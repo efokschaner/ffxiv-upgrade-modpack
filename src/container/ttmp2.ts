@@ -1,9 +1,10 @@
-import { readZip } from "../zip/zip";
+import { readZip, writeZip } from "../zip/zip";
+import { concatBytes, fnv1aKey } from "../util/binary";
 import {
-  FileStorageType, ModpackFormat,
+  FileStorageType, ModpackFormat, allFiles,
   type ModpackData, type ModpackFile, type ModpackGroup, type ModpackOption,
 } from "../model/modpack";
-import type { ModPackJson, TtmpModsJson } from "./manifest-types";
+import type { ModPackJson, TtmpModsJson, TtmpModPackPageJson, TtmpModGroupJson } from "./manifest-types";
 
 function fileFromMod(m: TtmpModsJson, mpd: Uint8Array): ModpackFile {
   return {
@@ -56,4 +57,64 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
     }
   }
   return { sourceFormat: ModpackFormat.Ttmp2, isSimple: false, meta, groups };
+}
+
+function buildBlob(files: ModpackFile[]): { blob: Uint8Array; place: Map<ModpackFile, { off: number; size: number }> } {
+  const parts: Uint8Array[] = [];
+  const place = new Map<ModpackFile, { off: number; size: number }>();
+  const seen = new Map<string, { off: number; size: number }>();
+  let off = 0;
+  for (const f of files) {
+    const key = fnv1aKey(f.data);
+    let pos = seen.get(key);
+    if (!pos) { pos = { off, size: f.data.length }; seen.set(key, pos); parts.push(f.data); off += f.data.length; }
+    place.set(f, pos);
+  }
+  return { blob: concatBytes(parts), place };
+}
+
+export function writeTtmp2(data: ModpackData): Uint8Array {
+  const files = allFiles(data);
+  const { blob, place } = buildBlob(files);
+
+  const modOf = (f: ModpackFile) => ({
+    Name: f.ttmp?.name ?? "", Category: f.ttmp?.category ?? "", FullPath: f.gamePath,
+    ModOffset: place.get(f)!.off, ModSize: place.get(f)!.size,
+    DatFile: f.ttmp?.datFile ?? "", IsDefault: f.ttmp?.isDefault ?? false,
+  });
+
+  const mpl: ModPackJson = {
+    TTMPVersion: data.isSimple ? "2.1s" : "2.1w",
+    Name: data.meta.name, Author: data.meta.author, Version: data.meta.version,
+    Description: data.meta.description, Url: data.meta.url,
+    MinimumFrameworkVersion: data.meta.minimumFrameworkVersion,
+  };
+
+  if (data.isSimple) {
+    mpl.SimpleModsList = files.map(modOf);
+  } else {
+    const byPage = new Map<number, TtmpModGroupJson[]>();
+    for (const g of data.groups) {
+      const list = byPage.get(g.page) ?? [];
+      list.push({
+        GroupName: g.name,
+        SelectionType: g.selectionType === "Multi" ? "Multi Selection" : "Single Selection",
+        OptionList: g.options.map((o) => ({
+          Name: o.name, Description: o.description, ImagePath: o.image,
+          GroupName: g.name, SelectionType: g.selectionType === "Multi" ? "Multi Selection" : "Single Selection",
+          ModsJsons: o.files.map(modOf),
+        })),
+      });
+      byPage.set(g.page, list);
+    }
+    const pages: TtmpModPackPageJson[] = [...byPage.keys()].sort((a, b) => a - b)
+      .map((p) => ({ PageIndex: p, ModGroups: byPage.get(p)! }));
+    mpl.ModPackPages = pages;
+  }
+
+  const entries = new Map<string, Uint8Array>([
+    ["TTMPL.mpl", new TextEncoder().encode(JSON.stringify(mpl))],
+    ["TTMPD.mpd", blob],
+  ]);
+  return writeZip(entries, { store: true });
 }
