@@ -1,0 +1,14 @@
+# Local research copies of the C# sources we are porting from (not ours to commit).
+# Re-clone from the URLs in docs/superpowers/specs if missing:
+#   https://github.com/TexTools/xivModdingFramework  (branch: develop)
+#   https://github.com/TexTools/FFXIV_TexTools_UI
+/reference/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
