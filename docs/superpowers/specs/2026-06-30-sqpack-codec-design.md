@@ -117,9 +117,11 @@ Every type is a header indexing a list of 128-byte-aligned blocks. One block:
 
 - `readBlock(reader) → Uint8Array`: read header; stored → copy; else `inflateSync(compressedLen bytes)`;
   skip padding.
-- `writeBlock(rawChunk) → Uint8Array`: `deflateSync(chunk)`; if not smaller than the input, emit a stored
-  block; prepend the 16-byte header; pad to 128. Uncompressed input is split into **16000-byte chunks**
-  (matching SE, so any decoder — including `/unwrap` — reads our output).
+- `writeBlock(rawChunk) → Uint8Array`: **always** `deflateSync(chunk)` (faithful to SE's
+  `CompressSmallData`, which never emits stored blocks on write — chunks are ≤16000 bytes so deflated size
+  stays well under the 32000 stored sentinel); prepend the 16-byte header; pad to 128. Uncompressed input
+  is split into **16000-byte chunks** (matching SE, so any decoder — including `/unwrap` — reads our
+  output). The **reader** still handles stored (`32000`) blocks, since older files/tools produced them.
 
 ### 5.2 Per-type modules — `src/sqpack/type2.ts`, `type3.ts`, `type4.ts`
 
@@ -169,11 +171,20 @@ reference architecture, provided the deviation is deliberate.
 Three layers, strongest first. All oracle/corpus tests **skip gracefully** when ConsoleTools or the corpus
 is absent (CI has neither), following the Task-4 harness pattern already in the repo.
 
-1. **Oracle decode cross-check (closes the known blind spot).** For real corpus entries,
-   `ConsoleTools /unwrap <entry> <out>` gives an *independent* decompression. Assert
-   `decodeSqPackFile(entry).data === /unwrap output` byte-for-byte. This validates decode against a foreign
-   implementation — the check PR #1's review flagged as missing. Individual entries are obtained by slicing
-   `TTMPD.mpd` (already done by `readTtmp2`), writing the slice to a temp file, and `/unwrap`-ing it.
+1. **Oracle decode cross-check (closes the known blind spot).** Individual entries are obtained by slicing
+   `TTMPD.mpd` (already done by `readTtmp2`) and writing the slice to a temp file.
+   - **Type 2 & 3 — direct via `/unwrap`.** `ConsoleTools /unwrap <entry.bin> <out.bin>` (using a *neutral
+     matching extension* like `.bin`, so ConsoleTools writes the raw un-sqpacked bytes rather than routing
+     `.tex`/`.mdl` through its image/3D exporters) gives an *independent* decompression. Assert
+     `decodeSqPackFile(entry).data === out` byte-for-byte. This is the check PR #1's review flagged as
+     missing.
+   - **Type 4 — via a `/wrap` bridge (game-gated).** ConsoleTools `/unwrap` **deliberately does not
+     decompress Type 4** (its guard is `type > 1 && type < 4`; `Program.cs:391`). The foreign check for
+     textures instead extracts a raw uncompressed `.tex` from the game (`/extract <gamePath.tex>
+     <raw.tex>`), re-wraps it with SE (`/wrap <raw.tex> <se.bin> <gamePath.tex> /sqpack`), and asserts
+     `decodeSqPackFile(se.bin).data === raw.tex`. This validates Type-4 decode against SE's encoder. It
+     needs the game install; it skips gracefully otherwise, leaving Type 4 covered by the self round-trip
+     (layer 2) plus synthetic units (layer 3).
 2. **Self round-trip over the corpus.** For every inner file across all 32 packs: `decode → encode →
    decode`; assert the two decoded blobs are byte-identical. Exercises all three types on real data.
 3. **Synthetic unit tests.** Hand-built minimal Type-2/3/4 entries (plus a stored-block case) for fast,
