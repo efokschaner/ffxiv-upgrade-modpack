@@ -12,7 +12,7 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   const headerLength = r.readInt32();
   const fileType = r.readInt32();
   if (fileType !== 3) throw new Error(`sqpack: not a Type 3 entry (fileType=${fileType})`);
-  r.readInt32(); // decompressedSize
+  const decompressedSize = r.readInt32();
   r.readInt32(); // buffer1
   r.readInt32(); // buffer2
   const version = r.readInt32();
@@ -101,7 +101,16 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
 
   const geometry: Uint8Array[] = [];
   for (let i = 0; i < 3; i++) { geometry.push(vertexBuffers[i]!); geometry.push(indexBuffers[i]!); }
-  return concatBytes([header.toUint8Array(), vInfo, mData, ...geometry]);
+
+  // Match Dat.ReadSqPackType3 (Dat.cs:801): the output buffer is sized `baseHeaderLength +
+  // decompressedSize`, where `decompressedSize` (entry offset 8) itself already counts the 68-byte
+  // header (encode writes uncompressedSize = 68 + content). This leaves 68 trailing zero bytes, which
+  // ConsoleTools /unwrap also emits — matching it is required by the byte-identical-decompressed bar.
+  const out = new Uint8Array(MDL_HEADER + decompressedSize);
+  out.set(header.toUint8Array(), 0);
+  let o = MDL_HEADER;
+  for (const part of [vInfo, mData, ...geometry]) { out.set(part, o); o += part.length; }
+  return out;
 }
 
 /** Compress a runtime MDL file into a Type 3 SQPack entry. Mirrors Mdl.CompressMdlFile (Mdl.cs:2148). */

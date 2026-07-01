@@ -9,7 +9,11 @@ function makeUncompressedMdl(): Uint8Array {
   const vInfo = 100, mData = 200;
   const vSizes = [300, 0, 0];
   const iSizes = [150, 0, 0];
-  const total = MDL_HEADER + vInfo + mData + vSizes.reduce((a, b) => a + b, 0) + iSizes.reduce((a, b) => a + b, 0);
+  const contentEnd = MDL_HEADER + vInfo + mData + vSizes.reduce((a, b) => a + b, 0) + iSizes.reduce((a, b) => a + b, 0);
+  // Dat.ReadSqPackType3 sizes its output buffer as `68 + decompressedSize`, and `decompressedSize`
+  // (entry offset 8) itself already counts the 68-byte header — so a real decode output ends with 68
+  // trailing zero bytes. The fixture must include them to be a fixed point of decode∘encode.
+  const total = contentEnd + MDL_HEADER;
   const buf = new Uint8Array(total);
   const dv = new DataView(buf.buffer);
 
@@ -41,7 +45,8 @@ function makeUncompressedMdl(): Uint8Array {
   buf[64] = 1; // lodCount
   buf[65] = 0; // flags
 
-  for (let i = MDL_HEADER; i < buf.length; i++) buf[i] = (i * 13 + 5) & 0xff;
+  // Fill only the content region; leave the 68 trailing bytes as zeros (see `total` above).
+  for (let i = MDL_HEADER; i < contentEnd; i++) buf[i] = (i * 13 + 5) & 0xff;
   return buf;
 }
 

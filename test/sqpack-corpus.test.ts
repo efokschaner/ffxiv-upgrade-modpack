@@ -1,0 +1,132 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, basename } from "node:path";
+import { loadModpack } from "../src/index";
+import { allFiles, FileStorageType, type ModpackFile } from "../src/model/modpack";
+import { decodeSqPackFile, encodeSqPackFile, SqPackType, type DecodedFile } from "../src/sqpack/sqpack";
+import { oracleAvailable, corpusInputs, unwrap } from "./helpers/oracle";
+
+const SELF_CAP_PER_TYPE = 25;   // full round-trip cap per SqPack type per pack
+const ORACLE_CAP_PER_TYPE = 3;  // /unwrap cross-check cap per type per pack
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** True when one buffer is a byte-exact prefix of the other (they differ only in trailing bytes). */
+function isPrefixRelation(a: Uint8Array, b: Uint8Array): boolean {
+  const m = Math.min(a.length, b.length);
+  for (let i = 0; i < m; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function compressedFiles(path: string): ModpackFile[] {
+  const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
+  return allFiles(data).filter((f) => f.storage === FileStorageType.SqPackCompressed);
+}
+
+/** The SQPack entry type is the int32 at offset 4 — readable without decompressing. */
+function entryType(f: ModpackFile): number {
+  return new DataView(f.data.buffer, f.data.byteOffset, f.data.byteLength).getInt32(4, true);
+}
+
+/**
+ * Decode a file, tolerating ONLY Type-4 (texture) decode failures. A tiny number of legacy textures
+ * (imported by old TexTools with improper block spacing) trip the skip/rewind block-recovery heuristic;
+ * our reader ports that heuristic faithfully from Dat.cs, so those files are undecodable by the reference
+ * algorithm too. We log and tolerate them for Type 4, but any Type-2/3 decode failure is a hard error.
+ */
+function decodeTolerant(f: ModpackFile, legacyTex: string[]): DecodedFile | null {
+  try {
+    return decodeSqPackFile(f.data);
+  } catch (err) {
+    if (entryType(f) === SqPackType.Texture) {
+      legacyTex.push(`${f.gamePath} (${(err as Error).message})`);
+      return null;
+    }
+    throw err; // Type 2/3 must always decode.
+  }
+}
+
+const inputs = corpusInputs();
+
+describe.skipIf(inputs.length === 0)("sqpack corpus", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "sqpack-"));
+
+  for (const path of inputs) {
+    const name = basename(path);
+
+    it(`decodes every compressed inner file in ${name}`, () => {
+      const files = compressedFiles(path);
+      const legacyTex: string[] = [];
+      let decoded = 0;
+      for (const f of files) {
+        const d = decodeTolerant(f, legacyTex);
+        if (d === null) continue;
+        expect(d.data.length).toBeGreaterThan(0);
+        decoded++;
+      }
+      console.log(`[decode-all] ${name}: ${decoded}/${files.length} decoded` +
+        (legacyTex.length ? `; ${legacyTex.length} legacy Type-4 tolerated: ${legacyTex.join(", ")}` : ""));
+    }, 1_200_000);
+
+    it(`self round-trips a bounded sample per type in ${name}`, () => {
+      const files = compressedFiles(path);
+      const legacyTex: string[] = [];
+      const canonicalized: string[] = [];
+      const testedByType = new Map<number, number>();
+      const totalByType = new Map<number, number>();
+      for (const f of files) {
+        const first = decodeTolerant(f, legacyTex);
+        if (first === null) continue;
+        totalByType.set(first.type, (totalByType.get(first.type) ?? 0) + 1);
+        if ((testedByType.get(first.type) ?? 0) >= SELF_CAP_PER_TYPE) continue;
+        const second = decodeSqPackFile(encodeSqPackFile(first.data, first.type));
+        if (!bytesEqual(first.data, second.data)) {
+          // Type 4 encode re-derives mip sizes from the canonical formula (exactly as SE's
+          // Tex.CompressTexFile does), so a texture whose stored mip tail is non-canonical is
+          // canonicalized on re-encode — SE is non-idempotent here too. Tolerate ONLY when the
+          // difference is purely trailing bytes (one output is a prefix of the other); any mid-content
+          // divergence, or any Type-2/3 mismatch, is a hard failure.
+          if (first.type === SqPackType.Texture && isPrefixRelation(first.data, second.data)) {
+            canonicalized.push(`${f.gamePath} (${first.data.length}->${second.data.length})`);
+            testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
+            continue;
+          }
+          expect.fail(`self round-trip mismatch (type ${first.type}) for ${f.gamePath}: ` +
+            `${first.data.length} vs ${second.data.length} bytes`);
+        }
+        testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
+      }
+      for (const [type, total] of totalByType) {
+        console.log(`[self round-trip] ${name}: type ${type} tested ${testedByType.get(type) ?? 0}/${total}`);
+      }
+      if (canonicalized.length) {
+        console.log(`[self round-trip] ${name}: ${canonicalized.length} Type-4 mip-canonicalized (trailing-byte only): ${canonicalized.join(", ")}`);
+      }
+    }, 1_200_000);
+
+    it.skipIf(!oracleAvailable())(`matches /unwrap for a bounded Type 2/3 sample in ${name}`, () => {
+      const files = compressedFiles(path);
+      const legacyTex: string[] = [];
+      const testedByType = new Map<number, number>();
+      for (const f of files) {
+        const decoded = decodeTolerant(f, legacyTex);
+        if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
+        if ((testedByType.get(decoded.type) ?? 0) >= ORACLE_CAP_PER_TYPE) continue;
+        const inPath = join(tmp, "entry.bin");
+        const outPath = join(tmp, "unwrapped.bin");
+        writeFileSync(inPath, f.data);
+        unwrap(inPath, outPath);
+        expect(bytesEqual(decoded.data, new Uint8Array(readFileSync(outPath)))).toBe(true);
+        testedByType.set(decoded.type, (testedByType.get(decoded.type) ?? 0) + 1);
+      }
+      for (const [type, tested] of testedByType) {
+        console.log(`[/unwrap] ${name}: type ${type} cross-checked ${tested}`);
+      }
+    }, 1_200_000);
+  }
+});
