@@ -556,7 +556,7 @@ export function encodeType4(data: Uint8Array): Uint8Array {
   const format = dv.getUint32(4, true);
   const width = dv.getUint16(8, true);
   const height = dv.getUint16(10, true);
-  const mipCount = data[12]! & 0xf;
+  const mipCount = data[14]! & 0xf; // MipCount byte @ offset 14 (Depth u16 occupies 12-13)
 
   const texHeader = data.slice(0, TEX_HEADER_SIZE);
   const mipSizes = texMipSizes(format, width, height);
