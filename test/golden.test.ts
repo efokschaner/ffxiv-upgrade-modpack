@@ -20,6 +20,13 @@ import { loadModpack, writeModpack, ModpackFormat } from "../src/index";
 // OUR OWN reader/writer: load → write(same format) → load must yield byte-identical
 // inner files. The ConsoleTools differential is DEFERRED to the codec plan, where we
 // can decompress and compare semantic content (see the skipped block below).
+//
+// KNOWN BLIND SPOT: because both sides of this comparison flow through the SAME
+// reader, a reader that mis-slices real SQPack ModOffset/ModSize would corrupt both
+// sides identically and still pass. Reader offset math against genuine .mpd blobs is
+// therefore exercised but not independently validated here — only the deferred
+// decompressed oracle differential can close that gap. (PMP manifest fidelity IS
+// independently validated against the original on-disk JSON in pmp-manifest.test.ts.)
 
 describe("corpus round-trip (skips without test/corpus/inputs)", () => {
   const packs = corpusInputs();

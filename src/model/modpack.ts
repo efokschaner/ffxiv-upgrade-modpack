@@ -17,6 +17,8 @@ export interface ModpackOption {
   files: ModpackFile[];
   fileSwaps: Record<string, string>; // PMP only; {} for TTMP
   manipulations: unknown[];          // PMP only; opaque JSON, [] for TTMP
+  raw?: unknown;           // opaque carry-through: full original PMP option JSON (Imc/Combining
+                           // extras, Priority, absent Files/Image, etc.). Re-emitted verbatim.
 }
 
 export interface ModpackGroup {
@@ -25,12 +27,14 @@ export interface ModpackGroup {
   selectionType: string;   // "Single" | "Multi" | "Imc" | "Combining"
   defaultSettings: number; // PMP; 0 for TTMP
   options: ModpackOption[];
-  raw?: unknown;           // opaque carry-through for PMP Imc/Combining group extras
+  raw?: unknown;           // opaque carry-through: full original PMP group JSON. Re-emitted verbatim.
 }
 
 export interface ModpackMeta {
   name: string; author: string; version: string; description: string;
   url: string; image: string; tags: string[]; minimumFrameworkVersion: string;
+  raw?: unknown;           // opaque carry-through: full original PMP meta.json (e.g.
+                           // DefaultPreferredItems, FileVersion). Re-emitted verbatim.
 }
 
 export interface ModpackData {
