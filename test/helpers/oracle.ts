@@ -32,3 +32,16 @@ export function generateUpgradeGolden(inputPath: string): string {
   upgrade(inputPath, out);
   return out;
 }
+
+/** Unwraps a sqpack-compressed blob to raw bytes (Types 2 & 3 only). Use a neutral matching extension (e.g. `.bin`) for both paths. */
+export function unwrap(src: string, dest: string): void { run(["/unwrap", src, dest]); }
+/** Wraps raw bytes back into a sqpack-compressed blob. `ffPath` is the FFXIV game path used to select the compression scheme. */
+export function wrap(src: string, dest: string, ffPath: string): void {
+  run(["/wrap", src, dest, ffPath, "/sqpack"]);
+}
+/** Extracts a file directly from the game by its game path. `dest` extension should match `gamePath` to get raw uncompressed output. */
+export function extractGameFile(gamePath: string, dest: string): void {
+  run(["/extract", gamePath, dest]);
+}
+/** ConsoleTools present (game-path resolution is validated lazily by extract calls). */
+export function gameAvailable(): boolean { return oracleAvailable(); }
