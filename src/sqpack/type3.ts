@@ -47,6 +47,13 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   const flags = r.readUint8();
   const padding = r.readBytes(2);
 
+  // Edge geometry is part of the Type-3 format but is always empty for real FFXIV models (verified
+  // across the corpus), so this port does not read the edge buffers' own offsets. Fail loudly rather
+  // than silently mis-decode (readGroup would seek to endOfHeader+0) if a model ever carried it.
+  if (edgeBlockCounts.some((c) => c !== 0)) {
+    throw new Error(`sqpack: Type 3 edge geometry is not supported (edge block counts ${edgeBlockCounts.join(",")})`);
+  }
+
   // Decompress each group by seeking to endOfHeader + its offset and reading its blocks.
   const readGroup = (offset: number, count: number): Uint8Array => {
     if (count === 0) return new Uint8Array(0);
@@ -75,9 +82,7 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
     vertexRealSizes[i] = vb.length;
     decompOffset += vb.length;
 
-    // Edge geometry (present in the format, empty in practice) sits between vertex and index.
-    const eb = readGroup(0, edgeBlockCounts[i]!); // count is 0 for real models
-    decompOffset += eb.length;
+    // Edge geometry sits between vertex and index in the layout; guaranteed empty by the guard above.
 
     indexUncompOffsets[i] = decompOffset;
     const ib = readGroup(indexBufferOffsets[i]!, indexBufferBlockCounts[i]!);
