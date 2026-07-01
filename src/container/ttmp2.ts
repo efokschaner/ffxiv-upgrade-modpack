@@ -59,15 +59,28 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
   return { sourceFormat: ModpackFormat.Ttmp2, isSimple: false, meta, groups };
 }
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 function buildBlob(files: ModpackFile[]): { blob: Uint8Array; place: Map<ModpackFile, { off: number; size: number }> } {
   const parts: Uint8Array[] = [];
   const place = new Map<ModpackFile, { off: number; size: number }>();
-  const seen = new Map<string, { off: number; size: number }>();
+  const seen = new Map<string, Array<{ pos: { off: number; size: number }; data: Uint8Array }>>();
   let off = 0;
   for (const f of files) {
     const key = fnv1aKey(f.data);
-    let pos = seen.get(key);
-    if (!pos) { pos = { off, size: f.data.length }; seen.set(key, pos); parts.push(f.data); off += f.data.length; }
+    const bucket = seen.get(key) ?? [];
+    let pos = bucket.find((e) => bytesEqual(e.data, f.data))?.pos;
+    if (!pos) {
+      pos = { off, size: f.data.length };
+      bucket.push({ pos, data: f.data });
+      seen.set(key, bucket);
+      parts.push(f.data);
+      off += f.data.length;
+    }
     place.set(f, pos);
   }
   return { blob: concatBytes(parts), place };

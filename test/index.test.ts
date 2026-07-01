@@ -24,4 +24,9 @@ describe("public API", () => {
   it("throws on unknown extension", () => {
     expect(() => loadModpack("x.zip", new Uint8Array())).toThrow();
   });
+
+  it("throws on cross-format write", () => {
+    expect(() => writeModpack(loadModpack("p.pmp", makePmpZip().bytes), "ttmp2")).toThrow();
+    expect(() => writeModpack(loadModpack("s.ttmp2", makeTtmp2Simple().bytes), "pmp")).toThrow();
+  });
 });

@@ -26,15 +26,35 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
+function compareBytesLex(a: Uint8Array, b: Uint8Array): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) { if (a[i] !== b[i]) return a[i]! - b[i]!; }
+  return a.length - b.length;
+}
+
 export function compareInnerFilesByteIdentical(a: ModpackData, b: ModpackData): { ok: boolean; mismatches: string[] } {
-  const map = (d: ModpackData) => new Map(allFiles(d).map((f) => [f.gamePath, f.data]));
-  const am = map(a); const bm = map(b);
+  // A game path may appear in multiple options with different bytes; compare the
+  // full multiset of payloads per path, order-independently.
+  const group = (d: ModpackData) => {
+    const m = new Map<string, Uint8Array[]>();
+    for (const f of allFiles(d)) {
+      const list = m.get(f.gamePath) ?? [];
+      list.push(f.data);
+      m.set(f.gamePath, list);
+    }
+    for (const list of m.values()) list.sort(compareBytesLex);
+    return m;
+  };
+  const am = group(a); const bm = group(b);
   const mismatches: string[] = [];
-  for (const [path, data] of am) {
-    const other = bm.get(path);
-    if (!other) { mismatches.push(`missing in golden: ${path}`); continue; }
-    if (!bytesEqual(data, other)) mismatches.push(`bytes differ: ${path}`);
+  const paths = new Set([...am.keys(), ...bm.keys()]);
+  for (const path of paths) {
+    const al = am.get(path) ?? [];
+    const bl = bm.get(path) ?? [];
+    if (al.length !== bl.length) { mismatches.push(`payload count differs for ${path}: ${al.length} vs ${bl.length}`); continue; }
+    for (let i = 0; i < al.length; i++) {
+      if (!bytesEqual(al[i]!, bl[i]!)) mismatches.push(`bytes differ: ${path} (payload ${i})`);
+    }
   }
-  for (const path of bm.keys()) if (!am.has(path)) mismatches.push(`extra in golden: ${path}`);
   return { ok: mismatches.length === 0, mismatches };
 }

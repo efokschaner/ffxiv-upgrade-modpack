@@ -1,5 +1,5 @@
 import { detectFormat } from "./container/detect";
-import { ModpackFormat, type ModpackData } from "./model/modpack";
+import { ModpackFormat, FileStorageType, allFiles, type ModpackData } from "./model/modpack";
 import { readTtmp2, writeTtmp2 } from "./container/ttmp2";
 import { readLegacyTtmp } from "./container/ttmp-legacy";
 import { readPmp, writePmp } from "./container/pmp";
@@ -19,5 +19,14 @@ export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
 }
 
 export function writeModpack(data: ModpackData, target: "ttmp2" | "pmp"): Uint8Array {
+  const needed = target === "ttmp2" ? FileStorageType.SqPackCompressed : FileStorageType.RawUncompressed;
+  const bad = allFiles(data).find((f) => f.storage !== needed);
+  if (bad) {
+    throw new Error(
+      `Cross-format conversion is not supported: cannot write a ${bad.storage} file ` +
+      `("${bad.gamePath}") to ${target}. Same-format re-emit only ` +
+      `(ttmp2/ttmp -> ttmp2, pmp -> pmp).`,
+    );
+  }
   return target === "ttmp2" ? writeTtmp2(data) : writePmp(data);
 }
