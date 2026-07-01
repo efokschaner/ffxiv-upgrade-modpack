@@ -8,6 +8,8 @@ export const VERSION = "0.0.0";
 export * from "./model/modpack";
 export { detectFormat } from "./container/detect";
 export { decodeSqPackFile, encodeSqPackFile, detectTypeFromGamePath, SqPackType, type DecodedFile } from "./sqpack/sqpack";
+export { parseMtrl, serializeMtrl } from "./mtrl/mtrl";
+export type { XivMtrl, MtrlTexture, MtrlString, ShaderKey, ShaderConstant, TextureSampler } from "./mtrl/types";
 
 export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
   const fmt = detectFormat(name);
