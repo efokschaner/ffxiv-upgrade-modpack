@@ -168,10 +168,19 @@ committed to `master` or `develop`; no CI). We build our own, anchored on a **re
 - `ConsoleTools.exe`: `C:\Program Files\FFXIV TexTools\FFXIV_TexTools\ConsoleTools.exe`
 - `console_config.json` already points `XivPath` at the Steam FFXIV install — `/upgrade` works out of the box (verified).
 
+> ⚠️ **CORRECTION (2026-06-30, verified against a 32-pack real corpus).** The oracle (`/resave` and
+> `/upgrade`) is a **transforming** operation, NOT byte-preserving. It decompresses each inner game file,
+> re-compresses it (different block layout ⇒ different bytes), and normalizes/upgrades model `.mdl` files
+> (uncompressed size changes). Therefore **any golden diff against ConsoleTools must compare DECOMPRESSED /
+> semantic content, never raw compressed payloads** — which requires the SQPack codec. Until codecs exist,
+> the container-only layer is validated by a **self round-trip** (our reader→writer→reader, byte-identical
+> inner files), which passed 32/32 on the real corpus and needs no oracle. This resolves the open decision
+> below: **byte-identical for our own round-trip; semantic/structural for oracle diffs.**
+
 Layers (strongest first):
 1. **End-to-end golden diff.** Run `ConsoleTools /upgrade <pack> <golden>` over a corpus of real
-   pre-Dawntrail modpacks. The TS port must reproduce each `<golden>` (byte- or structure-equivalent —
-   decide tolerance; incidental zip ordering may need normalization).
+   pre-Dawntrail modpacks. The TS port must reproduce each `<golden>` compared on **decompressed** content
+   (the oracle recompresses/normalizes — see correction above), not raw bytes.
 2. **Component goldens.** Per-transform input→output pairs (mtrl EW→DT, normal→index, eye-mask→diffuse),
    seeded from `/extract` outputs and the bundled `Resources` fixtures
    (`default_material.mtrl` ↔ `default_material_dt.mtrl`, `Colorset.*`).
