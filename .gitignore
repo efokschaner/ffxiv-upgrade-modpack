@@ -12,3 +12,9 @@ dist/
 # OS
 Thumbs.db
 .DS_Store
+
+# Subagent-driven-development scratch
+/.superpowers/
+
+# Real modpack corpus + goldens for converter tests — user-provided, not committed.
+/test/corpus/
