@@ -102,7 +102,7 @@ Expected: FAIL — `npm` errors because `package.json` does not exist yet (this 
 
 ```json
 {
-  "name": "modpack-upgrader",
+  "name": "ffxiv-upgrade-modpack",
   "version": "0.0.0",
   "private": true,
   "type": "module",
