@@ -198,7 +198,7 @@ is easier to automate but brittle to incidental ordering / timestamps).
 
 ## 7. Environment notes
 
-- Working directory: `C:\dev\efokschaner\ffxiv-upgrade-modpack` (git repo; remote `git@github.com:efokschaner/ffxiv-upgrade-modpack.git`).
+- Git repo, published on GitHub as `ffxiv-upgrade-modpack`.
 - Reference repos were cloned into the **session scratchpad**, which is **ephemeral** — on resume,
   re-clone `xivModdingFramework` and `FFXIV_TexTools_UI` (URLs in §2) to a stable location (e.g.
   `./reference/`, git-ignored) for source reference.
