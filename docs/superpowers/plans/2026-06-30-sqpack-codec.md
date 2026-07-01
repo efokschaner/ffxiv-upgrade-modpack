@@ -1125,6 +1125,23 @@ git commit -m "test(sqpack): add /unwrap /wrap /extract oracle wrappers"
 
 ### Task 7: Corpus self round-trip + Type 2/3 /unwrap cross-check
 
+> **REVISED DURING EXECUTION (see `.superpowers/sdd/progress.md`).** The corpus is ~1.66 GB / 32 packs
+> (largest ttmp2 468 MB), so iterating *every* inner file for the full round-trip and spawning ConsoleTools
+> per Type-2/3 file was impractical. The shipped test (`test/sqpack-corpus.test.ts`) instead does:
+> **decode-all at 100 % coverage** (cheap inflate) + **bounded self round-trip** (25/type/pack) +
+> **bounded `/unwrap` cross-check** (3/type/pack, Type 2/3), all with logged coverage.
+> The corpus surfaced two real bugs, fixed as part of this task:
+> (1) **Type-3 decode** must allocate `68 + decompressedSize` (the entry's `decompressedSize` already counts
+> the 68-byte header) so it emits the 68 trailing zero bytes `/unwrap` also emits — `src/sqpack/type3.ts`
+> fixed; the Type-3 fixture updated to include them.
+> (2) **Type-4 encode** canonicalizes non-canonical mip tails via the mip-size formula (as SE's
+> `Tex.CompressTexFile` does, so SE is non-idempotent too); the self round-trip tolerates ONLY Type-4
+> trailing-byte (prefix) differences whose re-decoded length equals the canonical formula length, and
+> logs them. Rare legacy Type-4 textures that trip the faithful skip/rewind heuristic are tolerated+logged
+> at decode-all; any Type-2/3 decode or round-trip failure is a hard error. Final: corpus 96/96.
+>
+> The code block below is the original (pre-revision) design, retained for provenance.
+
 **Files:**
 - Create: `test/sqpack-corpus.test.ts`
 
