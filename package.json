@@ -2,6 +2,8 @@
   "name": "ffxiv-upgrade-modpack",
   "version": "0.0.0",
   "private": true,
+  "license": "GPL-3.0-or-later",
+  "author": "Edmund Fokschaner",
   "type": "module",
   "scripts": {
     "build": "vite build",

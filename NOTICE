@@ -1,0 +1,37 @@
+ffxiv-upgrade-modpack
+Copyright (C) 2026 Edmund Fokschaner
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+================================================================================
+Attribution / derivative-work notice
+================================================================================
+
+This project is a derivative work. Substantial portions of the source —
+in particular the SQPack codec (src/sqpack/) and the modpack container
+readers/writers (src/container/, src/model/) — are a hand port from C# to
+TypeScript of:
+
+  xivModdingFramework
+    https://github.com/TexTools/xivModdingFramework
+    Copyright (C) Rafael Gonzalez ("liinko") and the xivModdingFramework
+    contributors.
+    Licensed under the GNU General Public License, version 3 or later.
+
+  FFXIV TexTools (FFXIV_TexTools_UI / ConsoleTools)
+    https://github.com/TexTools/FFXIV_TexTools_UI
+    Copyright (C) Rafael Gonzalez ("liinko") and the FFXIV TexTools
+    contributors.
+    Licensed under the GNU General Public License, version 3 or later.
+
+Ported source files carry SPDX headers and, where useful, cite the specific
+upstream source file and line ranges (e.g. `Dat.cs:520`) they were derived
+from. Because these upstream works are licensed under GPL-3.0-or-later, this
+entire project is likewise distributed under GPL-3.0-or-later.
+
+FINAL FANTASY XIV and all related game assets are the property of
+SQUARE ENIX CO., LTD. This project ships no game assets; any game data used
+for local testing is not distributed with this repository.
