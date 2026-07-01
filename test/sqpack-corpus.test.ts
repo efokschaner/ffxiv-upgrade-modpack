@@ -5,7 +5,21 @@ import { join, basename } from "node:path";
 import { loadModpack } from "../src/index";
 import { allFiles, FileStorageType, type ModpackFile } from "../src/model/modpack";
 import { decodeSqPackFile, encodeSqPackFile, SqPackType, type DecodedFile } from "../src/sqpack/sqpack";
+import { texMipSizes } from "../src/sqpack/type4";
 import { oracleAvailable, corpusInputs, unwrap } from "./helpers/oracle";
+
+const TEX_HEADER_SIZE = 80;
+
+/** Canonical decompressed length of a Type-4 tex: 80-byte header + sum of formula-derived mip sizes. */
+function canonicalTexLength(decoded: Uint8Array): number {
+  const dv = new DataView(decoded.buffer, decoded.byteOffset, decoded.byteLength);
+  const format = dv.getUint32(4, true);
+  const width = dv.getUint16(8, true);
+  const height = dv.getUint16(10, true);
+  const mipCount = decoded[14]! & 0xf;
+  const sizes = texMipSizes(format, width, height).slice(0, mipCount);
+  return TEX_HEADER_SIZE + sizes.reduce((a, b) => a + b, 0);
+}
 
 const SELF_CAP_PER_TYPE = 25;   // full round-trip cap per SqPack type per pack
 const ORACLE_CAP_PER_TYPE = 3;  // /unwrap cross-check cap per type per pack
@@ -88,10 +102,17 @@ describe.skipIf(inputs.length === 0)("sqpack corpus", () => {
         if (!bytesEqual(first.data, second.data)) {
           // Type 4 encode re-derives mip sizes from the canonical formula (exactly as SE's
           // Tex.CompressTexFile does), so a texture whose stored mip tail is non-canonical is
-          // canonicalized on re-encode — SE is non-idempotent here too. Tolerate ONLY when the
-          // difference is purely trailing bytes (one output is a prefix of the other); any mid-content
-          // divergence, or any Type-2/3 mismatch, is a hard failure.
-          if (first.type === SqPackType.Texture && isPrefixRelation(first.data, second.data)) {
+          // canonicalized on re-encode — SE is non-idempotent here too. Tolerate ONLY when BOTH:
+          // (1) one output is a byte-exact prefix of the other (content matches, differs only in the
+          // trailing tail), AND (2) the re-decoded length equals the canonical formula-derived length.
+          // (2) proves the difference is exactly mip-tail canonicalization and rules out an arbitrary
+          // Type-4 encode truncation bug (which prefix-relation alone would mask). Any mid-content
+          // divergence, a non-canonical re-decoded length, or any Type-2/3 mismatch is a hard failure.
+          if (
+            first.type === SqPackType.Texture &&
+            isPrefixRelation(first.data, second.data) &&
+            second.data.length === canonicalTexLength(second.data)
+          ) {
             canonicalized.push(`${f.gamePath} (${first.data.length}->${second.data.length})`);
             testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
             continue;
