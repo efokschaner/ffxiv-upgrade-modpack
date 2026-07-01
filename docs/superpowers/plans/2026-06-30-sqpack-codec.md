@@ -244,12 +244,11 @@ export function compressData(data: Uint8Array): Uint8Array[] {
   for (let off = 0; off < data.length; off += MAX_CHUNK) {
     blocks.push(writeBlock(data.slice(off, Math.min(off + MAX_CHUNK, data.length))));
   }
-  if (data.length === 0) blocks.push(writeBlock(new Uint8Array(0)));
   return blocks;
 }
 ```
 
-> Note the `data.length === 0` guard: a zero-length buffer must still emit one (empty) block so block counts stay consistent; `CompressData`'s `Math.Ceiling(0/16000f)` yields 0 parts in C#, but zero-length sub-buffers do not occur for real Type-2/3/4 payloads. The guard keeps `compressData` total-safe; callers that pass empty buffers get a valid single block.
+> A zero-length buffer yields **zero** blocks, exactly as C# `CompressData` does (`Math.Ceiling(0/16000f) === 0`). This matters for Type 3: models routinely have empty LoD1/LoD2 vertex/index buffers, and their block counts must be 0 to match SE's structure. Block counts are always derived from the returned list length, so an empty list is self-consistent on the decode side.
 
 - [ ] **Step 5: Run test to verify it passes**
 
