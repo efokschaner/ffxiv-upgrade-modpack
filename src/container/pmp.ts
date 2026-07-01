@@ -1,6 +1,6 @@
-import { readZip } from "../zip/zip";
+import { readZip, writeZip } from "../zip/zip";
 import {
-  FileStorageType, ModpackFormat,
+  FileStorageType, ModpackFormat, allFiles,
   type ModpackData, type ModpackGroup, type ModpackOption,
 } from "../model/modpack";
 import type { PmpGroupJson, PmpMetaJson, PmpOptionJson } from "./manifest-types";
@@ -57,4 +57,56 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     },
     groups,
   };
+}
+
+function safeName(s: string): string {
+  return (s || "_").replace(/[^A-Za-z0-9._-]/g, "_");
+}
+
+function optionToJson(o: ModpackOption, includeMeta: boolean): PmpOptionJson {
+  const Files: Record<string, string> = {};
+  for (const f of o.files) {
+    const zip = (f.pmpPath ?? f.gamePath);            // forward slashes (zip entry name)
+    Files[f.gamePath] = zip.replace(/\//g, "\\");     // backslashes in JSON value
+  }
+  const base: PmpOptionJson = { Files, FileSwaps: o.fileSwaps, Manipulations: o.manipulations };
+  if (includeMeta) { base.Name = o.name; base.Description = o.description; base.Image = o.image; }
+  return base;
+}
+
+export function writePmp(data: ModpackData): Uint8Array {
+  const enc = new TextEncoder();
+  const entries = new Map<string, Uint8Array>();
+
+  const meta: PmpMetaJson = {
+    FileVersion: 3, Name: data.meta.name, Author: data.meta.author,
+    Description: data.meta.description, Version: data.meta.version,
+    Website: data.meta.url, Image: data.meta.image, ModTags: data.meta.tags,
+  };
+  entries.set("meta.json", enc.encode(JSON.stringify(meta, null, 2)));
+
+  const [defaultGroup, ...rest] = data.groups;
+  const defaultOption: ModpackOption = defaultGroup?.options[0] ?? {
+    name: "", description: "", image: "", priority: 0, files: [], fileSwaps: {}, manipulations: [],
+  };
+  const defaultMod: PmpOptionJson = { Version: 0, ...optionToJson(defaultOption, false) };
+  entries.set("default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2)));
+
+  rest.forEach((g, i) => {
+    const groupJson: PmpGroupJson = {
+      Version: 0, Name: g.name, Description: g.description, Image: g.image,
+      Page: g.page, Priority: g.priority, Type: g.selectionType, DefaultSettings: g.defaultSettings,
+      ...(g.raw && typeof g.raw === "object" ? (g.raw as Record<string, unknown>) : {}),
+      Options: g.options.map((o) => optionToJson(o, true)),
+    };
+    const fileName = `group_${String(i + 1).padStart(3, "0")}_${safeName(g.name)}.json`;
+    entries.set(fileName, enc.encode(JSON.stringify(groupJson, null, 2)));
+  });
+
+  for (const f of allFiles(data)) {
+    const zipPath = (f.pmpPath ?? f.gamePath).replace(/\\/g, "/");
+    if (!entries.has(zipPath)) entries.set(zipPath, f.data);
+  }
+
+  return writeZip(entries, { store: false });
 }
