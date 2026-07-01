@@ -96,6 +96,11 @@ export function getRealSamplerCount(m: XivMtrl): number {
   if (m.uvMapStrings.length <= 1) return total;
   for (const tex of m.textures) {
     if (!tex.sampler) continue;
+    // Empty-sampler placeholders never get a secondary double-write on serialize (serialize.ts
+    // writes their single sampler with index 255 and no secondary), so they must not add to the
+    // count here. C# (XivMtrl.cs:271) DOES count them — a latent header/write-loop mismatch that
+    // cannot trigger on real corpus data (0 unstable) but which we guard against here.
+    if (isEmptySampler(tex)) continue;
     const secondary = secondarySamplerId(tex.sampler.samplerIdRaw);
     if (secondary === undefined) continue;
     if (m.textures.some((x) => x.sampler && x.sampler.samplerIdRaw === secondary)) continue;

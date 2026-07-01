@@ -7,7 +7,7 @@
 import { describe, it, expect } from "vitest";
 import {
   colorSetDataSize, shaderConstantsDataSize, getRealSamplerCount,
-  isPrimaryMapSampler, secondarySamplerId,
+  isPrimaryMapSampler, secondarySamplerId, EMPTY_SAMPLER_PREFIX,
   SAMPLER_NORMAL_MAP_0, SAMPLER_NORMAL_MAP_1, SAMPLER_COLOR_MAP_1,
   type XivMtrl,
 } from "../src/mtrl/types";
@@ -59,5 +59,18 @@ describe("mtrl computed helpers", () => {
     m.textures.push({ texturePath: "n2.tex", flags: 0, sampler: { samplerIdRaw: SAMPLER_NORMAL_MAP_1, samplerSettingsRaw: 0 } });
     expect(getRealSamplerCount(m)).toBe(2); // 2 present, no extra double-write
     expect(SAMPLER_COLOR_MAP_1).toBeGreaterThan(0); // constant is exported
+  });
+
+  it("does not count a secondary double-write for an empty-sampler placeholder", () => {
+    const m = baseMtrl();
+    m.uvMapStrings = [{ value: "uv1", flags: 0 }, { value: "uv2", flags: 0 }];
+    m.textures = [{
+      texturePath: EMPTY_SAMPLER_PREFIX + SAMPLER_NORMAL_MAP_0,
+      flags: 0,
+      sampler: { samplerIdRaw: SAMPLER_NORMAL_MAP_0, samplerSettingsRaw: 0 },
+    }];
+    // The placeholder writes exactly one sampler (index 255) with no secondary, so the count is 1,
+    // not 2 — even though it carries a primary Map0 sampler in a 2-UV material.
+    expect(getRealSamplerCount(m)).toBe(1);
   });
 });

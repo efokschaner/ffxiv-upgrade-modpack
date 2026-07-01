@@ -24,6 +24,8 @@ function pad4(len: number): number {
  * Mtrl.XivMtrlToUncompressedMtrl (Mtrl.cs:556). Regenerates the string block, the sampler
  * double-writes, and the normalized header/flags deterministically — byte-exact for canonical
  * inputs (see design spec §5).
+ * NOTE: mutates the caller's model by lowercasing each texture.texturePath in place (faithful to
+ * Mtrl.cs:558); no other field of the input is mutated.
  */
 export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
   // Lowercase all texture paths (Mtrl.cs:558). Real SE paths are already lowercase (a no-op).
