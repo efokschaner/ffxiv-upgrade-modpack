@@ -1,3 +1,5 @@
+import { deflateSync, inflateSync } from "fflate";
+
 export class BinaryReader {
   private view: DataView;
   private pos = 0;
@@ -10,6 +12,12 @@ export class BinaryReader {
   readUint32(): number { const v = this.view.getUint32(this.pos, true); this.pos += 4; return v; }
   readInt16(): number { const v = this.view.getInt16(this.pos, true); this.pos += 2; return v; }
   readUint16(): number { const v = this.view.getUint16(this.pos, true); this.pos += 2; return v; }
+  readUint8(): number { const v = this.view.getUint8(this.pos); this.pos += 1; return v; }
+  readBytes(len: number): Uint8Array {
+    const out = this.bytes.slice(this.pos, this.pos + len);
+    this.pos += len;
+    return out;
+  }
   slice(start: number, len: number): Uint8Array {
     return this.bytes.slice(start, start + len);
   }
@@ -31,4 +39,27 @@ export function fnv1aKey(bytes: Uint8Array): string {
     h = Math.imul(h, 0x01000193);
   }
   return `${bytes.length}:${(h >>> 0).toString(16)}`;
+}
+
+/** Raw DEFLATE (no zlib/gzip framing), matching C# DeflateStream. */
+export function deflateRaw(bytes: Uint8Array): Uint8Array {
+  return deflateSync(bytes);
+}
+export function inflateRaw(bytes: Uint8Array, size: number): Uint8Array {
+  const out = inflateSync(bytes, { out: new Uint8Array(size) });
+  return out;
+}
+
+/** Little-endian byte builder for constructing SQPack headers. */
+export class ByteBuilder {
+  private parts: number[] = [];
+  u8(v: number): this { this.parts.push(v & 0xff); return this; }
+  u16(v: number): this { this.parts.push(v & 0xff, (v >>> 8) & 0xff); return this; }
+  i32(v: number): this {
+    this.parts.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff);
+    return this;
+  }
+  bytes(a: Uint8Array | number[]): this { for (const b of a) this.parts.push(b & 0xff); return this; }
+  get length(): number { return this.parts.length; }
+  toUint8Array(): Uint8Array { return new Uint8Array(this.parts); }
 }
