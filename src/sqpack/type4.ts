@@ -82,6 +82,11 @@ export function encodeType4(data: Uint8Array): Uint8Array {
 
   const texHeader = data.slice(0, TEX_HEADER_SIZE);
   const mipSizes = texMipSizes(format, width, height);
+  // Guard mirrors DDS.CompressDDSBody (DDS.cs:1079-1080): mipCount cannot exceed the formula chain,
+  // otherwise mipSizes[i] would be undefined and we would emit a silently malformed entry.
+  if (mipSizes.length < mipCount) {
+    throw new Error(`sqpack: tex mipCount ${mipCount} exceeds mip chain (${mipSizes.length}) for ${width}x${height} format ${format}`);
+  }
 
   // Compress each mip's pixel bytes into blocks.
   const ddsParts: Uint8Array[][] = [];

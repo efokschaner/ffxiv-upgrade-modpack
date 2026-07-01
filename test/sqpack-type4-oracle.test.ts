@@ -28,8 +28,10 @@ describe.skipIf(!gameAvailable())("sqpack Type 4 /wrap bridge", () => {
         extractGameFile(gamePath, rawPath);       // uncompressed .tex from the game
         raw = new Uint8Array(readFileSync(rawPath));
         wrap(rawPath, sePath, gamePath);           // SE re-compresses to a Type 4 entry (/sqpack)
-      } catch {
-        // Path not present on this install — treat as inconclusive skip.
+      } catch (err) {
+        // Path not present on this install — treat as inconclusive skip, but log it so a fully-skipped
+        // bridge (green with zero assertions) is visible rather than silently passing.
+        console.log(`[type4 /wrap bridge] INCONCLUSIVE skip for ${gamePath}: ${(err as Error).message}`);
         return;
       }
       const seEntry = new Uint8Array(readFileSync(sePath));
