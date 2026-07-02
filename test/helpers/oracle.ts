@@ -1,10 +1,37 @@
-import { existsSync, readdirSync, mkdirSync } from "node:fs";
+import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join, basename } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 
 const CONSOLE_TOOLS = "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
 const CORPUS_INPUTS = join(__dirname, "..", "corpus", "inputs");
 const GOLDEN_UPGRADE = join(__dirname, "..", "corpus", "golden-upgrade");
+
+/** Content-addressed cache of ConsoleTools /unwrap outputs. Lives inside the gitignored
+ * test/corpus/ tree (see .gitignore) so it is never committed. Keyed by sha256(entry). */
+const DEFAULT_ORACLE_CACHE = join(__dirname, "..", "corpus", ".oracle-cache");
+
+/** Lowercase hex sha256 of an entry blob. Same input ⇒ same key, so identical payloads
+ * (common across multi-option packs) dedupe to one cache file and one ConsoleTools call. */
+export function oracleKey(entry: Uint8Array): string {
+  return createHash("sha256").update(entry).digest("hex");
+}
+
+/** Cached /unwrap output for `key`, or null on miss. */
+export function oracleCacheGet(key: string, dir: string = DEFAULT_ORACLE_CACHE): Uint8Array | null {
+  const p = join(dir, `${key}.bin`);
+  return existsSync(p) ? new Uint8Array(readFileSync(p)) : null;
+}
+
+/** Store `data` under `key`, atomically (temp file + rename) so an interrupted run never
+ * leaves a half-written cache entry that a later run would trust. */
+export function oracleCachePut(key: string, data: Uint8Array, dir: string = DEFAULT_ORACLE_CACHE): void {
+  mkdirSync(dir, { recursive: true });
+  const finalPath = join(dir, `${key}.bin`);
+  const tmpPath = join(dir, `${key}.bin.tmp`);
+  writeFileSync(tmpPath, data);
+  renameSync(tmpPath, finalPath);
+}
 
 export function oracleAvailable(): boolean {
   return existsSync(CONSOLE_TOOLS);
