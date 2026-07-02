@@ -1,7 +1,8 @@
-import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync, mkdtempSync } from "node:fs";
 import { join, basename } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 
 const CONSOLE_TOOLS = "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
 const CORPUS_INPUTS = join(__dirname, "..", "corpus", "inputs");
@@ -72,3 +73,43 @@ export function extractGameFile(gamePath: string, dest: string): void {
 }
 /** ConsoleTools present (game-path resolution is validated lazily by extract calls). */
 export function gameAvailable(): boolean { return oracleAvailable(); }
+
+/** Per-process scratch dir for the /unwrap file dance. Each Vitest worker imports this module
+ * separately, so each gets its own dir — no cross-worker collision. Created lazily. */
+let ORACLE_TMP: string | null = null;
+function oracleTmpDir(): string {
+  if (ORACLE_TMP === null) ORACLE_TMP = mkdtempSync(join(tmpdir(), "oracle-"));
+  return ORACLE_TMP;
+}
+
+/** Run the real ConsoleTools /unwrap on an in-memory entry, returning the raw bytes. */
+function unwrapViaConsoleTools(entry: Uint8Array): Uint8Array {
+  const dir = oracleTmpDir();
+  const inPath = join(dir, "entry.bin");
+  const outPath = join(dir, "unwrapped.bin");
+  writeFileSync(inPath, entry);
+  unwrap(inPath, outPath);
+  return new Uint8Array(readFileSync(outPath));
+}
+
+/**
+ * Cached /unwrap: returns the decompressed bytes for `entry`, spawning ConsoleTools at most
+ * once per distinct entry across all runs. Cache hits skip the process spawn entirely (~436ms
+ * each). Returns null only when the entry is uncached AND no producer is available (no TexTools),
+ * so callers can skip that sample. `opts.available`/`opts.produce` exist for unit testing.
+ */
+export function unwrapCached(
+  entry: Uint8Array,
+  opts: { dir?: string; available?: boolean; produce?: (entry: Uint8Array) => Uint8Array } = {},
+): Uint8Array | null {
+  const dir = opts.dir ?? DEFAULT_ORACLE_CACHE;
+  const key = oracleKey(entry);
+  const hit = oracleCacheGet(key, dir);
+  if (hit !== null) return hit;
+  const available = opts.available ?? oracleAvailable();
+  if (!available) return null;
+  const produce = opts.produce ?? unwrapViaConsoleTools;
+  const out = produce(entry);
+  oracleCachePut(key, out, dir);
+  return out;
+}
