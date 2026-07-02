@@ -465,6 +465,17 @@ git commit -m "test(oracle): cross-check every Type 2/3 entry (cache makes warm 
 
 ---
 
+## Amendment (post-plan, Task 5): fail-on-absent policy
+
+After the whole-branch review, the operator chose to **reverse the prior "skip gracefully when the corpus/oracle is absent" design**. As shipped (commit range `e1d9c7c`..`4db2ea6`), corpus-dependent tests **FAIL, not skip**, when their prerequisite is missing:
+
+- A shared guard `assertCorpusPresent(inputs, what?)` in `test/helpers/oracle.ts` throws when the input list is empty. All four corpus test files (`sqpack-corpus`, `mtrl-corpus`, `golden`, `pmp-manifest`) call it in a dedicated `it(...)`; their old `describe.skipIf(...)` / `it("reports when nothing ran")` escape hatches are removed.
+- The `/unwrap` cross-check **throws** (rather than skipping) when `unwrapCached` returns `null` — i.e. an entry can be neither served from cache nor generated because TexTools is absent. Combined with Task 4's cap removal, every Type 2/3 entry is cross-checked.
+- Consequence (intended): `npm test` is **red on any machine without the local gitignored corpus** (or without cached oracle data + TexTools). This is the desired loud signal for this solo project; it supersedes every "skip"/"skip-when-unavailable" phrasing above (e.g. Task 2's heading and the Self-Review note).
+- Also folded in from the review: `rmSync` the `/unwrap` output before each spawn (surface a no-write as ENOENT, not a stale-cache poison), plus clarifying comments on the content-addressed temp name and the lack of cross-worker cache contention.
+
+---
+
 ## Self-Review
 
 - **Requirement coverage:** cache keyed by content hash (Task 1); populate-on-miss / skip-when-unavailable (Task 2); corpus test rewired with identical sampling (Task 3); optional coverage bump kept separate (Task 4); gitignored location and no-new-deps honored (Global Constraints). ✓
