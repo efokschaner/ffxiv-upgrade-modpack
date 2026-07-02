@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync, mkdtempSync } from "node:fs";
+import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync, mkdtempSync, rmSync } from "node:fs";
 import { join, basename } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -29,6 +29,8 @@ export function oracleCacheGet(key: string, dir: string = DEFAULT_ORACLE_CACHE):
 export function oracleCachePut(key: string, data: Uint8Array, dir: string = DEFAULT_ORACLE_CACHE): void {
   mkdirSync(dir, { recursive: true });
   const finalPath = join(dir, `${key}.bin`);
+  // Deterministic temp name is safe here ONLY because payloads are content-addressed: any two
+  // writers for the same key produce byte-identical data, so a race can't corrupt the result.
   const tmpPath = join(dir, `${key}.bin.tmp`);
   writeFileSync(tmpPath, data);
   renameSync(tmpPath, finalPath);
@@ -43,6 +45,21 @@ export function corpusInputs(): string[] {
   return readdirSync(CORPUS_INPUTS)
     .filter((f) => /\.(ttmp2?|pmp)$/i.test(f))
     .map((f) => join(CORPUS_INPUTS, f));
+}
+
+/**
+ * Policy guard for corpus-dependent tests: they FAIL (not skip) when the local corpus is absent,
+ * so a missing test/corpus/inputs is a loud red signal rather than a silently-green no-op. Call
+ * inside a dedicated `it(...)` in each corpus test file. `what` labels the required inputs in the
+ * error (e.g. ".pmp corpus inputs" for the PMP-only tests).
+ */
+export function assertCorpusPresent(inputs: string[], what: string = "corpus inputs"): void {
+  if (inputs.length === 0) {
+    throw new Error(
+      `No ${what} in test/corpus/inputs — corpus-dependent tests require the local ` +
+      `(gitignored, user-provided) corpus. Populate test/corpus/inputs to run these tests.`,
+    );
+  }
 }
 
 function run(args: string[]): void {
@@ -88,6 +105,9 @@ function unwrapViaConsoleTools(entry: Uint8Array): Uint8Array {
   const inPath = join(dir, "entry.bin");
   const outPath = join(dir, "unwrapped.bin");
   writeFileSync(inPath, entry);
+  // Remove any prior output so a (hypothetical) ConsoleTools no-write surfaces as ENOENT on read
+  // rather than silently caching the previous entry's bytes under this entry's key.
+  rmSync(outPath, { force: true });
   unwrap(inPath, outPath);
   return new Uint8Array(readFileSync(outPath));
 }
@@ -97,6 +117,8 @@ function unwrapViaConsoleTools(entry: Uint8Array): Uint8Array {
  * once per distinct entry across all runs. Cache hits skip the process spawn entirely (~436ms
  * each). Returns null only when the entry is uncached AND no producer is available (no TexTools),
  * so callers can skip that sample. `opts.available`/`opts.produce` exist for unit testing.
+ * No cross-worker write contention on DEFAULT_ORACLE_CACHE: only sqpack-corpus.test.ts writes it,
+ * and Vitest executes tests within a single file sequentially.
  */
 export function unwrapCached(
   entry: Uint8Array,

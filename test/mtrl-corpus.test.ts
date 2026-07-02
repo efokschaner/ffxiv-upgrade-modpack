@@ -6,7 +6,7 @@ import { allFiles, FileStorageType, type ModpackFile } from "../src/model/modpac
 import { decodeSqPackFile, SqPackType } from "../src/sqpack/sqpack";
 import { parseMtrl, serializeMtrl } from "../src/mtrl/mtrl";
 import type { XivMtrl } from "../src/mtrl/types";
-import { corpusInputs } from "./helpers/oracle";
+import { corpusInputs, assertCorpusPresent } from "./helpers/oracle";
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
@@ -50,7 +50,11 @@ const inputs = corpusInputs();
 //       altered even though the bytes differ.
 // A non-fixed-point (unstable) or content-changing (semantic-break) result is a real codec bug and
 // fails the test. The exact-match count (logged per pack) anchors faithfulness on canonical files.
-describe.skipIf(inputs.length === 0)("mtrl corpus", () => {
+describe("mtrl corpus", () => {
+  it("requires the local corpus (fails if test/corpus/inputs is empty)", () => {
+    assertCorpusPresent(inputs);
+  });
+
   for (const path of inputs) {
     const name = basename(path);
     it(`round-trips or faithfully normalizes every .mtrl in ${name}`, () => {

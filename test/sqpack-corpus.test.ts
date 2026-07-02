@@ -5,7 +5,7 @@ import { loadModpack } from "../src/index";
 import { allFiles, FileStorageType, type ModpackFile } from "../src/model/modpack";
 import { decodeSqPackFile, encodeSqPackFile, SqPackType, type DecodedFile } from "../src/sqpack/sqpack";
 import { texMipSizes } from "../src/sqpack/type4";
-import { corpusInputs, unwrapCached } from "./helpers/oracle";
+import { corpusInputs, unwrapCached, assertCorpusPresent } from "./helpers/oracle";
 
 const TEX_HEADER_SIZE = 80;
 
@@ -65,7 +65,11 @@ function decodeTolerant(f: ModpackFile, legacyTex: string[]): DecodedFile | null
 
 const inputs = corpusInputs();
 
-describe.skipIf(inputs.length === 0)("sqpack corpus", () => {
+describe("sqpack corpus", () => {
+  it("requires the local corpus (fails if test/corpus/inputs is empty)", () => {
+    assertCorpusPresent(inputs);
+  });
+
   for (const path of inputs) {
     const name = basename(path);
 
@@ -126,25 +130,28 @@ describe.skipIf(inputs.length === 0)("sqpack corpus", () => {
       }
     }, 1_200_000);
 
-    it(`matches /unwrap for a bounded Type 2/3 sample in ${name}`, () => {
+    it(`matches /unwrap for every Type 2/3 entry in ${name}`, () => {
       const files = compressedFiles(path);
       const legacyTex: string[] = [];
       const testedByType = new Map<number, number>();
-      let skipped = 0;
       for (const f of files) {
         const decoded = decodeTolerant(f, legacyTex);
         if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
         // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
-        // null ⇒ uncached AND no oracle to generate it (e.g. TexTools not installed) ⇒ skip sample.
+        // Policy: fail (don't skip) when we cannot verify — a null means the oracle output is neither
+        // cached nor generable (TexTools absent), so we cannot cross-check and must fail loudly.
         const oracleOut = unwrapCached(f.data);
-        if (oracleOut === null) { skipped++; continue; }
+        if (oracleOut === null) {
+          throw new Error(
+            `cannot cross-check ${f.gamePath}: no cached /unwrap output and ConsoleTools unavailable`,
+          );
+        }
         expect(bytesEqual(decoded.data, oracleOut)).toBe(true);
         testedByType.set(decoded.type, (testedByType.get(decoded.type) ?? 0) + 1);
       }
       for (const [type, tested] of testedByType) {
         console.log(`[/unwrap] ${name}: type ${type} cross-checked ${tested}`);
       }
-      if (skipped) console.log(`[/unwrap] ${name}: ${skipped} sample(s) skipped (no oracle + cache miss)`);
     }, 1_200_000);
   }
 });

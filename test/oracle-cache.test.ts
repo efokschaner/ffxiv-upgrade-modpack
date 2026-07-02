@@ -50,3 +50,14 @@ describe("unwrapCached", () => {
     expect(calls).toBe(1);
   });
 });
+
+import { assertCorpusPresent } from "./helpers/oracle";
+
+describe("assertCorpusPresent", () => {
+  it("throws when the corpus list is empty", () => {
+    expect(() => assertCorpusPresent([])).toThrow(/corpus/i);
+  });
+  it("does not throw when at least one input is present", () => {
+    expect(() => assertCorpusPresent(["x.ttmp2"])).not.toThrow();
+  });
+});

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { corpusInputs } from "./helpers/oracle";
+import { corpusInputs, assertCorpusPresent } from "./helpers/oracle";
 import { compareInnerFilesByteIdentical } from "./helpers/compare";
 import { loadModpack, writeModpack, ModpackFormat } from "../src/index";
 
@@ -28,8 +28,12 @@ import { loadModpack, writeModpack, ModpackFormat } from "../src/index";
 // decompressed oracle differential can close that gap. (PMP manifest fidelity IS
 // independently validated against the original on-disk JSON in pmp-manifest.test.ts.)
 
-describe("corpus round-trip (skips without test/corpus/inputs)", () => {
+describe("corpus round-trip", () => {
   const packs = corpusInputs();
+
+  it("requires the local corpus (fails if test/corpus/inputs is empty)", () => {
+    assertCorpusPresent(packs);
+  });
 
   it.runIf(packs.length > 0).each(packs)(
     "our reader→writer→reader preserves every inner file byte-for-byte: %s",
@@ -48,12 +52,6 @@ describe("corpus round-trip (skips without test/corpus/inputs)", () => {
     1_200_000,
   );
 
-  it("reports when nothing ran", () => {
-    if (packs.length === 0) {
-      console.warn("corpus round-trip skipped: empty test/corpus/inputs");
-    }
-    expect(true).toBe(true);
-  });
 });
 
 // DEFERRED: ConsoleTools /resave (and /upgrade) byte-differential.

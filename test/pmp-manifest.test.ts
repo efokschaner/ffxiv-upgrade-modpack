@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { readPmp, writePmp } from "../src/container/pmp";
 import { readZip, writeZip } from "../src/zip/zip";
-import { corpusInputs } from "./helpers/oracle";
+import { corpusInputs, assertCorpusPresent } from "./helpers/oracle";
 import { structurallyEqual } from "./helpers/compare";
 
 const enc = new TextEncoder();
@@ -53,10 +53,14 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
   });
 });
 
-describe("pmp manifest round-trip (corpus, skips without inputs)", () => {
+describe("pmp manifest round-trip (corpus)", () => {
   const pmps = corpusInputs().filter((p) => p.toLowerCase().endsWith(".pmp"));
   const manifestNames = (z: Map<string, Uint8Array>) =>
     [...z.keys()].filter((k) => /^group_\d+.*\.json$/i.test(k)).sort();
+
+  it("requires .pmp packs in the local corpus (fails if none present)", () => {
+    assertCorpusPresent(pmps, ".pmp corpus inputs");
+  });
 
   it.runIf(pmps.length > 0).each(pmps)(
     "re-emits every manifest JSON structurally unchanged: %s",
@@ -79,9 +83,4 @@ describe("pmp manifest round-trip (corpus, skips without inputs)", () => {
     },
     600_000,
   );
-
-  it("reports when nothing ran", () => {
-    if (pmps.length === 0) console.warn("pmp manifest corpus check skipped: no .pmp in test/corpus/inputs");
-    expect(true).toBe(true);
-  });
 });
