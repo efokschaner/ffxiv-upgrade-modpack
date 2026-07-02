@@ -21,7 +21,6 @@ function canonicalTexLength(decoded: Uint8Array): number {
 }
 
 const SELF_CAP_PER_TYPE = 25;   // full round-trip cap per SqPack type per pack
-const ORACLE_CAP_PER_TYPE = 3;  // /unwrap cross-check cap per type per pack
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
@@ -135,7 +134,6 @@ describe.skipIf(inputs.length === 0)("sqpack corpus", () => {
       for (const f of files) {
         const decoded = decodeTolerant(f, legacyTex);
         if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
-        if ((testedByType.get(decoded.type) ?? 0) >= ORACLE_CAP_PER_TYPE) continue;
         // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
         // null ⇒ uncached AND no oracle to generate it (e.g. TexTools not installed) ⇒ skip sample.
         const oracleOut = unwrapCached(f.data);
