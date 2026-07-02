@@ -12,8 +12,12 @@ Status: **in progress.** Foundation (modpack container I/O) and the SQPack codec
 
 ## License
 
+Copyright (C) 2026 Edmund Fokschaner and contributors.
+
 This project is licensed under the **GNU General Public License, version 3 or
-later (GPL-3.0-or-later)** — see [`LICENSE`](./LICENSE).
+later (GPL-3.0-or-later)** — see [`LICENSE`](./LICENSE). The license applies to
+every file in this repository; individual source files carry no per-file
+license header.
 
 It is a **derivative work**: substantial portions (the SQPack codec and the
 modpack container readers/writers) are a hand port from C# to TypeScript of

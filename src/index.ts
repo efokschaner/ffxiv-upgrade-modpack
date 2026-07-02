@@ -1,9 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { detectFormat } from "./container/detect";
 import { ModpackFormat, FileStorageType, allFiles, type ModpackData } from "./model/modpack";
 import { readTtmp2, writeTtmp2 } from "./container/ttmp2";
