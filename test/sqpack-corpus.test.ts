@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { loadModpack } from "../src/index";
@@ -63,6 +63,12 @@ function decodeTolerant(f: ModpackFile, legacyTex: string[]): DecodedFile | null
   }
 }
 
+/** One compressed inner file paired with its tolerant decode result — d is null iff a tolerated Type-4 failure. */
+interface PackEntry {
+  f: ModpackFile;
+  d: DecodedFile | null;
+}
+
 const inputs = corpusInputs();
 
 describe("sqpack corpus", () => {
@@ -73,85 +79,95 @@ describe("sqpack corpus", () => {
   for (const path of inputs) {
     const name = basename(path);
 
-    it(`decodes every compressed inner file in ${name}`, () => {
-      const files = compressedFiles(path);
+    // Each pack is read, parsed, and decoded exactly ONCE here; the three checks below share the
+    // result instead of repeating that work three times. A Type-2/3 decode failure throws in this
+    // hook, which fails all three of the pack's checks — a hard error, exactly as intended.
+    describe(name, () => {
+      let entries: PackEntry[] = [];
       const legacyTex: string[] = [];
-      let decoded = 0;
-      for (const f of files) {
-        const d = decodeTolerant(f, legacyTex);
-        if (d === null) continue;
-        expect(d.data.length).toBeGreaterThan(0);
-        decoded++;
-      }
-      console.log(`[decode-all] ${name}: ${decoded}/${files.length} decoded` +
-        (legacyTex.length ? `; ${legacyTex.length} legacy Type-4 tolerated: ${legacyTex.join(", ")}` : ""));
-    }, 1_200_000);
 
-    it(`self round-trips a bounded sample per type in ${name}`, () => {
-      const files = compressedFiles(path);
-      const legacyTex: string[] = [];
-      const canonicalized: string[] = [];
-      const testedByType = new Map<number, number>();
-      const totalByType = new Map<number, number>();
-      for (const f of files) {
-        const first = decodeTolerant(f, legacyTex);
-        if (first === null) continue;
-        totalByType.set(first.type, (totalByType.get(first.type) ?? 0) + 1);
-        if ((testedByType.get(first.type) ?? 0) >= SELF_CAP_PER_TYPE) continue;
-        const second = decodeSqPackFile(encodeSqPackFile(first.data, first.type));
-        if (!bytesEqual(first.data, second.data)) {
-          // Type 4 encode re-derives mip sizes from the canonical formula (exactly as SE's
-          // Tex.CompressTexFile does), so a texture whose stored mip tail is non-canonical is
-          // canonicalized on re-encode — SE is non-idempotent here too. Tolerate ONLY when BOTH:
-          // (1) one output is a byte-exact prefix of the other (content matches, differs only in the
-          // trailing tail), AND (2) the re-decoded length equals the canonical formula-derived length.
-          // (2) proves the difference is exactly mip-tail canonicalization and rules out an arbitrary
-          // Type-4 encode truncation bug (which prefix-relation alone would mask). Any mid-content
-          // divergence, a non-canonical re-decoded length, or any Type-2/3 mismatch is a hard failure.
-          if (
-            first.type === SqPackType.Texture &&
-            isPrefixRelation(first.data, second.data) &&
-            second.data.length === canonicalTexLength(second.data)
-          ) {
-            canonicalized.push(`${f.gamePath} (${first.data.length}->${second.data.length})`);
-            testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
-            continue;
+      beforeAll(() => {
+        entries = compressedFiles(path).map((f) => ({ f, d: decodeTolerant(f, legacyTex) }));
+      }, 1_200_000);
+
+      // Release this pack's decoded data once its checks finish. Vitest retains the describe closures
+      // for the whole file run, so without this the decoded data for all 32 packs would accumulate
+      // (multi-GB). Clearing the reference keeps peak memory at ~one pack, matching the pre-refactor code.
+      afterAll(() => {
+        entries = [];
+      });
+
+      it(`decodes every compressed inner file in ${name}`, () => {
+        let decoded = 0;
+        for (const { d } of entries) {
+          if (d === null) continue;
+          expect(d.data.length).toBeGreaterThan(0);
+          decoded++;
+        }
+        console.log(`[decode-all] ${name}: ${decoded}/${entries.length} decoded` +
+          (legacyTex.length ? `; ${legacyTex.length} legacy Type-4 tolerated: ${legacyTex.join(", ")}` : ""));
+      }, 1_200_000);
+
+      it(`self round-trips a bounded sample per type in ${name}`, () => {
+        const canonicalized: string[] = [];
+        const testedByType = new Map<number, number>();
+        const totalByType = new Map<number, number>();
+        for (const { f, d: first } of entries) {
+          if (first === null) continue;
+          totalByType.set(first.type, (totalByType.get(first.type) ?? 0) + 1);
+          if ((testedByType.get(first.type) ?? 0) >= SELF_CAP_PER_TYPE) continue;
+          const second = decodeSqPackFile(encodeSqPackFile(first.data, first.type));
+          if (!bytesEqual(first.data, second.data)) {
+            // Type 4 encode re-derives mip sizes from the canonical formula (exactly as SE's
+            // Tex.CompressTexFile does), so a texture whose stored mip tail is non-canonical is
+            // canonicalized on re-encode — SE is non-idempotent here too. Tolerate ONLY when BOTH:
+            // (1) one output is a byte-exact prefix of the other (content matches, differs only in the
+            // trailing tail), AND (2) the re-decoded length equals the canonical formula-derived length.
+            // (2) proves the difference is exactly mip-tail canonicalization and rules out an arbitrary
+            // Type-4 encode truncation bug (which prefix-relation alone would mask). Any mid-content
+            // divergence, a non-canonical re-decoded length, or any Type-2/3 mismatch is a hard failure.
+            if (
+              first.type === SqPackType.Texture &&
+              isPrefixRelation(first.data, second.data) &&
+              second.data.length === canonicalTexLength(second.data)
+            ) {
+              canonicalized.push(`${f.gamePath} (${first.data.length}->${second.data.length})`);
+              testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
+              continue;
+            }
+            expect.fail(`self round-trip mismatch (type ${first.type}) for ${f.gamePath}: ` +
+              `${first.data.length} vs ${second.data.length} bytes`);
           }
-          expect.fail(`self round-trip mismatch (type ${first.type}) for ${f.gamePath}: ` +
-            `${first.data.length} vs ${second.data.length} bytes`);
+          testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
         }
-        testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
-      }
-      for (const [type, total] of totalByType) {
-        console.log(`[self round-trip] ${name}: type ${type} tested ${testedByType.get(type) ?? 0}/${total}`);
-      }
-      if (canonicalized.length) {
-        console.log(`[self round-trip] ${name}: ${canonicalized.length} Type-4 mip-canonicalized (trailing-byte only): ${canonicalized.join(", ")}`);
-      }
-    }, 1_200_000);
+        for (const [type, total] of totalByType) {
+          console.log(`[self round-trip] ${name}: type ${type} tested ${testedByType.get(type) ?? 0}/${total}`);
+        }
+        if (canonicalized.length) {
+          console.log(`[self round-trip] ${name}: ${canonicalized.length} Type-4 mip-canonicalized (trailing-byte only): ${canonicalized.join(", ")}`);
+        }
+      }, 1_200_000);
 
-    it(`matches /unwrap for every Type 2/3 entry in ${name}`, () => {
-      const files = compressedFiles(path);
-      const legacyTex: string[] = [];
-      const testedByType = new Map<number, number>();
-      for (const f of files) {
-        const decoded = decodeTolerant(f, legacyTex);
-        if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
-        // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
-        // Policy: fail (don't skip) when we cannot verify — a null means the oracle output is neither
-        // cached nor generable (TexTools absent), so we cannot cross-check and must fail loudly.
-        const oracleOut = unwrapCached(f.data);
-        if (oracleOut === null) {
-          throw new Error(
-            `cannot cross-check ${f.gamePath}: no cached /unwrap output and ConsoleTools unavailable`,
-          );
+      it(`matches /unwrap for every Type 2/3 entry in ${name}`, () => {
+        const testedByType = new Map<number, number>();
+        for (const { f, d: decoded } of entries) {
+          if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
+          // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
+          // Policy: fail (don't skip) when we cannot verify — a null means the oracle output is neither
+          // cached nor generable (TexTools absent), so we cannot cross-check and must fail loudly.
+          const oracleOut = unwrapCached(f.data);
+          if (oracleOut === null) {
+            throw new Error(
+              `cannot cross-check ${f.gamePath}: no cached /unwrap output and ConsoleTools unavailable`,
+            );
+          }
+          expect(bytesEqual(decoded.data, oracleOut)).toBe(true);
+          testedByType.set(decoded.type, (testedByType.get(decoded.type) ?? 0) + 1);
         }
-        expect(bytesEqual(decoded.data, oracleOut)).toBe(true);
-        testedByType.set(decoded.type, (testedByType.get(decoded.type) ?? 0) + 1);
-      }
-      for (const [type, tested] of testedByType) {
-        console.log(`[/unwrap] ${name}: type ${type} cross-checked ${tested}`);
-      }
-    }, 1_200_000);
+        for (const [type, tested] of testedByType) {
+          console.log(`[/unwrap] ${name}: type ${type} cross-checked ${tested}`);
+        }
+      }, 1_200_000);
+    });
   }
 });
