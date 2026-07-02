@@ -1,12 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { loadModpack } from "../src/index";
 import { allFiles, FileStorageType, type ModpackFile } from "../src/model/modpack";
 import { decodeSqPackFile, encodeSqPackFile, SqPackType, type DecodedFile } from "../src/sqpack/sqpack";
 import { texMipSizes } from "../src/sqpack/type4";
-import { oracleAvailable, corpusInputs, unwrap } from "./helpers/oracle";
+import { corpusInputs, unwrapCached } from "./helpers/oracle";
 
 const TEX_HEADER_SIZE = 80;
 
@@ -68,8 +67,6 @@ function decodeTolerant(f: ModpackFile, legacyTex: string[]): DecodedFile | null
 const inputs = corpusInputs();
 
 describe.skipIf(inputs.length === 0)("sqpack corpus", () => {
-  const tmp = mkdtempSync(join(tmpdir(), "sqpack-"));
-
   for (const path of inputs) {
     const name = basename(path);
 
@@ -130,24 +127,26 @@ describe.skipIf(inputs.length === 0)("sqpack corpus", () => {
       }
     }, 1_200_000);
 
-    it.skipIf(!oracleAvailable())(`matches /unwrap for a bounded Type 2/3 sample in ${name}`, () => {
+    it(`matches /unwrap for a bounded Type 2/3 sample in ${name}`, () => {
       const files = compressedFiles(path);
       const legacyTex: string[] = [];
       const testedByType = new Map<number, number>();
+      let skipped = 0;
       for (const f of files) {
         const decoded = decodeTolerant(f, legacyTex);
         if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
         if ((testedByType.get(decoded.type) ?? 0) >= ORACLE_CAP_PER_TYPE) continue;
-        const inPath = join(tmp, "entry.bin");
-        const outPath = join(tmp, "unwrapped.bin");
-        writeFileSync(inPath, f.data);
-        unwrap(inPath, outPath);
-        expect(bytesEqual(decoded.data, new Uint8Array(readFileSync(outPath)))).toBe(true);
+        // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
+        // null ⇒ uncached AND no oracle to generate it (e.g. TexTools not installed) ⇒ skip sample.
+        const oracleOut = unwrapCached(f.data);
+        if (oracleOut === null) { skipped++; continue; }
+        expect(bytesEqual(decoded.data, oracleOut)).toBe(true);
         testedByType.set(decoded.type, (testedByType.get(decoded.type) ?? 0) + 1);
       }
       for (const [type, tested] of testedByType) {
         console.log(`[/unwrap] ${name}: type ${type} cross-checked ${tested}`);
       }
+      if (skipped) console.log(`[/unwrap] ${name}: ${skipped} sample(s) skipped (no oracle + cache miss)`);
     }, 1_200_000);
   }
 });
