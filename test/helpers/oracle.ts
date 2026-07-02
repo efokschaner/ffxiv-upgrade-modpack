@@ -116,7 +116,9 @@ function unwrapViaConsoleTools(entry: Uint8Array): Uint8Array {
  * Cached /unwrap: returns the decompressed bytes for `entry`, spawning ConsoleTools at most
  * once per distinct entry across all runs. Cache hits skip the process spawn entirely (~436ms
  * each). Returns null only when the entry is uncached AND no producer is available (no TexTools),
- * so callers can skip that sample. `opts.available`/`opts.produce` exist for unit testing.
+ * leaving it to the caller to decide how to handle an unverifiable sample (the sole caller,
+ * sqpack-corpus.test.ts, fails loudly per the fail-on-unavailable policy). `opts.available`/
+ * `opts.produce` exist for unit testing.
  * No cross-worker write contention on DEFAULT_ORACLE_CACHE: only sqpack-corpus.test.ts writes it,
  * and Vitest executes tests within a single file sequentially.
  */

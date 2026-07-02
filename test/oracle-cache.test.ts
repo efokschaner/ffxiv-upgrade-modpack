@@ -55,7 +55,7 @@ import { assertCorpusPresent } from "./helpers/oracle";
 
 describe("assertCorpusPresent", () => {
   it("throws when the corpus list is empty", () => {
-    expect(() => assertCorpusPresent([])).toThrow(/corpus/i);
+    expect(() => assertCorpusPresent([])).toThrow(/require the local/);
   });
   it("does not throw when at least one input is present", () => {
     expect(() => assertCorpusPresent(["x.ttmp2"])).not.toThrow();
