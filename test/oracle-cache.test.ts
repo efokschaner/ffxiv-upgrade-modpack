@@ -51,6 +51,20 @@ describe("unwrapCached", () => {
   });
 });
 
+import { readdirSync } from "node:fs";
+
+describe("oracleCachePut concurrency-safety", () => {
+  it("repeated puts for the same key leave one .bin and no .tmp residue", () => {
+    const dir = mkdtempSync(join(tmpdir(), "oc-"));
+    const key = "abc123";
+    const data = new Uint8Array([1, 2, 3, 4, 5]);
+    for (let i = 0; i < 5; i++) oracleCachePut(key, data, dir);
+    const files = readdirSync(dir);
+    expect(files).toEqual([`${key}.bin`]);            // exactly one file, no leftover .tmp
+    expect(Array.from(oracleCacheGet(key, dir)!)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
 import { assertCorpusPresent } from "./helpers/oracle";
 
 describe("assertCorpusPresent", () => {
