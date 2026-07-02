@@ -18,6 +18,14 @@ export class BinaryReader {
     this.pos += len;
     return out;
   }
+  readFloat32(): number { const v = this.view.getFloat32(this.pos, true); this.pos += 4; return v; }
+  readNullTerminatedString(): string {
+    const start = this.pos;
+    while (this.view.getUint8(this.pos) !== 0) this.pos += 1;
+    const s = new TextDecoder().decode(this.bytes.subarray(start, this.pos));
+    this.pos += 1; // consume the null terminator
+    return s;
+  }
   slice(start: number, len: number): Uint8Array {
     return this.bytes.slice(start, start + len);
   }
@@ -55,6 +63,16 @@ export class ByteBuilder {
   private parts: number[] = [];
   u8(v: number): this { this.parts.push(v & 0xff); return this; }
   u16(v: number): this { this.parts.push(v & 0xff, (v >>> 8) & 0xff); return this; }
+  u32(v: number): this {
+    this.parts.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff);
+    return this;
+  }
+  f32(v: number): this {
+    const b = new Uint8Array(4);
+    new DataView(b.buffer).setFloat32(0, v, true);
+    this.parts.push(b[0]!, b[1]!, b[2]!, b[3]!);
+    return this;
+  }
   i32(v: number): this {
     this.parts.push(v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff);
     return this;
