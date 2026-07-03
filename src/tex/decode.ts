@@ -25,6 +25,40 @@ import {
   type XivTex,
 } from "./types";
 
+// Physical byte size of a texture's TOP mip input, for the formats decodeToRgba supports. Deliberately
+// NOT texMipSizes: the reference bpp table reports a logical 32 for L8/DXT3/A16B16G16R16F, which is not
+// the physical input byte count (using it here would false-reject valid L8/DXT3 data). Returns undefined
+// for formats decodeToRgba does not support, so the dispatch's `default` still throws /unsupported/.
+function decodedInputBytes(
+  format: number,
+  w: number,
+  h: number,
+): number | undefined {
+  const blocks = Math.ceil(w / 4) * Math.ceil(h / 4);
+  switch (format) {
+    case DXT1:
+    case BC4:
+      return blocks * 8;
+    case DXT3:
+    case DXT5:
+    case BC5:
+    case BC7:
+      return blocks * 16;
+    case A8R8G8B8:
+      return w * h * 4;
+    case A4R4G4B4:
+    case A1R5G5B5:
+      return w * h * 2;
+    case L8:
+    case A8:
+      return w * h;
+    case A16B16G16R16F:
+      return w * h * 8;
+    default:
+      return undefined;
+  }
+}
+
 /** Decodes the top mip of a texture to RGBA8888 at width x (height*layers). Port of the dispatch in
  *  DDS.ConvertPixelData (DDS.cs:453) + XivTex.GetRawPixels. `layer >= 0` returns that layer only. */
 export function decodeToRgba(tex: XivTex, layer = -1): Uint8Array {
@@ -32,6 +66,13 @@ export function decodeToRgba(tex: XivTex, layer = -1): Uint8Array {
   const w = tex.width;
   const h = tex.height * layers;
   const src = tex.mipData;
+
+  const need = decodedInputBytes(tex.format, w, h);
+  if (need !== undefined && src.length < need) {
+    throw new Error(
+      `tex: truncated mip data for ${w}x${h} format ${tex.format} (have ${src.length}, need ${need})`,
+    );
+  }
 
   let out: Uint8Array;
   switch (tex.format) {

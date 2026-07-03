@@ -96,6 +96,13 @@ describe("tex decode: uncompressed", () => {
       decodeToRgba(texOf(X8R8G8B8, 1, 1, new Uint8Array(4))),
     ).toThrow(/unsupported/i);
   });
+
+  it("throws a clear 'truncated' error for undersized uncompressed mip data", () => {
+    // A8R8G8B8 2x2 needs 16 bytes; only 8 given.
+    expect(() =>
+      decodeToRgba(texOf(A8R8G8B8, 2, 2, new Uint8Array(8))),
+    ).toThrow(/truncated/i);
+  });
 });
 
 // A 4x4 block whose color0=white(0xFFFF), color1=black(0x0000), all color indices 0.
@@ -185,6 +192,15 @@ describe("tex decode: BC5", () => {
     const out = decodeToRgba(texOf(BC5, 4, 4, block));
     // channel0=180 -> after swap lands in Blue; channel1=60 in Green; Red=0; Alpha=255.
     expect(Array.from(out.slice(0, 4))).toEqual([0, 60, 180, 255]);
+  });
+});
+
+describe("tex decode: truncated mip data", () => {
+  it("throws a clear 'truncated' error for undersized BC7 block data", () => {
+    // BC7 8x8 needs 4 blocks x 16 bytes = 64 bytes; only 16 given.
+    expect(() => decodeToRgba(texOf(BC7, 8, 8, new Uint8Array(16)))).toThrow(
+      /truncated/i,
+    );
   });
 });
 
