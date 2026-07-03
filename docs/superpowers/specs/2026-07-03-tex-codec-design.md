@@ -84,6 +84,21 @@ writer emit). Pass-through textures never hit this path; they stay byte-exact at
 The module is self-contained (mirroring `src/mtrl/`). Later transforms compose the pieces on demand:
 `decodeSqPackFile → parseTex → decodeToRgba → (transform) → encodeUncompressedTex → encodeSqPackFile`.
 
+**Two write paths (why retention does not distort the future oracle diff).** Bytes leave the codec two
+ways, and they do not overlap: the **replay path** (`serializeTex(parseTex(x))`, which replays the
+*retained* header — used for the round-trip gate) and the **canonical path**
+(`buildCanonicalTexHeader`, the `CreateTexFileHeader` port — used for *regenerated* textures, which is
+what we diff against the oracle). The retention decision only touches the replay path; the oracle
+comparison runs through the canonical path. So retention has no direct bearing on the diff, and helps it
+indirectly: (1) untouched textures bypass the model entirely (opaque container passthrough), so their
+decompressed content — header included — matches regardless; (2) because `parseTex → serializeTex` is a
+proven identity, any future oracle mismatch on a texture is attributable to a real transform/encode
+difference, not to the codec silently normalizing a header; and (3) retention keeps **both** output
+behaviours permanently reachable — if matching the oracle ever requires *preserving* an original header
+we can replay it, and if it requires *canonicalizing* we already do (`buildCanonicalTexHeader`). Lossy
+would have discarded the original header irrecoverably. The genuine oracle-match difficulty lives in the
+canonical header port and Nvtt mip/encode parity (§6), which retention neither creates nor solves.
+
 ---
 
 ## 3. Reference source map (what we are porting)
