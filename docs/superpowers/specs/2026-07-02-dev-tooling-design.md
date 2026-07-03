@@ -52,7 +52,7 @@ mistakes (floating promises, unused symbols) before they land.
 **Config:** `biome.json` at repo root.
 
 - **Formatter:** enabled. Community-standard settings that match the existing code where it already agrees, so the *only* churn is line-reflow, not a quote/indent war:
-  - `indentStyle: "space"`, `indentWidth: 2` — matches current code. (This is the one deliberate divergence from Biome's own default of tabs; chosen because the entire codebase is already 2-space and 2-space is the dominant community/Prettier standard. Flag for operator: switch to Biome's tab default instead if preferred.)
+  - `indentStyle: "space"`, `indentWidth: 2` — **decided**. This is a deliberate divergence from Biome's own default of tabs: chosen because the entire codebase is already 2-space, it matches Prettier and the dominant published-style-guide convention (so zero indent churn on top of the reflow), and it renders predictably in diffs and code review. (Biome defaults to tabs on an accessibility rationale; that path was considered and declined.)
   - `lineWidth: 80` — Biome/Prettier default; this is the setting that drives the reflow.
   - Quotes double, semicolons always, trailing commas `all` — all already true in the code, so no churn from these.
 - **Linter:** `recommended` rule set on, plus enabling the **type-aware / correctness rules Biome v2 supports** that matter for a binary-codec library — notably `noFloatingPromises` and the `suspicious`/`correctness` groups. Rules that would fight intentional patterns in this codebase (if any surface during implementation) are disabled explicitly with an inline comment, not blanket-suppressed.
