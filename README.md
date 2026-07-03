@@ -37,8 +37,9 @@ repository ships no game assets.
 - **Test:** `npm test`
 - **Build:** `npm run build`
 
-A pre-commit hook (lefthook) runs Biome + typecheck on staged files. The full
-test suite runs at end-of-task, not on push — see [`AGENTS.md`](./AGENTS.md).
+A pre-commit hook (lefthook) runs Biome on staged files and a whole-project
+typecheck. The full test suite runs at end-of-task, not on push — see
+[`AGENTS.md`](./AGENTS.md).
 
 After cloning, opt in to clean blame across the one-time formatting reflow:
 
