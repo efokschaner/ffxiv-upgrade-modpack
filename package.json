@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "test": "vitest run",
+    "test": "tsx scripts/run-tests.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },

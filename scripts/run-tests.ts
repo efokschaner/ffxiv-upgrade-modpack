@@ -43,8 +43,10 @@ async function main(): Promise<void> {
     const corpusSpecs = indices.map((i) => project.createSpecification(`\0virtual:corpus-unit:${i}`));
     const normalSpecs = single !== undefined ? [] : await vitest.globTestSpecifications();
     await vitest.runTestSpecifications([...normalSpecs, ...corpusSpecs], true);
-    const failed = vitest.state.getTestModules().filter((m) => !m.ok());
-    process.exitCode = failed.length > 0 ? 1 : 0;
+    const modules = vitest.state.getTestModules();
+    // Zero modules counts as failure (matches Vitest's own hasFailed()): if nothing ran at all,
+    // something went wrong — never report a false green.
+    process.exitCode = modules.length === 0 || modules.some((m) => !m.ok()) ? 1 : 0;
   } finally {
     await vitest.close();
   }
