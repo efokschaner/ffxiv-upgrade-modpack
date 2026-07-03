@@ -26,8 +26,10 @@ Every task's requirements implicitly include these:
 ### Task 1: Install and configure Biome (no reformat yet)
 
 **Files:**
-- Create: `biome.json`
+- Create: `biome.jsonc`
 - Modify: `package.json` (add devDependency + `format`/`lint`/`check` scripts)
+
+> **Implementation note (reconciled with shipped code):** the config file is `biome.jsonc`, not `biome.json` — Biome 2.5.1 rejects `//` comments in a file named `.json`, and we keep the inline rationale. Also, `linter.rules.recommended: true` is deprecated in 2.5.1 in favor of `preset: "recommended"` (used below), and the oracle-cache ignore uses the folder form `!**/.oracle-cache` (Biome ≥2.2 `useBiomeIgnoreFolder`). Other prose in this plan that says "biome.json" means this config file.
 
 **Interfaces:**
 - Produces: a working `biome.json` and `npm run check`/`lint`/`format` scripts that Task 2 (reformat) and Task 4 (hook) both invoke. The linter has `style.noNonNullAssertion` **off** (the codebase uses `arr[i]!` idiomatically with `noUncheckedIndexedAccess`).
@@ -48,9 +50,9 @@ npx biome --version
 ```
 Expected: prints a `2.x.y` version (e.g. `Version: 2.2.0`). Note this exact `X.Y.Z` — you will put it in `biome.json`'s `$schema` URL in Step 3.
 
-- [ ] **Step 3: Create `biome.json`**
+- [ ] **Step 3: Create `biome.jsonc`**
 
-Create `biome.json` with exactly this content, replacing `X.Y.Z` in the `$schema` URL with the version from Step 2:
+Create `biome.jsonc` with exactly this content, replacing `X.Y.Z` in the `$schema` URL with the version from Step 2 (shipped: `2.5.1`):
 
 ```jsonc
 {
@@ -63,7 +65,7 @@ Create `biome.json` with exactly this content, replacing `X.Y.Z` in the `$schema
   "files": {
     // .gitignore already excludes reference/, node_modules/, dist/, test/corpus/.
     // Also skip the generated test oracle cache.
-    "includes": ["**", "!**/.oracle-cache/**"]
+    "includes": ["**", "!**/.oracle-cache"]
   },
   "formatter": {
     "enabled": true,
@@ -81,7 +83,7 @@ Create `biome.json` with exactly this content, replacing `X.Y.Z` in the `$schema
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "style": {
         // The codebase uses non-null assertions idiomatically alongside
         // tsconfig's noUncheckedIndexedAccess (e.g. `textures[i]!.path`).
@@ -131,7 +133,7 @@ Expected: **zero** `lint/style/noNonNullAssertion` diagnostics (proves the disab
 - [ ] **Step 7: Commit (config only — no reformat)**
 
 ```
-git add biome.json package.json package-lock.json
+git add biome.jsonc package.json package-lock.json
 git commit -m "build: add Biome (formatter + linter) config and scripts"
 ```
 
