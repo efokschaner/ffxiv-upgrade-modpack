@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync, mkdtempSync, rmSync } from "node:fs";
 import { join, basename } from "node:path";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 
 const CONSOLE_TOOLS = "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
@@ -29,11 +29,23 @@ export function oracleCacheGet(key: string, dir: string = DEFAULT_ORACLE_CACHE):
 export function oracleCachePut(key: string, data: Uint8Array, dir: string = DEFAULT_ORACLE_CACHE): void {
   mkdirSync(dir, { recursive: true });
   const finalPath = join(dir, `${key}.bin`);
-  // Deterministic temp name is safe here ONLY because payloads are content-addressed: any two
-  // writers for the same key produce byte-identical data, so a race can't corrupt the result.
-  const tmpPath = join(dir, `${key}.bin.tmp`);
+  // Unique temp name per writer so concurrent shard workers writing the same key never race on a
+  // shared temp path (each does its own write + atomic rename; last rename wins with identical bytes).
+  const tmpPath = join(dir, `${key}.${randomUUID()}.tmp`);
   writeFileSync(tmpPath, data);
-  renameSync(tmpPath, finalPath);
+  try {
+    renameSync(tmpPath, finalPath);
+  } catch (err) {
+    // Concurrent forks may write the SAME content-addressed key at once; on Windows a racing rename
+    // can throw (EPERM/EBUSY/EEXIST) when another worker holds finalPath open or already replaced it.
+    // The key is sha256(content), so an existing finalPath already holds the correct bytes — tolerate
+    // it and drop our now-redundant temp. Anything else is a real error.
+    if (existsSync(finalPath)) {
+      rmSync(tmpPath, { force: true });
+    } else {
+      throw err;
+    }
+  }
 }
 
 export function oracleAvailable(): boolean {
@@ -116,11 +128,11 @@ function unwrapViaConsoleTools(entry: Uint8Array): Uint8Array {
  * Cached /unwrap: returns the decompressed bytes for `entry`, spawning ConsoleTools at most
  * once per distinct entry across all runs. Cache hits skip the process spawn entirely (~436ms
  * each). Returns null only when the entry is uncached AND no producer is available (no TexTools),
- * leaving it to the caller to decide how to handle an unverifiable sample (the sole caller,
- * sqpack-corpus.test.ts, fails loudly per the fail-on-unavailable policy). `opts.available`/
+ * leaving it to the caller to decide how to handle an unverifiable sample (registerSqpackChecks
+ * fails loudly per the fail-on-unavailable policy). `opts.available`/
  * `opts.produce` exist for unit testing.
- * No cross-worker write contention on DEFAULT_ORACLE_CACHE: only sqpack-corpus.test.ts writes it,
- * and Vitest executes tests within a single file sequentially.
+ * DEFAULT_ORACLE_CACHE is written concurrently by parallel corpus shard workers; oracleCachePut is
+ * concurrency-safe (content-addressed keys + unique per-writer temp name + atomic rename).
  */
 export function unwrapCached(
   entry: Uint8Array,

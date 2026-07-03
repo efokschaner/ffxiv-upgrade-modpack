@@ -5,9 +5,12 @@
   "license": "GPL-3.0-or-later",
   "author": "Edmund Fokschaner",
   "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "build": "vite build",
-    "test": "vitest run",
+    "test": "tsx scripts/run-tests.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
@@ -15,9 +18,10 @@
     "fflate": "0.8.2"
   },
   "devDependencies": {
-    "@types/node": "20.12.12",
+    "@types/node": "22.20.0",
+    "tsx": "4.22.4",
     "typescript": "5.4.5",
-    "vite": "5.2.11",
-    "vitest": "1.6.0"
+    "vite": "6.4.3",
+    "vitest": "4.1.9"
   }
 }

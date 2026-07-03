@@ -11,5 +11,5 @@
     "types": ["vitest/globals", "node"],
     "outDir": "dist"
   },
-  "include": ["src", "test"]
+  "include": ["src", "test", "scripts"]
 }

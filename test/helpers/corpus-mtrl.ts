@@ -1,18 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { loadModpack } from "../src/index";
-import { allFiles, FileStorageType, type ModpackFile } from "../src/model/modpack";
-import { decodeSqPackFile, SqPackType } from "../src/sqpack/sqpack";
-import { parseMtrl, serializeMtrl } from "../src/mtrl/mtrl";
-import type { XivMtrl } from "../src/mtrl/types";
-import { corpusInputs, assertCorpusPresent } from "./helpers/oracle";
-
-function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
+import { loadModpack } from "../../src/index";
+import { allFiles, FileStorageType, type ModpackFile } from "../../src/model/modpack";
+import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
+import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
+import type { XivMtrl } from "../../src/mtrl/types";
+import { bytesEqual } from "./compare";
 
 function mtrlFiles(path: string): ModpackFile[] {
   const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
@@ -33,32 +27,21 @@ function modelKey(m: XivMtrl): string {
   return JSON.stringify({ ...m, additionalData, colorSetDyeData: Array.from(m.colorSetDyeData) });
 }
 
-const inputs = corpusInputs();
-
 // Correctness gate for the MTRL codec over real SE/TexTools materials.
-//
 // Canonical inputs round-trip byte-identical: serializeMtrl(parseMtrl(x)) === x.
-//
 // Non-canonical inputs do NOT round-trip byte-identical, and that is expected (design spec §7):
 // serializeMtrl faithfully reproduces C#'s Mtrl.XivMtrlToUncompressedMtrl, which normalizes such
 // files exactly as we do — string block re-padded to 4 (§5.1), shader-constant data size recomputed
 // with zero-filled overflow constants (§6.4/§8), stale 0x08 dye flag cleared when no dye (§5.3).
-// For these we require the normalization to be BOTH:
-//   (1) a STABLE fixed point — re-round-tripping our own output reproduces it byte-for-byte; and
-//   (2) SEMANTICALLY LOSSLESS — parse(original) and parse(reserialized) are the same model modulo
-//       the 0x08 dye flag (see modelKey), so no texture/sampler/colorset/constant was dropped or
-//       altered even though the bytes differ.
-// A non-fixed-point (unstable) or content-changing (semantic-break) result is a real codec bug and
-// fails the test. The exact-match count (logged per pack) anchors faithfulness on canonical files.
-describe("mtrl corpus", () => {
-  it("requires the local corpus (fails if test/corpus/inputs is empty)", () => {
-    assertCorpusPresent(inputs);
-  });
-
-  for (const path of inputs) {
-    const name = basename(path);
+// For these we require the normalization to be BOTH: (1) a STABLE fixed point — re-round-tripping
+// our own output reproduces it byte-for-byte; and (2) SEMANTICALLY LOSSLESS — parse(original) and
+// parse(reserialized) are the same model modulo the 0x08 dye flag (see modelKey). A non-fixed-point
+// (unstable) or content-changing (semantic-break) result is a real codec bug and fails the test.
+export function registerMtrlChecks(pack: string): void {
+  const name = basename(pack);
+  describe(`mtrl corpus: ${name}`, () => {
     it(`round-trips or faithfully normalizes every .mtrl in ${name}`, () => {
-      const files = mtrlFiles(path);
+      const files = mtrlFiles(pack);
       let exact = 0;
       let normalized = 0;
       const unstable: string[] = [];
@@ -95,5 +78,5 @@ describe("mtrl corpus", () => {
         );
       }
     }, 1_200_000);
-  }
-});
+  });
+}

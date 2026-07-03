@@ -1,9 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { readPmp, writePmp } from "../src/container/pmp";
 import { readZip, writeZip } from "../src/zip/zip";
-import { corpusInputs, assertCorpusPresent } from "./helpers/oracle";
-import { structurallyEqual } from "./helpers/compare";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -51,36 +48,4 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     const meta = JSON.parse(dec.decode(out.get("meta.json")!));
     expect(meta.DefaultPreferredItems).toEqual(["item-42"]);
   });
-});
-
-describe("pmp manifest round-trip (corpus)", () => {
-  const pmps = corpusInputs().filter((p) => p.toLowerCase().endsWith(".pmp"));
-  const manifestNames = (z: Map<string, Uint8Array>) =>
-    [...z.keys()].filter((k) => /^group_\d+.*\.json$/i.test(k)).sort();
-
-  it("requires .pmp packs in the local corpus (fails if none present)", () => {
-    assertCorpusPresent(pmps, ".pmp corpus inputs");
-  });
-
-  it.runIf(pmps.length > 0).each(pmps)(
-    "re-emits every manifest JSON structurally unchanged: %s",
-    (packPath) => {
-      const inZ = readZip(readFileSync(packPath));
-      const outZ = readZip(writePmp(readPmp(readFileSync(packPath))));
-      for (const fixed of ["meta.json", "default_mod.json"]) {
-        const a = JSON.parse(dec.decode(inZ.get(fixed)!));
-        const b = JSON.parse(dec.decode(outZ.get(fixed)!));
-        expect(structurallyEqual(a, b), `${fixed} differs`).toBe(true);
-      }
-      const inG = manifestNames(inZ);
-      const outG = manifestNames(outZ);
-      expect(outG.length).toBe(inG.length);
-      for (let i = 0; i < inG.length; i++) {
-        const a = JSON.parse(dec.decode(inZ.get(inG[i]!)!));
-        const b = JSON.parse(dec.decode(outZ.get(outG[i]!)!));
-        expect(structurallyEqual(a, b), `${inG[i]} vs ${outG[i]} differ`).toBe(true);
-      }
-    },
-    600_000,
-  );
 });
