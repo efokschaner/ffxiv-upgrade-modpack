@@ -28,7 +28,12 @@ export {
   encodeSqPackFile,
   SqPackType,
 } from "./sqpack/sqpack";
-export { parseTex, serializeTex } from "./tex/tex";
+export {
+  decodeToRgba,
+  encodeUncompressedTex,
+  parseTex,
+  serializeTex,
+} from "./tex/tex";
 export type { XivTex } from "./tex/types";
 
 export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
