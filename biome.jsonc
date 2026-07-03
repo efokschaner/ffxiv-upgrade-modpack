@@ -8,7 +8,7 @@
   "files": {
     // .gitignore already excludes reference/, node_modules/, dist/, test/corpus/.
     // Also skip the generated test oracle cache.
-    "includes": ["**", "!**/.oracle-cache/**"]
+    "includes": ["**", "!**/.oracle-cache"]
   },
   "formatter": {
     "enabled": true,
