@@ -12,7 +12,7 @@ Add the standard automated-quality tooling this codebase is currently missing �
 and a class of correctness issues are enforced mechanically rather than by
 convention. This matters especially because the codebase is developed largely by
 agents: mechanical enforcement keeps agent-authored diffs consistent and catches
-mistakes (floating promises, unused symbols) before they land.
+mistakes (unused symbols, unreachable code, unsafe patterns) before they land.
 
 ### What already exists (and is kept)
 
@@ -55,7 +55,7 @@ mistakes (floating promises, unused symbols) before they land.
   - `indentStyle: "space"`, `indentWidth: 2` — **decided**. This is a deliberate divergence from Biome's own default of tabs: chosen because the entire codebase is already 2-space, it matches Prettier and the dominant published-style-guide convention (so zero indent churn on top of the reflow), and it renders predictably in diffs and code review. (Biome defaults to tabs on an accessibility rationale; that path was considered and declined.)
   - `lineWidth: 80` — Biome/Prettier default; this is the setting that drives the reflow.
   - Quotes double, semicolons always, trailing commas `all` — all already true in the code, so no churn from these.
-- **Linter:** `recommended` rule set on, plus enabling the **type-aware / correctness rules Biome v2 supports** that matter for a binary-codec library — notably `noFloatingPromises` and the `suspicious`/`correctness` groups. Rules that would fight intentional patterns in this codebase (if any surface during implementation) are disabled explicitly with an inline comment, not blanket-suppressed.
+- **Linter:** Biome's **stable `recommended`** rule set only (which already covers the `suspicious`/`correctness`/`complexity` groups — unused vars, unreachable code, unsafe patterns, etc.). **Type-aware linting is deliberately deferred:** the marquee type-aware rule `noFloatingPromises` is `nursery` (experimental) and belongs to Biome's *types domain*, so enabling it turns on Biome's whole-project type-inference scanner on every lint. The payoff is low here (the codebase is mostly synchronous binary parsing; the only real async surface is the test runner) and the cost (experimental rule + slower lint) is real — revisit once it graduates from nursery. Any stable rule that fights an intentional pattern is disabled explicitly with an inline comment, not blanket-suppressed.
 - **Import organizing:** Biome's import sorter (`organizeImports`) enabled — deterministic import order, good for agentic diffs.
 - **Ignore:** `reference/` (vendored C#/third-party), `dist/`, `node_modules/`, `test/corpus/`, `.oracle-cache/`.
 
@@ -151,4 +151,5 @@ The ordering matters so the reformat lands cleanly and blame stays intact:
 - No ESLint, Prettier, or oxlint — Biome only.
 - No formatter tuning to preserve the compact style (standardization chosen over reflow-minimization).
 - No commit-message linting (commitlint) or changelog automation — not requested.
+- No type-aware / nursery lint rules (`noFloatingPromises` et al.) — deferred until stable to keep lint fast and non-experimental (§3).
 - No pre-commit and no pre-push test execution — tests run at end-of-task (§4, §6) to keep both commits and pushes low-friction.
