@@ -73,9 +73,9 @@ function unpack4444(src: Uint8Array, w: number, h: number): Uint8Array {
   const out = new Uint8Array(w * h * 4);
   for (let p = 0; p < w * h; p++) {
     const px = dv.getUint16(p * 2, true);
-    out[p * 4] = (px & 0x000f) * 16; // blue
+    out[p * 4] = ((px & 0x0f00) >> 8) * 16; // blue
     out[p * 4 + 1] = ((px & 0x00f0) >> 4) * 16; // green
-    out[p * 4 + 2] = ((px & 0x0f00) >> 8) * 16; // red
+    out[p * 4 + 2] = (px & 0x000f) * 16; // red
     out[p * 4 + 3] = ((px & 0xf000) >> 12) * 16; // alpha
   }
   return out;
@@ -87,7 +87,9 @@ function unpack5551(src: Uint8Array, w: number, h: number): Uint8Array {
   const out = new Uint8Array(w * h * 4);
   for (let p = 0; p < w * h; p++) {
     const px = dv.getUint16(p * 2, true);
-    out[p * 4] = ((px & 0x7c00) >> 10) * 8; // red
+    // Reference uses 0x7E00 (DDS.cs:548); bit 9 (0x0200) is shifted out by >>10 either way,
+    // so this is numerically identical to 0x7C00, but kept literal for fidelity.
+    out[p * 4] = ((px & 0x7e00) >> 10) * 8; // red
     out[p * 4 + 1] = ((px & 0x03e0) >> 5) * 8; // green
     out[p * 4 + 2] = (px & 0x001f) * 8; // blue
     out[p * 4 + 3] = ((px & 0x8000) >> 15) * 255; // alpha

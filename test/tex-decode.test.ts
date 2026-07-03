@@ -6,7 +6,15 @@
 
 import { describe, expect, it } from "vitest";
 import { decodeToRgba } from "../src/tex/decode";
-import { A8, A8R8G8B8, L8, type XivTex } from "../src/tex/types";
+import {
+  A1R5G5B5,
+  A4R4G4B4,
+  A8,
+  A8R8G8B8,
+  A16B16G16R16F,
+  L8,
+  type XivTex,
+} from "../src/tex/types";
 
 function texOf(
   format: number,
@@ -43,6 +51,35 @@ describe("tex decode: uncompressed", () => {
     expect(Array.from(out)).toEqual([77, 77, 77, 255]);
     const out2 = decodeToRgba(texOf(L8, 1, 1, new Uint8Array([200])));
     expect(Array.from(out2)).toEqual([200, 200, 200, 255]);
+  });
+
+  it("A4R4G4B4 decodes to RGBA in blue,green,red,alpha nibble order", () => {
+    // u16 0x1234 LE bytes [0x34, 0x12] -> blue=2*16, green=3*16, red=4*16, alpha=1*16.
+    const out = decodeToRgba(
+      texOf(A4R4G4B4, 1, 1, new Uint8Array([0x34, 0x12])),
+    );
+    expect(Array.from(out)).toEqual([32, 48, 64, 16]);
+  });
+
+  it("A1R5G5B5 decodes to RGBA", () => {
+    // u16 0xFC00 LE bytes [0x00, 0xFC] -> red=31*8, green=0, blue=0, alpha=255.
+    const out = decodeToRgba(
+      texOf(A1R5G5B5, 1, 1, new Uint8Array([0x00, 0xfc])),
+    );
+    expect(Array.from(out)).toEqual([248, 0, 0, 255]);
+  });
+
+  it("A16B16G16R16F decodes halfs to rounded 0-255 RGBA", () => {
+    // R=1.0, G=0, B=0.5, A=1.0 (little-endian half floats) -> [255, 0, 128, 255].
+    const out = decodeToRgba(
+      texOf(
+        A16B16G16R16F,
+        1,
+        1,
+        new Uint8Array([0x00, 0x3c, 0x00, 0x00, 0x00, 0x38, 0x00, 0x3c]),
+      ),
+    );
+    expect(Array.from(out)).toEqual([255, 0, 128, 255]);
   });
 
   it("throws on an unsupported (not-yet-implemented) format", () => {
