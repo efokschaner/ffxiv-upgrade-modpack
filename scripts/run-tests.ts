@@ -38,15 +38,33 @@ async function main(): Promise<void> {
       resolve(here, "../test/helpers/corpus-units.ts"),
     );
     const unitCount = enumerateUnits().length;
-    const indices =
-      single !== undefined ? [Number(single)] : Array.from({ length: unitCount }, (_, i) => i);
+    let indices: number[];
+    if (single !== undefined) {
+      const idx = Number(single);
+      if (!Number.isInteger(idx) || idx < 0) {
+        throw new Error(`CORPUS_UNIT must be a non-negative integer unit index, got ${JSON.stringify(single)}`);
+      }
+      indices = [idx];
+    } else {
+      indices = Array.from({ length: unitCount }, (_, i) => i);
+    }
     const corpusSpecs = indices.map((i) => project.createSpecification(`\0virtual:corpus-unit:${i}`));
     const normalSpecs = single !== undefined ? [] : await vitest.globTestSpecifications();
-    await vitest.runTestSpecifications([...normalSpecs, ...corpusSpecs], true);
+    const specs = [...normalSpecs, ...corpusSpecs];
+    await vitest.runTestSpecifications(specs, true);
     const modules = vitest.state.getTestModules();
-    // Zero modules counts as failure (matches Vitest's own hasFailed()): if nothing ran at all,
-    // something went wrong — never report a false green.
-    process.exitCode = modules.length === 0 || modules.some((m) => !m.ok()) ? 1 : 0;
+    // Correctness gate for a parallel run: every submitted spec must yield exactly one passing
+    // TestModule. A worker that hard-crashes (e.g. OOM on a 200–457 MB pack — the very failure mode
+    // the worker cap guards against) drops its virtual spec silently: that spec simply never appears
+    // in getTestModules(), so a `.some(!ok)` check alone would report a false green. Comparing the
+    // observed module count against the specs we submitted turns a silently-dropped unit into a red.
+    // Also fail on any unhandled error surfaced outside a module. (`modules.length !== specs.length`
+    // subsumes the zero-modules case: with specs present, 0 modules is a count mismatch.)
+    const failed =
+      modules.length !== specs.length ||
+      modules.some((m) => !m.ok()) ||
+      vitest.state.getUnhandledErrors().length > 0;
+    process.exitCode = failed ? 1 : 0;
   } finally {
     // A close() failure must not flip an already-computed exit code (a green run to red). Log and
     // swallow — the test result, already reflected in process.exitCode, is what matters.
