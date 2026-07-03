@@ -5,7 +5,7 @@ import { join } from "node:path";
 // registration on import, so the Node-API runner can import it outside any test worker. The
 // vitest-dependent dispatch lives in corpus-register.ts (loaded only inside workers).
 
-export type CheckKind = "sqpack" | "golden" | "mtrl" | "pmp";
+export type CheckKind = "sqpack" | "golden" | "mtrl" | "pmp" | "tex";
 export interface Unit {
   pack: string;
   check: CheckKind;
@@ -34,6 +34,7 @@ export function enumerateUnits(): Unit[] {
     units.push({ pack, check: "sqpack" });
     units.push({ pack, check: "golden" });
     units.push({ pack, check: "mtrl" });
+    units.push({ pack, check: "tex" });
     if (pack.toLowerCase().endsWith(".pmp")) units.push({ pack, check: "pmp" });
   }
   return units;
