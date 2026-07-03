@@ -1,12 +1,13 @@
 import { BinaryReader, ByteBuilder, concatBytes } from "../util/binary";
-import { readBlock, compressData } from "./blocks";
+import { compressData, readBlock } from "./blocks";
 
 /** Decompress a Type 2 (Standard/binary) SQPack entry. Mirrors Dat.ReadSqPackType2 (Dat.cs:623). */
 export function decodeType2(entry: Uint8Array): Uint8Array {
   const r = new BinaryReader(entry);
   const headerLength = r.readInt32();
   const fileType = r.readInt32();
-  if (fileType !== 2) throw new Error(`sqpack: not a Type 2 entry (fileType=${fileType})`);
+  if (fileType !== 2)
+    throw new Error(`sqpack: not a Type 2 entry (fileType=${fileType})`);
   r.readInt32(); // uncompressedSize (unused; we concat actual block outputs)
   r.readInt32(); // bufferInfoA
   r.readInt32(); // bufferInfoB

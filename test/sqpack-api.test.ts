@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import { decodeSqPackFile, encodeSqPackFile, detectTypeFromGamePath, SqPackType } from "../src/sqpack/sqpack";
+import { describe, expect, it } from "vitest";
+import {
+  decodeSqPackFile,
+  detectTypeFromGamePath,
+  encodeSqPackFile,
+  SqPackType,
+} from "../src/sqpack/sqpack";
 
 describe("sqpack dispatch", () => {
   it("detects type from game path", () => {

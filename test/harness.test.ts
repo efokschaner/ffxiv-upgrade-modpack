@@ -1,16 +1,49 @@
-import { describe, it, expect } from "vitest";
-import { structurallyEqual, compareInnerFilesByteIdentical } from "./helpers/compare";
-import { oracleAvailable, corpusInputs } from "./helpers/oracle";
-import { ModpackFormat, FileStorageType, emptyMeta, type ModpackData } from "../src/model/modpack";
+import { describe, expect, it } from "vitest";
+import {
+  emptyMeta,
+  FileStorageType,
+  type ModpackData,
+  ModpackFormat,
+} from "../src/model/modpack";
+import {
+  compareInnerFilesByteIdentical,
+  structurallyEqual,
+} from "./helpers/compare";
+import { corpusInputs, oracleAvailable } from "./helpers/oracle";
 
 function oneFilePack(path: string, bytes: Uint8Array): ModpackData {
   return {
-    sourceFormat: ModpackFormat.Ttmp2, isSimple: true, meta: emptyMeta(),
-    groups: [{
-      name: "g", description: "", image: "", page: 0, priority: 0, selectionType: "Single", defaultSettings: 0,
-      options: [{ name: "o", description: "", image: "", priority: 0, fileSwaps: {}, manipulations: [],
-        files: [{ gamePath: path, data: bytes, storage: FileStorageType.SqPackCompressed }] }],
-    }],
+    sourceFormat: ModpackFormat.Ttmp2,
+    isSimple: true,
+    meta: emptyMeta(),
+    groups: [
+      {
+        name: "g",
+        description: "",
+        image: "",
+        page: 0,
+        priority: 0,
+        selectionType: "Single",
+        defaultSettings: 0,
+        options: [
+          {
+            name: "o",
+            description: "",
+            image: "",
+            priority: 0,
+            fileSwaps: {},
+            manipulations: [],
+            files: [
+              {
+                gamePath: path,
+                data: bytes,
+                storage: FileStorageType.SqPackCompressed,
+              },
+            ],
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -33,26 +66,74 @@ describe("compareInnerFilesByteIdentical", () => {
   });
 
   it("detects multi-option payload mismatch and order-independent match for shared gamePath", () => {
-    function twoOptionPack(bytes1: Uint8Array, bytes2: Uint8Array): ModpackData {
+    function twoOptionPack(
+      bytes1: Uint8Array,
+      bytes2: Uint8Array,
+    ): ModpackData {
       return {
-        sourceFormat: ModpackFormat.Ttmp2, isSimple: false, meta: emptyMeta(),
-        groups: [{
-          name: "g", description: "", image: "", page: 0, priority: 0, selectionType: "Single", defaultSettings: 0,
-          options: [
-            { name: "opt1", description: "", image: "", priority: 0, fileSwaps: {}, manipulations: [],
-              files: [{ gamePath: "shared.mtrl", data: bytes1, storage: FileStorageType.SqPackCompressed }] },
-            { name: "opt2", description: "", image: "", priority: 0, fileSwaps: {}, manipulations: [],
-              files: [{ gamePath: "shared.mtrl", data: bytes2, storage: FileStorageType.SqPackCompressed }] },
-          ],
-        }],
+        sourceFormat: ModpackFormat.Ttmp2,
+        isSimple: false,
+        meta: emptyMeta(),
+        groups: [
+          {
+            name: "g",
+            description: "",
+            image: "",
+            page: 0,
+            priority: 0,
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "opt1",
+                description: "",
+                image: "",
+                priority: 0,
+                fileSwaps: {},
+                manipulations: [],
+                files: [
+                  {
+                    gamePath: "shared.mtrl",
+                    data: bytes1,
+                    storage: FileStorageType.SqPackCompressed,
+                  },
+                ],
+              },
+              {
+                name: "opt2",
+                description: "",
+                image: "",
+                priority: 0,
+                fileSwaps: {},
+                manipulations: [],
+                files: [
+                  {
+                    gamePath: "shared.mtrl",
+                    data: bytes2,
+                    storage: FileStorageType.SqPackCompressed,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       };
     }
     // one side's second-option bytes differ → mismatch
-    const a = twoOptionPack(new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6]));
-    const bDiff = twoOptionPack(new Uint8Array([1, 2, 3]), new Uint8Array([7, 8, 9]));
+    const a = twoOptionPack(
+      new Uint8Array([1, 2, 3]),
+      new Uint8Array([4, 5, 6]),
+    );
+    const bDiff = twoOptionPack(
+      new Uint8Array([1, 2, 3]),
+      new Uint8Array([7, 8, 9]),
+    );
     expect(compareInnerFilesByteIdentical(a, bDiff).ok).toBe(false);
     // reversed option order = same multiset → match
-    const bMatch = twoOptionPack(new Uint8Array([4, 5, 6]), new Uint8Array([1, 2, 3]));
+    const bMatch = twoOptionPack(
+      new Uint8Array([4, 5, 6]),
+      new Uint8Array([1, 2, 3]),
+    );
     expect(compareInnerFilesByteIdentical(a, bMatch).ok).toBe(true);
   });
 });

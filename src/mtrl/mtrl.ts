@@ -1,5 +1,10 @@
 export { parseMtrl } from "./parse";
 export { serializeMtrl } from "./serialize";
 export type {
-  XivMtrl, MtrlTexture, MtrlString, ShaderKey, ShaderConstant, TextureSampler,
+  MtrlString,
+  MtrlTexture,
+  ShaderConstant,
+  ShaderKey,
+  TextureSampler,
+  XivMtrl,
 } from "./types";

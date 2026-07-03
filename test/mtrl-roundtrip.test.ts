@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { parseMtrl, serializeMtrl } from "../src/mtrl/mtrl";
 import { buildMinimalMtrl } from "./helpers/make-mtrl";
 

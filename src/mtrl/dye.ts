@@ -1,4 +1,4 @@
-import { BinaryReader, ByteBuilder } from "../util/binary";
+import type { BinaryReader, ByteBuilder } from "../util/binary";
 
 function assertDyeLength(len: number): void {
   if (len !== 0 && len !== 32 && len !== 128) {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { decodeType2, encodeType2 } from "../src/sqpack/type2";
 
 function sample(n: number): Uint8Array {
@@ -10,7 +10,9 @@ describe("type 2 codec", () => {
     const raw = sample(500);
     const entry = encodeType2(raw);
     // Valid entry header: fileType int32 at offset 4 is 2.
-    expect(new DataView(entry.buffer, entry.byteOffset).getInt32(4, true)).toBe(2);
+    expect(new DataView(entry.buffer, entry.byteOffset).getInt32(4, true)).toBe(
+      2,
+    );
     expect(decodeType2(entry)).toEqual(raw);
   });
 

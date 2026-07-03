@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { BinaryReader, ByteBuilder } from "../src/util/binary";
+import { describe, expect, it } from "vitest";
 import { readColorset, writeColorset } from "../src/mtrl/colorset";
+import { BinaryReader, ByteBuilder } from "../src/util/binary";
 
 function roundtrip(colorDataSize: number): void {
   const values: number[] = [];
-  for (let i = 0; i < colorDataSize / 2; i++) values.push((i * 37 + 11) & 0xffff);
+  for (let i = 0; i < colorDataSize / 2; i++)
+    values.push((i * 37 + 11) & 0xffff);
   const b = new ByteBuilder();
   writeColorset(b, values);
   const bytes = b.toUint8Array();

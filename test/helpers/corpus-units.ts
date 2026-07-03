@@ -6,7 +6,10 @@ import { join } from "node:path";
 // vitest-dependent dispatch lives in corpus-register.ts (loaded only inside workers).
 
 export type CheckKind = "sqpack" | "golden" | "mtrl" | "pmp";
-export interface Unit { pack: string; check: CheckKind }
+export interface Unit {
+  pack: string;
+  check: CheckKind;
+}
 
 // Mirrors oracle.ts CORPUS_INPUTS, but SORTED so the unit order is deterministic and identical
 // between the runner (which imports this to count specs) and the workers (which index into it).
@@ -16,7 +19,7 @@ function sortedPacks(): string[] {
   if (!existsSync(CORPUS_INPUTS)) return [];
   return readdirSync(CORPUS_INPUTS)
     .filter((f) => /\.(ttmp2?|pmp)$/i.test(f))
-    .sort()                       // deterministic order (single source of truth)
+    .sort() // deterministic order (single source of truth)
     .map((f) => join(CORPUS_INPUTS, f));
 }
 

@@ -1,7 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { loadModpack, writeModpack } from "../src/index";
 import { allFiles } from "../src/model/modpack";
-import { makeTtmp2Simple, makeLegacyTtmp, makePmpZip } from "./helpers/make-packs";
+import {
+  makeLegacyTtmp,
+  makePmpZip,
+  makeTtmp2Simple,
+} from "./helpers/make-packs";
 
 describe("public API", () => {
   it("loads each format and rewrites preserving inner files", () => {
@@ -26,7 +30,11 @@ describe("public API", () => {
   });
 
   it("throws on cross-format write", () => {
-    expect(() => writeModpack(loadModpack("p.pmp", makePmpZip().bytes), "ttmp2")).toThrow();
-    expect(() => writeModpack(loadModpack("s.ttmp2", makeTtmp2Simple().bytes), "pmp")).toThrow();
+    expect(() =>
+      writeModpack(loadModpack("p.pmp", makePmpZip().bytes), "ttmp2"),
+    ).toThrow();
+    expect(() =>
+      writeModpack(loadModpack("s.ttmp2", makeTtmp2Simple().bytes), "pmp"),
+    ).toThrow();
   });
 });

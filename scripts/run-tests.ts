@@ -1,8 +1,8 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createVitest } from "vitest/node";
-import { corpusUnitsPlugin } from "./corpus-units-plugin";
 import type { enumerateUnits as EnumerateUnits } from "../test/helpers/corpus-units";
+import { corpusUnitsPlugin } from "./corpus-units-plugin";
 
 // Custom test runner: runs the normal *.test.ts specs PLUS one fileless virtual spec per corpus
 // (pack × check) work unit, so Vitest's forks pool schedules them dynamically across cores.
@@ -41,22 +41,27 @@ async function main(): Promise<void> {
     // type) — reach past the public API into internals we don't want to depend on across upgrades.
     await vitest.standalone();
     const project = vitest.getRootProject();
-    const { enumerateUnits } = await vitest.import<{ enumerateUnits: typeof EnumerateUnits }>(
-      resolve(here, "../test/helpers/corpus-units.ts"),
-    );
+    const { enumerateUnits } = await vitest.import<{
+      enumerateUnits: typeof EnumerateUnits;
+    }>(resolve(here, "../test/helpers/corpus-units.ts"));
     const unitCount = enumerateUnits().length;
     let indices: number[];
     if (single !== undefined) {
       const idx = Number(single);
       if (!Number.isInteger(idx) || idx < 0) {
-        throw new Error(`CORPUS_UNIT must be a non-negative integer unit index, got ${JSON.stringify(single)}`);
+        throw new Error(
+          `CORPUS_UNIT must be a non-negative integer unit index, got ${JSON.stringify(single)}`,
+        );
       }
       indices = [idx];
     } else {
       indices = Array.from({ length: unitCount }, (_, i) => i);
     }
-    const corpusSpecs = indices.map((i) => project.createSpecification(`\0virtual:corpus-unit:${i}`));
-    const normalSpecs = single !== undefined ? [] : await vitest.globTestSpecifications();
+    const corpusSpecs = indices.map((i) =>
+      project.createSpecification(`\0virtual:corpus-unit:${i}`),
+    );
+    const normalSpecs =
+      single !== undefined ? [] : await vitest.globTestSpecifications();
     const specs = [...normalSpecs, ...corpusSpecs];
     await vitest.runTestSpecifications(specs, true);
     const modules = vitest.state.getTestModules();

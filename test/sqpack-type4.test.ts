@@ -1,23 +1,28 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { decodeType4, encodeType4, texMipSizes } from "../src/sqpack/type4";
 
 const TEX_HEADER_SIZE = 80;
 const BC5 = 25136; // 8 bpp, min dimension 4
 
 // Build a minimal but valid uncompressed .tex: 80-byte header (format/width/height/mipCount) + mip pixels.
-function makeUncompressedTex(width: number, height: number, mipCount: number): Uint8Array {
+function makeUncompressedTex(
+  width: number,
+  height: number,
+  mipCount: number,
+): Uint8Array {
   const sizes = texMipSizes(BC5, width, height).slice(0, mipCount);
   const total = sizes.reduce((a, b) => a + b, 0);
   const buf = new Uint8Array(TEX_HEADER_SIZE + total);
   const dv = new DataView(buf.buffer);
-  dv.setUint32(0, 0, true);          // attributes
-  dv.setUint32(4, BC5, true);        // texture format
+  dv.setUint32(0, 0, true); // attributes
+  dv.setUint32(4, BC5, true); // texture format
   dv.setUint16(8, width, true);
   dv.setUint16(10, height, true);
-  dv.setUint16(12, 1, true);         // depth
-  buf[14] = mipCount & 0xf;          // mip count (low nibble)
+  dv.setUint16(12, 1, true); // depth
+  buf[14] = mipCount & 0xf; // mip count (low nibble)
   // Fill pixel data deterministically.
-  for (let i = TEX_HEADER_SIZE; i < buf.length; i++) buf[i] = (i * 17 + 3) & 0xff;
+  for (let i = TEX_HEADER_SIZE; i < buf.length; i++)
+    buf[i] = (i * 17 + 3) & 0xff;
   return buf;
 }
 
@@ -30,7 +35,9 @@ describe("type 4 codec", () => {
   it("round-trips a single-mip texture", () => {
     const raw = makeUncompressedTex(16, 16, 1);
     const entry = encodeType4(raw);
-    expect(new DataView(entry.buffer, entry.byteOffset).getInt32(4, true)).toBe(4);
+    expect(new DataView(entry.buffer, entry.byteOffset).getInt32(4, true)).toBe(
+      4,
+    );
     expect(decodeType4(entry)).toEqual(raw);
   });
 

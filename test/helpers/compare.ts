@@ -7,14 +7,18 @@ export function structurallyEqual(a: unknown, b: unknown): boolean {
   if (typeof a !== typeof b) return false;
   if (typeof a !== "object") return a === b;
   if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length)
+      return false;
     return a.every((x, i) => structurallyEqual(x, b[i]));
   }
-  const ao = a as Record<string, unknown>; const bo = b as Record<string, unknown>;
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
   const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
   for (const k of keys) {
-    const av = ao[k]; const bv = bo[k];
-    if ((av === null || av === undefined) && (bv === null || bv === undefined)) continue;
+    const av = ao[k];
+    const bv = bo[k];
+    if ((av === null || av === undefined) && (bv === null || bv === undefined))
+      continue;
     if (!structurallyEqual(av, bv)) return false;
   }
   return true;
@@ -28,11 +32,16 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 function compareBytesLex(a: Uint8Array, b: Uint8Array): number {
   const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) { if (a[i] !== b[i]) return a[i]! - b[i]!; }
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== b[i]) return a[i]! - b[i]!;
+  }
   return a.length - b.length;
 }
 
-export function compareInnerFilesByteIdentical(a: ModpackData, b: ModpackData): { ok: boolean; mismatches: string[] } {
+export function compareInnerFilesByteIdentical(
+  a: ModpackData,
+  b: ModpackData,
+): { ok: boolean; mismatches: string[] } {
   // A game path may appear in multiple options with different bytes; compare the
   // full multiset of payloads per path, order-independently.
   const group = (d: ModpackData) => {
@@ -45,15 +54,22 @@ export function compareInnerFilesByteIdentical(a: ModpackData, b: ModpackData): 
     for (const list of m.values()) list.sort(compareBytesLex);
     return m;
   };
-  const am = group(a); const bm = group(b);
+  const am = group(a);
+  const bm = group(b);
   const mismatches: string[] = [];
   const paths = new Set([...am.keys(), ...bm.keys()]);
   for (const path of paths) {
     const al = am.get(path) ?? [];
     const bl = bm.get(path) ?? [];
-    if (al.length !== bl.length) { mismatches.push(`payload count differs for ${path}: ${al.length} vs ${bl.length}`); continue; }
+    if (al.length !== bl.length) {
+      mismatches.push(
+        `payload count differs for ${path}: ${al.length} vs ${bl.length}`,
+      );
+      continue;
+    }
     for (let i = 0; i < al.length; i++) {
-      if (!bytesEqual(al[i]!, bl[i]!)) mismatches.push(`bytes differ: ${path} (payload ${i})`);
+      if (!bytesEqual(al[i]!, bl[i]!))
+        mismatches.push(`bytes differ: ${path} (payload ${i})`);
     }
   }
   return { ok: mismatches.length === 0, mismatches };

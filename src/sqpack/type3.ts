@@ -1,17 +1,22 @@
 import { BinaryReader, ByteBuilder, concatBytes } from "../util/binary";
-import { readBlock, compressData } from "./blocks";
+import { compressData, readBlock } from "./blocks";
 
 const MDL_HEADER = 68;
 
-function read3u32(r: BinaryReader): number[] { return [r.readUint32(), r.readUint32(), r.readUint32()]; }
-function read3u16(r: BinaryReader): number[] { return [r.readUint16(), r.readUint16(), r.readUint16()]; }
+function read3u32(r: BinaryReader): number[] {
+  return [r.readUint32(), r.readUint32(), r.readUint32()];
+}
+function read3u16(r: BinaryReader): number[] {
+  return [r.readUint16(), r.readUint16(), r.readUint16()];
+}
 
 /** Decompress a Type 3 (Model) SQPack entry into a runtime MDL file. Mirrors Dat.ReadSqPackType3 (Dat.cs:688). */
 export function decodeType3(entry: Uint8Array): Uint8Array {
   const r = new BinaryReader(entry);
   const headerLength = r.readInt32();
   const fileType = r.readInt32();
-  if (fileType !== 3) throw new Error(`sqpack: not a Type 3 entry (fileType=${fileType})`);
+  if (fileType !== 3)
+    throw new Error(`sqpack: not a Type 3 entry (fileType=${fileType})`);
   const decompressedSize = r.readInt32();
   r.readInt32(); // buffer1
   r.readInt32(); // buffer2
@@ -21,10 +26,14 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
 
   r.readInt32(); // vertexInfoSize (uncompressed, unused)
   r.readInt32(); // modelDataSize (uncompressed, unused)
-  read3u32(r); read3u32(r); read3u32(r); // uncompressed vertex/edge/index buffer sizes (unused)
+  read3u32(r);
+  read3u32(r);
+  read3u32(r); // uncompressed vertex/edge/index buffer sizes (unused)
   r.readInt32(); // vertexInfoCompressedSize (unused)
   r.readInt32(); // modelDataCompressedSize (unused)
-  read3u32(r); read3u32(r); read3u32(r); // compressed vertex/edge/index buffer sizes (unused)
+  read3u32(r);
+  read3u32(r);
+  read3u32(r); // compressed vertex/edge/index buffer sizes (unused)
 
   const vertexInfoOffset = r.readInt32();
   const modelDataOffset = r.readInt32();
@@ -32,8 +41,11 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   read3u32(r); // edgeGeometryVertexBufferOffsets (unused)
   const indexBufferOffsets = read3u32(r);
 
-  r.readInt16(); r.readInt16(); // vertexInfo / modelData block indexes (unused)
-  read3u16(r); read3u16(r); read3u16(r); // vertex/edge/index block indexes (unused)
+  r.readInt16();
+  r.readInt16(); // vertexInfo / modelData block indexes (unused)
+  read3u16(r);
+  read3u16(r);
+  read3u16(r); // vertex/edge/index block indexes (unused)
 
   const vertexInfoBlockCount = r.readInt16();
   const modelDataBlockCount = r.readInt16();
@@ -51,7 +63,9 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   // across the corpus), so this port does not read the edge buffers' own offsets. Fail loudly rather
   // than silently mis-decode (readGroup would seek to endOfHeader+0) if a model ever carried it.
   if (edgeBlockCounts.some((c) => c !== 0)) {
-    throw new Error(`sqpack: Type 3 edge geometry is not supported (edge block counts ${edgeBlockCounts.join(",")})`);
+    throw new Error(
+      `sqpack: Type 3 edge geometry is not supported (edge block counts ${edgeBlockCounts.join(",")})`,
+    );
   }
 
   // Decompress each group by seeking to endOfHeader + its offset and reading its blocks.
@@ -105,7 +119,10 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   header.u8(lodCount).u8(flags).bytes(padding);
 
   const geometry: Uint8Array[] = [];
-  for (let i = 0; i < 3; i++) { geometry.push(vertexBuffers[i]!); geometry.push(indexBuffers[i]!); }
+  for (let i = 0; i < 3; i++) {
+    geometry.push(vertexBuffers[i]!);
+    geometry.push(indexBuffers[i]!);
+  }
 
   // Match Dat.ReadSqPackType3 (Dat.cs:801): the output buffer is sized `baseHeaderLength +
   // decompressedSize`, where `decompressedSize` (entry offset 8) itself already counts the 68-byte
@@ -114,7 +131,10 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   const out = new Uint8Array(MDL_HEADER + decompressedSize);
   out.set(header.toUint8Array(), 0);
   let o = MDL_HEADER;
-  for (const part of [vInfo, mData, ...geometry]) { out.set(part, o); o += part.length; }
+  for (const part of [vInfo, mData, ...geometry]) {
+    out.set(part, o);
+    o += part.length;
+  }
   return out;
 }
 
@@ -126,37 +146,82 @@ export function encodeType3(data: Uint8Array): Uint8Array {
   const modelDataSize = dv.getInt32(8, true);
   const meshCount = dv.getUint16(12, true);
   const materialCount = dv.getUint16(14, true);
-  const vertexOffsets = [dv.getUint32(16, true), dv.getUint32(20, true), dv.getUint32(24, true)];
-  const indexOffsets = [dv.getUint32(28, true), dv.getUint32(32, true), dv.getUint32(36, true)];
-  const vertexSizes = [dv.getUint32(40, true), dv.getUint32(44, true), dv.getUint32(48, true)];
-  const indexSizes = [dv.getUint32(52, true), dv.getUint32(56, true), dv.getUint32(60, true)];
+  const vertexOffsets = [
+    dv.getUint32(16, true),
+    dv.getUint32(20, true),
+    dv.getUint32(24, true),
+  ];
+  const indexOffsets = [
+    dv.getUint32(28, true),
+    dv.getUint32(32, true),
+    dv.getUint32(36, true),
+  ];
+  const vertexSizes = [
+    dv.getUint32(40, true),
+    dv.getUint32(44, true),
+    dv.getUint32(48, true),
+  ];
+  const indexSizes = [
+    dv.getUint32(52, true),
+    dv.getUint32(56, true),
+    dv.getUint32(60, true),
+  ];
   const lodCount = data[64]!;
   const flags = data[65]!;
 
-  const vInfoBlocks = compressData(data.slice(MDL_HEADER, MDL_HEADER + vertexInfoSize));
-  const mDataBlocks = compressData(data.slice(MDL_HEADER + vertexInfoSize, MDL_HEADER + vertexInfoSize + modelDataSize));
+  const vInfoBlocks = compressData(
+    data.slice(MDL_HEADER, MDL_HEADER + vertexInfoSize),
+  );
+  const mDataBlocks = compressData(
+    data.slice(
+      MDL_HEADER + vertexInfoSize,
+      MDL_HEADER + vertexInfoSize + modelDataSize,
+    ),
+  );
   const vBlocks: Uint8Array[][] = [];
   const iBlocks: Uint8Array[][] = [];
   for (let i = 0; i < 3; i++) {
-    vBlocks.push(compressData(data.slice(vertexOffsets[i]!, vertexOffsets[i]! + vertexSizes[i]!)));
-    iBlocks.push(compressData(data.slice(indexOffsets[i]!, indexOffsets[i]! + indexSizes[i]!)));
+    vBlocks.push(
+      compressData(
+        data.slice(vertexOffsets[i]!, vertexOffsets[i]! + vertexSizes[i]!),
+      ),
+    );
+    iBlocks.push(
+      compressData(
+        data.slice(indexOffsets[i]!, indexOffsets[i]! + indexSizes[i]!),
+      ),
+    );
   }
 
-  const sum = (blocks: Uint8Array[]) => blocks.reduce((n, b) => n + b.length, 0);
+  const sum = (blocks: Uint8Array[]) =>
+    blocks.reduce((n, b) => n + b.length, 0);
   const compressedData = concatBytes([
-    ...vInfoBlocks, ...mDataBlocks,
+    ...vInfoBlocks,
+    ...mDataBlocks,
     ...[0, 1, 2].flatMap((i) => [...vBlocks[i]!, ...iBlocks[i]!]),
   ]);
 
-  const blockCount = vInfoBlocks.length + mDataBlocks.length + vBlocks.reduce((n, b) => n + b.length, 0) + iBlocks.reduce((n, b) => n + b.length, 0);
+  const blockCount =
+    vInfoBlocks.length +
+    mDataBlocks.length +
+    vBlocks.reduce((n, b) => n + b.length, 0) +
+    iBlocks.reduce((n, b) => n + b.length, 0);
   let headerLength = 256;
   if (blockCount > 24) {
     const extension = Math.floor(((blockCount - 24) * 2) / 128) + 1;
     headerLength = 256 + extension * 128;
   }
 
-  const pad128 = (n: number) => { const r = n % 128; return r === 0 ? n : n + (128 - r); };
-  const uncompressedSize = MDL_HEADER + vertexInfoSize + modelDataSize + vertexSizes.reduce((a, b) => a + b, 0) + indexSizes.reduce((a, b) => a + b, 0);
+  const pad128 = (n: number) => {
+    const r = n % 128;
+    return r === 0 ? n : n + (128 - r);
+  };
+  const uncompressedSize =
+    MDL_HEADER +
+    vertexInfoSize +
+    modelDataSize +
+    vertexSizes.reduce((a, b) => a + b, 0) +
+    indexSizes.reduce((a, b) => a + b, 0);
 
   const h = new ByteBuilder()
     .i32(headerLength)
@@ -166,15 +231,29 @@ export function encodeType3(data: Uint8Array): Uint8Array {
     .i32(Math.floor(compressedData.length / 128))
     .i32(signature)
     // Uncompressed sizes (padded): vInfo, mData, vertex×3, edge×3 (0), index×3.
-    .i32(pad128(vertexInfoSize)).i32(pad128(modelDataSize))
-    .i32(pad128(vertexSizes[0]!)).i32(pad128(vertexSizes[1]!)).i32(pad128(vertexSizes[2]!))
-    .i32(0).i32(0).i32(0)
-    .i32(pad128(indexSizes[0]!)).i32(pad128(indexSizes[1]!)).i32(pad128(indexSizes[2]!))
+    .i32(pad128(vertexInfoSize))
+    .i32(pad128(modelDataSize))
+    .i32(pad128(vertexSizes[0]!))
+    .i32(pad128(vertexSizes[1]!))
+    .i32(pad128(vertexSizes[2]!))
+    .i32(0)
+    .i32(0)
+    .i32(0)
+    .i32(pad128(indexSizes[0]!))
+    .i32(pad128(indexSizes[1]!))
+    .i32(pad128(indexSizes[2]!))
     // Compressed sizes: vInfo, mData, vertex×3, edge×3 (0), index×3.
-    .i32(sum(vInfoBlocks)).i32(sum(mDataBlocks))
-    .i32(sum(vBlocks[0]!)).i32(sum(vBlocks[1]!)).i32(sum(vBlocks[2]!))
-    .i32(0).i32(0).i32(0)
-    .i32(sum(iBlocks[0]!)).i32(sum(iBlocks[1]!)).i32(sum(iBlocks[2]!));
+    .i32(sum(vInfoBlocks))
+    .i32(sum(mDataBlocks))
+    .i32(sum(vBlocks[0]!))
+    .i32(sum(vBlocks[1]!))
+    .i32(sum(vBlocks[2]!))
+    .i32(0)
+    .i32(0)
+    .i32(0)
+    .i32(sum(iBlocks[0]!))
+    .i32(sum(iBlocks[1]!))
+    .i32(sum(iBlocks[2]!));
 
   // Compressed offsets, written [vInfo][mData] then per-LoD [vertex][index].
   const vInfoOff = 0;
@@ -185,7 +264,17 @@ export function encodeType3(data: Uint8Array): Uint8Array {
   const iOff1 = vOff1 + sum(vBlocks[1]!);
   const vOff2 = iOff1 + sum(iBlocks[1]!);
   const iOff2 = vOff2 + sum(vBlocks[2]!);
-  h.i32(vInfoOff).i32(mDataOff).i32(vOff0).i32(vOff1).i32(vOff2).i32(0).i32(0).i32(0).i32(iOff0).i32(iOff1).i32(iOff2);
+  h.i32(vInfoOff)
+    .i32(mDataOff)
+    .i32(vOff0)
+    .i32(vOff1)
+    .i32(vOff2)
+    .i32(0)
+    .i32(0)
+    .i32(0)
+    .i32(iOff0)
+    .i32(iOff1)
+    .i32(iOff2);
 
   // Block indexes.
   const vInfoIdx = 0;
@@ -196,13 +285,30 @@ export function encodeType3(data: Uint8Array): Uint8Array {
   const iIdx1 = vIdx1 + vBlocks[1]!.length;
   const vIdx2 = iIdx1 + iBlocks[1]!.length;
   const iIdx2 = vIdx2 + vBlocks[2]!.length;
-  h.u16(vInfoIdx).u16(mDataIdx).u16(vIdx0).u16(vIdx1).u16(vIdx2).u16(iIdx0).u16(iIdx1).u16(iIdx2).u16(iIdx0).u16(iIdx1).u16(iIdx2);
+  h.u16(vInfoIdx)
+    .u16(mDataIdx)
+    .u16(vIdx0)
+    .u16(vIdx1)
+    .u16(vIdx2)
+    .u16(iIdx0)
+    .u16(iIdx1)
+    .u16(iIdx2)
+    .u16(iIdx0)
+    .u16(iIdx1)
+    .u16(iIdx2);
 
   // Block counts.
-  h.u16(vInfoBlocks.length).u16(mDataBlocks.length)
-    .u16(vBlocks[0]!.length).u16(vBlocks[1]!.length).u16(vBlocks[2]!.length)
-    .u16(0).u16(0).u16(0)
-    .u16(iBlocks[0]!.length).u16(iBlocks[1]!.length).u16(iBlocks[2]!.length);
+  h.u16(vInfoBlocks.length)
+    .u16(mDataBlocks.length)
+    .u16(vBlocks[0]!.length)
+    .u16(vBlocks[1]!.length)
+    .u16(vBlocks[2]!.length)
+    .u16(0)
+    .u16(0)
+    .u16(0)
+    .u16(iBlocks[0]!.length)
+    .u16(iBlocks[1]!.length)
+    .u16(iBlocks[2]!.length);
 
   h.u16(meshCount).u16(materialCount).u8(lodCount).u8(flags).u16(0);
 

@@ -1,10 +1,21 @@
-import { existsSync, readdirSync, statSync, mkdirSync, readFileSync, writeFileSync, renameSync, mkdtempSync, rmSync } from "node:fs";
-import { join, basename } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 
-const CONSOLE_TOOLS = "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
+const CONSOLE_TOOLS =
+  "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
 const CORPUS_INPUTS = join(__dirname, "..", "corpus", "inputs");
 const GOLDEN_UPGRADE = join(__dirname, "..", "corpus", "golden-upgrade");
 
@@ -19,7 +30,10 @@ export function oracleKey(entry: Uint8Array): string {
 }
 
 /** Cached /unwrap output for `key`, or null on miss. */
-export function oracleCacheGet(key: string, dir: string = DEFAULT_ORACLE_CACHE): Uint8Array | null {
+export function oracleCacheGet(
+  key: string,
+  dir: string = DEFAULT_ORACLE_CACHE,
+): Uint8Array | null {
   const p = join(dir, `${key}.bin`);
   return existsSync(p) ? new Uint8Array(readFileSync(p)) : null;
 }
@@ -52,7 +66,11 @@ function sweepStaleTemps(dir: string): void {
 
 /** Store `data` under `key`, atomically (temp file + rename) so an interrupted run never
  * leaves a half-written cache entry that a later run would trust. */
-export function oracleCachePut(key: string, data: Uint8Array, dir: string = DEFAULT_ORACLE_CACHE): void {
+export function oracleCachePut(
+  key: string,
+  data: Uint8Array,
+  dir: string = DEFAULT_ORACLE_CACHE,
+): void {
   mkdirSync(dir, { recursive: true });
   if (!sweptTempDirs.has(dir)) {
     sweptTempDirs.add(dir);
@@ -95,11 +113,14 @@ export function corpusInputs(): string[] {
  * inside a dedicated `it(...)` in each corpus test file. `what` labels the required inputs in the
  * error (e.g. ".pmp corpus inputs" for the PMP-only tests).
  */
-export function assertCorpusPresent(inputs: string[], what: string = "corpus inputs"): void {
+export function assertCorpusPresent(
+  inputs: string[],
+  what: string = "corpus inputs",
+): void {
   if (inputs.length === 0) {
     throw new Error(
       `No ${what} in test/corpus/inputs — corpus-dependent tests require the local ` +
-      `(gitignored, user-provided) corpus. Populate test/corpus/inputs to run these tests.`,
+        `(gitignored, user-provided) corpus. Populate test/corpus/inputs to run these tests.`,
     );
   }
 }
@@ -109,19 +130,28 @@ function run(args: string[]): void {
   execFileSync(CONSOLE_TOOLS, args, { stdio: "pipe" });
 }
 
-export function resave(src: string, dest: string): void { run(["/resave", src, dest]); }
-export function upgrade(src: string, dest: string): void { run(["/upgrade", src, dest]); }
+export function resave(src: string, dest: string): void {
+  run(["/resave", src, dest]);
+}
+export function upgrade(src: string, dest: string): void {
+  run(["/upgrade", src, dest]);
+}
 
 /** Runs /upgrade into test/corpus/golden-upgrade/ and returns the golden path. */
 export function generateUpgradeGolden(inputPath: string): string {
   mkdirSync(GOLDEN_UPGRADE, { recursive: true });
-  const out = join(GOLDEN_UPGRADE, basename(inputPath).replace(/\.[^.]+$/, ".ttmp2"));
+  const out = join(
+    GOLDEN_UPGRADE,
+    basename(inputPath).replace(/\.[^.]+$/, ".ttmp2"),
+  );
   upgrade(inputPath, out);
   return out;
 }
 
 /** Unwraps a sqpack-compressed blob to raw bytes (Types 2 & 3 only). Use a neutral matching extension (e.g. `.bin`) for both paths. */
-export function unwrap(src: string, dest: string): void { run(["/unwrap", src, dest]); }
+export function unwrap(src: string, dest: string): void {
+  run(["/unwrap", src, dest]);
+}
 /** Wraps raw bytes back into a sqpack-compressed blob. `ffPath` is the FFXIV game path used to select the compression scheme. */
 export function wrap(src: string, dest: string, ffPath: string): void {
   run(["/wrap", src, dest, ffPath, "/sqpack"]);
@@ -131,7 +161,9 @@ export function extractGameFile(gamePath: string, dest: string): void {
   run(["/extract", gamePath, dest]);
 }
 /** ConsoleTools present (game-path resolution is validated lazily by extract calls). */
-export function gameAvailable(): boolean { return oracleAvailable(); }
+export function gameAvailable(): boolean {
+  return oracleAvailable();
+}
 
 /** Per-process scratch dir for the /unwrap file dance. Each Vitest worker imports this module
  * separately, so each gets its own dir — no cross-worker collision. Created lazily. */
@@ -166,7 +198,11 @@ function unwrapViaConsoleTools(entry: Uint8Array): Uint8Array {
  */
 export function unwrapCached(
   entry: Uint8Array,
-  opts: { dir?: string; available?: boolean; produce?: (entry: Uint8Array) => Uint8Array } = {},
+  opts: {
+    dir?: string;
+    available?: boolean;
+    produce?: (entry: Uint8Array) => Uint8Array;
+  } = {},
 ): Uint8Array | null {
   const dir = opts.dir ?? DEFAULT_ORACLE_CACHE;
   const key = oracleKey(entry);

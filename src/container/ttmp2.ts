@@ -1,56 +1,108 @@
-import { readZip, writeZip } from "../zip/zip";
-import { concatBytes, fnv1aKey } from "../util/binary";
 import {
-  FileStorageType, ModpackFormat, allFiles,
-  type ModpackData, type ModpackFile, type ModpackGroup, type ModpackOption,
+  allFiles,
+  FileStorageType,
+  type ModpackData,
+  type ModpackFile,
+  ModpackFormat,
+  type ModpackGroup,
+  type ModpackOption,
 } from "../model/modpack";
-import type { ModPackJson, TtmpModsJson, TtmpModPackPageJson, TtmpModGroupJson } from "./manifest-types";
+import { concatBytes, fnv1aKey } from "../util/binary";
+import { readZip, writeZip } from "../zip/zip";
+import type {
+  ModPackJson,
+  TtmpModGroupJson,
+  TtmpModPackPageJson,
+  TtmpModsJson,
+} from "./manifest-types";
 
 function fileFromMod(m: TtmpModsJson, mpd: Uint8Array): ModpackFile {
   return {
     gamePath: m.FullPath,
     data: mpd.slice(m.ModOffset, m.ModOffset + m.ModSize),
     storage: FileStorageType.SqPackCompressed,
-    ttmp: { name: m.Name, category: m.Category, datFile: m.DatFile, isDefault: m.IsDefault ?? false },
+    ttmp: {
+      name: m.Name,
+      category: m.Category,
+      datFile: m.DatFile,
+      isDefault: m.IsDefault ?? false,
+    },
   };
 }
 
 export function readTtmp2(bytes: Uint8Array): ModpackData {
   const entries = readZip(bytes);
-  const mplName = [...entries.keys()].find((k) => k.toLowerCase().endsWith(".mpl"));
-  const mpdName = [...entries.keys()].find((k) => k.toLowerCase().endsWith(".mpd"));
-  if (!mplName || !mpdName) throw new Error("ttmp2: missing TTMPL.mpl or TTMPD.mpd");
-  const mpl = JSON.parse(new TextDecoder().decode(entries.get(mplName)!)) as ModPackJson;
+  const mplName = [...entries.keys()].find((k) =>
+    k.toLowerCase().endsWith(".mpl"),
+  );
+  const mpdName = [...entries.keys()].find((k) =>
+    k.toLowerCase().endsWith(".mpd"),
+  );
+  if (!mplName || !mpdName)
+    throw new Error("ttmp2: missing TTMPL.mpl or TTMPD.mpd");
+  const mpl = JSON.parse(
+    new TextDecoder().decode(entries.get(mplName)!),
+  ) as ModPackJson;
   const mpd = entries.get(mpdName)!;
 
   const meta = {
-    name: mpl.Name ?? "", author: mpl.Author ?? "", version: mpl.Version ?? "",
-    description: mpl.Description ?? "", url: mpl.Url ?? "", image: "", tags: [],
+    name: mpl.Name ?? "",
+    author: mpl.Author ?? "",
+    version: mpl.Version ?? "",
+    description: mpl.Description ?? "",
+    url: mpl.Url ?? "",
+    image: "",
+    tags: [],
     minimumFrameworkVersion: mpl.MinimumFrameworkVersion ?? "1.0.0.0",
   };
 
   if (mpl.SimpleModsList) {
     const option: ModpackOption = {
-      name: "Default", description: "", image: "", priority: 0, fileSwaps: {}, manipulations: [],
+      name: "Default",
+      description: "",
+      image: "",
+      priority: 0,
+      fileSwaps: {},
+      manipulations: [],
       files: mpl.SimpleModsList.map((m) => fileFromMod(m, mpd)),
     };
     const group: ModpackGroup = {
-      name: "Default", description: "", image: "", page: 0, priority: 0,
-      selectionType: "Single", defaultSettings: 0, options: [option],
+      name: "Default",
+      description: "",
+      image: "",
+      page: 0,
+      priority: 0,
+      selectionType: "Single",
+      defaultSettings: 0,
+      options: [option],
     };
-    return { sourceFormat: ModpackFormat.Ttmp2, isSimple: true, meta, groups: [group] };
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: true,
+      meta,
+      groups: [group],
+    };
   }
 
   const groups: ModpackGroup[] = [];
   for (const page of mpl.ModPackPages ?? []) {
     for (const g of page.ModGroups) {
       groups.push({
-        name: g.GroupName, description: "", image: "", page: page.PageIndex, priority: 0,
-        selectionType: g.SelectionType === "Multi Selection" ? "Multi" : "Single",
+        name: g.GroupName,
+        description: "",
+        image: "",
+        page: page.PageIndex,
+        priority: 0,
+        selectionType:
+          g.SelectionType === "Multi Selection" ? "Multi" : "Single",
         defaultSettings: 0,
         options: g.OptionList.map((o) => ({
-          name: o.Name, description: o.Description ?? "", image: o.ImagePath ?? "",
-          priority: 0, fileSwaps: {}, manipulations: [],
+          name: o.Name,
+          description: o.Description ?? "",
+          image: o.ImagePath ?? "",
+          priority: 0,
+          fileSwaps: {},
+          manipulations: [],
           files: o.ModsJsons.map((m) => fileFromMod(m, mpd)),
         })),
       });
@@ -65,10 +117,16 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-function buildBlob(files: ModpackFile[]): { blob: Uint8Array; place: Map<ModpackFile, { off: number; size: number }> } {
+function buildBlob(files: ModpackFile[]): {
+  blob: Uint8Array;
+  place: Map<ModpackFile, { off: number; size: number }>;
+} {
   const parts: Uint8Array[] = [];
   const place = new Map<ModpackFile, { off: number; size: number }>();
-  const seen = new Map<string, Array<{ pos: { off: number; size: number }; data: Uint8Array }>>();
+  const seen = new Map<
+    string,
+    Array<{ pos: { off: number; size: number }; data: Uint8Array }>
+  >();
   let off = 0;
   for (const f of files) {
     const key = fnv1aKey(f.data);
@@ -91,15 +149,22 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   const { blob, place } = buildBlob(files);
 
   const modOf = (f: ModpackFile) => ({
-    Name: f.ttmp?.name ?? "", Category: f.ttmp?.category ?? "", FullPath: f.gamePath,
-    ModOffset: place.get(f)!.off, ModSize: place.get(f)!.size,
-    DatFile: f.ttmp?.datFile ?? "", IsDefault: f.ttmp?.isDefault ?? false,
+    Name: f.ttmp?.name ?? "",
+    Category: f.ttmp?.category ?? "",
+    FullPath: f.gamePath,
+    ModOffset: place.get(f)!.off,
+    ModSize: place.get(f)!.size,
+    DatFile: f.ttmp?.datFile ?? "",
+    IsDefault: f.ttmp?.isDefault ?? false,
   });
 
   const mpl: ModPackJson = {
     TTMPVersion: data.isSimple ? "2.1s" : "2.1w",
-    Name: data.meta.name, Author: data.meta.author, Version: data.meta.version,
-    Description: data.meta.description, Url: data.meta.url,
+    Name: data.meta.name,
+    Author: data.meta.author,
+    Version: data.meta.version,
+    Description: data.meta.description,
+    Url: data.meta.url,
     MinimumFrameworkVersion: data.meta.minimumFrameworkVersion,
   };
 
@@ -111,16 +176,24 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
       const list = byPage.get(g.page) ?? [];
       list.push({
         GroupName: g.name,
-        SelectionType: g.selectionType === "Multi" ? "Multi Selection" : "Single Selection",
+        SelectionType:
+          g.selectionType === "Multi" ? "Multi Selection" : "Single Selection",
         OptionList: g.options.map((o) => ({
-          Name: o.name, Description: o.description, ImagePath: o.image,
-          GroupName: g.name, SelectionType: g.selectionType === "Multi" ? "Multi Selection" : "Single Selection",
+          Name: o.name,
+          Description: o.description,
+          ImagePath: o.image,
+          GroupName: g.name,
+          SelectionType:
+            g.selectionType === "Multi"
+              ? "Multi Selection"
+              : "Single Selection",
           ModsJsons: o.files.map(modOf),
         })),
       });
       byPage.set(g.page, list);
     }
-    const pages: TtmpModPackPageJson[] = [...byPage.keys()].sort((a, b) => a - b)
+    const pages: TtmpModPackPageJson[] = [...byPage.keys()]
+      .sort((a, b) => a - b)
       .map((p) => ({ PageIndex: p, ModGroups: byPage.get(p)! }));
     mpl.ModPackPages = pages;
   }

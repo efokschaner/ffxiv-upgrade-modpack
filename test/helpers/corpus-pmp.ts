@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { describe, expect, it } from "vitest";
 import { readPmp, writePmp } from "../../src/container/pmp";
 import { readZip } from "../../src/zip/zip";
 import { structurallyEqual } from "./compare";
@@ -27,7 +27,9 @@ export function registerPmpManifestChecks(pack: string): void {
       for (let i = 0; i < inG.length; i++) {
         const a = JSON.parse(dec.decode(inZ.get(inG[i]!)!));
         const b = JSON.parse(dec.decode(outZ.get(outG[i]!)!));
-        expect(structurallyEqual(a, b), `${inG[i]} vs ${outG[i]} differ`).toBe(true);
+        expect(structurallyEqual(a, b), `${inG[i]} vs ${outG[i]} differ`).toBe(
+          true,
+        );
       }
     }, 600_000);
   });

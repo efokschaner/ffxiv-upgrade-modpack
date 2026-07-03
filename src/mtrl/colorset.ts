@@ -1,4 +1,4 @@
-import { BinaryReader, ByteBuilder } from "../util/binary";
+import type { BinaryReader, ByteBuilder } from "../util/binary";
 
 /**
  * Reads the colorset as colorDataSize/2 raw half-float uint16s (Half.RawValue), byte-exact.

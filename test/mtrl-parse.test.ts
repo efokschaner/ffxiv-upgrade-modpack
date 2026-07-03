@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { parseMtrl } from "../src/mtrl/parse";
 import { SAMPLER_NORMAL_MAP_0 } from "../src/mtrl/types";
 import { buildMinimalMtrl } from "./helpers/make-mtrl";
@@ -14,7 +14,10 @@ describe("parseMtrl", () => {
     expect(m.textures).toHaveLength(1);
     expect(m.textures[0]!.texturePath).toBe("test.tex");
     expect(m.textures[0]!.flags).toBe(0);
-    expect(m.textures[0]!.sampler).toEqual({ samplerIdRaw: SAMPLER_NORMAL_MAP_0, samplerSettingsRaw: 0x00010203 });
+    expect(m.textures[0]!.sampler).toEqual({
+      samplerIdRaw: SAMPLER_NORMAL_MAP_0,
+      samplerSettingsRaw: 0x00010203,
+    });
 
     expect(m.uvMapStrings).toEqual([{ value: "uv1", flags: 0 }]);
     expect(m.colorsetStrings).toEqual([]);
@@ -27,7 +30,9 @@ describe("parseMtrl", () => {
     expect(m.materialFlags).toBe(0x0011);
     expect(m.materialFlags2).toBe(0x0022);
     expect(m.shaderKeys).toEqual([{ keyId: 0x12345678, value: 0x9abcdef0 }]);
-    expect(m.shaderConstants).toEqual([{ constantId: 0xcafebabe, values: [1.5] }]);
+    expect(m.shaderConstants).toEqual([
+      { constantId: 0xcafebabe, values: [1.5] },
+    ]);
   });
 
   it("throws on an unrecognized colorset size", () => {

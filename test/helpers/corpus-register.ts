@@ -1,8 +1,8 @@
-import { enumerateUnits, type CheckKind } from "./corpus-units";
-import { registerSqpackChecks } from "./corpus-sqpack";
 import { registerGoldenCheck } from "./corpus-golden";
 import { registerMtrlChecks } from "./corpus-mtrl";
 import { registerPmpManifestChecks } from "./corpus-pmp";
+import { registerSqpackChecks } from "./corpus-sqpack";
+import { type CheckKind, enumerateUnits } from "./corpus-units";
 
 // Loaded ONLY inside a Vitest worker (via the virtual corpus-unit module). Statically imports the
 // vitest-dependent check helpers, so it must never be imported from the runner — keep enumeration
@@ -20,7 +20,9 @@ export function registerUnit(index: number): void {
   const units = enumerateUnits();
   const unit = units[index];
   if (!unit) {
-    throw new Error(`corpus unit index ${index} out of range (have ${units.length})`);
+    throw new Error(
+      `corpus unit index ${index} out of range (have ${units.length})`,
+    );
   }
   DISPATCH[unit.check](unit.pack);
 }

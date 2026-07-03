@@ -1,4 +1,4 @@
-import { unzipSync, zipSync, type Zippable } from "fflate";
+import { unzipSync, type Zippable, zipSync } from "fflate";
 
 export function readZip(bytes: Uint8Array): Map<string, Uint8Array> {
   const out = new Map<string, Uint8Array>();

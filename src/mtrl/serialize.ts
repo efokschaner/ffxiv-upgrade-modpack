@@ -2,8 +2,12 @@ import { ByteBuilder } from "../util/binary";
 import { writeColorset } from "./colorset";
 import { writeDye } from "./dye";
 import {
-  type XivMtrl, colorSetDataSize, shaderConstantsDataSize, getRealSamplerCount,
-  isEmptySampler, secondarySamplerId,
+  colorSetDataSize,
+  getRealSamplerCount,
+  isEmptySampler,
+  secondarySamplerId,
+  shaderConstantsDataSize,
+  type XivMtrl,
 } from "./types";
 
 const enc = new TextEncoder();
@@ -23,7 +27,8 @@ function pad4(len: number): number {
  */
 export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
   // Lowercase all texture paths (Mtrl.cs:558). Real SE paths are already lowercase (a no-op).
-  for (const tex of mtrl.textures) tex.texturePath = tex.texturePath.toLowerCase();
+  for (const tex of mtrl.textures)
+    tex.texturePath = tex.texturePath.toLowerCase();
 
   // Placeholder (empty-sampler) textures are excluded from the count, string block, and tables.
   const realTextures = mtrl.textures.filter((t) => !isEmptySampler(t));
@@ -66,9 +71,12 @@ export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
   b.u8(additionalData.length);
 
   // Offset/flag tables.
-  for (let i = 0; i < realTextures.length; i++) b.u16(textureOffsets[i]!).u16(realTextures[i]!.flags);
-  for (let i = 0; i < mtrl.uvMapStrings.length; i++) b.u16(mapOffsets[i]!).u16(mtrl.uvMapStrings[i]!.flags);
-  for (let i = 0; i < mtrl.colorsetStrings.length; i++) b.u16(colorsetOffsets[i]!).u16(mtrl.colorsetStrings[i]!.flags);
+  for (let i = 0; i < realTextures.length; i++)
+    b.u16(textureOffsets[i]!).u16(realTextures[i]!.flags);
+  for (let i = 0; i < mtrl.uvMapStrings.length; i++)
+    b.u16(mapOffsets[i]!).u16(mtrl.uvMapStrings[i]!.flags);
+  for (let i = 0; i < mtrl.colorsetStrings.length; i++)
+    b.u16(colorsetOffsets[i]!).u16(mtrl.colorsetStrings[i]!.flags);
 
   b.bytes(stringBytes);
   b.bytes(additionalData);
@@ -100,14 +108,27 @@ export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
     const tex = mtrl.textures[i]!;
     if (!tex.sampler) continue;
     if (isEmptySampler(tex)) {
-      b.u32(tex.sampler.samplerIdRaw).u32(tex.sampler.samplerSettingsRaw).u8(255).bytes([0, 0, 0]);
+      b.u32(tex.sampler.samplerIdRaw)
+        .u32(tex.sampler.samplerSettingsRaw)
+        .u8(255)
+        .bytes([0, 0, 0]);
     } else {
-      b.u32(tex.sampler.samplerIdRaw).u32(tex.sampler.samplerSettingsRaw).u8(i).bytes([0, 0, 0]);
+      b.u32(tex.sampler.samplerIdRaw)
+        .u32(tex.sampler.samplerSettingsRaw)
+        .u8(i)
+        .bytes([0, 0, 0]);
       if (multiUv) {
         const secondary = secondarySamplerId(tex.sampler.samplerIdRaw);
-        if (secondary !== undefined &&
-            !mtrl.textures.some((x) => x.sampler && x.sampler.samplerIdRaw === secondary)) {
-          b.u32(secondary).u32(tex.sampler.samplerSettingsRaw).u8(i).bytes([0, 0, 0]);
+        if (
+          secondary !== undefined &&
+          !mtrl.textures.some(
+            (x) => x.sampler && x.sampler.samplerIdRaw === secondary,
+          )
+        ) {
+          b.u32(secondary)
+            .u32(tex.sampler.samplerSettingsRaw)
+            .u8(i)
+            .bytes([0, 0, 0]);
         }
       }
     }
@@ -116,7 +137,11 @@ export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
   // Shader-constant float data block, zero-padded to shaderConstantsDataSize if short (Mtrl.cs:774).
   const scds = shaderConstantsDataSize(mtrl);
   let floatBytes = 0;
-  for (const c of mtrl.shaderConstants) for (const f of c.values) { b.f32(f); floatBytes += 4; }
+  for (const c of mtrl.shaderConstants)
+    for (const f of c.values) {
+      b.f32(f);
+      floatBytes += 4;
+    }
   for (let i = floatBytes; i < scds; i++) b.u8(0);
 
   // Backfill header fields.

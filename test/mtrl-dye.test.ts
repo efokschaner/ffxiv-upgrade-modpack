@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { BinaryReader, ByteBuilder } from "../src/util/binary";
+import { describe, expect, it } from "vitest";
 import { readDye, writeDye } from "../src/mtrl/dye";
+import { BinaryReader, ByteBuilder } from "../src/util/binary";
 
 function roundtrip(len: number): void {
   const dye = new Uint8Array(len).map((_, i) => (i * 5 + 1) & 0xff);
@@ -17,10 +17,14 @@ describe("mtrl dye codec", () => {
   it("carries a zero-length (no dye) blob verbatim", () => roundtrip(0));
 
   it("rejects an invalid read length", () => {
-    expect(() => readDye(new BinaryReader(new Uint8Array(64)), 64)).toThrow(/invalid dye length/);
+    expect(() => readDye(new BinaryReader(new Uint8Array(64)), 64)).toThrow(
+      /invalid dye length/,
+    );
   });
 
   it("rejects an invalid write length", () => {
-    expect(() => writeDye(new ByteBuilder(), new Uint8Array(16))).toThrow(/invalid dye length/);
+    expect(() => writeDye(new ByteBuilder(), new Uint8Array(16))).toThrow(
+      /invalid dye length/,
+    );
   });
 });

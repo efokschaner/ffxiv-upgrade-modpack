@@ -2,8 +2,13 @@ import { BinaryReader } from "../util/binary";
 import { readColorset } from "./colorset";
 import { readDye } from "./dye";
 import {
-  type XivMtrl, type MtrlTexture, type MtrlString, type ShaderKey, type ShaderConstant,
-  EMPTY_SAMPLER_PREFIX, isPrimaryMapSampler,
+  EMPTY_SAMPLER_PREFIX,
+  isPrimaryMapSampler,
+  type MtrlString,
+  type MtrlTexture,
+  type ShaderConstant,
+  type ShaderKey,
+  type XivMtrl,
 } from "./types";
 
 /**
@@ -71,7 +76,9 @@ export function parseMtrl(bytes: Uint8Array, mtrlPath = ""): XivMtrl {
     const colorDataSize = colorSetDataSizeField >= 2048 ? 2048 : 512;
     const remainder = colorSetDataSizeField - colorDataSize;
     if (remainder !== 0 && remainder !== 32 && remainder !== 128) {
-      throw new Error(`mtrl: unrecognized colorSetDataSize ${colorSetDataSizeField}`);
+      throw new Error(
+        `mtrl: unrecognized colorSetDataSize ${colorSetDataSizeField}`,
+      );
     }
     colorSetData = readColorset(r, colorDataSize);
     if (remainder > 0) colorSetDyeData = readDye(r, remainder);
@@ -90,14 +97,22 @@ export function parseMtrl(bytes: Uint8Array, mtrlPath = ""): XivMtrl {
     shaderKeys.push({ keyId: r.readUint32(), value: r.readUint32() });
   }
 
-  const descriptors: { constantId: number; offset: number; size: number }[] = [];
+  const descriptors: { constantId: number; offset: number; size: number }[] =
+    [];
   for (let i = 0; i < shaderConstantsCount; i++) {
-    descriptors.push({ constantId: r.readUint32(), offset: r.readInt16(), size: r.readInt16() });
+    descriptors.push({
+      constantId: r.readUint32(),
+      offset: r.readInt16(),
+      size: r.readInt16(),
+    });
   }
 
   // Sampler section: assign to textures, with the drop/replace/placeholder rules (Mtrl.cs:356).
   for (let i = 0; i < textureSamplerCount; i++) {
-    const sampler = { samplerIdRaw: r.readUint32(), samplerSettingsRaw: r.readUint32() };
+    const sampler = {
+      samplerIdRaw: r.readUint32(),
+      samplerSettingsRaw: r.readUint32(),
+    };
     const textureIndex = r.readUint8();
     r.readBytes(3); // padding
     if (textureIndex < textures.length) {
@@ -111,7 +126,11 @@ export function parseMtrl(bytes: Uint8Array, mtrlPath = ""): XivMtrl {
       }
     } else {
       // Index 255 (or any out-of-range): a fake placeholder texture holds the sampler.
-      textures.push({ texturePath: EMPTY_SAMPLER_PREFIX + sampler.samplerIdRaw, flags: 0, sampler });
+      textures.push({
+        texturePath: EMPTY_SAMPLER_PREFIX + sampler.samplerIdRaw,
+        flags: 0,
+        sampler,
+      });
     }
   }
 
@@ -123,19 +142,33 @@ export function parseMtrl(bytes: Uint8Array, mtrlPath = ""): XivMtrl {
     let values: number[];
     if (bytesRead + d.size <= shaderConstantsDataSizeField) {
       values = [];
-      for (let idx = 0; idx < d.size; idx += 4) { values.push(r.readFloat32()); bytesRead += 4; }
+      for (let idx = 0; idx < d.size; idx += 4) {
+        values.push(r.readFloat32());
+        bytesRead += 4;
+      }
     } else {
       values = new Array(Math.floor(d.size / 4)).fill(0);
     }
     shaderConstants.push({ constantId: d.constantId, values });
   }
-  while (bytesRead < shaderConstantsDataSizeField) { r.readUint8(); bytesRead += 1; }
+  while (bytesRead < shaderConstantsDataSizeField) {
+    r.readUint8();
+    bytesRead += 1;
+  }
 
   return {
-    signature, shaderPackRaw, additionalData,
-    textures, uvMapStrings, colorsetStrings,
-    colorSetData, colorSetDyeData,
-    shaderKeys, shaderConstants,
-    materialFlags, materialFlags2, mtrlPath,
+    signature,
+    shaderPackRaw,
+    additionalData,
+    textures,
+    uvMapStrings,
+    colorsetStrings,
+    colorSetData,
+    colorSetDyeData,
+    shaderKeys,
+    shaderConstants,
+    materialFlags,
+    materialFlags2,
+    mtrlPath,
   };
 }

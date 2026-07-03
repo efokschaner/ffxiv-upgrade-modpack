@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readLegacyTtmp } from "../src/container/ttmp-legacy";
-import { writeTtmp2, readTtmp2 } from "../src/container/ttmp2";
+import { readTtmp2, writeTtmp2 } from "../src/container/ttmp2";
 import { allFiles, ModpackFormat } from "../src/model/modpack";
 import { makeLegacyTtmp } from "./helpers/make-packs";
 

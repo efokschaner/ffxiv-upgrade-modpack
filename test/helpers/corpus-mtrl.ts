@@ -1,17 +1,23 @@
-import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { describe, expect, it } from "vitest";
 import { loadModpack } from "../../src/index";
-import { allFiles, FileStorageType, type ModpackFile } from "../../src/model/modpack";
-import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
+import {
+  allFiles,
+  FileStorageType,
+  type ModpackFile,
+} from "../../src/model/modpack";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import type { XivMtrl } from "../../src/mtrl/types";
+import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
 import { bytesEqual } from "./compare";
 
 function mtrlFiles(path: string): ModpackFile[] {
   const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
   return allFiles(data).filter(
-    (f) => f.storage === FileStorageType.SqPackCompressed && f.gamePath.toLowerCase().endsWith(".mtrl"),
+    (f) =>
+      f.storage === FileStorageType.SqPackCompressed &&
+      f.gamePath.toLowerCase().endsWith(".mtrl"),
   );
 }
 
@@ -24,7 +30,11 @@ function mtrlFiles(path: string): ModpackFile[] {
 function modelKey(m: XivMtrl): string {
   const additionalData = Array.from(m.additionalData);
   if (additionalData.length > 0) additionalData[0]! &= ~0x08 & 0xff;
-  return JSON.stringify({ ...m, additionalData, colorSetDyeData: Array.from(m.colorSetDyeData) });
+  return JSON.stringify({
+    ...m,
+    additionalData,
+    colorSetDyeData: Array.from(m.colorSetDyeData),
+  });
 }
 
 // Correctness gate for the MTRL codec over real SE/TexTools materials.
@@ -56,25 +66,33 @@ export function registerMtrlChecks(pack: string): void {
         }
         const re2 = serializeMtrl(parseMtrl(re, f.gamePath));
         if (!bytesEqual(re2, re)) {
-          unstable.push(`${f.gamePath} (${decoded.data.length}->${re.length}->${re2.length})`);
+          unstable.push(
+            `${f.gamePath} (${decoded.data.length}->${re.length}->${re2.length})`,
+          );
           continue;
         }
-        if (modelKey(parseMtrl(decoded.data, f.gamePath)) !== modelKey(parseMtrl(re, f.gamePath))) {
-          semanticBreaks.push(`${f.gamePath} (${decoded.data.length}->${re.length})`);
+        if (
+          modelKey(parseMtrl(decoded.data, f.gamePath)) !==
+          modelKey(parseMtrl(re, f.gamePath))
+        ) {
+          semanticBreaks.push(
+            `${f.gamePath} (${decoded.data.length}->${re.length})`,
+          );
           continue;
         }
         normalized++;
       }
-      const total = exact + normalized + unstable.length + semanticBreaks.length;
+      const total =
+        exact + normalized + unstable.length + semanticBreaks.length;
       console.log(
         `[mtrl] ${name}: ${exact} exact, ${normalized} normalized, ` +
-        `${unstable.length} unstable, ${semanticBreaks.length} semantic-break (of ${total})`,
+          `${unstable.length} unstable, ${semanticBreaks.length} semantic-break (of ${total})`,
       );
       if (unstable.length || semanticBreaks.length) {
         expect.fail(
           `mtrl round-trip failures in ${name} — unstable (not a fixed point): ` +
-          `[${unstable.join(", ")}]; semantic-break (content changed beyond the dye flag): ` +
-          `[${semanticBreaks.join(", ")}]`,
+            `[${unstable.join(", ")}]; semantic-break (content changed beyond the dye flag): ` +
+            `[${semanticBreaks.join(", ")}]`,
         );
       }
     }, 1_200_000);

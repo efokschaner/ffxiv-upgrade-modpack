@@ -7,17 +7,19 @@ import type { Plugin } from "vite";
 // filesystem tries to handle it. The generated code imports registerUnit by an absolute file URL so
 // it resolves from a virtual module that has no real path (and works on Windows).
 const PREFIX = "virtual:corpus-unit:";
-const RESOLVED = "\0" + PREFIX;
+const RESOLVED = `\0${PREFIX}`;
 
 export function corpusUnitsPlugin(): Plugin {
   const here = dirname(fileURLToPath(import.meta.url));
-  const registerModule = pathToFileURL(resolve(here, "../test/helpers/corpus-register.ts")).href;
+  const registerModule = pathToFileURL(
+    resolve(here, "../test/helpers/corpus-register.ts"),
+  ).href;
   return {
     name: "corpus-units",
     enforce: "pre",
     resolveId(id) {
-      if (id.startsWith(RESOLVED)) return id;      // already resolved (what the runner passes)
-      if (id.startsWith(PREFIX)) return "\0" + id; // tolerate the un-prefixed form too
+      if (id.startsWith(RESOLVED)) return id; // already resolved (what the runner passes)
+      if (id.startsWith(PREFIX)) return `\0${id}`; // tolerate the un-prefixed form too
       return null;
     },
     load(id) {

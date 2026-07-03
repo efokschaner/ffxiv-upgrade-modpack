@@ -1,4 +1,10 @@
-import { BinaryReader, ByteBuilder, concatBytes, deflateRaw, inflateRaw } from "../util/binary";
+import {
+  type BinaryReader,
+  ByteBuilder,
+  concatBytes,
+  deflateRaw,
+  inflateRaw,
+} from "../util/binary";
 
 const MAX_CHUNK = 16000;
 const STORED_SENTINEL = 32000;
@@ -50,9 +56,15 @@ export function readBlock(r: BinaryReader): Uint8Array {
 
 /** Compresses one chunk (<= 16000 bytes) into a single padded block. Mirrors CompressSmallData (Dat.cs:2094). */
 export function writeBlock(chunk: Uint8Array): Uint8Array {
-  if (chunk.length > MAX_CHUNK) throw new Error("sqpack: writeBlock chunk too large");
+  if (chunk.length > MAX_CHUNK)
+    throw new Error("sqpack: writeBlock chunk too large");
   const compressed = deflateRaw(chunk);
-  const header = new ByteBuilder().i32(16).i32(0).i32(compressed.length).i32(chunk.length).toUint8Array();
+  const header = new ByteBuilder()
+    .i32(16)
+    .i32(0)
+    .i32(compressed.length)
+    .i32(chunk.length)
+    .toUint8Array();
   const body = concatBytes([header, compressed]);
   const padding = new Uint8Array(pad128(body.length) - body.length);
   return concatBytes([body, padding]);
@@ -62,7 +74,9 @@ export function writeBlock(chunk: Uint8Array): Uint8Array {
 export function compressData(data: Uint8Array): Uint8Array[] {
   const blocks: Uint8Array[] = [];
   for (let off = 0; off < data.length; off += MAX_CHUNK) {
-    blocks.push(writeBlock(data.slice(off, Math.min(off + MAX_CHUNK, data.length))));
+    blocks.push(
+      writeBlock(data.slice(off, Math.min(off + MAX_CHUNK, data.length))),
+    );
   }
   return blocks;
 }

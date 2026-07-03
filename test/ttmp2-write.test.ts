@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readTtmp2, writeTtmp2 } from "../src/container/ttmp2";
 import { allFiles } from "../src/model/modpack";
 import { makeTtmp2Simple, makeTtmp2Wizard } from "./helpers/make-packs";
@@ -24,7 +24,9 @@ describe("writeTtmp2 round-trip", () => {
     expect(out.isSimple).toBe(false);
     expect(out.groups[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
     const byPath = new Map(allFiles(out).map((f) => [f.gamePath, f.data]));
-    expect(byPath.get(Object.keys(pack.expectedFiles)[0]!)).toEqual(Object.values(pack.expectedFiles)[0]);
+    expect(byPath.get(Object.keys(pack.expectedFiles)[0]!)).toEqual(
+      Object.values(pack.expectedFiles)[0],
+    );
   });
 
   it("dedupes identical payloads into one blob region", () => {

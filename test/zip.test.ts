@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { readZip, writeZip } from "../src/zip/zip";
+import { describe, expect, it } from "vitest";
 import { BinaryReader, concatBytes, fnv1aKey } from "../src/util/binary";
+import { readZip, writeZip } from "../src/zip/zip";
 
 describe("zip wrapper", () => {
   it("round-trips entries", () => {
@@ -27,8 +27,9 @@ describe("binary utils", () => {
   });
 
   it("concats and builds stable dedupe keys", () => {
-    expect(concatBytes([new Uint8Array([1]), new Uint8Array([2, 3])]))
-      .toEqual(new Uint8Array([1, 2, 3]));
+    expect(concatBytes([new Uint8Array([1]), new Uint8Array([2, 3])])).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
     const a = fnv1aKey(new Uint8Array([1, 2, 3]));
     const b = fnv1aKey(new Uint8Array([1, 2, 3]));
     const c = fnv1aKey(new Uint8Array([1, 2, 4]));

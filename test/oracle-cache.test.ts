@@ -1,8 +1,13 @@
-import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { oracleKey, oracleCacheGet, oracleCachePut, unwrapCached } from "./helpers/oracle";
+import { describe, expect, it } from "vitest";
+import {
+  oracleCacheGet,
+  oracleCachePut,
+  oracleKey,
+  unwrapCached,
+} from "./helpers/oracle";
 
 describe("oracle cache primitives", () => {
   it("oracleKey is a stable 64-char hex sha256 that differs by content", () => {
@@ -38,7 +43,10 @@ describe("unwrapCached", () => {
     const entry = new Uint8Array([10, 20, 30]);
     const out = new Uint8Array([42, 42]);
     let calls = 0;
-    const produce = () => { calls++; return out; };
+    const produce = () => {
+      calls++;
+      return out;
+    };
 
     const first = unwrapCached(entry, { dir, available: true, produce });
     expect(Array.from(first!)).toEqual([42, 42]);
@@ -51,7 +59,7 @@ describe("unwrapCached", () => {
   });
 });
 
-import { readdirSync, writeFileSync, utimesSync, existsSync } from "node:fs";
+import { existsSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 
 describe("oracleCachePut concurrency-safety", () => {
   it("repeated puts for the same key leave one .bin and no .tmp residue", () => {
@@ -60,7 +68,7 @@ describe("oracleCachePut concurrency-safety", () => {
     const data = new Uint8Array([1, 2, 3, 4, 5]);
     for (let i = 0; i < 5; i++) oracleCachePut(key, data, dir);
     const files = readdirSync(dir);
-    expect(files).toEqual([`${key}.bin`]);            // exactly one file, no leftover .tmp
+    expect(files).toEqual([`${key}.bin`]); // exactly one file, no leftover .tmp
     expect(Array.from(oracleCacheGet(key, dir)!)).toEqual([1, 2, 3, 4, 5]);
   });
 
@@ -76,8 +84,8 @@ describe("oracleCachePut concurrency-safety", () => {
 
     oracleCachePut("key0", new Uint8Array([9, 9]), dir); // triggers the one-time sweep for this dir
 
-    expect(existsSync(staleTmp)).toBe(false);           // stale orphan reclaimed
-    expect(existsSync(freshTmp)).toBe(true);            // recent (in-flight-age) temp untouched
+    expect(existsSync(staleTmp)).toBe(false); // stale orphan reclaimed
+    expect(existsSync(freshTmp)).toBe(true); // recent (in-flight-age) temp untouched
     expect(existsSync(join(dir, "key0.bin"))).toBe(true); // the put itself still succeeded
   });
 });

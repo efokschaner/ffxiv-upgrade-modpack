@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { describe, expect, it } from "vitest";
+import { loadModpack, ModpackFormat, writeModpack } from "../../src/index";
 import { compareInnerFilesByteIdentical } from "./compare";
-import { loadModpack, writeModpack, ModpackFormat } from "../../src/index";
 
 // Layer-1 corpus check (moved from the former golden.test.ts).
 //
@@ -27,7 +27,10 @@ export function registerGoldenCheck(pack: string): void {
       const data = loadModpack(name, readFileSync(pack));
       const target = data.sourceFormat === ModpackFormat.Pmp ? "pmp" : "ttmp2";
       const rewritten = writeModpack(data, target);
-      const reread = loadModpack(target === "pmp" ? "x.pmp" : "x.ttmp2", rewritten);
+      const reread = loadModpack(
+        target === "pmp" ? "x.pmp" : "x.ttmp2",
+        rewritten,
+      );
       const result = compareInnerFilesByteIdentical(data, reread);
       if (!result.ok) console.error("mismatched files:", result.mismatches);
       expect(result.ok).toBe(true);

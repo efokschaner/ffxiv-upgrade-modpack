@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import { compressData, readBlock, writeBlock } from "../src/sqpack/blocks";
 import { BinaryReader, concatBytes, deflateRaw } from "../src/util/binary";
-import { readBlock, writeBlock, compressData } from "../src/sqpack/blocks";
 
 const enc = new TextEncoder();
 
@@ -45,10 +45,15 @@ describe("block codec", () => {
     const raw = enc.encode("stored payload");
     const head = new Uint8Array(16);
     const dv = new DataView(head.buffer);
-    dv.setInt32(0, 16, true); dv.setInt32(4, 0, true);
-    dv.setInt32(8, 32000, true); dv.setInt32(12, raw.length, true);
+    dv.setInt32(0, 16, true);
+    dv.setInt32(4, 0, true);
+    dv.setInt32(8, 32000, true);
+    dv.setInt32(12, raw.length, true);
     const body = concatBytes([head, raw]);
-    const padded = concatBytes([body, new Uint8Array((128 - (body.length % 128)) % 128)]);
+    const padded = concatBytes([
+      body,
+      new Uint8Array((128 - (body.length % 128)) % 128),
+    ]);
     const r = new BinaryReader(padded);
     expect(readBlock(r)).toEqual(raw);
   });
@@ -70,7 +75,12 @@ describe("block codec", () => {
     const a = enc.encode("AAAAAAAAAA first legacy payload");
     const b = enc.encode("BBBB second legacy payload here");
     const c = enc.encode("CCCCCC third");
-    const stream = concatBytes([rawBlock(a), rawBlock(b), rawBlock(c), new Uint8Array(200)]);
+    const stream = concatBytes([
+      rawBlock(a),
+      rawBlock(b),
+      rawBlock(c),
+      new Uint8Array(200),
+    ]);
     const r = new BinaryReader(stream);
     expect(readBlock(r)).toEqual(a);
     expect(readBlock(r)).toEqual(b);
@@ -80,7 +90,9 @@ describe("block codec", () => {
   it("decodes an irregularly-spaced multi-block stream (mixed skip + rewind)", () => {
     // Mirror real legacy TexTools output: blocks separated by irregular zero gaps that are not
     // 128-aligned, so each block is recovered via either leading-zero skip or padding rewind.
-    const payloads = Array.from({ length: 6 }, (_, i) => enc.encode(`legacy mip block #${i} ${"x".repeat(i * 9)}`));
+    const payloads = Array.from({ length: 6 }, (_, i) =>
+      enc.encode(`legacy mip block #${i} ${"x".repeat(i * 9)}`),
+    );
     const gaps = [0, 16, 48, 0, 96, 32]; // trailing zero padding after each block (deliberately non-128-aligned)
     const stream = concatBytes([
       ...payloads.map((p, i) => rawBlock(p, gaps[i]!)),

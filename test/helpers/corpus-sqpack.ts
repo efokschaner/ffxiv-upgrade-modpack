@@ -1,18 +1,31 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadModpack } from "../../src/index";
-import { allFiles, FileStorageType, type ModpackFile } from "../../src/model/modpack";
-import { decodeSqPackFile, encodeSqPackFile, SqPackType, type DecodedFile } from "../../src/sqpack/sqpack";
+import {
+  allFiles,
+  FileStorageType,
+  type ModpackFile,
+} from "../../src/model/modpack";
+import {
+  type DecodedFile,
+  decodeSqPackFile,
+  encodeSqPackFile,
+  SqPackType,
+} from "../../src/sqpack/sqpack";
 import { texMipSizes } from "../../src/sqpack/type4";
-import { unwrapCached } from "./oracle";
 import { bytesEqual } from "./compare";
+import { unwrapCached } from "./oracle";
 
 const TEX_HEADER_SIZE = 80;
 
 /** Canonical decompressed length of a Type-4 tex: 80-byte header + sum of formula-derived mip sizes. */
 function canonicalTexLength(decoded: Uint8Array): number {
-  const dv = new DataView(decoded.buffer, decoded.byteOffset, decoded.byteLength);
+  const dv = new DataView(
+    decoded.buffer,
+    decoded.byteOffset,
+    decoded.byteLength,
+  );
   const format = dv.getUint32(4, true);
   const width = dv.getUint16(8, true);
   const height = dv.getUint16(10, true);
@@ -21,7 +34,7 @@ function canonicalTexLength(decoded: Uint8Array): number {
   return TEX_HEADER_SIZE + sizes.reduce((a, b) => a + b, 0);
 }
 
-const SELF_CAP_PER_TYPE = 25;   // full round-trip cap per SqPack type per pack
+const SELF_CAP_PER_TYPE = 25; // full round-trip cap per SqPack type per pack
 
 /** True when one buffer is a byte-exact prefix of the other (they differ only in trailing bytes). */
 function isPrefixRelation(a: Uint8Array, b: Uint8Array): boolean {
@@ -32,12 +45,18 @@ function isPrefixRelation(a: Uint8Array, b: Uint8Array): boolean {
 
 function compressedFiles(path: string): ModpackFile[] {
   const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
-  return allFiles(data).filter((f) => f.storage === FileStorageType.SqPackCompressed);
+  return allFiles(data).filter(
+    (f) => f.storage === FileStorageType.SqPackCompressed,
+  );
 }
 
 /** The SQPack entry type is the int32 at offset 4 — readable without decompressing. */
 function entryType(f: ModpackFile): number {
-  return new DataView(f.data.buffer, f.data.byteOffset, f.data.byteLength).getInt32(4, true);
+  return new DataView(
+    f.data.buffer,
+    f.data.byteOffset,
+    f.data.byteLength,
+  ).getInt32(4, true);
 }
 
 /**
@@ -46,7 +65,10 @@ function entryType(f: ModpackFile): number {
  * our reader ports that heuristic faithfully from Dat.cs, so those files are undecodable by the reference
  * algorithm too. We log and tolerate them for Type 4, but any Type-2/3 decode failure is a hard error.
  */
-function decodeTolerant(f: ModpackFile, legacyTex: string[]): DecodedFile | null {
+function decodeTolerant(
+  f: ModpackFile,
+  legacyTex: string[],
+): DecodedFile | null {
   try {
     return decodeSqPackFile(f.data);
   } catch (err) {
@@ -74,7 +96,10 @@ export function registerSqpackChecks(pack: string): void {
     const legacyTex: string[] = [];
 
     beforeAll(() => {
-      entries = compressedFiles(pack).map((f) => ({ f, d: decodeTolerant(f, legacyTex) }));
+      entries = compressedFiles(pack).map((f) => ({
+        f,
+        d: decodeTolerant(f, legacyTex),
+      }));
     }, 1_200_000);
 
     afterAll(() => {
@@ -88,8 +113,12 @@ export function registerSqpackChecks(pack: string): void {
         expect(d.data.length).toBeGreaterThan(0);
         decoded++;
       }
-      console.log(`[decode-all] ${name}: ${decoded}/${entries.length} decoded` +
-        (legacyTex.length ? `; ${legacyTex.length} legacy Type-4 tolerated: ${legacyTex.join(", ")}` : ""));
+      console.log(
+        `[decode-all] ${name}: ${decoded}/${entries.length} decoded` +
+          (legacyTex.length
+            ? `; ${legacyTex.length} legacy Type-4 tolerated: ${legacyTex.join(", ")}`
+            : ""),
+      );
     }, 1_200_000);
 
     it(`self round-trips a bounded sample per type in ${name}`, () => {
@@ -100,7 +129,9 @@ export function registerSqpackChecks(pack: string): void {
         if (first === null) continue;
         totalByType.set(first.type, (totalByType.get(first.type) ?? 0) + 1);
         if ((testedByType.get(first.type) ?? 0) >= SELF_CAP_PER_TYPE) continue;
-        const second = decodeSqPackFile(encodeSqPackFile(first.data, first.type));
+        const second = decodeSqPackFile(
+          encodeSqPackFile(first.data, first.type),
+        );
         if (!bytesEqual(first.data, second.data)) {
           // Type 4 encode re-derives mip sizes from the canonical formula (exactly as SE's
           // Tex.CompressTexFile does), so a texture whose stored mip tail is non-canonical is
@@ -115,20 +146,31 @@ export function registerSqpackChecks(pack: string): void {
             isPrefixRelation(first.data, second.data) &&
             second.data.length === canonicalTexLength(second.data)
           ) {
-            canonicalized.push(`${f.gamePath} (${first.data.length}->${second.data.length})`);
-            testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
+            canonicalized.push(
+              `${f.gamePath} (${first.data.length}->${second.data.length})`,
+            );
+            testedByType.set(
+              first.type,
+              (testedByType.get(first.type) ?? 0) + 1,
+            );
             continue;
           }
-          expect.fail(`self round-trip mismatch (type ${first.type}) for ${f.gamePath}: ` +
-            `${first.data.length} vs ${second.data.length} bytes`);
+          expect.fail(
+            `self round-trip mismatch (type ${first.type}) for ${f.gamePath}: ` +
+              `${first.data.length} vs ${second.data.length} bytes`,
+          );
         }
         testedByType.set(first.type, (testedByType.get(first.type) ?? 0) + 1);
       }
       for (const [type, total] of totalByType) {
-        console.log(`[self round-trip] ${name}: type ${type} tested ${testedByType.get(type) ?? 0}/${total}`);
+        console.log(
+          `[self round-trip] ${name}: type ${type} tested ${testedByType.get(type) ?? 0}/${total}`,
+        );
       }
       if (canonicalized.length) {
-        console.log(`[self round-trip] ${name}: ${canonicalized.length} Type-4 mip-canonicalized (trailing-byte only): ${canonicalized.join(", ")}`);
+        console.log(
+          `[self round-trip] ${name}: ${canonicalized.length} Type-4 mip-canonicalized (trailing-byte only): ${canonicalized.join(", ")}`,
+        );
       }
     }, 1_200_000);
 
@@ -146,7 +188,10 @@ export function registerSqpackChecks(pack: string): void {
           );
         }
         expect(bytesEqual(decoded.data, oracleOut)).toBe(true);
-        testedByType.set(decoded.type, (testedByType.get(decoded.type) ?? 0) + 1);
+        testedByType.set(
+          decoded.type,
+          (testedByType.get(decoded.type) ?? 0) + 1,
+        );
       }
       for (const [type, tested] of testedByType) {
         console.log(`[/unwrap] ${name}: type ${type} cross-checked ${tested}`);

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { detectFormat } from "../src/container/detect";
 import { ModpackFormat } from "../src/model/modpack";
 
