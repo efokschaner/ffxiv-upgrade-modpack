@@ -250,8 +250,10 @@ git commit -m "build: ignore the Biome reformat commit in git blame"
 - Modify: `package.json` (add `lefthook` devDependency + `prepare` script)
 
 **Interfaces:**
-- Consumes: the `biome` binary and `biome.json` from Task 1; `tsc` (already present).
+- Consumes: the `biome` binary and `biome.jsonc` from Task 1; `tsc` (already present).
 - Produces: an active pre-commit hook that formats+lints staged files and runs `tsc --noEmit`.
+
+> **Implementation note (reconciled with shipped code, commit 5530368; lefthook v2.1.9):** the Steps 6–7 verification below was corrected during execution and this is how it was actually done: (1) the throwaway **type-error** file must live under a tsconfig-`include`d dir (`test/`), NOT repo root — a root file is outside `include: ["src","test","scripts"]` so `tsc --noEmit` wouldn't see it and the "hook blocks" test would falsely pass; (2) verification used `npx lefthook run pre-commit` (no scratch commits polluting history) for the auto-format and block checks, with the real end-to-end `git commit` of the config (Step 8) serving as the genuine installed-hook test. The Steps 6–7 text below (root-path scratch files + scratch commits) is superseded by this note.
 
 - [ ] **Step 1: Install lefthook pinned + min-age**
 
