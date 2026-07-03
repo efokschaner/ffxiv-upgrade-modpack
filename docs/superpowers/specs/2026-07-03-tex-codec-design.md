@@ -112,8 +112,17 @@ C# logic lives under `reference/xivModdingFramework/xivModdingFramework/Textures
 | `FileTypes/Tex.cs:71` `TexHeader` (+ `ReadTexHeader` / `ToBytes`) | 80-byte header layout | `src/tex/header.ts` |
 | `FileTypes/Tex.cs:1103` `CreateTexFileHeader` | Canonical header for regenerated tex | `src/tex/header.ts` `buildCanonicalTexHeader` |
 | `DataContainers/XivTex.cs:94/148` `FromUncompressedTex` / `ToUncompressedTex` | Model ↔ bytes | `src/tex/parse.ts` / `src/tex/serialize.ts` |
-| `Helpers/DxtUtil.cs` | BC1/3/4/5/7 block decode | `src/tex/decode.ts` |
+| **`BcnSharp` / `bc7enc` (MIT)** — `Bc*Sharp.Decode` + `rgbcx.h` / `bc7decomp.*` | BC1/3/4/5/7 block decode | `src/tex/decode.ts` (+ `src/tex/bc7.ts`) |
 | `FileTypes/DDS.cs:453` `ConvertPixelData` (+ `SwapRBColors`, `Read4444/5551/8bit/HalfFloat`) | Uncompressed unpacks + decode dispatch | `src/tex/decode.ts` |
+
+**Licensing note (found during planning).** The reference's `Helpers/DxtUtil.cs` (its DXT1/3/5 + BC4
+decoders) carries an **Ms-PL** header (vendored FNA/MonoGame) — **GPL-incompatible per the FSF** — so we
+do **not** transcribe it. The reference's BC5/BC7 decode already delegates to **`JeremyAnsel.BcnSharp`**,
+a C# port of **`richgel999/bc7enc`**, under the **MIT License** (bc7enc offers MIT *or* Public Domain) —
+**GPL-compatible**. We therefore port **all** BCn *decoders* from the `BcnSharp` / `bc7enc` MIT lineage
+(BcnSharp is the closer C# reference; `bc7enc` cross-checks), retaining the MIT copyright notice in
+`NOTICE`. The block-decode *algorithms* (565 unpack, 2-bit indices, RGTC/BPTC) are unpatented public
+standards regardless. The **uncompressed** unpacks stay ported from GPL `DDS.cs` (GPL→GPL, no issue).
 
 **The 80-byte `.tex` header** (`Tex.cs:71`, little-endian):
 
@@ -167,10 +176,12 @@ test/tex-fixtures.test.ts   extracted .tex round-trip + decode smoke; skips if f
 
 ## 5. Decode (the new capability)
 
-Hand-port `DxtUtil` — deterministic, and it **must match the reference exactly** so the future index-map
-golden lines up byte-for-byte.
+Port the BCn decoders from the **MIT `BcnSharp` / `bc7enc` lineage** (not FNA's Ms-PL `DxtUtil` — see the
+licensing note in §3). Decode is deterministic, and a spec-conformant decoder **matches** any other
+(including whatever the future index-map golden was produced with), so byte-exact parity is achievable.
 
-- **BCn (block) formats:** `DXT1`, `DXT3`, `DXT5`, `BC4`, `BC5`, `BC7` → RGBA8888.
+- **BCn (block) formats:** `DXT1`, `DXT3`, `DXT5`, `BC4`, `BC5`, `BC7` → RGBA8888. BC7 lives in its own
+  `src/tex/bc7.ts` (largest decoder; faithful port of `Bc7Sharp` / `bc7decomp`).
 - **Uncompressed unpacks** (`DDS.ConvertPixelData`): `A8R8G8B8` (R/B swap), `A4R4G4B4`, `A1R5G5B5`,
   `L8`, `A8`, `A16B16G16R16F`.
 - **Deferred formats** (§1 out-of-scope): reject with a clear `unsupported texture format` error until a
@@ -267,8 +278,14 @@ Neither can match Nvtt byte-for-byte, so this layer is validated by **decode-wit
 
 ## 10. Environment / constraints
 
-- **No new dependencies** in this stage (the encoder-library decision belongs to §9).
+- **No new runtime dependencies** in this stage (the encoder-library decision belongs to §9). The BCn
+  decoders are *ported source*, not an imported package.
+- **Reference setup:** clone `JeremyAnsel/BcnSharp` (and optionally `richgel999/bc7enc`) into the
+  gitignored `reference/`, alongside the existing xivModdingFramework checkout, for porting reference.
+- **Attribution:** add the MIT copyright notice (Richard Geldreich Jr; Jérémy Ansel) for the ported BCn
+  decoders to `NOTICE`. New files carry the repo's SPDX/GPL header; ported-BCn files additionally cite
+  the MIT origin in a comment.
 - TypeScript + Vitest; Windows + PowerShell; `npm`.
-- New files carry the repo's SPDX/GPL header. Extracted `.tex` fixtures are GPL-3.0 framework/game
-  resources covered by the existing NOTICE attribution; keep the bundle minimal.
+- Extracted `.tex` fixtures are GPL-3.0 framework/game resources covered by the existing NOTICE
+  attribution; keep the bundle minimal.
 - All integers little-endian.
