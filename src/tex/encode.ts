@@ -14,8 +14,11 @@ function nextPow2(n: number): number {
   return p;
 }
 
-/** Box-resamples RGBA to the next power-of-two dimensions (no-op if already power-of-two). Mirrors the
- *  ResizeXivTx pre-step (EndwalkerUpgrade.cs:1098). Nvtt-filter parity is confirmed at transform-time. */
+/** Resizes RGBA to the next power-of-two dimensions via nearest-neighbor point sampling (no-op if
+ *  already power-of-two). Mirrors the ResizeXivTx pre-step (EndwalkerUpgrade.cs:1098). This is a
+ *  placeholder resample filter, not the final one; exact byte-parity against the real filter is
+ *  deferred to the oracle-comparison work (design spec §6), so this does not claim fidelity beyond
+ *  point sampling. */
 export function resizeToPowerOfTwo(
   rgba: Uint8Array,
   width: number,
@@ -40,8 +43,11 @@ export function resizeToPowerOfTwo(
   return { rgba: out, width: tw, height: th };
 }
 
-/** Full RGBA mip chain to 1x1 via 2x2 box average. Structural match to Nvtt's default box filter;
- *  exact byte parity is validated later against a captured oracle tex (design spec §6, tier 2). */
+/** Full RGBA mip chain to 1x1 via 2x2 box average. The edge clamp (x1/y1 clamped to w-1/h-1) exists
+ *  to handle the 1xN / Nx1 plateau at the top of the chain; in the real pipeline all input dimensions
+ *  are power-of-two because resizeToPowerOfTwo runs first, so this is not claiming general odd-dimension
+ *  box coverage. Structural match to Nvtt's default box filter; exact byte parity is validated later
+ *  against a captured oracle tex (design spec §6, tier 2). */
 export function generateMipmaps(
   rgba: Uint8Array,
   width: number,
