@@ -14,6 +14,7 @@ import {
   A8R8G8B8,
   A16B16G16R16F,
   BC4,
+  BC5,
   DXT1,
   DXT3,
   DXT5,
@@ -59,6 +60,9 @@ export function decodeToRgba(tex: XivTex, layer = -1): Uint8Array {
       break;
     case BC4:
       out = decodeBc4(src, w, h);
+      break;
+    case BC5:
+      out = decodeBc5(src, w, h);
       break;
     default:
       throw new Error(`tex: unsupported decode format ${tex.format}`);
@@ -341,6 +345,29 @@ function decodeBc4(src: Uint8Array, w: number, h: number): Uint8Array {
         out[o + 1] = v[t]!;
         out[o + 2] = v[t]!;
         out[o + 3] = 255;
+      }
+    }
+  });
+  return out;
+}
+
+/** BC5: two interpolated channels. Matches Bc5Sharp.Decode (R=ch0,G=ch1,B=0,A=255) followed by
+ *  DxtUtil.SwapRedBlue (R<->B). Net: R=0, G=ch1, B=ch0, A=255. */
+function decodeBc5(src: Uint8Array, w: number, h: number): Uint8Array {
+  const out = new Uint8Array(w * h * 4);
+  forEachBlock(w, h, (bx, by) => {
+    const base = (by * ((w + 3) >> 2) + bx) * 16;
+    const ch0 = decodeInterpolatedChannel(src, base);
+    const ch1 = decodeInterpolatedChannel(src, base + 8);
+    for (let t = 0; t < 16; t++) {
+      const px = bx * 4 + (t & 3);
+      const py = by * 4 + (t >> 2);
+      if (px < w && py < h) {
+        const o = (py * w + px) * 4;
+        out[o] = 0; // R (was channel0 before swap)
+        out[o + 1] = ch1[t]!; // G
+        out[o + 2] = ch0[t]!; // B (channel0 after swap)
+        out[o + 3] = 255; // A
       }
     }
   });

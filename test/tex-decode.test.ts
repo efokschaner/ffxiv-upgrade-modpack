@@ -13,6 +13,8 @@ import {
   A8R8G8B8,
   A16B16G16R16F,
   BC4,
+  BC5,
+  BC7,
   DXT1,
   DXT3,
   DXT5,
@@ -87,8 +89,8 @@ describe("tex decode: uncompressed", () => {
   });
 
   it("throws on an unsupported (not-yet-implemented) format", () => {
-    // BC5 is added in a later task; until then decode rejects it clearly.
-    expect(() => decodeToRgba(texOf(25136, 4, 4, new Uint8Array(16)))).toThrow(
+    // BC7 is added in a later task; until then decode rejects it clearly.
+    expect(() => decodeToRgba(texOf(BC7, 4, 4, new Uint8Array(16)))).toThrow(
       /unsupported/i,
     );
   });
@@ -166,5 +168,20 @@ describe("tex decode: block formats", () => {
     const out = decodeToRgba(texOf(DXT3, 4, 4, block));
     expect(Array.from(out.slice(8, 12))).toEqual([85, 85, 85, 255]); // texel2: (2*0+255)/3=85
     expect(Array.from(out.slice(12, 16))).toEqual([170, 170, 170, 255]); // texel3: (0+2*255)/3=170
+  });
+});
+
+describe("tex decode: BC5", () => {
+  it("decodes two channels with the BcnSharp+SwapRedBlue layout", () => {
+    // Block A (bytes 0..7): channel0, endpoints [180,20], lookup 0 -> all 180.
+    // Block B (bytes 8..15): channel1, endpoints [60,10], lookup 0 -> all 60.
+    const block = new Uint8Array(16);
+    block[0] = 180;
+    block[1] = 20;
+    block[8] = 60;
+    block[9] = 10;
+    const out = decodeToRgba(texOf(BC5, 4, 4, block));
+    // channel0=180 -> after swap lands in Blue; channel1=60 in Green; Red=0; Alpha=255.
+    expect(Array.from(out.slice(0, 4))).toEqual([0, 60, 180, 255]);
   });
 });
