@@ -1,0 +1,11 @@
+# Fast local gate. The full test suite is NOT run here — it runs at
+# end-of-task (see AGENTS.md). Bypass in emergencies with `git commit --no-verify`.
+pre-commit:
+  parallel: true
+  commands:
+    format-lint:
+      glob: "*.{ts,js,mjs,cjs,json,jsonc}"
+      run: npx biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+    typecheck:
+      run: npx tsc --noEmit
