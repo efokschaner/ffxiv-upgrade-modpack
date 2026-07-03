@@ -12,6 +12,10 @@ import {
   A8,
   A8R8G8B8,
   A16B16G16R16F,
+  BC4,
+  DXT1,
+  DXT3,
+  DXT5,
   L8,
   type XivTex,
 } from "../src/tex/types";
@@ -87,5 +91,80 @@ describe("tex decode: uncompressed", () => {
     expect(() => decodeToRgba(texOf(25136, 4, 4, new Uint8Array(16)))).toThrow(
       /unsupported/i,
     );
+  });
+});
+
+// A 4x4 block whose color0=white(0xFFFF), color1=black(0x0000), all color indices 0.
+// c0 > c1, index 0 -> color0 = white. 8-byte DXT1 block.
+function whiteDxt1Block(): Uint8Array {
+  return new Uint8Array([0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+}
+
+describe("tex decode: block formats", () => {
+  it("DXT1 decodes a solid-white block to opaque white", () => {
+    const out = decodeToRgba(texOf(DXT1, 4, 4, whiteDxt1Block()));
+    // All 16 texels white/opaque.
+    for (let i = 0; i < 16; i++) {
+      expect(Array.from(out.slice(i * 4, i * 4 + 4))).toEqual([
+        255, 255, 255, 255,
+      ]);
+    }
+  });
+
+  it("DXT1 decodes a punch-through block with transparent index 3", () => {
+    // color0=black(0x0000) <= color1=white(0xFFFF) -> punch-through mode. Indices packed
+    // little-endian 2 bits per texel (texel0 in the lowest 2 bits): texel0=0 (black,opaque),
+    // texel1=1 (white,opaque), texel2=2 (avg,opaque), texel3=3 (transparent) -> byte 0xE4.
+    const block = new Uint8Array([
+      0x00, 0x00, 0xff, 0xff, 0xe4, 0x00, 0x00, 0x00,
+    ]);
+    const out = decodeToRgba(texOf(DXT1, 4, 4, block));
+    expect(Array.from(out.slice(0, 4))).toEqual([0, 0, 0, 255]); // texel0: color0
+    expect(Array.from(out.slice(4, 8))).toEqual([255, 255, 255, 255]); // texel1: color1
+    expect(Array.from(out.slice(8, 12))).toEqual([127, 127, 127, 255]); // texel2: avg = (0+255)/2 floor
+    expect(Array.from(out.slice(12, 16))).toEqual([0, 0, 0, 0]); // texel3: transparent black
+  });
+
+  it("DXT5 decodes solid white color with alpha0 for all texels", () => {
+    // alpha0=255, alpha1=0, alphaMask=0 -> alphaIndex 0 -> a=255. Color as DXT1 white.
+    const block = new Uint8Array(16);
+    block[0] = 255;
+    block[1] = 0; // alpha endpoints; bytes 2..7 alphaMask = 0
+    block[8] = 0xff;
+    block[9] = 0xff; // color0 white; color1 black; indices 0
+    const out = decodeToRgba(texOf(DXT5, 4, 4, block));
+    expect(Array.from(out.slice(0, 4))).toEqual([255, 255, 255, 255]);
+  });
+
+  it("BC4 decodes a solid block to gray(red0) with opaque alpha", () => {
+    // red0=200, red1=100, lookup=0 -> all texels index 0 -> r=200 -> (200,200,200,255).
+    const block = new Uint8Array([200, 100, 0, 0, 0, 0, 0, 0]);
+    const out = decodeToRgba(texOf(BC4, 4, 4, block));
+    expect(Array.from(out.slice(0, 4))).toEqual([200, 200, 200, 255]);
+  });
+
+  it("DXT3 decodes explicit alpha nibble + color0", () => {
+    // alpha nibbles all 0xF -> a = 0xFF; color0 white, indices 0.
+    const block = new Uint8Array(16).fill(0);
+    for (let i = 0; i < 8; i++) block[i] = 0xff; // explicit 4-bit alpha, all max
+    block[8] = 0xff;
+    block[9] = 0xff; // color0 white; color1 black; indices 0
+    const out = decodeToRgba(texOf(DXT3, 4, 4, block));
+    expect(Array.from(out.slice(0, 4))).toEqual([255, 255, 255, 255]);
+  });
+
+  it("DXT3 always uses 4-color mode even when color0 <= color1", () => {
+    // color0=black(0x0000) <= color1=white(0xFFFF). Unlike DXT1, BC2/BC3 never punch-through:
+    // idx2 -> (2*c0+c1)/3, idx3 -> (c0+2*c1)/3, both opaque via the explicit alpha channel.
+    const block = new Uint8Array(16).fill(0);
+    for (let i = 0; i < 8; i++) block[i] = 0xff; // alpha all max
+    block[8] = 0x00;
+    block[9] = 0x00; // color0 black
+    block[10] = 0xff;
+    block[11] = 0xff; // color1 white
+    block[12] = 0xe4; // texel0=0,texel1=1,texel2=2,texel3=3
+    const out = decodeToRgba(texOf(DXT3, 4, 4, block));
+    expect(Array.from(out.slice(8, 12))).toEqual([85, 85, 85, 255]); // texel2: (2*0+255)/3=85
+    expect(Array.from(out.slice(12, 16))).toEqual([170, 170, 170, 255]); // texel3: (0+2*255)/3=170
   });
 });
