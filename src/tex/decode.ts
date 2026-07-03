@@ -7,6 +7,7 @@
 // Uncompressed unpacks are ported from DDS.ConvertPixelData (DDS.cs:453). Block decoders are
 // ported from MIT richgel999/bc7enc_rdo (rgbcx.h), not the Ms-PL FNA DxtUtil.
 
+import { decodeBc7 } from "./bc7";
 import {
   A1R5G5B5,
   A4R4G4B4,
@@ -15,6 +16,7 @@ import {
   A16B16G16R16F,
   BC4,
   BC5,
+  BC7,
   DXT1,
   DXT3,
   DXT5,
@@ -63,6 +65,9 @@ export function decodeToRgba(tex: XivTex, layer = -1): Uint8Array {
       break;
     case BC5:
       out = decodeBc5(src, w, h);
+      break;
+    case BC7:
+      out = decodeBc7(src, w, h);
       break;
     default:
       throw new Error(`tex: unsupported decode format ${tex.format}`);

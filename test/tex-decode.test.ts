@@ -19,8 +19,10 @@ import {
   DXT3,
   DXT5,
   L8,
+  X8R8G8B8,
   type XivTex,
 } from "../src/tex/types";
+import { buildBc7Mode6SolidBlock } from "./helpers/make-tex";
 
 function texOf(
   format: number,
@@ -89,10 +91,10 @@ describe("tex decode: uncompressed", () => {
   });
 
   it("throws on an unsupported (not-yet-implemented) format", () => {
-    // BC7 is added in a later task; until then decode rejects it clearly.
-    expect(() => decodeToRgba(texOf(BC7, 4, 4, new Uint8Array(16)))).toThrow(
-      /unsupported/i,
-    );
+    // X8R8G8B8 has no decoder yet; decode rejects it clearly.
+    expect(() =>
+      decodeToRgba(texOf(X8R8G8B8, 1, 1, new Uint8Array(4))),
+    ).toThrow(/unsupported/i);
   });
 });
 
@@ -183,5 +185,33 @@ describe("tex decode: BC5", () => {
     const out = decodeToRgba(texOf(BC5, 4, 4, block));
     // channel0=180 -> after swap lands in Blue; channel1=60 in Green; Red=0; Alpha=255.
     expect(Array.from(out.slice(0, 4))).toEqual([0, 60, 180, 255]);
+  });
+});
+
+describe("tex decode: BC7", () => {
+  it("decodes a mode-6 solid block to the encoded color (with R/B swap)", () => {
+    // comps 0x7F, pbit 1 -> (0x7F<<1)|1 = 0xFF = 255 for R,G,B; alpha comps 0x7F pbit1 -> 255.
+    const block = buildBc7Mode6SolidBlock(0x7f, 0x7f, 0x7f, 0x7f, 1);
+    const out = decodeToRgba(texOf(BC7, 4, 4, block));
+    // Solid white is swap-invariant.
+    for (let i = 0; i < 16; i++) {
+      expect(Array.from(out.slice(i * 4, i * 4 + 4))).toEqual([
+        255, 255, 255, 255,
+      ]);
+    }
+  });
+
+  it("applies the red/blue swap on a non-gray solid block", () => {
+    // Mode 6 solid block: every channel value = (comp7<<1)|pbit (both endpoints equal, index 0).
+    // r7=0x40,g7=0x20,b7=0x10,a7=0x7f, pbit=1 ->
+    //   R=(0x40<<1)|1=129, G=(0x20<<1)|1=65, B=(0x10<<1)|1=33, A=(0x7f<<1)|1=255.
+    // Pre-swap RGBA = (129,65,33,255); after R<->B swap -> (33,65,129,255).
+    const block = buildBc7Mode6SolidBlock(0x40, 0x20, 0x10, 0x7f, 1);
+    const out = decodeToRgba(texOf(BC7, 4, 4, block));
+    for (let i = 0; i < 16; i++) {
+      expect(Array.from(out.slice(i * 4, i * 4 + 4))).toEqual([
+        33, 65, 129, 255,
+      ]);
+    }
   });
 });
