@@ -32,6 +32,13 @@ async function main(): Promise<void> {
     // do), so without this the reporters' `this.ctx` stays undefined and they throw when printing
     // the end-of-run summary. `standalone()` is the public Node-API entry point meant for exactly
     // this "I'll drive runTestSpecifications myself" usage.
+    //
+    // Note: `standalone()` internally calls `globTestSpecifications()` once, and we call it again
+    // below to build `normalSpecs`, so the test dir is globbed twice. That redundant glob is
+    // deliberately accepted: it is negligible (a fast-glob over ~28 test files, single-digit ms),
+    // and the only ways to avoid it — reusing standalone's cached specs (no public accessor; the
+    // getters re-glob) or firing `onInit` directly (vitest's `report()` isn't on the public Vitest
+    // type) — reach past the public API into internals we don't want to depend on across upgrades.
     await vitest.standalone();
     const project = vitest.getRootProject();
     const { enumerateUnits } = await vitest.import<{ enumerateUnits: typeof EnumerateUnits }>(

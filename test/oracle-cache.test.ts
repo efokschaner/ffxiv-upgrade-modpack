@@ -51,7 +51,7 @@ describe("unwrapCached", () => {
   });
 });
 
-import { readdirSync } from "node:fs";
+import { readdirSync, writeFileSync, utimesSync, existsSync } from "node:fs";
 
 describe("oracleCachePut concurrency-safety", () => {
   it("repeated puts for the same key leave one .bin and no .tmp residue", () => {
@@ -62,6 +62,23 @@ describe("oracleCachePut concurrency-safety", () => {
     const files = readdirSync(dir);
     expect(files).toEqual([`${key}.bin`]);            // exactly one file, no leftover .tmp
     expect(Array.from(oracleCacheGet(key, dir)!)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("sweeps stale orphaned .tmp files (older than the stale window) but leaves recent ones", () => {
+    const dir = mkdtempSync(join(tmpdir(), "oc-"));
+    const staleTmp = join(dir, "stale.aaaaaaaa.tmp");
+    const freshTmp = join(dir, "live.bbbbbbbb.tmp");
+    writeFileSync(staleTmp, new Uint8Array([1]));
+    writeFileSync(freshTmp, new Uint8Array([1]));
+    // Age the orphan two hours into the past (past the 1h stale window); leave the other fresh.
+    const twoHoursAgoSec = (Date.now() - 2 * 60 * 60 * 1000) / 1000;
+    utimesSync(staleTmp, twoHoursAgoSec, twoHoursAgoSec);
+
+    oracleCachePut("key0", new Uint8Array([9, 9]), dir); // triggers the one-time sweep for this dir
+
+    expect(existsSync(staleTmp)).toBe(false);           // stale orphan reclaimed
+    expect(existsSync(freshTmp)).toBe(true);            // recent (in-flight-age) temp untouched
+    expect(existsSync(join(dir, "key0.bin"))).toBe(true); // the put itself still succeeded
   });
 });
 

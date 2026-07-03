@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, statSync, mkdirSync, readFileSync, writeFileSync, renameSync, mkdtempSync, rmSync } from "node:fs";
 import { join, basename } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -24,10 +24,40 @@ export function oracleCacheGet(key: string, dir: string = DEFAULT_ORACLE_CACHE):
   return existsSync(p) ? new Uint8Array(readFileSync(p)) : null;
 }
 
+// A crash between writeFileSync and the rename below leaves the unique-named .tmp behind, and (unlike
+// the old fixed temp name) nothing overwrites it later. Reclaim such orphans by sweeping temps older
+// than this window — far longer than any write→rename window, so a concurrent in-flight writer's temp
+// (milliseconds old) is never touched. Swept once per cache dir per process (only cold runs write).
+const TMP_STALE_MS = 60 * 60 * 1000; // 1 hour
+const sweptTempDirs = new Set<string>();
+
+function sweepStaleTemps(dir: string): void {
+  const now = Date.now();
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return; // dir vanished between mkdir and here — nothing to sweep
+  }
+  for (const f of entries) {
+    if (!f.endsWith(".tmp")) continue;
+    const p = join(dir, f);
+    try {
+      if (now - statSync(p).mtimeMs > TMP_STALE_MS) rmSync(p, { force: true });
+    } catch {
+      // Raced away by another sweeper/writer, or stat failed — best-effort cleanup, ignore.
+    }
+  }
+}
+
 /** Store `data` under `key`, atomically (temp file + rename) so an interrupted run never
  * leaves a half-written cache entry that a later run would trust. */
 export function oracleCachePut(key: string, data: Uint8Array, dir: string = DEFAULT_ORACLE_CACHE): void {
   mkdirSync(dir, { recursive: true });
+  if (!sweptTempDirs.has(dir)) {
+    sweptTempDirs.add(dir);
+    sweepStaleTemps(dir);
+  }
   const finalPath = join(dir, `${key}.bin`);
   // Unique temp name per writer so concurrent shard workers writing the same key never race on a
   // shared temp path (each does its own write + atomic rename; last rename wins with identical bytes).
