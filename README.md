@@ -29,3 +29,17 @@ GPL-3.0-or-later. Because of that, this project is GPL-3.0-or-later too — see
 
 FINAL FANTASY XIV and its assets are the property of SQUARE ENIX CO., LTD. This
 repository ships no game assets.
+
+## Development
+
+- **Format + lint:** `npm run check` (Biome owns formatting; don't hand-format).
+- **Typecheck:** `npm run typecheck`
+- **Test:** `npm test`
+- **Build:** `npm run build`
+
+A pre-commit hook (lefthook) runs Biome + typecheck on staged files. The full
+test suite runs at end-of-task, not on push — see [`AGENTS.md`](./AGENTS.md).
+
+After cloning, opt in to clean blame across the one-time formatting reflow:
+
+    git config blame.ignoreRevsFile .git-blame-ignore-revs

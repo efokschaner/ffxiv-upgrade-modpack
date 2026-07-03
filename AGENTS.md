@@ -1,0 +1,44 @@
+# Contributing & agent guide
+
+Canonical workflow for humans and coding agents in this repo. Keep it short;
+if a rule changes, change it here.
+
+## Commands
+
+- `npm run check` — format + lint + organize imports (Biome, applies safe fixes).
+- `npm run lint` — lint only, no writes.
+- `npm run typecheck` — `tsc --noEmit`.
+- `npm test` — full suite via the custom parallel runner.
+- `npm run build` — production build (Vite).
+
+## End-of-task ritual (required)
+
+Before considering ANY task complete, run and confirm all green:
+
+1. `npm run check`
+2. `npm run typecheck`
+3. `npm test`
+
+This is the primary test gate — there is no CI and no pre-push hook. Tests run
+at end-of-task (more often than pushes, less often than commits). A pre-commit
+hook (lefthook) already runs Biome + typecheck on every commit; it does NOT run
+the tests.
+
+## Conventions
+
+- **Formatting is mechanical.** Biome owns it. Do not hand-format and do not
+  re-introduce the old compact single-line style — run `npm run check`.
+- **Supply chain.** Install new deps pinned-exact (`.npmrc save-exact`) with a
+  ≥ 7-day min release age (e.g. `npm install -D <pkg> --before=<date 7+ days ago>`).
+- **`reference/` is off-limits.** It is vendored third-party C#
+  (xivModdingFramework / TexTools) kept for porting reference. Never edit, lint,
+  or format it (it is gitignored).
+- **Design lives in `docs/superpowers/`.** Specs in `specs/`, implementation
+  plans in `plans/`. Follow spec-then-plan discipline for non-trivial work.
+
+## Blame hygiene
+
+A one-time Biome reformat is recorded in `.git-blame-ignore-revs`. Opt in once so
+`git blame` skips it:
+
+    git config blame.ignoreRevsFile .git-blame-ignore-revs
