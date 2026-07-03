@@ -112,17 +112,18 @@ C# logic lives under `reference/xivModdingFramework/xivModdingFramework/Textures
 | `FileTypes/Tex.cs:71` `TexHeader` (+ `ReadTexHeader` / `ToBytes`) | 80-byte header layout | `src/tex/header.ts` |
 | `FileTypes/Tex.cs:1103` `CreateTexFileHeader` | Canonical header for regenerated tex | `src/tex/header.ts` `buildCanonicalTexHeader` |
 | `DataContainers/XivTex.cs:94/148` `FromUncompressedTex` / `ToUncompressedTex` | Model ↔ bytes | `src/tex/parse.ts` / `src/tex/serialize.ts` |
-| **`BcnSharp` / `bc7enc` (MIT)** — `Bc*Sharp.Decode` + `rgbcx.h` / `bc7decomp.*` | BC1/3/4/5/7 block decode | `src/tex/decode.ts` (+ `src/tex/bc7.ts`) |
+| **`richgel999/bc7enc_rdo` (MIT/Unlicense)** — `rgbcx.h` (`unpack_bc1/3/4/5`) + `bc7decomp.cpp` (`unpack_bc7`) | BC1/3/4/5/7 block decode | `src/tex/decode.ts` (+ `src/tex/bc7.ts`) |
 | `FileTypes/DDS.cs:453` `ConvertPixelData` (+ `SwapRBColors`, `Read4444/5551/8bit/HalfFloat`) | Uncompressed unpacks + decode dispatch | `src/tex/decode.ts` |
 
 **Licensing note (found during planning).** The reference's `Helpers/DxtUtil.cs` (its DXT1/3/5 + BC4
 decoders) carries an **Ms-PL** header (vendored FNA/MonoGame) — **GPL-incompatible per the FSF** — so we
-do **not** transcribe it. The reference's BC5/BC7 decode already delegates to **`JeremyAnsel.BcnSharp`**,
-a C# port of **`richgel999/bc7enc`**, under the **MIT License** (bc7enc offers MIT *or* Public Domain) —
-**GPL-compatible**. We therefore port **all** BCn *decoders* from the `BcnSharp` / `bc7enc` MIT lineage
-(BcnSharp is the closer C# reference; `bc7enc` cross-checks), retaining the MIT copyright notice in
-`NOTICE`. The block-decode *algorithms* (565 unpack, 2-bit indices, RGTC/BPTC) are unpatented public
-standards regardless. The **uncompressed** unpacks stay ported from GPL `DDS.cs` (GPL→GPL, no issue).
+do **not** transcribe it. The reference's BC5/BC7 decode delegates to **`JeremyAnsel.BcnSharp`**, which is
+only a **native-DLL P/Invoke wrapper** (no readable C#) around **`richgel999/bc7enc_rdo`** — available under
+the **MIT License OR the Unlicense (public domain)**, both **GPL-compatible**. We therefore port **all**
+BCn *decoders* directly from **`bc7enc_rdo`** (`rgbcx.h` `unpack_bc1`/`unpack_bc3`/`unpack_bc4`/`unpack_bc5`;
+`bc7decomp.cpp` `unpack_bc7`), retaining the MIT copyright notice in `NOTICE`. The block-decode
+*algorithms* (565 unpack, 2-bit indices, RGTC/BPTC) are unpatented public standards regardless. The
+**uncompressed** unpacks stay ported from GPL `DDS.cs` (GPL→GPL, no issue).
 
 **The 80-byte `.tex` header** (`Tex.cs:71`, little-endian):
 
@@ -176,7 +177,7 @@ test/tex-fixtures.test.ts   extracted .tex round-trip + decode smoke; skips if f
 
 ## 5. Decode (the new capability)
 
-Port the BCn decoders from the **MIT `BcnSharp` / `bc7enc` lineage** (not FNA's Ms-PL `DxtUtil` — see the
+Port the BCn decoders from **MIT `richgel999/bc7enc_rdo`** (`rgbcx.h` / `bc7decomp.cpp`; not FNA's Ms-PL `DxtUtil` — see the
 licensing note in §3). Decode is deterministic, and a spec-conformant decoder **matches** any other
 (including whatever the future index-map golden was produced with), so byte-exact parity is achievable.
 
@@ -287,11 +288,11 @@ Neither can match Nvtt byte-for-byte, so this layer is validated by **decode-wit
 
 - **No new runtime dependencies** in this stage (the encoder-library decision belongs to §9). The BCn
   decoders are *ported source*, not an imported package.
-- **Reference setup:** clone `JeremyAnsel/BcnSharp` (and optionally `richgel999/bc7enc`) into the
-  gitignored `reference/`, alongside the existing xivModdingFramework checkout, for porting reference.
-- **Attribution:** add the MIT copyright notice (Richard Geldreich Jr; Jérémy Ansel) for the ported BCn
-  decoders to `NOTICE`. New files carry the repo's SPDX/GPL header; ported-BCn files additionally cite
-  the MIT origin in a comment.
+- **Reference setup:** clone `richgel999/bc7enc_rdo` into the gitignored `reference/bc7enc_rdo`, alongside the
+  existing xivModdingFramework checkout, for porting reference (the readable BCn decode source).
+- **Attribution:** add the MIT copyright notice (Richard Geldreich Jr, 2020; MIT-or-Unlicense) for the
+  ported BCn decoders to `NOTICE`. New files carry the repo's SPDX/GPL header; ported-BCn files
+  additionally cite the `bc7enc_rdo` MIT origin in a comment.
 - TypeScript + Vitest; Windows + PowerShell; `npm`.
 - Extracted `.tex` fixtures are GPL-3.0 framework/game resources covered by the existing NOTICE
   attribution; keep the bundle minimal.
