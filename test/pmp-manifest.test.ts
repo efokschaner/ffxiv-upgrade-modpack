@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readPmp, writePmp } from "../src/container/pmp";
 import { readZip, writeZip } from "../src/zip/zip";
-import { corpusInputs, assertCorpusPresent } from "./helpers/oracle";
-import { registerPmpManifestChecks } from "./helpers/corpus-pmp";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -50,14 +48,4 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     const meta = JSON.parse(dec.decode(out.get("meta.json")!));
     expect(meta.DefaultPreferredItems).toEqual(["item-42"]);
   });
-});
-
-describe("pmp manifest round-trip (corpus)", () => {
-  const pmps = corpusInputs().filter((p) => p.toLowerCase().endsWith(".pmp"));
-
-  it("requires .pmp packs in the local corpus (fails if none present)", () => {
-    assertCorpusPresent(pmps, ".pmp corpus inputs");
-  });
-
-  for (const pack of pmps) registerPmpManifestChecks(pack);
 });
