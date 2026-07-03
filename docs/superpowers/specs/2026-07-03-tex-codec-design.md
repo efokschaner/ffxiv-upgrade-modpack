@@ -230,6 +230,13 @@ are absent, following the existing `corpusInputs()` / `describe.skipIf` pattern.
 
 1. **Corpus header round-trip (the ground-truth gate).** Every `.tex` inner file across the corpus:
    `decodeSqPackFile(entry) → parseTex → serializeTex`, assert **byte-identical** to the decoded input.
+   Wired into the repo's fileless Node-API corpus runner as a `registerTexChecks(pack)` unit (the same
+   mechanism as the mtrl/sqpack corpus checks — `corpus-units.ts` + `corpus-register.ts`), **not** a
+   standalone `skipIf` file. Because the retained-header model replays all 80 header bytes and the mip
+   tail verbatim, this holds **unconditionally** — there is **no** normalization-tolerance branch (unlike
+   the mtrl gate); the only textures skipped are those whose SQPack Type-4 *decode* fails (a handful of
+   legacy files undecodable by the reference block-recovery heuristic too). Any decodable `.tex` that is
+   not byte-exact is a codec bug.
 2. **Synthetic decode units (oracle-free).** Hand-built BC blocks with known endpoints/indices → asserted
    RGBA; uncompressed unpacks → exact RGBA.
 3. **Synthetic header/round-trip units.** Full-header round-trip; `buildCanonicalTexHeader` field layout;
