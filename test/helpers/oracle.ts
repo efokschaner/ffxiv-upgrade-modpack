@@ -33,7 +33,19 @@ export function oracleCachePut(key: string, data: Uint8Array, dir: string = DEFA
   // shared temp path (each does its own write + atomic rename; last rename wins with identical bytes).
   const tmpPath = join(dir, `${key}.${randomUUID()}.tmp`);
   writeFileSync(tmpPath, data);
-  renameSync(tmpPath, finalPath);
+  try {
+    renameSync(tmpPath, finalPath);
+  } catch (err) {
+    // Concurrent forks may write the SAME content-addressed key at once; on Windows a racing rename
+    // can throw (EPERM/EBUSY/EEXIST) when another worker holds finalPath open or already replaced it.
+    // The key is sha256(content), so an existing finalPath already holds the correct bytes — tolerate
+    // it and drop our now-redundant temp. Anything else is a real error.
+    if (existsSync(finalPath)) {
+      rmSync(tmpPath, { force: true });
+    } else {
+      throw err;
+    }
+  }
 }
 
 export function oracleAvailable(): boolean {

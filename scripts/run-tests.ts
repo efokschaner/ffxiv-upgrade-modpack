@@ -48,7 +48,13 @@ async function main(): Promise<void> {
     // something went wrong — never report a false green.
     process.exitCode = modules.length === 0 || modules.some((m) => !m.ok()) ? 1 : 0;
   } finally {
-    await vitest.close();
+    // A close() failure must not flip an already-computed exit code (a green run to red). Log and
+    // swallow — the test result, already reflected in process.exitCode, is what matters.
+    try {
+      await vitest.close();
+    } catch (err) {
+      console.error("vitest.close() failed (ignored):", err);
+    }
   }
 }
 
