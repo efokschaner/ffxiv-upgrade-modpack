@@ -393,9 +393,8 @@ function decodeBc4(src: Uint8Array, w: number, h: number): Uint8Array {
 
 /** BC5: two interpolated channels. Matches Bc5Sharp.Decode (R=ch0,G=ch1,B=0,A=255) followed by
  *  DxtUtil.SwapRedBlue (R<->B). Net: R=0, G=ch1, B=ch0, A=255.
- *  PROVISIONAL: the pre-swap byte order vs the native Bc5Sharp is unverified until the transforms/
- *  oracle stage confirms it against a golden (design spec §5/§6) — do not treat the absolute channel
- *  order as settled. */
+ *  Verified against texconv (BC5_UNORM) in test/tex/tex-bcn-golden.test.ts (channelMap "swapRB"): the
+ *  net R=0, G=ch1, B=ch0, A=255 layout is settled. */
 function decodeBc5(src: Uint8Array, w: number, h: number): Uint8Array {
   const out = new Uint8Array(w * h * 4);
   forEachBlock(w, h, (bx, by) => {
