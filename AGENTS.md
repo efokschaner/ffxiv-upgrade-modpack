@@ -26,6 +26,12 @@ at end-of-task (more often than pushes, less often than commits). A pre-commit
 hook (lefthook) already runs Biome + typecheck on every commit; it does NOT run
 the tests.
 
+**Coverage:** `npm run test:coverage` runs the same full suite (including the
+corpus) under the v8 provider and writes a text + HTML + json-summary report to
+`coverage/`. It is opt-in (the flag is off by default, so the normal gate pays
+no overhead) and report-only — no thresholds. Use it to check that tests and the
+corpus exercise the code, not as a pass/fail gate.
+
 ## Conventions
 
 - **Formatting is mechanical.** Biome owns it. Do not hand-format and do not
