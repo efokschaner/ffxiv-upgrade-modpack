@@ -59,13 +59,21 @@ function texOf(
   };
 }
 
-describe("tex BCn golden decode (texconv oracle)", () => {
+// Two-tier golden provenance (see test/tex/fixtures/bcn/README.md): BC7 vectors (channelMap "swapRB")
+// are compared against DirectXTex texconv's own decode (independent, bit-exact); BC1-5 vectors
+// (channelMap "none") are compared against our decoder's frozen output (a regression anchor that the
+// generator gated to within ±1 of texconv). The title reflects which golden each vector uses.
+describe("tex BCn golden decode", () => {
   it("manifest is non-empty", () => {
     expect(manifest.length).toBeGreaterThan(0);
   });
 
   for (const v of manifest) {
-    it(`${v.name} decodes to the texconv golden (${v.format} ${v.width}x${v.height})`, () => {
+    const goldenKind =
+      v.channelMap === "none"
+        ? "frozen golden (±1 texconv-gated)"
+        : "texconv golden";
+    it(`${v.name} matches its ${goldenKind} (${v.format} ${v.width}x${v.height})`, () => {
       const code = FORMAT_CODES[v.format];
       expect(code, `unknown format ${v.format}`).toBeDefined();
       const input = new Uint8Array(readFileSync(join(dir, v.input)));
