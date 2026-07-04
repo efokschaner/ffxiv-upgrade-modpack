@@ -97,15 +97,23 @@ Same entry point as `npm test`, so coverage sees the identical full spec set
 (normal specs + all corpus units). Single source of truth for spec routing; no
 divergent second entry point.
 
-**Lifecycle risk to validate empirically (implementation task):** the runner
-drives `standalone()` + manual `runTestSpecifications` rather than
-`vitest.start()`. Coverage init/clean/collect is lifecycle-bound, and the
-end-of-run `reportCoverage()` may not fire automatically on this path. The
-implementation must verify whether an explicit `await vitest.reportCoverage(true)`
-(before `close()`) is required to emit reports, and if so add it — guarded so it
-only runs when coverage is enabled, leaving the default path byte-for-byte
-unchanged. Verification = run `npm run test:coverage` and confirm a populated
-`coverage/` report and non-zero `src/**` numbers actually appear.
+**Lifecycle question — RESOLVED by reading Vitest 4.1.9 source
+(`vitest/dist/chunks/cli-api.*.js`):** the manual `standalone()` +
+`runTestSpecifications` path already drives the full coverage lifecycle. No
+extra call is needed.
+
+- `standalone()` calls `initCoverageProvider()` then `coverageProvider.clean()`.
+- `runTestSpecifications(specs, allTestsRun)` → `runFiles`, whose `finally`
+  calls `generateCoverage(...)` **and** `this.reportCoverage(coverage, allTestsRun)`
+  — the call that writes the text/html/json reports.
+- The runner already passes `allTestsRun = true` to `runTestSpecifications`,
+  which is exactly what coverage `all: true` wants.
+- When coverage is disabled, `coverageProvider` is null and every `?.` hook
+  no-ops, so the default `npm test` path is byte-for-byte unchanged.
+
+So enabling `coverage.enabled` in the config override is sufficient. The
+implementation still verifies empirically: run `npm run test:coverage` and
+confirm a populated `coverage/` report with non-zero `src/**` numbers appears.
 
 ### 4. Artifacts / gitignore
 
