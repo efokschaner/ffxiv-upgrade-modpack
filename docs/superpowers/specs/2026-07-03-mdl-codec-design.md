@@ -140,7 +140,7 @@ Every length is count-driven. `md` = the parsed `MdlModelData`.
 | 2  | **MdlModelData** (parsed) | fixed struct (`MdlModelData.Read`) | `Mdl.cs:~455` |
 | 3  | elementIds | `32 · md.ElementIdCount` | `Mdl.cs:459` |
 | 4  | lodHeaders | `60 · 3` (always 3 LoD) | `Mdl.cs:475-516` |
-| 5  | extraMeshHeader | `60` **iff** `md.Flags2 & HasExtraMeshes`, else `0` (3 LoD × 5 types × 4 B) | `Mdl.cs:518-531` |
+| 5  | extraMeshHeader | `120` **iff** `md.Flags2 & HasExtraMeshes`, else `0` (3 LoD × 10 types × 4 B; `LightShaft`..`Shadow` exclusive = ordinals 3..12) | `Mdl.cs:518-531` |
 | 6  | meshHeaders | `36 · MeshCount` (header @12) | `Mdl.cs:~540-660` |
 | 7  | attributeOffsets | `4 · md.AttributeCount` | `Mdl.cs:669` |
 | 8  | terrainShadowMeshHeaders | `20 · N`, **N = LoD0 header's TerrainShadow mesh count** (see wrinkle below) | `Mdl.cs:682-686` |
