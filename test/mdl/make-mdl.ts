@@ -1,5 +1,5 @@
 import { serializeMdlModelData } from "../../src/mdl/model-data";
-import type { MdlModelData } from "../../src/mdl/types";
+import { HAS_EXTRA_MESHES, type MdlModelData } from "../../src/mdl/types";
 import { ByteBuilder, concatBytes } from "../../src/util/binary";
 
 /** Deterministic non-zero filler so slices are distinguishable in tests. */
@@ -13,7 +13,10 @@ function filler(len: number, seed: number): Uint8Array {
  * size (design spec §3). v5 and v6 differ only in the header version field — the walker slices the
  * bone-set block by formula, so its internal layout is opaque and identical here.
  */
-export function buildMinimalMdl(version: number): Uint8Array {
+export function buildMinimalMdl(
+  version: number,
+  withExtraMeshes = false,
+): Uint8Array {
   const md: MdlModelData = {
     radius: 1.5,
     meshCount: 1,
@@ -29,7 +32,7 @@ export function buildMinimalMdl(version: number): Uint8Array {
     flags1: 0,
     elementIdCount: 1,
     terrainShadowMeshCount: 0,
-    flags2: 0, // no HAS_EXTRA_MESHES
+    flags2: withExtraMeshes ? HAS_EXTRA_MESHES : 0,
     modelClipOutDistance: 0,
     shadowClipOutDistance: 0,
     furniturePartBoundingBoxCount: 0,
@@ -59,7 +62,9 @@ export function buildMinimalMdl(version: number): Uint8Array {
     modelData, // 2
     filler(32 * md.elementIdCount, 1), // 3 elementIds (32)
     lodHeaders, // 4 (180)
-    new Uint8Array(0), // 5 extraMeshHeader (flags2 has no HAS_EXTRA_MESHES)
+    withExtraMeshes
+      ? filler(120, 2) // 5 extraMeshHeader (HAS_EXTRA_MESHES set)
+      : new Uint8Array(0), // 5 extraMeshHeader (flags2 has no HAS_EXTRA_MESHES)
     filler(36 * md.meshCount, 3), // 6 meshHeaders (36)
     filler(4 * md.attributeCount, 4), // 7 attributeOffsets (4)
     new Uint8Array(0), // 8 terrainShadowMeshHeaders (tsCount 0)

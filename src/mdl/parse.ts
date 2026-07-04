@@ -35,8 +35,9 @@ export function parseMdl(bytes: Uint8Array, filePath = ""): XivMdl {
   // 3-21. Count-driven sections (design spec §3).
   const elementIds = r.readBytes(32 * md.elementIdCount);
   const lodHeaders = r.readBytes(LOD_HEADER * 3);
+  // 120 = 3 LoD × 10 extra-mesh types (EMeshType.LightShaft..Shadow exclusive) × 4 B (MeshIndexAndCount).
   const extraMeshHeader = r.readBytes(
-    (md.flags2 & HAS_EXTRA_MESHES) !== 0 ? 60 : 0,
+    (md.flags2 & HAS_EXTRA_MESHES) !== 0 ? 120 : 0,
   );
   const meshHeaders = r.readBytes(MESH_HEADER * header.meshCount);
   const attributeOffsets = r.readBytes(4 * md.attributeCount);

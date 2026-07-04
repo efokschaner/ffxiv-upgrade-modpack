@@ -44,6 +44,11 @@ describe("parseMdl structural walk", () => {
     expect(mdl.sections.boneSets).toHaveLength(132);
   });
 
+  it("parses the 120-byte extra-mesh header when HAS_EXTRA_MESHES is set", () => {
+    const mdl = parseMdl(buildMinimalMdl(6, true));
+    expect(mdl.sections.extraMeshHeader).toHaveLength(120);
+  });
+
   it("throws when a section length does not sum to modelDataSize", () => {
     const bytes = buildMinimalMdl(5);
     // Corrupt modelDataSize (u32 @8) so the walk overshoots/undershoots the block end.
