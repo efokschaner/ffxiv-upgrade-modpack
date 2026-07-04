@@ -93,14 +93,17 @@ slice. So the gate is:
   replay, including `MdlModelData`'s Read/Write being exact inverses and the `trailing` slice).
 
 **Why `trailing` exists (corpus finding).** The reference `GetXivMdl` does **not** require the
-model-data sections to be contiguous with the geometry: after the bounding boxes it **seeks to the
-LoD0 `VertexDataOffset`** and explicitly tolerates a gap (`Mdl.cs:1000-1027`, noting "certain penumbra
-MDLs, and very old TexTools MDLs"). Some real mods carry a trailing region the reference never parses
-as a named section — empirically an extra `32·BoneCount`-byte per-bone bounding-box block that
-TexTools' writer appends (`Mdl.cs:3906`) but `GetXivMdl` reads past. `modelDataSize` (header) includes
-it; the geometry begins exactly at `modelDataStart + modelDataSize`, so `trailing =
-[endOfBoundingBoxes, modelDataStart + modelDataSize)` is captured opaquely and replayed. This mirrors
-tex's opaque mip tail: a small, deliberate opacity where the reference itself is non-contiguous, in
+model-data sections to be contiguous with the geometry: it reads geometry via the LoD0
+`VertexDataOffset` as an **absolute random-access offset** into the file (decoupled from the parse
+stream position, `Mdl.cs:1048`), and includes corrective handling for misaligned files (`Mdl.cs:1000-1027`,
+noting "certain penumbra MDLs, and very old TexTools MDLs"). Some real mods carry a trailing region the
+reference never parses as a named section — empirically an extra `32·BoneCount`-byte per-bone
+bounding-box block that an **older TexTools/Penumbra writer generation** appended (the current
+framework writer no longer populates it — `boneBoundingBoxDataBlock` at `Mdl.cs:3906` is now dead) but
+`GetXivMdl` reads past. `modelDataSize` (header) includes it; the geometry begins exactly at
+`modelDataStart + modelDataSize`, so `trailing = [endOfBoundingBoxes, modelDataStart + modelDataSize)`
+is captured opaquely and replayed. This mirrors tex's opaque mip tail: a small, deliberate opacity
+where the reference itself is non-contiguous, in
 exchange for unconditional byte-exact round-trip.
 
 This mirrors the mtrl/tex philosophy: **the corpus self round-trip is the ground-truth, oracle-free
