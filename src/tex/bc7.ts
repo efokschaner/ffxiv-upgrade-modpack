@@ -2,14 +2,13 @@
 //   Copyright (c) 2020-2021 Richard Geldreich, Jr. (MIT / Unlicense) — see NOTICE.
 // The BPTC algorithm is an unpatented public standard.
 //
-// TODO(oracle-stage): only mode 6 has a known-answer unit test; modes 0-5/7 are exercised on real
-// corpus textures by the decode-smoke (output length only), so their pixel output is unverified until
-// a per-mode golden fixture lands with the transforms/oracle work (design spec §6; PR #5 review #2).
+// BC7 modes 0-7 are verified pixel-exact against the DirectXTex `texconv` reference decoder by the
+// golden-fixture suite (test/tex/tex-bcn-golden.test.ts), which also asserts all 8 modes are covered.
 
 // Decodes BC7-compressed data to RGBA8888 at width x height, applying the red/blue swap that the
 // reference applies after Bc7Sharp.Decode (DxtUtil.SwapRedBlue).
-// PROVISIONAL: the pre-swap byte order vs the native Bc7Sharp is unverified until the oracle stage
-// confirms it — do not treat the absolute channel order as settled (design spec §5/§6).
+// The red/blue swap (applied on top of a standard-order block decode) is verified against texconv in
+// test/tex/tex-bcn-golden.test.ts (channelMap "swapRB"); the channel order is settled.
 export function decodeBc7(
   src: Uint8Array,
   width: number,
