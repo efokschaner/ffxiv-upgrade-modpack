@@ -56,23 +56,26 @@ trusted tool produces both halves of every vector.
 
 Two families, because they close different gaps. Both are needed; neither alone is sufficient.
 
-### Family A — per-mode BC7 blocks (guarantees mode coverage)
+### Family A — BC7 all-modes coverage (encoder-sourced + measured guard)
 
-One hand-authored 16-byte BC7 block per mode **0–7**, each a single 4×4 block.
+Goal: pixel-verify **every** BC7 mode 0–7, with coverage that is **measured and asserted**, not assumed.
 
-- Why hand-authored, not encoder-driven: DirectXTex's BC7 encoder picks modes **adaptively** and may
-  never emit some modes for given content, so encoding images cannot *guarantee* all-8-mode coverage.
-  Hand-authoring the mode bits does.
-- We do **not** hand-compute expected pixels. We author only a **valid** mode-N block (correct mode
-  marker + minimally-valid partition/endpoint/index/p-bit fields, with non-trivial endpoints/indices so
-  the mode's interpolation math is actually exercised). **texconv decodes the block to produce the
-  golden.** Cross-decoding our block against an independent decoder *is* the verification — no re-derived
-  expected values, so no shared-logic blind spot.
-- Existing `test/tex/make-tex.ts` already has a mode-6 block builder; this generalizes that to a
-  per-mode builder. Blocks are validated during authoring by decoding with both our decoder and texconv
-  and confirming agreement (that agreement is the committed golden).
+Mechanism:
 
-Closes: `bc7.ts:5` (modes 0–5/7 unverified).
+- Craft the Family-B source images (below) to deliberately induce a spread of BC7 modes — multi-region
+  color patches (partitioned modes 1/3/7), decorrelated alpha (rotation/index modes 4/5), 3-subset
+  opaque regions (modes 0/2), smooth opaque (mode 6) — and encode with texconv at **maximum quality**
+  (`-bcmax`), which pushes the encoder to exploit more modes.
+- A tiny **mode-histogram** reads the BC7 mode of every block across all committed BC7 fixtures. A test
+  asserts the **set of covered modes**. The BC7 block mode is trivially recoverable: it is the index of
+  the least-significant set bit of the block's first byte (mode *m* = *m* zero bits then a 1).
+- **Fallback authoring only for genuinely unreachable modes.** If a mode never appears after crafting
+  images, hand-author a single valid block for *that* mode (extending the existing `make-tex.ts` mode-6
+  builder) — expected to be at most a couple, if any. The histogram makes any such gap explicit rather
+  than silent.
+- Either way, expected pixels come from **texconv**, not hand computation — no shared-logic blind spot.
+
+Closes: `bc7.ts:5` (modes 0–5/7 unverified), with the exact covered-mode set recorded and asserted.
 
 ### Family B — small real source images (breadth, multi-block, edges, BC1–5)
 
@@ -134,22 +137,24 @@ missing mapping is observable); the procedural sources guarantee this.
 ```
 test/tex/fixtures/bcn/
   manifest.json              # array of vectors (see schema below)
-  blocks/
-    bc7-mode0.bin .. bc7-mode7.bin   # Family A: raw 16-byte compressed blocks
-    bc7-mode0.rgba .. bc7-mode7.rgba # Family A: golden RGBA (texconv, standard order)
   images/
     <name>.<fmt>.bin                 # Family B: raw compressed mip bytes per (image, format)
     <name>.<fmt>.rgba                # Family B: golden RGBA (texconv, standard order)
+                                     #   BC7 fixtures here supply Family-A mode coverage (measured)
+  blocks/
+    bc7-mode<N>.bin / .rgba          # Family A FALLBACK ONLY: hand-authored block for any BC7 mode
+                                     #   texconv's encoder never emitted (often empty)
   sources/
     <name>.<ext>                     # Family B: committed source images (viewable)
   README.md                          # provenance, exact texconv commands + version, channel-order note
   gen-bcn-fixtures.ps1               # regen script (dev-time; shells out to texconv)
 ```
 
-- Inputs/goldens are **raw `.bin`/`.rgba`** (opaque but fully deterministic) — same precedent as the
-  committed `test/corpus/.oracle-cache/*.bin` blobs. Source images stay committed and viewable for human
-  review. Storing goldens raw avoids adding a PNG decoder to the test (respects the tex-codec
-  no-runtime-deps rule).
+- Inputs/goldens are **raw `.bin`/`.rgba`** (opaque but fully deterministic, and regenerable from the
+  committed sources + regen script). Source images stay committed and viewable for human review. Storing
+  goldens raw avoids adding a PNG decoder to the test (respects the tex-codec no-runtime-deps rule).
+  These fixtures live under `test/tex/fixtures/` — **not** under the gitignored `/test/corpus/` — so they
+  are committed to the repo (small and stable), unlike the local-only modpack corpus.
 - **Manifest vector schema** (single source of truth the test iterates):
 
   ```jsonc
@@ -225,10 +230,10 @@ Regeneration is a one-time/occasional dev action, **not** part of the `npm test`
 
 ## 9. Risks & mitigations
 
-- **Authoring valid per-mode BC7 blocks is fiddly** (partitions, subset endpoints, p-bits, index/rotation
-  bits for modes 4/5). Mitigation: we already own a full BC7 decoder to sanity-check each block, and
-  texconv is the independent cross-check; use partition 0 and simple endpoints where a mode allows, and
-  keep each block minimal-but-non-trivial. This is the main implementation effort.
+- **A BC7 mode may be unreachable by texconv's encoder** even with crafted content and `-bcmax`.
+  Mitigation: the mode-histogram makes any gap explicit; hand-author a single valid block for just that
+  mode (extending the existing mode-6 builder), validated against texconv. Expected to be at most a
+  couple of modes, if any — far less bitstream code than authoring all eight.
 - **DDS container stripping** must handle the DX10 extended header (BC7/BC5 use DXGI formats). Mitigation:
   the regen script detects the `DX10` fourCC and adjusts the header offset; documented in the README.
 - **texconv availability on the dev machine.** Mitigation: download the standalone signed exe (no global
