@@ -72,7 +72,12 @@ export function buildMinimalMdl(
     new Uint8Array(0), // 10 terrainShadowParts (0)
     filler(4 * md.materialCount, 6), // 11 materialOffsets (4)
     filler(4 * md.boneCount, 7), // 12 boneOffsets (8)
-    filler(md.boneSetSize * 2 + md.boneSetCount * 4, 8), // 13 boneSets (132)
+    filler(
+      version >= 6
+        ? md.boneSetSize * 2 + md.boneSetCount * 4
+        : 132 * md.boneSetCount,
+      8,
+    ), // 13 boneSets (version-dependent; 132 for this fixture either way)
     new Uint8Array(0), // 14 shapeInfo (0)
     new Uint8Array(0), // 15 shapeParts (0)
     new Uint8Array(0), // 16 shapeData (0)

@@ -53,7 +53,13 @@ export function parseMdl(bytes: Uint8Array, filePath = ""): XivMdl {
   const terrainShadowParts = r.readBytes(12 * md.terrainShadowPartCount);
   const materialOffsets = r.readBytes(4 * md.materialCount);
   const boneOffsets = r.readBytes(4 * md.boneCount);
-  const boneSets = r.readBytes(md.boneSetSize * 2 + md.boneSetCount * 4);
+  // Bone-set block length is VERSION-DEPENDENT: real v5 files store boneSetSize=0 and use fixed
+  // 132-byte sets (64 i16 + i32; Mdl.cs:779-797); v6 uses the compact formula (Mdl.cs:741).
+  const boneSets = r.readBytes(
+    header.version >= 6
+      ? md.boneSetSize * 2 + md.boneSetCount * 4
+      : 132 * md.boneSetCount,
+  );
   const shapeInfo = r.readBytes(16 * md.shapeCount);
   const shapeParts = r.readBytes(12 * md.shapePartCount);
   const shapeData = r.readBytes(4 * md.shapeDataCount);
