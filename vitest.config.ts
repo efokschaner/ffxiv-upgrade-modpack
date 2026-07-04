@@ -20,7 +20,10 @@ export default defineConfig({
       reportsDirectory: "coverage",
       // Test helpers are part of the system under test, so include test/** too.
       // `all` surfaces files no test touched (as 0%) instead of hiding them.
-      include: ["src/**", "test/**"],
+      // Scoped to *.ts: under `all`, v8 tries to parse every matched file, and the
+      // corpus/fixtures under test/** are binary (.ttmp2/.pmp/.bin/.mtrl) — a bare
+      // test/** glob makes v8 throw PARSE_ERROR on them. All our code is TS anyway.
+      include: ["src/**/*.ts", "test/**/*.ts"],
       all: true,
       // No thresholds: report-only (there is no CI; the test gate stays unbrittle).
     },

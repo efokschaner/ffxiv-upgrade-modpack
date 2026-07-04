@@ -13,10 +13,18 @@ import { corpusUnitsPlugin } from "./corpus-units-plugin";
 // runs under a plain ESM loader (tsx / vite-node), so a normal top-level `import` of corpus-units.ts
 // would hit `__dirname` before Vite ever touches it. We instead load it through `vitest.import()`
 // (the Vite module runner) so it gets the same transform/shim as worker-loaded test files.
+//
+// CLI compatibility: this runner aims to transparently mimic the Vitest CLI to
+// the degree we actually need. Flags we support should behave as `vitest <flag>`
+// does rather than inventing bespoke equivalents. Supported so far:
+//   --coverage   enable coverage for this run (as `vitest --coverage`).
+// (CORPUS_UNIT stays an env var: it is a plumbing/debug aid with no Vitest-CLI
+// analogue.)
 const here = dirname(fileURLToPath(import.meta.url));
 
 async function main(): Promise<void> {
   const single = process.env.CORPUS_UNIT;
+  const coverage = process.argv.includes("--coverage");
   const vitest = await createVitest(
     "test",
     // Force the "default" reporter. Vitest 4 auto-selects the "agent"/"minimal" reporter when
@@ -24,7 +32,15 @@ async function main(): Promise<void> {
     // printLeaksSummary() throws ("Cannot read properties of undefined (reading 'state')") when
     // driven through the Node API here — an upstream reporter-init ordering bug, not something in
     // our runner. Pinning the reporter sidesteps it.
-    { watch: false, reporters: ["default"] },
+    {
+      watch: false,
+      reporters: ["default"],
+      // --coverage flips this on; config default (vitest.config.ts) is false so the
+      // normal path stays overhead-free. standalone()+runTestSpecifications already
+      // drive the full coverage lifecycle: standalone() inits+cleans the provider,
+      // and runFiles() calls reportCoverage() internally, so no extra call is needed.
+      coverage: { enabled: coverage },
+    },
     { plugins: [corpusUnitsPlugin()] }, // viteOverrides — where Vite plugins go
   );
   try {
