@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseMtrl } from "../src/mtrl/parse";
-import { SAMPLER_NORMAL_MAP_0 } from "../src/mtrl/types";
-import { buildMinimalMtrl } from "./helpers/make-mtrl";
+import { parseMtrl } from "../../src/mtrl/parse";
+import { SAMPLER_NORMAL_MAP_0 } from "../../src/mtrl/types";
+import { buildMinimalMtrl } from "./make-mtrl";
 
 describe("parseMtrl", () => {
   it("parses the hand-built canonical file into the expected model", () => {

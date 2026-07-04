@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { readPmp, writePmp } from "../src/container/pmp";
-import { allFiles } from "../src/model/modpack";
-import { readZip } from "../src/zip/zip";
-import { makePmpZip } from "./helpers/make-packs";
+import { readPmp, writePmp } from "../../src/container/pmp";
+import { allFiles } from "../../src/model/modpack";
+import { readZip } from "../../src/zip/zip";
+import { makePmpZip } from "../helpers/make-packs";
 
 describe("writePmp round-trip", () => {
   it("preserves inner files byte-for-byte and re-reads structurally", () => {

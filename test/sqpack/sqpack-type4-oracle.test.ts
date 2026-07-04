@@ -2,8 +2,8 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { decodeSqPackFile, SqPackType } from "../src/sqpack/sqpack";
-import { extractGameFile, gameAvailable, wrap } from "./helpers/oracle";
+import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
+import { extractGameFile, gameAvailable, wrap } from "../helpers/oracle";
 
 const GAME_TEX_PATHS = [
   "chara/common/texture/eye/eye01_base.tex",

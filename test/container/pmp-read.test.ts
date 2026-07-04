@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { readPmp } from "../src/container/pmp";
-import { allFiles, FileStorageType, ModpackFormat } from "../src/model/modpack";
-import { makePmpZip } from "./helpers/make-packs";
+import { readPmp } from "../../src/container/pmp";
+import {
+  allFiles,
+  FileStorageType,
+  ModpackFormat,
+} from "../../src/model/modpack";
+import { makePmpZip } from "../helpers/make-packs";
 
 describe("readPmp", () => {
   it("reads meta, default mod, and groups with raw files", () => {

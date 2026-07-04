@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { readColorset, writeColorset } from "../src/mtrl/colorset";
-import { BinaryReader, ByteBuilder } from "../src/util/binary";
+import { readColorset, writeColorset } from "../../src/mtrl/colorset";
+import { BinaryReader, ByteBuilder } from "../../src/util/binary";
 
 function roundtrip(colorDataSize: number): void {
   const values: number[] = [];

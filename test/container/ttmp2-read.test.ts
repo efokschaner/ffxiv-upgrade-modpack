@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { readTtmp2 } from "../src/container/ttmp2";
-import { allFiles, FileStorageType } from "../src/model/modpack";
-import { makeTtmp2Simple, makeTtmp2Wizard } from "./helpers/make-packs";
+import { readTtmp2 } from "../../src/container/ttmp2";
+import { allFiles, FileStorageType } from "../../src/model/modpack";
+import { makeTtmp2Simple, makeTtmp2Wizard } from "../helpers/make-packs";
 
 describe("readTtmp2", () => {
   it("reads a simple pack with byte-exact opaque blobs", () => {

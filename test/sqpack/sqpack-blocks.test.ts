@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { compressData, readBlock, writeBlock } from "../src/sqpack/blocks";
-import { BinaryReader, concatBytes, deflateRaw } from "../src/util/binary";
+import { compressData, readBlock, writeBlock } from "../../src/sqpack/blocks";
+import { BinaryReader, concatBytes, deflateRaw } from "../../src/util/binary";
 
 const enc = new TextEncoder();
 

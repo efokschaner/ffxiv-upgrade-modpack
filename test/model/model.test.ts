@@ -5,7 +5,7 @@ import {
   FileStorageType,
   type ModpackData,
   ModpackFormat,
-} from "../src/model/modpack";
+} from "../../src/model/modpack";
 
 describe("model", () => {
   it("emptyMeta has all string fields blank and tags empty", () => {

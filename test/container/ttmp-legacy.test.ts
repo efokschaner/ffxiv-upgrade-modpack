@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { readLegacyTtmp } from "../src/container/ttmp-legacy";
-import { readTtmp2, writeTtmp2 } from "../src/container/ttmp2";
-import { allFiles, ModpackFormat } from "../src/model/modpack";
-import { makeLegacyTtmp } from "./helpers/make-packs";
+import { readLegacyTtmp } from "../../src/container/ttmp-legacy";
+import { readTtmp2, writeTtmp2 } from "../../src/container/ttmp2";
+import { allFiles, ModpackFormat } from "../../src/model/modpack";
+import { makeLegacyTtmp } from "../helpers/make-packs";
 
 describe("readLegacyTtmp", () => {
   it("parses NDJSON mpl and slices the mpd", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeType3, encodeType3 } from "../src/sqpack/type3";
+import { decodeType3, encodeType3 } from "../../src/sqpack/type3";
 
 const MDL_HEADER = 68;
 

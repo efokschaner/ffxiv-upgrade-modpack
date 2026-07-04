@@ -4,7 +4,7 @@ import {
   detectTypeFromGamePath,
   encodeSqPackFile,
   SqPackType,
-} from "../src/sqpack/sqpack";
+} from "../../src/sqpack/sqpack";
 
 describe("sqpack dispatch", () => {
   it("detects type from game path", () => {

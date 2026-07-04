@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeType4, encodeType4, texMipSizes } from "../src/sqpack/type4";
+import { decodeType4, encodeType4, texMipSizes } from "../../src/sqpack/type4";
 
 const TEX_HEADER_SIZE = 80;
 const BC5 = 25136; // 8 bpp, min dimension 4

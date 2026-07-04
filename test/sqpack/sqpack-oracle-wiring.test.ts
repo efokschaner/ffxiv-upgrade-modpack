@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { extractGameFile, gameAvailable, unwrap, wrap } from "./helpers/oracle";
+import {
+  extractGameFile,
+  gameAvailable,
+  unwrap,
+  wrap,
+} from "../helpers/oracle";
 
 describe("oracle sqpack wrappers", () => {
   it("expose callable functions and a boolean gameAvailable", () => {

@@ -3,7 +3,7 @@ import {
   makeLegacyTtmp,
   makePmpZip,
   makeTtmp2Simple,
-} from "./helpers/make-packs";
+} from "../helpers/make-packs";
 
 describe("synthetic pack builders", () => {
   it("produce non-empty byte buffers with known files", () => {

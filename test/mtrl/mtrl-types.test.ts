@@ -10,7 +10,7 @@ import {
   secondarySamplerId,
   shaderConstantsDataSize,
   type XivMtrl,
-} from "../src/mtrl/types";
+} from "../../src/mtrl/types";
 
 function baseMtrl(): XivMtrl {
   return {

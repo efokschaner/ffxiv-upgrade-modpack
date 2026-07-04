@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BinaryReader, concatBytes, fnv1aKey } from "../src/util/binary";
-import { readZip, writeZip } from "../src/zip/zip";
+import { BinaryReader, concatBytes, fnv1aKey } from "../../src/util/binary";
+import { readZip, writeZip } from "../../src/zip/zip";
 
 describe("zip wrapper", () => {
   it("round-trips entries", () => {

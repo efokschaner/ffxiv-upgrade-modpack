@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { readPmp, writePmp } from "../src/container/pmp";
-import { readZip, writeZip } from "../src/zip/zip";
+import { readPmp, writePmp } from "../../src/container/pmp";
+import { readZip, writeZip } from "../../src/zip/zip";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();

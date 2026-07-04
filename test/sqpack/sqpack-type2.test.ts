@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeType2, encodeType2 } from "../src/sqpack/type2";
+import { decodeType2, encodeType2 } from "../../src/sqpack/type2";
 
 function sample(n: number): Uint8Array {
   return new Uint8Array(n).map((_, i) => (i * 31 + 7) & 0xff);

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseMtrl, serializeMtrl } from "../src/mtrl/mtrl";
+import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import {
   getRealSamplerCount,
   isEmptySampler,
   SAMPLER_COLOR_MAP_0,
   SAMPLER_NORMAL_MAP_0,
-} from "../src/mtrl/types";
-import { buildDoubleUvMtrl, buildEmptySamplerMtrl } from "./helpers/make-mtrl";
+} from "../../src/mtrl/types";
+import { buildDoubleUvMtrl, buildEmptySamplerMtrl } from "./make-mtrl";
 
 describe("mtrl sampler handling", () => {
   it("drops the double-written secondary on parse and regenerates it on serialize", () => {

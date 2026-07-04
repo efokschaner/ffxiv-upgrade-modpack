@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { readDye, writeDye } from "../src/mtrl/dye";
-import { BinaryReader, ByteBuilder } from "../src/util/binary";
+import { readDye, writeDye } from "../../src/mtrl/dye";
+import { BinaryReader, ByteBuilder } from "../../src/util/binary";
 
 function roundtrip(len: number): void {
   const dye = new Uint8Array(len).map((_, i) => (i * 5 + 1) & 0xff);
