@@ -10,5 +10,22 @@ export default defineConfig({
     environment: "node",
     pool: "forks",
     maxWorkers: MAX_WORKERS,
+    coverage: {
+      // Enabled at runtime by scripts/run-tests.ts when invoked with --coverage
+      // (see `npm run test:coverage`). Off by default so plain `npm test` and
+      // `test:watch` pay zero coverage overhead.
+      enabled: false,
+      provider: "v8",
+      reporter: ["text", "html", "json-summary"],
+      reportsDirectory: "coverage",
+      // Test helpers are part of the system under test, so include test/** too.
+      // `all` surfaces files no test touched (as 0%) instead of hiding them.
+      // Scoped to *.ts: under `all`, v8 tries to parse every matched file, and the
+      // corpus/fixtures under test/** are binary (.ttmp2/.pmp/.bin/.mtrl) — a bare
+      // test/** glob makes v8 throw PARSE_ERROR on them. All our code is TS anyway.
+      include: ["src/**/*.ts", "test/**/*.ts"],
+      all: true,
+      // No thresholds: report-only (there is no CI; the test gate stays unbrittle).
+    },
   },
 });

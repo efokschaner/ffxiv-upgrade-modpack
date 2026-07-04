@@ -9,6 +9,8 @@ if a rule changes, change it here.
 - `npm run lint` — lint only, no writes.
 - `npm run typecheck` — `tsc --noEmit`.
 - `npm test` — full suite via the custom parallel runner.
+- `npm run test:coverage` — coverage report (v8) over the full suite incl.
+  corpus; opt-in, **not** part of the required test gate. Writes `coverage/`.
 - `npm run build` — production build (Vite).
 
 ## End-of-task ritual (required)
@@ -23,6 +25,12 @@ This is the primary test gate — there is no CI and no pre-push hook. Tests run
 at end-of-task (more often than pushes, less often than commits). A pre-commit
 hook (lefthook) already runs Biome + typecheck on every commit; it does NOT run
 the tests.
+
+**Coverage:** `npm run test:coverage` runs the same full suite (including the
+corpus) under the v8 provider and writes a text + HTML + json-summary report to
+`coverage/`. It is opt-in (the flag is off by default, so the normal gate pays
+no overhead) and report-only — no thresholds. Use it to check that tests and the
+corpus exercise the code, not as a pass/fail gate.
 
 ## Conventions
 
