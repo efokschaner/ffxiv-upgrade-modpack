@@ -15,7 +15,9 @@ export function parseMdlHeader(bytes: Uint8Array): MdlHeader {
   };
 }
 
-/** Replays the retained 68 header bytes verbatim. Byte-exact. */
+/** Replays the retained 68 header bytes verbatim. Byte-exact. NOTE: this ignores the parsed scalar
+ *  fields (version/meshCount/...) — they are read-only walk conveniences. A future header mutation must
+ *  write into `h.bytes` (see the MdlHeader note in types.ts), not the scalar fields. */
 export function serializeMdlHeader(h: MdlHeader): Uint8Array {
   return h.bytes;
 }

@@ -11,8 +11,12 @@ export const MDL_MODEL_DATA = 56;
 export const HAS_EXTRA_MESHES = 0x10; // EMeshFlags2.HasExtraMeshes
 
 /** The retained 68-byte MDL header: parsed fields for the walk + the raw bytes for byte-exact replay. */
+// NOTE: `serializeMdlHeader` replays `bytes` verbatim (preserving the ~60 header bytes this stage
+// does not model). The scalar fields below are READ-ONLY conveniences for the walk — assigning to them
+// does NOT change the output. A later mutation (e.g. the deferred v5->v6 transform setting version=6 /
+// lodCount=1) must write into `bytes` directly (or rebuild it), not into these fields.
 export interface MdlHeader {
-  bytes: Uint8Array; // all 68 header bytes, retained for verbatim serialize
+  bytes: Uint8Array; // all 68 header bytes, retained for verbatim serialize (source of truth on write)
   version: number; // u16 @0
   vertexInfoSize: number; // u32 @4
   modelDataSize: number; // u32 @8
@@ -54,7 +58,7 @@ export interface MdlModelData {
   unknown17: number;
 }
 
-/** The 20 model-data sections carried as opaque byte slices (order = design spec §3). */
+/** The 20 named model-data sections + the trailing gap, carried as opaque byte slices (order = spec §3). */
 export interface MdlSections {
   pathData: Uint8Array;
   elementIds: Uint8Array;

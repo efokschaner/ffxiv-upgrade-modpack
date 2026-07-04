@@ -331,7 +331,10 @@ A later stage adds the actual v5→v6 model fix (`EndwalkerUpgrade.cs:282`), bui
 - read `version`; **no-op unless v5** (return input unchanged — most models);
 - bail on boneless models (`BoneSetCount == 0 || BoneCount == 0`) — matching the reference's safety
   guard;
-- set `header.version = 6`, `modelData.LoDCount = 1`, `modelData.BoneSetSize = 64 · BoneSetCount`;
+- set the version to 6 and LoD count to 1 **by writing into `header.bytes`** (version u16@0, lodCount
+  u8@64 — the parsed `MdlHeader` scalar fields are read-only walk conveniences that `serializeMdlHeader`
+  ignores), and set `modelData.LoDCount = 1`, `modelData.BoneSetSize = 64 · BoneSetCount` (these
+  `MdlModelData` fields DO round-trip through `serializeMdlModelData`);
 - **re-encode the `boneSets` section** from the v5 layout to the compact v6 layout (this is the one
   section that needs per-set parsing — deferred here precisely because the identity walker does not
   need it);
