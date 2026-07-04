@@ -74,23 +74,38 @@ decoded output). It:
    `MdlModelData`, `meshCount`, flags, and — for one section — the LoD0 header) and slicing it out.
    `MdlModelData` is the single section parsed into editable fields; the rest are **named byte
    slices**.
-4. Carries the trailing **geometry** as an opaque slice.
+4. Carries any **trailing** bytes between the last named section and the geometry as an opaque slice
+   (see below), then the **geometry** as an opaque slice.
 
-**The correctness twist (why a slice walk is still a real gate).** A naive "slice everything, then
-concat" round-trips byte-exact *regardless of whether the section boundaries are correct*, so it
-would validate nothing. To make the walk meaningful, the walker **computes every section length
-structurally and asserts the running offset lands exactly at the end of the modelData block**
-(`modelDataSize`, known from the header) after the last bounding box. A wrong length ⇒ the offset
-misses ⇒ a loud parse error. So the gate is twofold and strong:
+**The correctness twist (why a slice walk is still a real gate — with one refinement from the corpus).**
+A naive "slice everything, then concat" round-trips byte-exact *regardless of whether the section
+boundaries are correct*, so it would validate nothing. To make the walk meaningful, the walker
+**computes every section length structurally and asserts the running offset does not overrun the
+modelData block** (`modelDataSize`, known from the header). Any bytes remaining between the last named
+section (the bounding boxes) and `modelDataSize` are carried verbatim as an opaque **`trailing`**
+slice. So the gate is:
 
-- **Structural:** `Σ(section lengths) == modelDataSize` for every corpus model (validates the layout
-  understanding), and
+- **Structural (no-overrun):** `Σ(named section lengths) ≤ modelDataSize` for every corpus model — an
+  over-read (the failure mode a mis-sized section usually produces, via a garbage downstream count)
+  throws loudly. For the **vast majority** of corpus models the sum lands *exactly* on
+  `modelDataSize` (`trailing` is empty), so the named-section math is validated exactly on those.
 - **Byte-exact:** `serializeMdl(parseMdl(x)) === x` for every corpus model (validates lossless
-  replay, including `MdlModelData`'s Read/Write being exact inverses).
+  replay, including `MdlModelData`'s Read/Write being exact inverses and the `trailing` slice).
+
+**Why `trailing` exists (corpus finding).** The reference `GetXivMdl` does **not** require the
+model-data sections to be contiguous with the geometry: after the bounding boxes it **seeks to the
+LoD0 `VertexDataOffset`** and explicitly tolerates a gap (`Mdl.cs:1000-1027`, noting "certain penumbra
+MDLs, and very old TexTools MDLs"). Some real mods carry a trailing region the reference never parses
+as a named section — empirically an extra `32·BoneCount`-byte per-bone bounding-box block that
+TexTools' writer appends (`Mdl.cs:3906`) but `GetXivMdl` reads past. `modelDataSize` (header) includes
+it; the geometry begins exactly at `modelDataStart + modelDataSize`, so `trailing =
+[endOfBoundingBoxes, modelDataStart + modelDataSize)` is captured opaquely and replayed. This mirrors
+tex's opaque mip tail: a small, deliberate opacity where the reference itself is non-contiguous, in
+exchange for unconditional byte-exact round-trip.
 
 This mirrors the mtrl/tex philosophy: **the corpus self round-trip is the ground-truth, oracle-free
-gate.** Unlike tex (whose opaque mip tail meant the round-trip validated only the header), the
-`consumed == modelDataSize` assertion makes this round-trip validate the *entire* model-data layout.
+gate**, here backed by the no-overrun structural check and the exact-landing that holds for almost all
+models.
 
 The pre-Dawntrail corpus contains **v5** models (that is what the upgrade exists to fix) as well as
 v6, so the gate exercises both bone-set encodings (§5).
@@ -158,8 +173,9 @@ Every length is count-driven. `md` = the parsed `MdlModelData`.
 | 20 | padding | `1 + PaddingSize` (u8 size, then that many bytes) | `Mdl.cs:957-958` |
 | 21 | boundingBoxes | `32 · (4 + md.BoneCount + md.FurniturePartBoundingBoxCount)` (4 model + per-bone + furniture; 32 B each) | `Mdl.cs:969-994` |
 
-After section 21 the running offset must equal `_endOfVertexDataHeaders + vertexInfoSize +
-modelDataSize`, i.e. the start of geometry. The walker asserts this.
+After section 21 the running offset must **not exceed** `_endOfVertexDataHeaders + vertexInfoSize +
+modelDataSize` (the start of geometry); any bytes up to it are carried as the opaque `trailing` slice
+(§2). The walker asserts no-overrun.
 
 **Wrinkle — section 8 is not purely `MdlModelData`-driven.** `GetXivMdl` sizes the terrain-shadow
 mesh-header slice from the **LoD0 header's** TerrainShadow `(index,count)` range (`Mdl.cs:497-499`,
@@ -208,6 +224,7 @@ interface XivMdl {
     terrainShadowMeshHeaders; meshParts; terrainShadowParts; materialOffsets; boneOffsets;
     boneSets; shapeInfo; shapeParts; shapeData; partBoneSet; neckMorphTable; patch72;
     padding; boundingBoxes;       // each a Uint8Array
+    trailing;                     // opaque bytes between boundingBoxes and geometry (usually empty; §2)
   };
   geometry: Uint8Array;           // opaque vertex + index buffers
   filePath?: string;              // carried for later transform use; does not affect bytes
@@ -255,12 +272,14 @@ diagnostics can branch on it.
 
 `serializeMdl` replays the retained header, the opaque `vertexInfo`, the model-data sections in
 order (`MdlModelData` re-serialized via its exact-inverse `Write`; all other sections replayed as
-their retained slices), and the opaque `geometry`. Byte-exact for any parsed input.
+their retained slices), the opaque `trailing` slice, and the opaque `geometry`. Byte-exact for any
+parsed input.
 
-Because the sections are contiguous non-overlapping slices of the original and `MdlModelData.Write`
-is the exact inverse of `Read`, `serializeMdl(parseMdl(x)) === x` holds unconditionally for any
-model the walker accepts (i.e. any model whose section lengths sum to `modelDataSize`). Models the
-walker *rejects* (structural assertion fails) are surfaced loudly, not silently normalized.
+Because the sections plus `trailing` are contiguous non-overlapping slices covering the whole file
+and `MdlModelData.Write` is the exact inverse of `Read`, `serializeMdl(parseMdl(x)) === x` holds
+unconditionally for any model the walker accepts (i.e. any model whose named sections do not overrun
+`modelDataSize`). Models the walker *rejects* (over-read) are surfaced loudly, not silently
+normalized.
 
 ---
 
@@ -273,10 +292,11 @@ inputs are absent, following the existing `corpusInputs()` / fileless Node-API c
    `decodeSqPackFile(entry) → parseMdl → serializeMdl`, assert **byte-identical** to the decoded
    input. Wired into the fileless corpus runner as a `registerMdlChecks(pack)` unit (the same
    mechanism as the mtrl/tex/sqpack corpus checks — `corpus-units.ts` + `corpus-register.ts`), not a
-   standalone `skipIf` file. The parse's `consumed == modelDataSize` assertion runs inside this, so a
-   layout error fails the pack loudly. Models whose SQPack Type-3 *decode* fails (the same handful of
-   legacy files already undecodable) are the only skips; any decodable `.mdl` that is not byte-exact,
-   or whose sections do not sum to `modelDataSize`, is a codec bug.
+   standalone `skipIf` file. The parse's no-overrun assertion (`consumed ≤ modelDataSize`, remainder
+   carried as `trailing`) runs inside this, so an over-read fails the pack loudly. Models whose SQPack
+   Type-3 *decode* fails (the same handful of legacy files already undecodable) are the only skips; any
+   decodable `.mdl` that is not byte-exact, or whose named sections overrun `modelDataSize`, is a codec
+   bug.
 2. **Synthetic parse/round-trip units (oracle-free, written first).** Hand-built **minimal v5 and v6**
    `.mdl` files (`test/mdl/make-mdl.ts`) with distinctive counts → assert header fields,
    `MdlModelData` fields, and each section's span; `serializeMdl(parseMdl(x)) === x`.
