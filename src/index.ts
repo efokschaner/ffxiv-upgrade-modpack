@@ -11,6 +11,8 @@ import {
 
 export const VERSION = "0.0.0";
 export { detectFormat } from "./container/detect";
+export { parseMdl, serializeMdl } from "./mdl/mdl";
+export type { MdlModelData, XivMdl } from "./mdl/types";
 export * from "./model/modpack";
 export { parseMtrl, serializeMtrl } from "./mtrl/mtrl";
 export type {
