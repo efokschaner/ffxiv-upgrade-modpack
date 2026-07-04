@@ -72,4 +72,21 @@ are authored automatically for any mode the encoder does not emit.
 
 ## Coverage impact
 
-<!-- filled in by the coverage-assessment task -->
+`npm run test:coverage` (full suite incl. corpus), before vs. after these fixtures + the golden test
+(`test/tex/tex-bcn-golden.test.ts`):
+
+| File | lines | branches | functions |
+|---|---|---|---|
+| `src/tex/bc7.ts` | 23.7% → **98.9%** | 12.2% → **96.3%** | 33.3% → **100%** |
+| `src/tex/decode.ts` | 99.1% → 99.1% | 84.4% → **89.6%** | 100% → 100% |
+
+`bc7.ts` is the headline. Previously only BC7 **mode 6** had a known-answer test, so the other modes'
+decode paths were never executed (23.7% lines / 12.2% branches / 33.3% functions). The golden suite
+decodes all **8 modes** — modes 3–7 from real texconv-encoded images, modes 0–2 from the authored
+single-block fixtures — lifting it to ~99% lines / 96% branches / 100% functions.
+
+`decode.ts` lines were already ~99% from the existing hand-computed known-answer unit tests, so its gain
+is in **branches** (84.4% → 89.6%): the BC1/BC2/BC3/BC4/BC5 vectors exercise real multi-block data, the
+BC4 gray and BC5 R↔B channel paths, and the partial-edge-block clip paths (`if (px < w)` / `if (py < h)`)
+via the 65×33 `edge` fixtures — coverage that was previously only length-checked on the corpus. This is a
+branch/behavioural gain (pixel-exact, per mode and per path), not merely a line-count delta.
