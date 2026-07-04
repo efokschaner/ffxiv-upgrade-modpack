@@ -33,7 +33,7 @@
     "height": 64,
     "input": "images/grad.bc4.bin",
     "expected": "images/grad.bc4.rgba",
-    "channelMap": "grayFromR"
+    "channelMap": "none"
   },
   {
     "name": "grad.bc5",
@@ -42,7 +42,7 @@
     "height": 64,
     "input": "images/grad.bc5.bin",
     "expected": "images/grad.bc5.rgba",
-    "channelMap": "swapRB"
+    "channelMap": "none"
   },
   {
     "name": "grad.bc7",
@@ -87,7 +87,7 @@
     "height": 64,
     "input": "images/regions.bc4.bin",
     "expected": "images/regions.bc4.rgba",
-    "channelMap": "grayFromR"
+    "channelMap": "none"
   },
   {
     "name": "regions.bc5",
@@ -96,7 +96,7 @@
     "height": 64,
     "input": "images/regions.bc5.bin",
     "expected": "images/regions.bc5.rgba",
-    "channelMap": "swapRB"
+    "channelMap": "none"
   },
   {
     "name": "regions.bc7",
@@ -141,7 +141,7 @@
     "height": 64,
     "input": "images/alpha.bc4.bin",
     "expected": "images/alpha.bc4.rgba",
-    "channelMap": "grayFromR"
+    "channelMap": "none"
   },
   {
     "name": "alpha.bc5",
@@ -150,7 +150,7 @@
     "height": 64,
     "input": "images/alpha.bc5.bin",
     "expected": "images/alpha.bc5.rgba",
-    "channelMap": "swapRB"
+    "channelMap": "none"
   },
   {
     "name": "alpha.bc7",
@@ -195,7 +195,7 @@
     "height": 33,
     "input": "images/edge.bc4.bin",
     "expected": "images/edge.bc4.rgba",
-    "channelMap": "grayFromR"
+    "channelMap": "none"
   },
   {
     "name": "edge.bc5",
@@ -204,7 +204,7 @@
     "height": 33,
     "input": "images/edge.bc5.bin",
     "expected": "images/edge.bc5.rgba",
-    "channelMap": "swapRB"
+    "channelMap": "none"
   },
   {
     "name": "edge.bc7",
@@ -213,6 +213,33 @@
     "height": 33,
     "input": "images/edge.bc7.bin",
     "expected": "images/edge.bc7.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "block.bc7-mode0",
+    "format": "BC7",
+    "width": 4,
+    "height": 4,
+    "input": "blocks/bc7-mode0.bin",
+    "expected": "blocks/bc7-mode0.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "block.bc7-mode1",
+    "format": "BC7",
+    "width": 4,
+    "height": 4,
+    "input": "blocks/bc7-mode1.bin",
+    "expected": "blocks/bc7-mode1.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "block.bc7-mode2",
+    "format": "BC7",
+    "width": 4,
+    "height": 4,
+    "input": "blocks/bc7-mode2.bin",
+    "expected": "blocks/bc7-mode2.rgba",
     "channelMap": "swapRB"
   }
 ]

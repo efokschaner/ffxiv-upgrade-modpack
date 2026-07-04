@@ -1,33 +1,61 @@
 # BCn decode golden fixtures
 
 Golden test vectors for the BCn decoder (`src/tex/decode.ts`, `src/tex/bc7.ts`), independent of the
-modpack corpus and of TexTools. See `docs/superpowers/specs/2026-07-04-bcn-decode-golden-fixtures-design.md`.
+modpack corpus. See `docs/superpowers/specs/2026-07-04-bcn-decode-golden-fixtures-design.md`.
 
 ## What's here
 
 - `sources/*.tga` — small, deterministic, procedurally-generated source images (viewable).
 - `images/<name>.<fmt>.bin` — raw compressed mip bytes (texconv encode of the source, DDS container stripped).
-- `images/<name>.<fmt>.rgba` — golden RGBA8888, **standard channel order**, exactly texconv's decode.
-- `manifest.json` — the vector list the test iterates.
-- `blocks/*` — present only if a BC7 mode had to be hand-authored (see "Filling mode gaps").
+- `images/<name>.<fmt>.rgba` — golden RGBA8888 (provenance depends on format — see Oracle below).
+- `blocks/bc7-mode<N>.{bin,rgba}` — synthetic single-block BC7 vectors for modes the encoder never emits (0/1/2).
+- `manifest.json` — the vector list the test iterates: `{ name, format, width, height, input, expected, channelMap }`.
 
-## Oracle
+## Oracle (two tiers — this is the important part)
 
-DirectXTex `texconv` (Microsoft's reference BCn codec). Version used: **DirectXTex may2026 (texconv 2026.5.8.1)**.
-BCn decode is bit-exact and spec-defined, so texconv's output is authoritative and independent of our
-ported lineage. texconv is a dev-time tool — **not committed** and **not** an npm dependency.
+DirectXTex `texconv` — version **DirectXTex may2026 (texconv 2026.5.8.1)**. Dev-time tool, **not committed**,
+**not** an npm dependency.
 
-## Channel order
+BCn decode is **only** bit-exact/standardized for **BC7 (BPTC)** — there, texconv is an authoritative
+independent oracle and every one of our BC7 vectors matches it byte-for-byte. The older **BC1/BC2/BC3/BC4/BC5
+(S3TC/RGTC)** formats do **not** standardize how the 1/3 and 2/3 endpoint blends round: DirectXTex rounds
+(`(2·c0+c1+1)/3`), while our decoder faithfully ports **rgbcx's default `cBC1Ideal`** (truncation,
+`(2·c0+c1)/3` — `reference/bc7enc_rdo/rgbcx.cpp:2959`, `rgbcx.h:274`). The two agree to within **±1 per
+channel**. So the golden differs by format:
 
-texconv emits standard RGBA. Our decoder applies TexTools conventions on top of a standard decode; the
-test applies the same mapping to the golden before comparing (`applyChannelMap`):
+| Formats | Golden `expected` is… | `channelMap` | Test asserts |
+|---|---|---|---|
+| **BC7** | texconv's decode (**independent, standard order**) | `swapRB` | **byte-exact** vs texconv |
+| **BC1/BC2/BC3/BC4/BC5** | **our decoder's own output**, frozen (already in our channel order) | `none` | byte-exact vs the frozen snapshot |
 
-| Format | channelMap | Our output vs. standard |
-|---|---|---|
-| DXT1 / DXT3 / DXT5 | `none` | unchanged |
-| BC4 | `grayFromR` | red replicated across RGB, opaque (R,R,R,255) |
-| BC5 | `swapRB` | R<->B swap: (0, ch1, ch0, 255) |
-| BC7 | `swapRB` | R<->B swap on the decoded block |
+For the S3TC/RGTC formats the committed golden is our decoder's frozen output (a regression/characterization
+anchor), but it is **not** blindly frozen: `regen.ts` **gates** each such vector against texconv at generation
+time and fails if our decode differs by more than 1 per channel — an independent check that there is no
+structural, channel-order, or endpoint bug (only the sub-LSB rounding convention may differ). BC7 vectors are
+gated to an **exact** (0) match.
+
+### How confident are we these match TexTools?
+
+- **BC5 / BC7:** high — TexTools decodes these via **BcnSharp**, a P/Invoke wrapper around the same
+  `bc7enc_rdo`/rgbcx we ported, at rgbcx's default mode. Our frozen values should equal what TexTools sees.
+- **BC1 / DXT3 / BC4:** TexTools decodes these via **FNA's `DxtUtil`** (Ms-PL, which we deliberately did
+  **not** transcribe — see the tex-codec spec §3), a *different* implementation. Our frozen values are a
+  faithful standard rgbcx decode, corroborated within ±1 of DirectXTex, but they are **not** independently
+  diffed against DxtUtil byte-for-byte. Decoded RGBA is an intermediate for transforms, not the container
+  round-trip fidelity gate, so ±1 rounding here is immaterial to pass-through correctness.
+
+## Channel mapping
+
+`channelMap` (applied by the test's `applyChannelMap`) reconciles a golden with our decoder's TexTools
+channel convention. It is only non-`none` for BC7 here (whose golden is texconv standard-order); the frozen
+BC1–5 goldens are already in our order, so they use `none`. For reference, our decoder's conventions are:
+
+| Format | our output vs. standard |
+|---|---|
+| DXT1 / DXT3 / DXT5 | standard RGBA, unchanged |
+| BC4 | red replicated across RGB, opaque (R,R,R,255) |
+| BC5 | R↔B swap: (0, ch1, ch0, 255) |
+| BC7 | R↔B swap on the decoded block |
 
 ## Regenerate
 
@@ -35,15 +63,9 @@ Requires `texconv` on PATH (or `TEXCONV=C:\path\to\texconv.exe`):
 
     npx tsx test/tex/fixtures/bcn/regen.ts
 
-It regenerates `sources/`, `images/`, and `manifest.json`, then prints the covered BC7 mode set.
-
-## Filling mode gaps
-
-If `regen.ts` warns that a BC7 mode is missing, hand-author one valid block for that mode (extend the
-mode-6 builder in `test/tex/make-tex.ts`), write the 16 raw bytes to `blocks/bc7-mode<N>.bin`, wrap them
-in a 4x4 BC7 DDS and `texconv -f R8G8B8A8_UNORM` it to `blocks/bc7-mode<N>.rgba`, and add a manifest entry
-`{ name, format: "BC7", width: 4, height: 4, input, expected, channelMap: "swapRB" }`. The mode-coverage
-test then goes green.
+It regenerates `sources/`, `images/`, `blocks/`, and `manifest.json`, gating each vector against texconv
+(exact for BC7, ≤1 for S3TC/RGTC) and printing the covered BC7 mode set. Fallback BC7 mode blocks (0/1/2)
+are authored automatically for any mode the encoder does not emit.
 
 ## Coverage impact
 
