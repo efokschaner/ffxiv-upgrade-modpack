@@ -10,6 +10,15 @@
 
 **Design spec:** `docs/superpowers/specs/2026-07-04-bcn-decode-golden-fixtures-design.md`
 
+> **Amendment (during execution, PR #9):** Task 2's/Task 3's original code below stored *unmodified
+> texconv output* as the golden for **all** formats (single-tier, byte-exact vs texconv). Implementation
+> revealed that only **BC7 (BPTC)** is bit-exact across decoders; **BC1–BC5 (S3TC/RGTC)** round the
+> ⅓/⅔ midpoints implementation-definedly (our decoder ports rgbcx's default `cBC1Ideal` truncation,
+> texconv rounds → ±1). The shipped generator is therefore **two-tier**: BC7 goldens = texconv (exact);
+> BC1–BC5 goldens = our decoder's frozen output, gated to ≤1 vs texconv at generation time. The manifest
+> also carries 3 authored BC7 blocks (modes 0/1/2). `test/tex/fixtures/bcn/README.md` and `regen.ts` are
+> the authoritative final artifacts; read the Task 2/3 listings below as original intent.
+
 ## Global Constraints
 
 - **End-of-task ritual (required, from `AGENTS.md`):** before any task is "done", run and confirm green: `npm run check`, `npm run typecheck`, `npm test`.

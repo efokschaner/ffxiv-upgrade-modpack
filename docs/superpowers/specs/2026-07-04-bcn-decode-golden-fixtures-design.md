@@ -1,10 +1,29 @@
 # BCn Decode Golden Fixtures — Design
 
 **Date:** 2026-07-04
-**Status:** Design approved (brainstorming complete) — ready for implementation planning
+**Status:** Implemented (PR #9). **Amended during implementation — see the "Amendment" note below; the
+fixtures `README.md` is the authoritative description of the final two-tier design.**
 **Depends on:** TEX Codec (merged; `src/tex/`). Adds tests + committed fixtures only; no production
 source changes except downgrading two `PROVISIONAL`/`TODO` comments once the gaps they name are covered.
 **Parent spec:** `2026-07-03-tex-codec-design.md` (§5 decode, §6/§7 correctness strategy).
+
+---
+
+## Amendment (2026-07-04, during implementation)
+
+§4 below (and the corresponding plan) originally specified a **single-tier** oracle: goldens stored as
+*unmodified texconv output* for **all** formats, with the test asserting byte-exact vs texconv. Wiring up
+the fixtures surfaced that **BCn decode is only bit-exact/standardized for BC7 (BPTC)** — the older
+BC1–BC5 (S3TC/RGTC) formats leave the ⅓/⅔ midpoint rounding implementation-defined, so texconv (which
+rounds) differs from our decoder (faithful to rgbcx's default `cBC1Ideal` truncation, the BcnSharp/rgbcx
+lineage TexTools uses) by ±1. The shipped design is therefore **two-tier**:
+
+- **BC7** → golden is texconv's decode (independent, byte-exact), all 8 modes (0–2 via authored blocks).
+- **BC1–BC5** → golden is our decoder's own frozen output, which the generator gates to within ±1 of
+  texconv at generation time (an independent no-structural-bug check).
+
+`test/tex/fixtures/bcn/README.md` is the authoritative, current description. Read §4 below as the original
+intent; the README overrides it wherever they differ.
 
 ---
 
