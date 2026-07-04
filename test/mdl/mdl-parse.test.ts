@@ -35,6 +35,7 @@ describe("parseMdl structural walk", () => {
     expect(s.partBoneSet).toHaveLength(4);
     expect(s.padding).toHaveLength(1);
     expect(s.boundingBoxes).toHaveLength(192);
+    expect(s.trailing).toHaveLength(0);
     expect(mdl.geometry).toHaveLength(16);
   });
 
@@ -49,10 +50,31 @@ describe("parseMdl structural walk", () => {
     expect(mdl.sections.extraMeshHeader).toHaveLength(120);
   });
 
-  it("throws when a section length does not sum to modelDataSize", () => {
+  it("throws when the named sections OVERRUN modelDataSize", () => {
     const bytes = buildMinimalMdl(5);
-    // Corrupt modelDataSize (u32 @8) so the walk overshoots/undershoots the block end.
-    new DataView(bytes.buffer).setUint32(8, 999, true);
-    expect(() => parseMdl(bytes)).toThrow(/model-data walk consumed/i);
+    // Corrupt modelDataSize (u32 @8) DOWN so the real sections overrun the (too-small) block end.
+    new DataView(bytes.buffer).setUint32(8, 100, true);
+    expect(() => parseMdl(bytes)).toThrow(/overran modelDataSize/i);
+  });
+
+  it("captures a trailing gap opaquely (modelDataSize > named sections)", () => {
+    // Splice a real 48-byte gap between the named model-data sections and the geometry tail (the
+    // fixture's own geometry is only 16 B, too small to grow modelDataSize into), and bump
+    // modelDataSize by 48 so the walk carries the gap as `trailing`.
+    const base = buildMinimalMdl(5);
+    const baseDv = new DataView(base.buffer);
+    const modelDataStart = 68 + baseDv.getUint32(4, true);
+    const modelDataEnd = modelDataStart + baseDv.getUint32(8, true);
+    const gap = new Uint8Array(48).map((_, i) => (i * 3 + 5) & 0xff);
+    const grown = new Uint8Array(base.length + 48);
+    grown.set(base.subarray(0, modelDataEnd), 0);
+    grown.set(gap, modelDataEnd);
+    grown.set(base.subarray(modelDataEnd), modelDataEnd + 48);
+    new DataView(grown.buffer).setUint32(
+      8,
+      baseDv.getUint32(8, true) + 48,
+      true,
+    );
+    expect(parseMdl(grown).sections.trailing).toEqual(gap);
   });
 });

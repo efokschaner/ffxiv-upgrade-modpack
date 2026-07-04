@@ -76,6 +76,7 @@ export interface MdlSections {
   patch72: Uint8Array;
   padding: Uint8Array;
   boundingBoxes: Uint8Array;
+  trailing: Uint8Array; // opaque bytes between boundingBoxes and geometry (usually empty; spec §2)
 }
 
 /** A parsed runtime .mdl. serializeMdl replays this byte-for-byte. */

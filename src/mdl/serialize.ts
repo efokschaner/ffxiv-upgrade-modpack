@@ -32,6 +32,7 @@ export function serializeMdl(mdl: XivMdl): Uint8Array {
     s.patch72,
     s.padding,
     s.boundingBoxes,
+    s.trailing,
     mdl.geometry,
   ]);
 }

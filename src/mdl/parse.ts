@@ -76,13 +76,18 @@ export function parseMdl(bytes: Uint8Array, filePath = ""): XivMdl {
   );
 
   const consumed = r.tell();
-  if (consumed !== modelDataEnd) {
+  // No-overrun gate: named sections must not exceed modelDataSize. An over-read is the failure mode a
+  // mis-sized section usually produces (garbage downstream count) and is a hard error.
+  if (consumed > modelDataEnd) {
     throw new Error(
-      `mdl: model-data walk consumed ${consumed - modelDataStart} bytes, ` +
-        `expected ${header.modelDataSize} (path="${filePath}")`,
+      `mdl: model-data walk overran modelDataSize (consumed ${consumed - modelDataStart} > ` +
+        `${header.modelDataSize}) (path="${filePath}")`,
     );
   }
-
+  // Any bytes between the last named section and the geometry are carried opaquely (spec §2): the
+  // reference GetXivMdl seeks to VertexDataOffset for geometry and tolerates a gap (Mdl.cs:1000-1027)
+  // — some mods carry an extra 32*BoneCount per-bone bounding-box block that GetXivMdl reads past.
+  const trailing = bytes.slice(consumed, modelDataEnd);
   const geometry = bytes.slice(modelDataEnd);
 
   return {
@@ -110,6 +115,7 @@ export function parseMdl(bytes: Uint8Array, filePath = ""): XivMdl {
       patch72,
       padding,
       boundingBoxes,
+      trailing,
     },
     geometry,
     filePath,
