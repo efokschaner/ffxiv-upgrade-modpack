@@ -1,0 +1,218 @@
+[
+  {
+    "name": "grad.dxt1",
+    "format": "DXT1",
+    "width": 64,
+    "height": 64,
+    "input": "images/grad.dxt1.bin",
+    "expected": "images/grad.dxt1.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "grad.dxt3",
+    "format": "DXT3",
+    "width": 64,
+    "height": 64,
+    "input": "images/grad.dxt3.bin",
+    "expected": "images/grad.dxt3.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "grad.dxt5",
+    "format": "DXT5",
+    "width": 64,
+    "height": 64,
+    "input": "images/grad.dxt5.bin",
+    "expected": "images/grad.dxt5.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "grad.bc4",
+    "format": "BC4",
+    "width": 64,
+    "height": 64,
+    "input": "images/grad.bc4.bin",
+    "expected": "images/grad.bc4.rgba",
+    "channelMap": "grayFromR"
+  },
+  {
+    "name": "grad.bc5",
+    "format": "BC5",
+    "width": 64,
+    "height": 64,
+    "input": "images/grad.bc5.bin",
+    "expected": "images/grad.bc5.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "grad.bc7",
+    "format": "BC7",
+    "width": 64,
+    "height": 64,
+    "input": "images/grad.bc7.bin",
+    "expected": "images/grad.bc7.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "regions.dxt1",
+    "format": "DXT1",
+    "width": 64,
+    "height": 64,
+    "input": "images/regions.dxt1.bin",
+    "expected": "images/regions.dxt1.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "regions.dxt3",
+    "format": "DXT3",
+    "width": 64,
+    "height": 64,
+    "input": "images/regions.dxt3.bin",
+    "expected": "images/regions.dxt3.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "regions.dxt5",
+    "format": "DXT5",
+    "width": 64,
+    "height": 64,
+    "input": "images/regions.dxt5.bin",
+    "expected": "images/regions.dxt5.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "regions.bc4",
+    "format": "BC4",
+    "width": 64,
+    "height": 64,
+    "input": "images/regions.bc4.bin",
+    "expected": "images/regions.bc4.rgba",
+    "channelMap": "grayFromR"
+  },
+  {
+    "name": "regions.bc5",
+    "format": "BC5",
+    "width": 64,
+    "height": 64,
+    "input": "images/regions.bc5.bin",
+    "expected": "images/regions.bc5.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "regions.bc7",
+    "format": "BC7",
+    "width": 64,
+    "height": 64,
+    "input": "images/regions.bc7.bin",
+    "expected": "images/regions.bc7.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "alpha.dxt1",
+    "format": "DXT1",
+    "width": 64,
+    "height": 64,
+    "input": "images/alpha.dxt1.bin",
+    "expected": "images/alpha.dxt1.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "alpha.dxt3",
+    "format": "DXT3",
+    "width": 64,
+    "height": 64,
+    "input": "images/alpha.dxt3.bin",
+    "expected": "images/alpha.dxt3.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "alpha.dxt5",
+    "format": "DXT5",
+    "width": 64,
+    "height": 64,
+    "input": "images/alpha.dxt5.bin",
+    "expected": "images/alpha.dxt5.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "alpha.bc4",
+    "format": "BC4",
+    "width": 64,
+    "height": 64,
+    "input": "images/alpha.bc4.bin",
+    "expected": "images/alpha.bc4.rgba",
+    "channelMap": "grayFromR"
+  },
+  {
+    "name": "alpha.bc5",
+    "format": "BC5",
+    "width": 64,
+    "height": 64,
+    "input": "images/alpha.bc5.bin",
+    "expected": "images/alpha.bc5.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "alpha.bc7",
+    "format": "BC7",
+    "width": 64,
+    "height": 64,
+    "input": "images/alpha.bc7.bin",
+    "expected": "images/alpha.bc7.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "edge.dxt1",
+    "format": "DXT1",
+    "width": 65,
+    "height": 33,
+    "input": "images/edge.dxt1.bin",
+    "expected": "images/edge.dxt1.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "edge.dxt3",
+    "format": "DXT3",
+    "width": 65,
+    "height": 33,
+    "input": "images/edge.dxt3.bin",
+    "expected": "images/edge.dxt3.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "edge.dxt5",
+    "format": "DXT5",
+    "width": 65,
+    "height": 33,
+    "input": "images/edge.dxt5.bin",
+    "expected": "images/edge.dxt5.rgba",
+    "channelMap": "none"
+  },
+  {
+    "name": "edge.bc4",
+    "format": "BC4",
+    "width": 65,
+    "height": 33,
+    "input": "images/edge.bc4.bin",
+    "expected": "images/edge.bc4.rgba",
+    "channelMap": "grayFromR"
+  },
+  {
+    "name": "edge.bc5",
+    "format": "BC5",
+    "width": 65,
+    "height": 33,
+    "input": "images/edge.bc5.bin",
+    "expected": "images/edge.bc5.rgba",
+    "channelMap": "swapRB"
+  },
+  {
+    "name": "edge.bc7",
+    "format": "BC7",
+    "width": 65,
+    "height": 33,
+    "input": "images/edge.bc7.bin",
+    "expected": "images/edge.bc7.rgba",
+    "channelMap": "swapRB"
+  }
+]
