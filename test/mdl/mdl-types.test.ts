@@ -42,8 +42,8 @@ function distinctiveModelData(): MdlModelData {
     boneSetSize: 512,
     unknown13: 15,
     patch72TableSize: 16,
-    unknown15: 17,
-    unknown16: 18,
+    unknown15: -1, // 0xFFFF — pins signed i16 round-trip through the u16 mask
+    unknown16: -32768, // 0x8000 — high-bit
     unknown17: 19,
   };
 }

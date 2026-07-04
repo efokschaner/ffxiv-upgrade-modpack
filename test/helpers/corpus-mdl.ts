@@ -32,6 +32,7 @@ export function registerMdlChecks(pack: string): void {
       const files = mdlFiles(pack);
       let exact = 0;
       let legacySkipped = 0;
+      let trailingTotal = 0;
       for (const f of files) {
         let decoded: ReturnType<typeof decodeSqPackFile>;
         try {
@@ -41,12 +42,14 @@ export function registerMdlChecks(pack: string): void {
           continue;
         }
         if (decoded.type !== SqPackType.Model) continue;
-        const re = serializeMdl(parseMdl(decoded.data, f.gamePath));
+        const parsed = parseMdl(decoded.data, f.gamePath);
+        const re = serializeMdl(parsed);
         expect(bytesEqual(re, decoded.data)).toBe(true);
         exact++;
+        trailingTotal += parsed.sections.trailing.length;
       }
       console.log(
-        `[mdl] ${name}: ${exact} byte-exact, ${legacySkipped} legacy-skipped (of ${files.length})`,
+        `[mdl] ${name}: ${exact} byte-exact, ${legacySkipped} legacy-skipped, ${trailingTotal} trailing-bytes (of ${files.length})`,
       );
     }, 1_200_000);
   });

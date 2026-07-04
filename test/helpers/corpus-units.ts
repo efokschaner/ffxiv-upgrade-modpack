@@ -26,7 +26,7 @@ function sortedPacks(): string[] {
 /**
  * Every (pack × check-family) work unit, in a stable order: packs sorted ascending, then per pack
  * the fixed check order [sqpack, golden, mtrl, tex, mdl, (pmp if .pmp)]. sqpack is ONE unit (its three
- * its share one decode via beforeAll). The index into this array is the virtual module's identity.
+ * tests share one decode via beforeAll). The index into this array is the virtual module's identity.
  */
 export function enumerateUnits(): Unit[] {
   const units: Unit[] = [];
