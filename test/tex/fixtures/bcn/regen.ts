@@ -260,6 +260,9 @@ function goldenFor(
     throw new Error(
       `${label}: our decode differs from texconv by ${d} (> ${tol}) — a structural/channel-order discrepancy, not rounding. Investigate.`,
     );
+  // The returned channelMap describes which space `bytes` is ALREADY in (so the test maps it into our
+  // decoder's convention), NOT f.channelMap: BC7 keeps texconv's standard-order bytes (need "swapRB"),
+  // while the frozen S3TC bytes are already our decoder's output (need "none").
   if (f.xiv === "BC7") return { bytes: texStd, channelMap: "swapRB" };
   return { bytes: ours, channelMap: "none" };
 }

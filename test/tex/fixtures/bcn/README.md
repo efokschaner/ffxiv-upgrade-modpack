@@ -37,7 +37,10 @@ gated to an **exact** (0) match.
 ### How confident are we these match TexTools?
 
 - **BC5 / BC7:** high — TexTools decodes these via **BcnSharp**, a P/Invoke wrapper around the same
-  `bc7enc_rdo`/rgbcx we ported, at rgbcx's default mode. Our frozen values should equal what TexTools sees.
+  `bc7enc_rdo`/rgbcx we ported, at rgbcx's default mode, so our interpolated **values** share that lineage;
+  and the texconv gate independently corroborates the BC5/BC7 **channel order** (a wrong swap would diverge
+  by ~255, not ≤1). The corresponding "channel order settled" notes in `src/tex/decode.ts` (BC5) and
+  `src/tex/bc7.ts` (BC7) are updated on this branch to match.
 - **BC1 / DXT3 / BC4:** TexTools decodes these via **FNA's `DxtUtil`** (Ms-PL, which we deliberately did
   **not** transcribe — see the tex-codec spec §3), a *different* implementation. Our frozen values are a
   faithful standard rgbcx decode, corroborated within ±1 of DirectXTex, but they are **not** independently
