@@ -1,4 +1,5 @@
 import { registerGoldenCheck } from "./corpus-golden";
+import { registerMdlChecks } from "./corpus-mdl";
 import { registerMtrlChecks } from "./corpus-mtrl";
 import { registerPmpManifestChecks } from "./corpus-pmp";
 import { registerSqpackChecks } from "./corpus-sqpack";
@@ -14,6 +15,7 @@ const DISPATCH: Record<CheckKind, (pack: string) => void> = {
   mtrl: registerMtrlChecks,
   pmp: registerPmpManifestChecks,
   tex: registerTexChecks,
+  mdl: registerMdlChecks,
 };
 
 /** Register the checks for the unit at `index` in enumerateUnits(). Called by the virtual module
