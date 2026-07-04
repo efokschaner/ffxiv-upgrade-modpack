@@ -210,6 +210,11 @@ Regeneration is a one-time/occasional dev action, **not** part of the `npm test`
 
 - The new test must pass in `npm test` and show up in `npm run test:coverage` exercising the BC1/BC2/BC3/
   BC4/BC5/BC7 decode paths and all BC7 modes (report-only; no threshold gate).
+- **Coverage-change assessment (required deliverable).** Capture `npm run test:coverage` **before** and
+  **after** the change, and report the delta for `src/tex/decode.ts` and `src/tex/bc7.ts` — line/branch/
+  function %, plus which previously-uncovered regions (notably the BC7 per-mode branches, BC4/BC5 channel
+  paths, and edge-block clip paths) are now exercised. This is the concrete evidence the effort moved the
+  needle; include it in the final task write-up.
 - Each Family-A block is confirmed to be a *valid* mode-N block by texconv accepting and decoding it as
   that mode (recorded in the README); the golden is texconv's decode.
 - End-of-task ritual per `AGENTS.md`: `npm run check`, `npm run typecheck`, `npm test` all green.
