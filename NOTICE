@@ -36,3 +36,15 @@ are intentionally omitted; the license applies to every file in the repository.
 FINAL FANTASY XIV and all related game assets are the property of
 SQUARE ENIX CO., LTD. This project ships no game assets; any game data used
 for local testing is not distributed with this repository.
+
+----------------------------------------------------------------------
+
+src/tex/decode.ts and src/tex/bc7.ts contain BCn (BC1-BC7) texture
+decoders ported from richgel999/bc7enc_rdo (rgbcx.h, bc7decomp.cpp):
+
+  Copyright (c) 2020-2021 Richard Geldreich, Jr.
+  Available under the MIT License OR the Unlicense (public domain);
+  used here under the MIT License.
+
+The block-compression algorithms (S3TC/DXT, RGTC, BPTC) are unpatented
+public standards.

@@ -2,6 +2,7 @@ import { registerGoldenCheck } from "./corpus-golden";
 import { registerMtrlChecks } from "./corpus-mtrl";
 import { registerPmpManifestChecks } from "./corpus-pmp";
 import { registerSqpackChecks } from "./corpus-sqpack";
+import { registerTexChecks } from "./corpus-tex";
 import { type CheckKind, enumerateUnits } from "./corpus-units";
 
 // Loaded ONLY inside a Vitest worker (via the virtual corpus-unit module). Statically imports the
@@ -12,6 +13,7 @@ const DISPATCH: Record<CheckKind, (pack: string) => void> = {
   golden: registerGoldenCheck,
   mtrl: registerMtrlChecks,
   pmp: registerPmpManifestChecks,
+  tex: registerTexChecks,
 };
 
 /** Register the checks for the unit at `index` in enumerateUnits(). Called by the virtual module

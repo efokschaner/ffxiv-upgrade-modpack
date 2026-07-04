@@ -17,7 +17,7 @@
 - **Reference C# source:** `./reference/xivModdingFramework/` (git-ignored). Cite when verifying format details. Key files: `xivModdingFramework/Materials/FileTypes/Mtrl.cs` (`GetXivMtrl` @174, `XivMtrlToUncompressedMtrl` @556), `xivModdingFramework/Materials/DataContainers/XivMtrl.cs` (model + computed getters), `xivModdingFramework/Materials/DataContainers/ShaderHelpers.cs:480` (`ESamplerId`).
 - **No foreign oracle at this layer:** ConsoleTools exposes no command that runs a single `.mtrl` through parse→reserialize, so the corpus self round-trip + synthetic units are the whole gate (spec §3, §7).
 - **Endianness:** All MTRL integers are little-endian. Colorset values are raw IEEE-754 half-float `uint16`s; shader constants are IEEE-754 `float32`.
-- **License:** New files carry the repo's SPDX/GPL header (copy the 5-line header from `src/util/binary.ts`). Bundled fixtures (Task 8) are GPL-3.0 framework resources — covered by the existing NOTICE attribution.
+- **License:** Do NOT add per-file license/SPDX headers — the repo carries licensing at the top level (LICENSE + NOTICE) only. Bundled fixtures (Task 8) are GPL-3.0 framework resources — covered by the existing NOTICE attribution.
 
 ---
 
@@ -76,12 +76,6 @@ test/mtrl-fixtures.test.ts CREATE: EW + DT default-material round-trip; skips if
 `test/mtrl-types.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import {
   colorSetDataSize, shaderConstantsDataSize, getRealSamplerCount,
@@ -181,12 +175,6 @@ Add these methods inside the `ByteBuilder` class (after `u16`):
 - [ ] **Step 4: Write `src/mtrl/types.ts`**
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 // Internal marker for placeholder textures that only hold an empty (index-255) sampler.
 // Never appears in output bytes (placeholders are excluded from the texture count and string
 // block). Lowercase so it survives serialize's path lowercasing — see serialize.ts. The C#
@@ -320,12 +308,6 @@ git commit -m "feat(mtrl): add data model, computed helpers, and binary helpers"
 `test/mtrl-colorset.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import { BinaryReader, ByteBuilder } from "../src/util/binary";
 import { readColorset, writeColorset } from "../src/mtrl/colorset";
@@ -355,12 +337,6 @@ Expected: FAIL — cannot resolve `../src/mtrl/colorset`.
 - [ ] **Step 3: Write `src/mtrl/colorset.ts`**
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { BinaryReader, ByteBuilder } from "../util/binary";
 
 /**
@@ -411,12 +387,6 @@ git commit -m "feat(mtrl): add colorset Half-row codec"
 `test/mtrl-dye.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import { BinaryReader, ByteBuilder } from "../src/util/binary";
 import { readDye, writeDye } from "../src/mtrl/dye";
@@ -453,12 +423,6 @@ Expected: FAIL — cannot resolve `../src/mtrl/dye`.
 - [ ] **Step 3: Write `src/mtrl/dye.ts`**
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { BinaryReader, ByteBuilder } from "../util/binary";
 
 function assertDyeLength(len: number): void {
@@ -516,12 +480,6 @@ git commit -m "feat(mtrl): add dye-blob codec"
 `test/helpers/make-mtrl.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { ByteBuilder } from "../../src/util/binary";
 import { SAMPLER_NORMAL_MAP_0 } from "../../src/mtrl/types";
 
@@ -595,12 +553,6 @@ export function buildMinimalMtrl(): Uint8Array {
 `test/mtrl-parse.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import { parseMtrl } from "../src/mtrl/parse";
 import { SAMPLER_NORMAL_MAP_0 } from "../src/mtrl/types";
@@ -650,12 +602,6 @@ Expected: FAIL — cannot resolve `../src/mtrl/parse`.
 - [ ] **Step 4: Write `src/mtrl/parse.ts`**
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { BinaryReader } from "../util/binary";
 import { readColorset } from "./colorset";
 import { readDye } from "./dye";
@@ -834,12 +780,6 @@ git commit -m "feat(mtrl): add parseMtrl (GetXivMtrl port)"
 `test/mtrl-roundtrip.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import { parseMtrl, serializeMtrl } from "../src/mtrl/mtrl";
 import { buildMinimalMtrl } from "./helpers/make-mtrl";
@@ -867,12 +807,6 @@ Expected: FAIL — cannot resolve `../src/mtrl/mtrl`.
 - [ ] **Step 3: Write `src/mtrl/serialize.ts`**
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { ByteBuilder } from "../util/binary";
 import { writeColorset } from "./colorset";
 import { writeDye } from "./dye";
@@ -1007,12 +941,6 @@ export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
 - [ ] **Step 4: Write `src/mtrl/mtrl.ts`**
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 export { parseMtrl } from "./parse";
 export { serializeMtrl } from "./serialize";
 export type {
@@ -1164,12 +1092,6 @@ export function buildEmptySamplerMtrl(): Uint8Array {
 `test/mtrl-samplers.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import { parseMtrl, serializeMtrl } from "../src/mtrl/mtrl";
 import { getRealSamplerCount, isEmptySampler, SAMPLER_NORMAL_MAP_0, SAMPLER_COLOR_MAP_0 } from "../src/mtrl/types";
@@ -1241,12 +1163,6 @@ This is the capstone correctness test. It skips entirely when the corpus is abse
 `test/mtrl-corpus.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
@@ -1338,12 +1254,6 @@ Expected: `default_material.mtrl` (808 bytes, EW), `default_material_dt.mtrl` (2
 `test/mtrl-fixtures.test.ts`:
 
 ```ts
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
