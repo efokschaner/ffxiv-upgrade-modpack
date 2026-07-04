@@ -11,21 +11,15 @@ import {
   DXT5,
   type XivTex,
 } from "../../src/tex/types";
-import { applyChannelMap, bc7BlockMode, type ChannelMap } from "./golden-util";
+import {
+  applyChannelMap,
+  bc7BlockMode,
+  type GoldenVector,
+} from "./golden-util";
 
 const dir = join(__dirname, "fixtures", "bcn");
 
-interface Vector {
-  name: string;
-  format: string;
-  width: number;
-  height: number;
-  input: string;
-  expected: string;
-  channelMap: ChannelMap;
-}
-
-const manifest: Vector[] = JSON.parse(
+const manifest: GoldenVector[] = JSON.parse(
   readFileSync(join(dir, "manifest.json"), "utf8"),
 );
 

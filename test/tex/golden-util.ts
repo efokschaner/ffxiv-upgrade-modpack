@@ -2,6 +2,17 @@
 
 export type ChannelMap = "none" | "swapRB" | "grayFromR";
 
+/** One entry in test/tex/fixtures/bcn/manifest.json (shared by the generator and the golden test). */
+export interface GoldenVector {
+  name: string;
+  format: string;
+  width: number;
+  height: number;
+  input: string;
+  expected: string;
+  channelMap: ChannelMap;
+}
+
 /**
  * Maps a STANDARD-order RGBA buffer (texconv's decode output) into our decoder's TexTools channel
  * convention, so a texconv golden can be compared byte-for-byte against decodeToRgba's output:

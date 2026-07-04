@@ -8,7 +8,8 @@ modpack corpus. See `docs/superpowers/specs/2026-07-04-bcn-decode-golden-fixture
 - `sources/*.tga` — small, deterministic, procedurally-generated source images (viewable).
 - `images/<name>.<fmt>.bin` — raw compressed mip bytes (texconv encode of the source, DDS container stripped).
 - `images/<name>.<fmt>.rgba` — golden RGBA8888 (provenance depends on format — see Oracle below).
-- `blocks/bc7-mode<N>.{bin,rgba}` — synthetic single-block BC7 vectors for modes the encoder never emits (0/1/2).
+- `blocks/*.{bin,rgba}` — authored single-block vectors for paths no procedural source triggers: BC7
+  modes 0/1/2 (which no encoder emits), and one BC1 punch-through / 3-color block (transparent index 3).
 - `manifest.json` — the vector list the test iterates: `{ name, format, width, height, input, expected, channelMap }`.
 
 ## Oracle (two tiers — this is the important part)

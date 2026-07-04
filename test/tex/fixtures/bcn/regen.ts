@@ -25,12 +25,16 @@ import {
   DXT5,
   type XivTex,
 } from "../../../../src/tex/types";
-import { applyChannelMap, bc7BlockMode } from "../../golden-util";
+import {
+  applyChannelMap,
+  bc7BlockMode,
+  type ChannelMap,
+  type GoldenVector,
+} from "../../golden-util";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEXCONV = process.env.TEXCONV ?? "texconv";
 
-type ChannelMap = "none" | "swapRB" | "grayFromR";
 interface Fmt {
   key: string;
   texconv: string;
@@ -227,14 +231,13 @@ function authorBc7Block(mode: number): Uint8Array {
   return b;
 }
 
-interface Vector {
-  name: string;
-  format: string;
-  width: number;
-  height: number;
-  input: string;
-  expected: string;
-  channelMap: ChannelMap;
+// Authors an 8-byte DXT1/BC1 block in 3-color / punch-through mode (c0 <= c1). The opaque procedural
+// sources never trigger this path (BC1 has no alpha, so the encoder always picks the 4-color mode), so
+// this fixture is what exercises writeColorBlock's punch-through branch and the transparent index-3 texel.
+// c0 = black (0x0000), c1 = white (0xFFFF); indices 0xE4E4E4E4 => every 4 texels cycle 0,1,2,3
+// (color0, color1, 1/2 blend, transparent black).
+function authorDxt1PunchThroughBlock(): Uint8Array {
+  return new Uint8Array([0x00, 0x00, 0xff, 0xff, 0xe4, 0xe4, 0xe4, 0xe4]);
 }
 
 // Corroborates OUR decode against texconv, then returns the committed golden + its channelMap:
@@ -273,7 +276,7 @@ function main(): void {
   const tmp = join(HERE, ".tmp");
   for (const d of [srcDir, imgDir]) mkdirSync(d, { recursive: true });
 
-  const manifest: Vector[] = [];
+  const manifest: GoldenVector[] = [];
 
   for (const s of SOURCES) {
     const tga = join(srcDir, `${s.name}.tga`);
@@ -383,6 +386,46 @@ function main(): void {
         channelMap: g.channelMap,
       });
     }
+  }
+
+  // BC1 punch-through block (authored): the opaque procedural sources never trigger BC1's 3-color /
+  // transparent path, so add one block that does. BC1 tier => frozen our-output, gated <=1 vs texconv.
+  {
+    const dxt1 = FORMATS.find((f) => f.xiv === "DXT1")!;
+    const blocksDir = join(HERE, "blocks");
+    const encDir = join(tmp, "enc");
+    const decDir = join(tmp, "dec");
+    mkdirSync(blocksDir, { recursive: true });
+    mkdirSync(encDir, { recursive: true });
+    mkdirSync(decDir, { recursive: true });
+    const tmplTga = join(tmp, "bc1tmpl.tga");
+    writeTga(tmplTga, 4, 4, () => [128, 64, 200, 255]);
+    texconv(["-m", "1", "-f", "BC1_UNORM", "-o", encDir, tmplTga]);
+    const tmpl = new Uint8Array(readFileSync(join(encDir, "bc1tmpl.DDS")));
+    const dx10 =
+      tmpl[84] === 0x44 &&
+      tmpl[85] === 0x58 &&
+      tmpl[86] === 0x31 &&
+      tmpl[87] === 0x30;
+    const block = authorDxt1PunchThroughBlock();
+    const dds = Uint8Array.from(tmpl);
+    dds.set(block, dx10 ? 148 : 128);
+    const ptTmp = join(tmp, "bc1-punchthrough.dds");
+    writeFileSync(ptTmp, dds);
+    texconv(["-m", "1", "-f", "R8G8B8A8_UNORM", "-o", decDir, ptTmp]);
+    const texStd = stripDds(join(decDir, "bc1-punchthrough.DDS"));
+    const g = goldenFor(dxt1, block, texStd, 4, 4, "block.bc1-punchthrough");
+    writeFileSync(join(blocksDir, "bc1-punchthrough.bin"), block);
+    writeFileSync(join(blocksDir, "bc1-punchthrough.rgba"), g.bytes);
+    manifest.push({
+      name: "block.bc1-punchthrough",
+      format: "DXT1",
+      width: 4,
+      height: 4,
+      input: "blocks/bc1-punchthrough.bin",
+      expected: "blocks/bc1-punchthrough.rgba",
+      channelMap: g.channelMap,
+    });
   }
 
   rmSync(tmp, { recursive: true, force: true });

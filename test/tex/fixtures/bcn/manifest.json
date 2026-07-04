@@ -241,5 +241,14 @@
     "input": "blocks/bc7-mode2.bin",
     "expected": "blocks/bc7-mode2.rgba",
     "channelMap": "swapRB"
+  },
+  {
+    "name": "block.bc1-punchthrough",
+    "format": "DXT1",
+    "width": 4,
+    "height": 4,
+    "input": "blocks/bc1-punchthrough.bin",
+    "expected": "blocks/bc1-punchthrough.rgba",
+    "channelMap": "none"
   }
 ]
