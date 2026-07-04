@@ -393,8 +393,10 @@ function decodeBc4(src: Uint8Array, w: number, h: number): Uint8Array {
 
 /** BC5: two interpolated channels. Matches Bc5Sharp.Decode (R=ch0,G=ch1,B=0,A=255) followed by
  *  DxtUtil.SwapRedBlue (R<->B). Net: R=0, G=ch1, B=ch0, A=255.
- *  Verified against texconv (BC5_UNORM) in test/tex/tex-bcn-golden.test.ts (channelMap "swapRB"): the
- *  net R=0, G=ch1, B=ch0, A=255 layout is settled. */
+ *  The R=0, G=ch1, B=ch0, A=255 channel layout is settled: our decode is corroborated within ±1 of
+ *  texconv's BC5_UNORM (R<->B) by the fixture generator (test/tex/fixtures/bcn/regen.ts) and frozen as a
+ *  golden in test/tex/tex-bcn-golden.test.ts. The ±1 is S3TC/RGTC implementation-defined value rounding,
+ *  not a channel-order question (a wrong swap would diverge by ~255). */
 function decodeBc5(src: Uint8Array, w: number, h: number): Uint8Array {
   const out = new Uint8Array(w * h * 4);
   forEachBlock(w, h, (bx, by) => {
