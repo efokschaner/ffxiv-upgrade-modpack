@@ -9,6 +9,8 @@ if a rule changes, change it here.
 - `npm run lint` — lint only, no writes.
 - `npm run typecheck` — `tsc --noEmit`.
 - `npm test` — full suite via the custom parallel runner.
+- `npm run test:coverage` — coverage report (v8) over the full suite incl.
+  corpus; opt-in, **not** part of the required test gate. Writes `coverage/`.
 - `npm run build` — production build (Vite).
 
 ## End-of-task ritual (required)
