@@ -31,7 +31,9 @@ export {
 export {
   decodeToRgba,
   encodeUncompressedTex,
+  generateMipmaps,
   parseTex,
+  resizeToPowerOfTwo,
   serializeTex,
 } from "./tex/tex";
 export type { XivTex } from "./tex/types";

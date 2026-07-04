@@ -1,9 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
-// Part of ffxiv-upgrade-modpack. Portions are a C#-to-TypeScript port of
-// xivModdingFramework / FFXIV TexTools (GPL-3.0-or-later). See LICENSE and NOTICE.
-
 import { buildCanonicalTexHeader } from "../../src/tex/header";
 import { A8R8G8B8 } from "../../src/tex/types";
 import { concatBytes } from "../../src/util/binary";

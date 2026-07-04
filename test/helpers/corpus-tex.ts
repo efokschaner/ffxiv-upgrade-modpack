@@ -66,6 +66,9 @@ export function registerTexChecks(pack: string): void {
         const sampled = decodeSampleCount.get(parsed.format) ?? 0;
         if (sampled >= DECODE_SAMPLE_CAP_PER_FORMAT) continue;
         decodeSampleCount.set(parsed.format, sampled + 1);
+        // TODO(oracle-stage): this smoke asserts output LENGTH only, so a decoder that produced wrong
+        // pixels of the right size would pass (esp. BC7 modes 0-5/7, which have no known-answer unit
+        // test). Close with per-mode golden fixtures when the transforms/oracle stage lands (PR #5 #2).
         try {
           const rgba = decodeToRgba(parsed);
           expect(rgba.length).toBe(

@@ -1,14 +1,15 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2026 Edmund Fokschaner
-//
 // BC7 (BPTC) decoder ported from richgel999/bc7enc_rdo (bc7decomp.cpp unpack_bc7):
-//   Copyright (c) 2020-2021 Richard Geldreich, Jr. (MIT / Unlicense).
-// See NOTICE. The BPTC algorithm is an unpatented public standard.
+//   Copyright (c) 2020-2021 Richard Geldreich, Jr. (MIT / Unlicense) — see NOTICE.
+// The BPTC algorithm is an unpatented public standard.
 //
-// Part of ffxiv-upgrade-modpack (GPL-3.0-or-later). See LICENSE and NOTICE.
+// TODO(oracle-stage): only mode 6 has a known-answer unit test; modes 0-5/7 are exercised on real
+// corpus textures by the decode-smoke (output length only), so their pixel output is unverified until
+// a per-mode golden fixture lands with the transforms/oracle work (design spec §6; PR #5 review #2).
 
 // Decodes BC7-compressed data to RGBA8888 at width x height, applying the red/blue swap that the
 // reference applies after Bc7Sharp.Decode (DxtUtil.SwapRedBlue).
+// PROVISIONAL: the pre-swap byte order vs the native Bc7Sharp is unverified until the oracle stage
+// confirms it — do not treat the absolute channel order as settled (design spec §5/§6).
 export function decodeBc7(
   src: Uint8Array,
   width: number,

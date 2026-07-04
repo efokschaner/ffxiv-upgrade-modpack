@@ -291,8 +291,8 @@ Neither can match Nvtt byte-for-byte, so this layer is validated by **decode-wit
 - **Reference setup:** clone `richgel999/bc7enc_rdo` into the gitignored `reference/bc7enc_rdo`, alongside the
   existing xivModdingFramework checkout, for porting reference (the readable BCn decode source).
 - **Attribution:** add the MIT copyright notice (Richard Geldreich Jr, 2020; MIT-or-Unlicense) for the
-  ported BCn decoders to `NOTICE`. New files carry the repo's SPDX/GPL header; ported-BCn files
-  additionally cite the `bc7enc_rdo` MIT origin in a comment.
+  ported BCn decoders to `NOTICE`; the ported-BCn files also cite the `bc7enc_rdo` MIT origin in a brief
+  comment. Do NOT add per-file license/SPDX headers — licensing is carried repo-wide by LICENSE + NOTICE.
 - TypeScript + Vitest; Windows + PowerShell; `npm`.
 - Extracted `.tex` fixtures are GPL-3.0 framework/game resources covered by the existing NOTICE
   attribution; keep the bundle minimal.

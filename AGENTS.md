@@ -28,6 +28,11 @@ the tests.
 
 - **Formatting is mechanical.** Biome owns it. Do not hand-format and do not
   re-introduce the old compact single-line style — run `npm run check`.
+- **No per-file license headers.** Licensing lives in the top-level `LICENSE`
+  (GPL-3.0) and `NOTICE` (third-party attributions). Do not add SPDX or
+  copyright headers to individual source files. A file that ports third-party
+  code may cite its upstream origin in a brief comment, but the license notice
+  itself belongs in `NOTICE`.
 - **Supply chain.** Install new deps pinned-exact (`.npmrc save-exact`) with a
   ≥ 7-day min release age (e.g. `npm install -D <pkg> --before=<date 7+ days ago>`).
 - **`reference/` is off-limits.** It is vendored third-party C#
