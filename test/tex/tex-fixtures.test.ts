@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { decodeToRgba } from "../src/tex/decode";
-import { generateMipmaps } from "../src/tex/encode";
-import { parseTex, serializeTex } from "../src/tex/tex";
-import { texMipSizes } from "../src/tex/types";
+import { decodeToRgba } from "../../src/tex/decode";
+import { generateMipmaps } from "../../src/tex/encode";
+import { parseTex, serializeTex } from "../../src/tex/tex";
+import { texMipSizes } from "../../src/tex/types";
 
-const dir = join(__dirname, "fixtures");
+const dir = join(__dirname, "..", "fixtures");
 
 // (a) Round-trip an extracted .tex if present.
 const sample = join(dir, "sample.tex");

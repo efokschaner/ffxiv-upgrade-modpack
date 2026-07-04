@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeToRgba } from "../src/tex/decode";
+import { decodeToRgba } from "../../src/tex/decode";
 import {
   A1R5G5B5,
   A4R4G4B4,
@@ -15,8 +15,8 @@ import {
   L8,
   X8R8G8B8,
   type XivTex,
-} from "../src/tex/types";
-import { buildBc7Mode6SolidBlock } from "./helpers/make-tex";
+} from "../../src/tex/types";
+import { buildBc7Mode6SolidBlock } from "./make-tex";
 
 function texOf(
   format: number,

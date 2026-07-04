@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { decodeToRgba } from "../src/tex/decode";
+import { decodeToRgba } from "../../src/tex/decode";
 import {
   encodeUncompressedTex,
   generateMipmaps,
   resizeToPowerOfTwo,
-} from "../src/tex/encode";
-import { parseTex } from "../src/tex/tex";
-import { A8R8G8B8 } from "../src/tex/types";
+} from "../../src/tex/encode";
+import { parseTex } from "../../src/tex/tex";
+import { A8R8G8B8 } from "../../src/tex/types";
 
 describe("tex encode: uncompressed", () => {
   it("round-trips RGBA through encode -> parse -> decode (single mip)", () => {

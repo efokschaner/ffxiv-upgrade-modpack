@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseTex, serializeTex } from "../src/tex/tex";
-import { A8R8G8B8 } from "../src/tex/types";
-import { buildMinimalTex } from "./helpers/make-tex";
+import { parseTex, serializeTex } from "../../src/tex/tex";
+import { A8R8G8B8 } from "../../src/tex/types";
+import { buildMinimalTex } from "./make-tex";
 
 describe("tex parse/serialize round-trip", () => {
   it("parses the hand-built canonical file", () => {
@@ -20,7 +20,7 @@ describe("tex parse/serialize round-trip", () => {
   });
 
   it("is exported from the package index", async () => {
-    const idx = await import("../src/index");
+    const idx = await import("../../src/index");
     expect(typeof idx.parseTex).toBe("function");
     expect(typeof idx.serializeTex).toBe("function");
   });

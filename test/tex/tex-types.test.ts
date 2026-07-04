@@ -10,7 +10,7 @@ import {
   texLayers,
   texMipSizes,
   type XivTex,
-} from "../src/tex/types";
+} from "../../src/tex/types";
 
 function baseTex(): XivTex {
   return {

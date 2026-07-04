@@ -3,9 +3,9 @@ import {
   buildCanonicalTexHeader,
   parseTexHeader,
   serializeTexHeader,
-} from "../src/tex/header";
-import { A8R8G8B8, BC5, type XivTex } from "../src/tex/types";
-import { BinaryReader } from "../src/util/binary";
+} from "../../src/tex/header";
+import { A8R8G8B8, BC5, type XivTex } from "../../src/tex/types";
+import { BinaryReader } from "../../src/util/binary";
 
 describe("tex header codec", () => {
   it("round-trips a full 80-byte header byte-exact", () => {
