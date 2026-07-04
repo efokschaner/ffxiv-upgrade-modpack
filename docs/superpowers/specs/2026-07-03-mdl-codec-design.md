@@ -107,7 +107,7 @@ C# logic lives under `reference/xivModdingFramework/xivModdingFramework/Models/`
 | `FileTypes/Mdl.cs:349-995` `GetXivMdl` (the model-data walk) | Section order + per-section sizes | `src/mdl/parse.ts` (structural walk) |
 | `DataContainers/MdlModelData.cs` (`Read`/`Write` + flag enums) | Fixed model-data struct | `src/mdl/model-data.ts`, `src/mdl/types.ts` |
 | `FileTypes/Mdl.cs:1190/1210` `ReadBoundingBox` / `WriteBoundingBox` | Bounding-box helpers (2×Vector4 = 32 B) | consumed as slices here; helpers land with the §9 transform |
-| `FileTypes/Mdl.cs:741` `totalBoneBlockSize = BoneSetSize·2 + BoneSetCount·4` | Version-agnostic bone-set block length | `src/mdl/parse.ts` (§5) |
+| `FileTypes/Mdl.cs:741` (v6) + `:779-797` (v5) | **Version-dependent** bone-set block length (v6: `BoneSetSize·2 + BoneSetCount·4`; v5: fixed `132·BoneSetCount`) | `src/mdl/parse.ts` (§5) |
 | `Mods/EndwalkerUpgrade.cs:282` `FastMdlv6Upgrade` | The v5→v6 transform | **Deferred** (§9) |
 
 ### The 68-byte MDL header (`Mdl.cs`, little-endian)
@@ -148,7 +148,7 @@ Every length is count-driven. `md` = the parsed `MdlModelData`.
 | 10 | terrainShadowParts | `12 · md.TerrainShadowPartCount` | `Mdl.cs:706` |
 | 11 | materialOffsets | `4 · md.MaterialCount` | `Mdl.cs:~710` |
 | 12 | boneOffsets | `4 · md.BoneCount` | `Mdl.cs:731-734` |
-| 13 | boneSets | `md.BoneSetSize·2 + md.BoneSetCount·4` (version-agnostic, §5) | `Mdl.cs:741` |
+| 13 | boneSets | **version-dependent** (§5): v6 `md.BoneSetSize·2 + md.BoneSetCount·4`; v5 `132·md.BoneSetCount` | `Mdl.cs:741`/`:779-797` |
 | 14 | shapeInfo | `(4 + 3·2 + 3·2) · md.ShapeCount` = `16 · md.ShapeCount` (name offset + 3 LoD u16 offsets + 3 LoD i16 counts) | `Mdl.cs:813-850` |
 | 15 | shapeParts | `12 · md.ShapePartCount` | `Mdl.cs:853-863` |
 | 16 | shapeData | `4 · md.ShapeDataCount` | `Mdl.cs:866-874` |
@@ -228,17 +228,23 @@ Bone-set **internal** encoding differs by MDL version (`Mdl.cs:743-797`):
 - **v6:** a meta table of `BoneSetCount × (i16 offset, i16 count)` followed by variable-length
   bone-index arrays (each `count` i16, padded to a 4-byte boundary), zero-filled to the block end.
 
-**This stage does not parse bone-set internals.** It slices the whole block using the
-version-agnostic **block-length formula** the reference itself uses to bound the region:
+**This stage does not parse bone-set internals**, but the block length is **version-dependent** — it
+is NOT the single `Mdl.cs:741` formula (an earlier draft of this spec wrongly assumed it was):
 
 ```
-boneSetBlockLength = md.BoneSetSize · 2 + md.BoneSetCount · 4        (Mdl.cs:741)
+boneSetBlockLength = version >= 6
+  ? md.BoneSetSize · 2 + md.BoneSetCount · 4     (v6; Mdl.cs:741)
+  : 132 · md.BoneSetCount                        (v5; fixed 64×i16 + i32 per set, Mdl.cs:779-797)
 ```
 
-which yields the correct total for **both** encodings (v5: `BoneSetSize == 64·BoneSetCount` ⇒
-`128·BoneSetCount + 4·BoneSetCount = 132·BoneSetCount`; v6: covers the meta table + padded indices).
-Slicing opaquely keeps this stage version-agnostic and byte-exact; the §9 transform (which must
-*re-encode* v5 sets into v6) is where per-set parsing lands.
+**Why the `Mdl.cs:741` formula is v6-only (corpus-verified).** In real **v5** files `BoneSetSize` is
+`0` (or otherwise ≠ `64·BoneSetCount`), so the formula collapses to `4·BoneSetCount` and drastically
+under-reads. The C# v5 reader (`Mdl.cs:779-797`) never consults `BoneSetSize` — it reads a *fixed*
+`BoneSetCount × (64 i16 + i32)` = `132·BoneSetCount` bytes; `totalBoneBlockSize` (`Mdl.cs:741`) is
+computed but used **only** in the v6 branch. This is corroborated by `FastMdlv6Upgrade`, which *sets*
+`BoneSetSize = 64·BoneSetCount` while upgrading — precisely because a v5 file does not already hold
+that value. So the walker branches on `header.version`. The §9 transform (which must *re-encode* v5
+sets into v6) is where per-set parsing lands.
 
 `version` is still read from the header (offset 0) and retained, so the deferred transform and any
 diagnostics can branch on it.
