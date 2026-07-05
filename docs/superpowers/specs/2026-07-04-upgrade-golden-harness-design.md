@@ -128,27 +128,42 @@ the dest exists, cache its bytes and return `{ kind: "pack" }`; if not, cache th
 ### 4.3 Diff engine — `test/helpers/upgrade-diff.ts`
 
 ```ts
+type DiffStatus = "added" | "removed" | "mismatch";
 interface FileDiff {
-  group: number; option: number; gamePath: string;
-  status: "matched" | "added" | "removed" | "mismatch";
-  detail?: string;              // e.g. byte lengths, PSNR, first-divergence offset
+  gamePath: string; index: number;   // index = position within this path's sorted diff list (stable id)
+  status: DiffStatus;
+  detail?: string;                    // e.g. byte lengths, PSNR, first-divergence offset
 }
-interface PackDiff { pack: string; files: FileDiff[]; }
+interface PackDiff { pack: string; matched: number; files: FileDiff[]; }
 
-export function diffUpgrade(ours: ModpackData, golden: ModpackData): PackDiff;
+export function diffUpgrade(
+  pack: string, ours: ModpackData, golden: ModpackData,
+  confirmDivergence: (gamePath: string, ours: Uint8Array, golden: Uint8Array) => boolean,
+): PackDiff;
 ```
 
-Align options by structural position. Within each option, reduce both sides to
-`Map<gamePath, Uint8Array>` of **uncompressed** bytes (decode sqpack for ttmp,
-raw for pmp — reuse existing `decodeSqPackFile` / storage handling). Classify:
+**Key by `gamePath`, not by option structure.** A simple ttmp2 collapses to a
+single synthetic `Default` group/option, and `/upgrade`'s container writer gives
+no guarantee it preserves simple-vs-wizard structure or option ordering — so
+aligning by structural index is fragile. Instead, mirror the shipped
+`compareInnerFilesByteIdentical`: reduce **each whole pack** to
+`Map<gamePath, Uint8Array[]>` of **uncompressed** payloads (decode sqpack for
+ttmp, raw for pmp — a `gamePath` may carry several payloads across options, so
+it is a multiset), then per `gamePath` pair ours↔golden order-independently:
 
-- `added` — in golden, not ours (a file the upgrade should have created).
-- `removed` — in ours, not golden (unexpected; a real bug if it appears).
-- present in both → run the comparator (§4.4): `matched` or `mismatch`.
+1. Remove **exact byte-equal** pairs → counted in `matched`.
+2. On the remainder, pair via `confirmDivergence` (§4.4); a confirmed pair is an
+   intended divergence → counted in `matched`.
+3. Leftovers (sorted lexically for stable `index`): `min(nOurs,nGolden)` reported
+   as `mismatch`, surplus golden as `added`, surplus ours as `removed`.
 
-For the `noop` golden: compare **ours vs the original input pack** with the same
-engine; any non-`matched` entry is a mismatch (our pipeline changed a file the
-oracle left alone).
+`PackDiff.files` holds only the **non-matched** entries (the ratchet cares about
+those); `matched` is a count for logging. Only non-matched entries need the
+`{gamePath, index}` stable identity.
+
+For the `noop` golden: run the same engine with the **original input pack** as
+`golden`; any non-matched entry means our pipeline changed a file the oracle left
+alone.
 
 ### 4.4 Comparison + intentional-divergence confirmations — `test/helpers/upgrade-compare.ts`
 
@@ -196,9 +211,9 @@ lives with them under the gitignored corpus tree, **not** committed.
   pack changes (mirrors the per-key layout of `.oracle-cache` /
   `.upgrade-cache`; no concurrent-writer contention since each pack is a
   distinct key).
-- **Contents per pack:** the set of currently-expected non-`matched` diffs
-  (each `{group, option, gamePath, status}`), i.e. the known-unimplemented
-  remainder.
+- **Contents per pack:** the set of currently-expected non-matched diffs
+  (each `{gamePath, index, status}`, matching `FileDiff`), i.e. the
+  known-unimplemented remainder.
 - **Ratchet semantics:**
   - A pack with **no baseline entry has an empty baseline** — it is **expected
     to fully match** (exact + allow-list). This is the default for every newly
