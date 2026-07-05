@@ -153,6 +153,10 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
   // drops the material-variant letter) instead of the naming convention above. That path is not
   // derivable from the mod's bytes, so it is bundled as a base-game material->index table extracted
   // from the game (scripts/extract-index-overrides.ts). Convention holds for every material NOT in it.
+  // NOTE: C#'s refinement also gates on the convention idPath NOT already existing in-game; we apply
+  // the table UNCONDITIONALLY per materialPath (coarser). The table only holds paths where the golden
+  // actually diverged, so this is exact for the corpus; the ratchet would catch a future mod that
+  // reuses one of these base paths with a convention idPath that does resolve in-game.
   const idPathOverride = INDEX_PATH_OVERRIDES[mtrl.mtrlPath];
   if (idPathOverride !== undefined) {
     idPath = idPathOverride;

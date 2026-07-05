@@ -173,5 +173,5 @@ writeFileSync(
 console.log(`wrote ${sorted.length} index-path overrides`);
 if (problems.length) {
   console.log(`\n${problems.length} PROBLEMS (not recorded):`);
-  for (const p of problems) console.log("  " + p);
+  for (const p of problems) console.log(`  ${p}`);
 }
