@@ -174,4 +174,6 @@ console.log(`wrote ${sorted.length} index-path overrides`);
 if (problems.length) {
   console.log(`\n${problems.length} PROBLEMS (not recorded):`);
   for (const p of problems) console.log(`  ${p}`);
+  // Fail loud: a non-interactive regeneration must not silently commit an incomplete/wrong table.
+  process.exitCode = 1;
 }

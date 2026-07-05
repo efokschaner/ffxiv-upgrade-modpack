@@ -89,8 +89,12 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
       const mtrl = parseMtrl(uncompressedBytes(f), f.gamePath);
       const got = upgradeMaterial(mtrl);
       if (got.length === 0) return f; // no update needed
+      // Record the texture-upgrade targets only AFTER the rewrite is committed: a throw from
+      // serializeMtrl/restore (caught below -> file left untouched) must not leave orphaned targets
+      // in the returned set pointing at a material that was never actually rewritten.
+      const restored = restore(f, serializeMtrl(mtrl));
       infos.push(...got);
-      return restore(f, serializeMtrl(mtrl));
+      return restored;
     } catch {
       // Unparseable, OR a material C# abandons via its own NRE (e.g. a colorset material with no
       // resolvable normal texture) -> leave the file byte-untouched. Mirrors the per-material
