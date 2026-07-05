@@ -186,16 +186,26 @@ lives with them under the gitignored corpus tree, **not** committed.
   (each `{group, option, gamePath, status}`), i.e. the known-unimplemented
   remainder.
 - **Ratchet semantics:**
-  - PASS when the actual diff set ⊆ the baseline set (diff shrank or held).
-  - FAIL on any **regression**: a diff not in the baseline (new/unexpected
+  - A pack with **no baseline entry has an empty baseline** — it is **expected
+    to fully match** (exact + allow-list). This is the default for every newly
+    added corpus mod: if it matches (a no-op pack, or a pack whose transforms are
+    all implemented) it goes green with zero ceremony.
+  - PASS when the actual diff set ⊆ the baseline set (empty baseline ⇒ pass iff
+    zero divergences).
+  - FAIL on any **regression**: a diff not in the baseline (a new/unexpected
     divergence, or a file that used to match and now doesn't), or a `removed`.
-  - A pack with **no baseline entry** FAILS with a clear "run the bless step"
-    message — new corpus packs get explicit human acceptance, never a silent
-    green (fail-loud ethos).
-- **Bless step:** an update mode (`UPDATE_UPGRADE_BASELINE=1`, snapshot-test
-  ergonomics) rewrites each pack's baseline to its current actual diff. After a
-  transform round shrinks real diffs, re-bless to lock in the reduction; the
-  baseline strictly monotonically shrinks toward empty as rounds land.
+  - Making a failing pack green is always a **deliberate act**, never automatic:
+    either (a) add the divergence to the committed **allow-list** (§4.4) with a
+    cited reason — the right resolution for an intentional, permanent divergence
+    from TexTools; or (b) **bless** it into the pack's baseline as a
+    not-yet-implemented remainder during build-out.
+- **Bless step:** an explicit update mode (`UPDATE_UPGRADE_BASELINE=1`,
+  snapshot-test ergonomics) rewrites each pack's baseline to its current actual
+  diff. Used to record the initial mass of unimplemented diffs when the check is
+  first introduced, and to re-record (shrink) after each transform round. The
+  baseline strictly monotonically shrinks toward empty as rounds land; the **end
+  state is every baseline empty**, with the committed allow-list holding the only
+  remaining, intentional divergences.
 
 ### 4.6 Corpus wiring
 
@@ -243,8 +253,9 @@ Fast, oracle-free unit tests (like `oracle-cache.test.ts`) using synthetic
 - **comparator/allow-list:** exact mismatch fails by default; a matching
   allow-list entry with a tolerant comparator passes; a `gamePath` outside every
   entry must match exactly.
-- **baseline ratchet:** subset → pass; superset/regression → fail; missing entry
-  → fail-with-bless-hint; bless writes actual→baseline and a re-run passes.
+- **baseline ratchet:** subset → pass; superset/regression → fail; **missing
+  entry ⇒ empty baseline ⇒ pass iff zero divergences** (new pack expected to
+  match), fail otherwise; bless writes actual→baseline and a re-run passes.
 
 The **corpus** `upgrade` check itself is the integration test (real packs, real
 oracle, cached).
