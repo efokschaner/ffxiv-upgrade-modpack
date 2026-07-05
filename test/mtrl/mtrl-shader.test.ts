@@ -60,6 +60,17 @@ describe("samplerIdToTexUsage", () => {
       XivTexType.Specular,
     );
   });
+
+  it("keeps a legacy material's mask as Mask when the mask-as-spec override key is present", () => {
+    // ShaderHelpers.cs:436 — override key 0xC8BD1DEF==0xA02F4828 suppresses the mask->spec remap
+    const m = mtrl(SHPK_CHARACTER_LEGACY, [
+      { keyId: 0xb616dc5a, value: 0x600ef9df },
+      { keyId: 0xc8bd1def, value: 0xa02f4828 },
+    ]);
+    expect(samplerIdToTexUsage(ESamplerId.g_SamplerMask, m)).toBe(
+      XivTexType.Mask,
+    );
+  });
 });
 
 describe("getDefaultColorsetRow", () => {

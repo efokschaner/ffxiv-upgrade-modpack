@@ -22,6 +22,7 @@ export const ESamplerId = {
   g_SamplerColorMap1: 0x6968df0a,
   g_SamplerMask: 0x8a4e82b6,
   g_SamplerWrinklesMask: 0xb3f13975,
+  g_SamplerTileOrb: 0x800be99b,
   g_SamplerIndex: 0x565f8fd8,
 } as const;
 
@@ -34,19 +35,24 @@ export enum XivTexType {
   Index,
 }
 
-// ShaderHelpers.cs:432-478 — the chara-relevant subset of SamplerIdToTexUsage.
+// ShaderHelpers.cs:432-474 — the chara-relevant subset of SamplerIdToTexUsage.
 export function samplerIdToTexUsage(
   samplerId: number,
   mtrl: XivMtrl,
 ): XivTexType {
+  // CharacterLegacy compat (:435-442): a mask sampler reads as specular, UNLESS the
+  // explicit mask-as-spec override key 0xC8BD1DEF==0xA02F4828 is also present.
   if (
     mtrl.shaderPackRaw === SHPK_CHARACTER_LEGACY &&
     mtrl.shaderKeys.some(
       (k) => k.keyId === 0xb616dc5a && k.value === 0x600ef9df,
     ) &&
+    !mtrl.shaderKeys.some(
+      (k) => k.keyId === 0xc8bd1def && k.value === 0xa02f4828,
+    ) &&
     samplerId === ESamplerId.g_SamplerMask
   ) {
-    return XivTexType.Specular; // mask-as-spec compatibility material
+    return XivTexType.Specular;
   }
   switch (samplerId) {
     case ESamplerId.g_SamplerNormal:
@@ -57,6 +63,7 @@ export function samplerIdToTexUsage(
       return XivTexType.Normal;
     case ESamplerId.g_SamplerMask:
     case ESamplerId.g_SamplerWrinklesMask:
+    case ESamplerId.g_SamplerTileOrb:
       return XivTexType.Mask;
     case ESamplerId.g_SamplerIndex:
       return XivTexType.Index;
