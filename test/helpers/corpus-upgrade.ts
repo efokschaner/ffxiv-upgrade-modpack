@@ -62,6 +62,8 @@ export function registerUpgradeCheck(pack: string): void {
               .join(", "),
         );
       }
+      // 20 min: a cold cache spawns ConsoleTools /upgrade once for this pack (seconds for a big
+      // pack); generous so the first, cache-populating run never times out. Warm runs are ~instant.
     }, 1_200_000);
   });
 }

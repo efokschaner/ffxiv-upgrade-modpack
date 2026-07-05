@@ -30,7 +30,10 @@ export type GoldenResult =
   | { kind: "pack"; data: ModpackData }
   | { kind: "noop" };
 
-/** Golden container extension implied by the source name (format preserved: pmp->pmp, else ttmp2). */
+/** Golden container extension implied by the source name. Format is preserved: pmp->pmp; every
+ * TTMP-family input (.ttmp2 AND legacy .ttmp) folds to ttmp2 because ConsoleTools /upgrade always
+ * emits a Dawntrail .ttmp2 for those, never legacy .ttmp. Comparison is decompressed-by-gamePath,
+ * so the container format is not load-bearing anyway — this only keeps the cached golden tidy. */
 function goldenExt(name: string): "pmp" | "ttmp2" {
   return name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
 }

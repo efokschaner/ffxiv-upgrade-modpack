@@ -5,7 +5,7 @@ import {
   type ModpackFile,
 } from "../../src/model/modpack";
 import { decodeSqPackFile } from "../../src/sqpack/sqpack";
-import { bytesEqual } from "./compare";
+import { bytesEqual, compareBytesLex } from "./compare";
 
 export type DiffStatus = "added" | "removed" | "mismatch";
 export interface FileDiff {
@@ -34,14 +34,6 @@ function byGamePath(d: ModpackData): Map<string, Uint8Array[]> {
     m.set(f.gamePath, list);
   }
   return m;
-}
-
-function lex(a: Uint8Array, b: Uint8Array): number {
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    if (a[i] !== b[i]) return a[i]! - b[i]!;
-  }
-  return a.length - b.length;
 }
 
 /** Diff our upgraded pack against the golden, keyed by gamePath payload multiset. */
@@ -96,8 +88,8 @@ export function diffUpgrade(
     }
 
     // 3. leftovers, sorted for stable indices
-    oFinal.sort(lex);
-    gRemaining.sort(lex);
+    oFinal.sort(compareBytesLex);
+    gRemaining.sort(compareBytesLex);
     const n = Math.min(oFinal.length, gRemaining.length);
     let index = 0;
     for (let i = 0; i < n; i++) {

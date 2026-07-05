@@ -30,7 +30,7 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-function compareBytesLex(a: Uint8Array, b: Uint8Array): number {
+export function compareBytesLex(a: Uint8Array, b: Uint8Array): number {
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) {
     if (a[i] !== b[i]) return a[i]! - b[i]!;
