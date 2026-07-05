@@ -1,0 +1,253 @@
+import {
+  ESamplerId,
+  SHPK_CHARACTER,
+  SHPK_CHARACTER_GLASS,
+  SHPK_CHARACTER_LEGACY,
+  SHPK_HAIR,
+  samplerIdToTexUsage,
+  XivTexType,
+} from "../mtrl/shader";
+import type { MtrlTexture, XivMtrl } from "../mtrl/types";
+import { upgradeColorsetData, upgradeDyeData } from "./colorset-upgrade";
+import {
+  GLASS_ADDITIONAL_DATA,
+  GLASS_SHADER_CONSTANTS,
+  GLASS_SHADER_KEYS,
+} from "./reference/glass-shader-params";
+import {
+  HAIR_ADDITIONAL_DATA,
+  HAIR_SHADER_CONSTANTS,
+} from "./reference/hair-shader-params";
+import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
+
+const OLD_SHADER_CONSTANT_1 = 0x36080ad0;
+const OLD_SHADER_CONSTANT_2 = 0x992869ab;
+
+// EndwalkerUpgrade.cs:550
+export function doesMtrlNeedDawntrailUpdate(mtrl: XivMtrl): boolean {
+  if (mtrl.colorSetData.length === 256) return true;
+  if (mtrl.shaderPackRaw === SHPK_HAIR) {
+    return (
+      mtrl.shaderConstants.some(
+        (c) => c.constantId === OLD_SHADER_CONSTANT_1,
+      ) &&
+      mtrl.shaderConstants.some((c) => c.constantId === OLD_SHADER_CONSTANT_2)
+    );
+  }
+  return false;
+}
+
+/**
+ * Dx11Path (XivMtrl.cs:667-680). NOT a "strip a -- marker" helper (there is no such marker in our
+ * model or in C#'s parsed TexturePath): the DX9 flag (0x8000) means the stored TexturePath lacks
+ * the literal "--" hide-from-DX11 marker, and Dx11Path is the path AS the DX11 client would see it
+ * with that marker spliced onto the filename. Our parser (src/mtrl/parse.ts) never manufactures or
+ * strips "--" itself (confirmed: no "--" handling anywhere under src/mtrl), so this port needs its
+ * own helper mirroring the C# getter exactly, operating on the texture (path + flags) rather than
+ * a bare path string.
+ */
+function dx11Path(tex: MtrlTexture): string {
+  if ((tex.flags & 0x8000) === 0) return tex.texturePath;
+  const slash = tex.texturePath.lastIndexOf("/");
+  const dir = slash >= 0 ? tex.texturePath.slice(0, slash) : "";
+  const file = slash >= 0 ? tex.texturePath.slice(slash + 1) : tex.texturePath;
+  return `${dir}/--${file}`;
+}
+
+function findByUsage(
+  mtrl: XivMtrl,
+  usage: XivTexType,
+): MtrlTexture | undefined {
+  return mtrl.textures.find(
+    (t) =>
+      t.sampler && samplerIdToTexUsage(t.sampler.samplerIdRaw, mtrl) === usage,
+  );
+}
+
+function findBySampler(
+  mtrl: XivMtrl,
+  samplerId: number,
+): MtrlTexture | undefined {
+  return mtrl.textures.find((t) => t.sampler?.samplerIdRaw === samplerId);
+}
+
+// Tiling mode bits live in the low nibble of samplerSettingsRaw (XivMtrl.cs:822-858):
+// bits[0:1] = VTilingMode, bits[2:3] = UTilingMode. Used to transplant the normal sampler's
+// tiling onto the new index sampler (EndwalkerUpgrade.cs:962-966).
+const TILING_BITS_MASK = 0xf;
+const INDEX_SAMPLER_SETTINGS_BASE = 0x000f8340;
+
+function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
+  const infos: UpgradeInfo[] = [];
+
+  // EndwalkerUpgrade.cs:747-751
+  if (mtrl.shaderPackRaw === SHPK_CHARACTER) {
+    mtrl.shaderPackRaw = SHPK_CHARACTER_LEGACY;
+  }
+
+  // EndwalkerUpgrade.cs:757-771 — bake the DX9 "--" marker into the literal path and drop the
+  // flag; DX9 textures are unsupported in Endwalker+ and the flag can cause issues downstream.
+  for (const tex of mtrl.textures) {
+    if ((tex.flags & 0x8000) !== 0) {
+      const path = dx11Path(tex);
+      tex.flags &= ~0x8000;
+      tex.texturePath = path;
+    }
+  }
+
+  // EndwalkerUpgrade.cs:773
+  mtrl.additionalData = Uint8Array.from([0x34, 0x05, 0, 0]);
+
+  // EndwalkerUpgrade.cs:774-788
+  if (mtrl.shaderPackRaw === SHPK_CHARACTER_GLASS) {
+    mtrl.shaderKeys = GLASS_SHADER_KEYS.map((k) => ({ ...k }));
+    mtrl.shaderConstants = GLASS_SHADER_CONSTANTS.map((c) => ({
+      constantId: c.constantId,
+      values: [...c.values],
+    }));
+    mtrl.additionalData = Uint8Array.from(GLASS_ADDITIONAL_DATA);
+    mtrl.materialFlags &= ~0x0004;
+    mtrl.materialFlags &= ~0x0008;
+  }
+
+  // EndwalkerUpgrade.cs:909
+  const usesMaskAsSpec = mtrl.shaderKeys.some(
+    (k) =>
+      k.keyId === 0xc8bd1def &&
+      (k.value === 0xa02f4828 || k.value === 0x198d11cd),
+  );
+
+  // EndwalkerUpgrade.cs:797-876
+  mtrl.colorSetData = upgradeColorsetData(
+    mtrl.colorSetData,
+    mtrl.shaderPackRaw,
+  );
+
+  // EndwalkerUpgrade.cs:877-907
+  if (mtrl.colorSetDyeData.length > 0) {
+    mtrl.colorSetDyeData = upgradeDyeData(
+      mtrl.colorSetDyeData,
+      mtrl.shaderPackRaw,
+    );
+  }
+
+  // EndwalkerUpgrade.cs:912-921 (the base-game idPath refinement at :923-936 is intentionally
+  // omitted here — see Task 8's idPath audit).
+  const normalTex = findByUsage(mtrl, XivTexType.Normal);
+
+  if (normalTex) {
+    const normalPath = dx11Path(normalTex);
+    let idPath = normalPath.replaceAll(".tex", "_id.tex");
+    if (normalPath.includes("_n.tex")) {
+      idPath = normalPath.replaceAll("_n.tex", "_id.tex");
+    }
+
+    // EndwalkerUpgrade.cs:954-968
+    let samplerSettingsRaw = INDEX_SAMPLER_SETTINGS_BASE;
+    if (normalTex.sampler) {
+      samplerSettingsRaw =
+        (INDEX_SAMPLER_SETTINGS_BASE & ~TILING_BITS_MASK) |
+        (normalTex.sampler.samplerSettingsRaw & TILING_BITS_MASK);
+    }
+    mtrl.textures.push({
+      texturePath: idPath,
+      flags: 0,
+      sampler: {
+        samplerIdRaw: ESamplerId.g_SamplerIndex,
+        samplerSettingsRaw,
+      },
+    });
+
+    infos.push({
+      usage: EUpgradeTextureUsage.IndexMaps,
+      files: { normal: normalPath, index: idPath },
+    });
+  }
+
+  // EndwalkerUpgrade.cs:973-1027
+  if (mtrl.shaderPackRaw === SHPK_CHARACTER_LEGACY) {
+    const maskSamp = findBySampler(mtrl, ESamplerId.g_SamplerMask);
+    if (maskSamp && !usesMaskAsSpec) {
+      const maskPath = dx11Path(maskSamp);
+      maskSamp.texturePath = maskPath;
+      infos.push({
+        usage: EUpgradeTextureUsage.GearMaskLegacy,
+        files: { mask_old: maskPath, mask_new: maskPath },
+      });
+    }
+  } else if (mtrl.shaderPackRaw === SHPK_CHARACTER_GLASS) {
+    if (!usesMaskAsSpec) {
+      const maskSamp = findBySampler(mtrl, ESamplerId.g_SamplerMask);
+      if (maskSamp) {
+        const maskPath = dx11Path(maskSamp);
+        maskSamp.texturePath = maskPath;
+        infos.push({
+          usage: EUpgradeTextureUsage.GearMaskNew,
+          files: { mask_old: maskPath, mask_new: maskPath },
+        });
+      }
+    }
+  }
+
+  // EndwalkerUpgrade.cs:1028-1066
+  const specTex = findBySampler(mtrl, ESamplerId.g_SamplerSpecular);
+  const diffuseTex = findBySampler(mtrl, ESamplerId.g_SamplerDiffuse);
+  if (specTex?.sampler && diffuseTex) {
+    specTex.sampler.samplerIdRaw = ESamplerId.g_SamplerMask;
+
+    const maskAsSpecKey = mtrl.shaderKeys.find((k) => k.keyId === 0xc8bd1def);
+    if (maskAsSpecKey) {
+      maskAsSpecKey.value = 0x198d11cd;
+    } else {
+      mtrl.shaderKeys.push({ keyId: 0xc8bd1def, value: 0x198d11cd });
+    }
+
+    const legacyKey = mtrl.shaderKeys.find((k) => k.keyId === 0xb616dc5a);
+    if (legacyKey) {
+      legacyKey.value = 0x600ef9df;
+    } else {
+      mtrl.shaderKeys.push({ keyId: 0xb616dc5a, value: 0x600ef9df });
+    }
+  }
+
+  return infos;
+}
+
+// EndwalkerUpgrade.cs:1115-1173 (files != null slice — no texture creation)
+function upgradeHairMaterial(mtrl: XivMtrl): UpgradeInfo[] {
+  const normalTex = findByUsage(mtrl, XivTexType.Normal);
+  const maskTex = findByUsage(mtrl, XivTexType.Mask);
+  if (!normalTex || !maskTex) return [];
+
+  const originalConstants = mtrl.shaderConstants;
+  mtrl.shaderConstants = HAIR_SHADER_CONSTANTS.map((c) => ({
+    constantId: c.constantId,
+    values: [...c.values],
+  }));
+  mtrl.additionalData = Uint8Array.from(HAIR_ADDITIONAL_DATA);
+
+  // Preserve the alpha threshold, whose functionality is unchanged.
+  const alpha = originalConstants.find((c) => c.constantId === 0x29ac0223);
+  const alphaDest = mtrl.shaderConstants.find(
+    (c) => c.constantId === 0x29ac0223,
+  );
+  if (alpha && alphaDest) {
+    alphaDest.values = [...alpha.values];
+  }
+
+  const normalPath = dx11Path(normalTex);
+  const maskPath = dx11Path(maskTex);
+  return [
+    {
+      usage: EUpgradeTextureUsage.HairMaps,
+      files: { normal: normalPath, mask: maskPath },
+    },
+  ];
+}
+
+export function upgradeMaterial(mtrl: XivMtrl): UpgradeInfo[] {
+  if (!doesMtrlNeedDawntrailUpdate(mtrl)) return [];
+  if (mtrl.colorSetData.length === 256) return upgradeColorsetMaterial(mtrl);
+  if (mtrl.shaderPackRaw === SHPK_HAIR) return upgradeHairMaterial(mtrl);
+  return [];
+}
