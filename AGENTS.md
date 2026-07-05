@@ -73,6 +73,12 @@ corpus exercise the code, not as a pass/fail gate.
   or format it (it is gitignored).
 - **Design lives in `docs/superpowers/`.** Specs in `specs/`, implementation
   plans in `plans/`. Follow spec-then-plan discipline for non-trivial work.
+  - **Specs are durable; plans are transient.** A spec captures *why* and *what*
+    (decisions, invariants, trade-offs) and is kept indefinitely — other docs and
+    source READMEs link to it. A plan is an execution checklist for a spec: commit
+    it when written (so it lives in history), then **delete it once the work is
+    merged**. The shipped code, tests, and git history are the record of what was
+    done; a completed plan past its lifetime is just bloat.
 
 ## Blame hygiene
 

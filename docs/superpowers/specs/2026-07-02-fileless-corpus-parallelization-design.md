@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-02
 **Status:** Design approved (brainstorming complete) — ready for implementation planning
-**Supersedes:** `docs/superpowers/plans/2026-07-02-corpus-parallelization.md` Task 4 (the 16 hand-/generated shard files + `SHARD_COUNT` meta-test). Tasks 1–3 of that plan are **kept** and reused (oracle cache concurrency fix; the four `registerXChecks` helpers; exported `bytesEqual`).
+**Supersedes:** Task 4 of the (now-completed, history-only) `plans/2026-07-02-corpus-parallelization.md` — the 16 hand-/generated shard files + `SHARD_COUNT` meta-test. Tasks 1–3 of that plan were **kept** and reused: oracle cache concurrency fix; the four `registerXChecks` helpers; exported `bytesEqual`.
 
 ---
 
