@@ -1,4 +1,8 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { writeTtmp2 } from "../src/container/ttmp2";
 import {
   FileStorageType,
   type ModpackData,
@@ -11,6 +15,7 @@ import {
   type DivergenceRule,
 } from "./helpers/upgrade-compare";
 import { diffUpgrade } from "./helpers/upgrade-diff";
+import { upgradeGoldenCached } from "./helpers/upgrade-golden";
 
 describe("confirmDivergence", () => {
   it("returns false with the empty live registry", () => {
@@ -214,3 +219,108 @@ describe("diffUpgrade", () => {
     expect(d.files).toEqual([]);
   });
 });
+
+describe("upgradeGoldenCached", () => {
+  it("returns null on a miss when no oracle is available", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ug-"));
+    expect(
+      upgradeGoldenCached("m.ttmp2", new Uint8Array([1, 2, 3]), {
+        dir,
+        available: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("produces once on miss, then serves the parsed pack from cache", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ug-"));
+    const input = new Uint8Array([5, 5, 5]);
+    // A real ttmp2 blob to hand back as the "golden".
+    const golden = writeTtmp2(rawPackTtmp2());
+    let calls = 0;
+    const produce = () => {
+      calls++;
+      return golden;
+    };
+
+    const first = upgradeGoldenCached("m.ttmp2", input, {
+      dir,
+      available: true,
+      produce,
+    });
+    expect(first?.kind).toBe("pack");
+    expect(calls).toBe(1);
+
+    const second = upgradeGoldenCached("m.ttmp2", input, {
+      dir,
+      available: true,
+      produce,
+    });
+    expect(second?.kind).toBe("pack");
+    expect(calls).toBe(1); // served from cache, producer not re-run
+  });
+
+  it("caches a no-op (producer returns null) and serves it as noop", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ug-"));
+    const input = new Uint8Array([7, 7]);
+    let calls = 0;
+    const produce = () => {
+      calls++;
+      return null;
+    };
+    expect(
+      upgradeGoldenCached("m.ttmp2", input, { dir, available: true, produce })
+        ?.kind,
+    ).toBe("noop");
+    expect(
+      upgradeGoldenCached("m.ttmp2", input, { dir, available: true, produce })
+        ?.kind,
+    ).toBe("noop");
+    expect(calls).toBe(1);
+  });
+});
+
+// A minimal valid ttmp2 for the cache test's "golden".
+function rawPackTtmp2(): ModpackData {
+  return {
+    sourceFormat: ModpackFormat.Ttmp2,
+    isSimple: true,
+    meta: {
+      name: "g",
+      author: "",
+      version: "",
+      description: "",
+      url: "",
+      image: "",
+      tags: [],
+      minimumFrameworkVersion: "1.0.0.0",
+    },
+    groups: [
+      {
+        name: "Default",
+        description: "",
+        image: "",
+        page: 0,
+        priority: 0,
+        selectionType: "Single",
+        defaultSettings: 0,
+        options: [
+          {
+            name: "Default",
+            description: "",
+            image: "",
+            priority: 0,
+            fileSwaps: {},
+            manipulations: [],
+            files: [
+              {
+                gamePath: "a/b.mtrl",
+                data: new Uint8Array([1, 2, 3, 4]),
+                storage: FileStorageType.SqPackCompressed,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
