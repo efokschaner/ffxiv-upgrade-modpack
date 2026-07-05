@@ -78,6 +78,12 @@ export function diffUpgrade(
     }
 
     // 2. confirmed-divergence pairs on the remainder
+    // NOTE: This is greedy first-match pairing, NOT maximum bipartite matching.
+    // When a single gamePath has multiple distinct payloads that could each confirm
+    // against multiple goldens, it may under-match and report a false mismatch.
+    // This is acceptable while DIVERGENCE_RULES is empty/simple and multi-payload-per-path
+    // is rare; revisit with maximum matching if that changes.
+    // (Phase 1 exact-match is unaffected — byte-equality is an equivalence relation, so greedy is optimal there.)
     const oFinal: Uint8Array[] = [];
     for (const o of oRemaining) {
       const i = gRemaining.findIndex((g) => confirmDivergence(gp, o, g));

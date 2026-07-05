@@ -158,4 +158,59 @@ describe("diffUpgrade", () => {
     expect(d.matched).toBe(1);
     expect(d.files).toEqual([]);
   });
+
+  it("matches same gamePath with two identical payloads on each side", () => {
+    const ours = rawPack({ "dup.mtrl": new Uint8Array([1]) });
+    ours.groups[0]!.options[0]!.files.push({
+      gamePath: "dup.mtrl",
+      data: new Uint8Array([2]),
+      storage: FileStorageType.RawUncompressed,
+    });
+    const golden = rawPack({ "dup.mtrl": new Uint8Array([1]) });
+    golden.groups[0]!.options[0]!.files.push({
+      gamePath: "dup.mtrl",
+      data: new Uint8Array([2]),
+      storage: FileStorageType.RawUncompressed,
+    });
+    const d = diffUpgrade("p", ours, golden, never);
+    expect(d.matched).toBe(2);
+    expect(d.files).toEqual([]);
+  });
+
+  it("detects extra payload when ours has two and golden has one", () => {
+    const ours = rawPack({ "dup.mtrl": new Uint8Array([1]) });
+    ours.groups[0]!.options[0]!.files.push({
+      gamePath: "dup.mtrl",
+      data: new Uint8Array([9]),
+      storage: FileStorageType.RawUncompressed,
+    });
+    const golden = rawPack({ "dup.mtrl": new Uint8Array([1]) });
+    const d = diffUpgrade("p", ours, golden, never);
+    expect(d.matched).toBe(1);
+    expect(d.files).toHaveLength(1);
+    expect(d.files[0]!.gamePath).toBe("dup.mtrl");
+    expect(d.files[0]!.status).toBe("removed");
+  });
+
+  it("pins greedy (non-maximum) confirm-phase matching for multi-payload paths", () => {
+    const ours = rawPack({ "g_id.tex": new Uint8Array([1, 1]) });
+    ours.groups[0]!.options[0]!.files.push({
+      gamePath: "g_id.tex",
+      data: new Uint8Array([3]),
+      storage: FileStorageType.RawUncompressed,
+    });
+    const golden = rawPack({ "g_id.tex": new Uint8Array([2, 2]) });
+    golden.groups[0]!.options[0]!.files.push({
+      gamePath: "g_id.tex",
+      data: new Uint8Array([4]),
+      storage: FileStorageType.RawUncompressed,
+    });
+    const confirm = (p: string, o: Uint8Array, g: Uint8Array) =>
+      p.endsWith("_id.tex") && o.length === g.length;
+    const d = diffUpgrade("p", ours, golden, confirm);
+    // Greedy phase-2 matching pairs [1,1] (len 2) with [2,2] (len 2),
+    // then [3] (len 1) with [4] (len 1). Both pairs confirm, so all matched.
+    expect(d.matched).toBe(2);
+    expect(d.files).toEqual([]);
+  });
 });
