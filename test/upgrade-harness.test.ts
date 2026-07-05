@@ -203,26 +203,32 @@ describe("diffUpgrade", () => {
     expect(d.files[0]!.status).toBe("removed");
   });
 
-  it("pins greedy (non-maximum) confirm-phase matching for multi-payload paths", () => {
-    const ours = rawPack({ "g_id.tex": new Uint8Array([1, 1]) });
+  it("under-matches (greedy, not maximum) when a path's confirmable pairings are ambiguous", () => {
+    // Two distinct payloads per side, none byte-equal, so phase 1 (exact) finds nothing
+    // and everything falls to the phase-2 confirm pairing.
+    const ours = rawPack({ "g.tex": new Uint8Array([1]) });
     ours.groups[0]!.options[0]!.files.push({
-      gamePath: "g_id.tex",
-      data: new Uint8Array([3]),
+      gamePath: "g.tex",
+      data: new Uint8Array([2]),
       storage: FileStorageType.RawUncompressed,
     });
-    const golden = rawPack({ "g_id.tex": new Uint8Array([2, 2]) });
+    const golden = rawPack({ "g.tex": new Uint8Array([3]) });
     golden.groups[0]!.options[0]!.files.push({
-      gamePath: "g_id.tex",
+      gamePath: "g.tex",
       data: new Uint8Array([4]),
       storage: FileStorageType.RawUncompressed,
     });
-    const confirm = (p: string, o: Uint8Array, g: Uint8Array) =>
-      p.endsWith("_id.tex") && o.length === g.length;
+    // Everything confirms EXCEPT ours [2] vs golden [4]. The MAXIMUM matching pairs
+    // ours [1]<->golden [4] and ours [2]<->golden [3] (both confirm) => 2 matched, 0 leftover.
+    // Greedy instead takes ours [1] <-> the FIRST confirmable golden ([3]), stranding ours [2]
+    // with only [4], which does not confirm => 1 matched + 1 mismatch. This pins the documented
+    // greedy (non-maximum-bipartite) limitation of the confirm phase (see upgrade-diff.ts).
+    const confirm = (_p: string, o: Uint8Array, g: Uint8Array) =>
+      !(o[0] === 2 && g[0] === 4);
     const d = diffUpgrade("p", ours, golden, confirm);
-    // Greedy phase-2 matching pairs [1,1] (len 2) with [2,2] (len 2),
-    // then [3] (len 1) with [4] (len 1). Both pairs confirm, so all matched.
-    expect(d.matched).toBe(2);
-    expect(d.files).toEqual([]);
+    expect(d.matched).toBe(1);
+    expect(d.files).toHaveLength(1);
+    expect(d.files[0]!.status).toBe("mismatch");
   });
 });
 
