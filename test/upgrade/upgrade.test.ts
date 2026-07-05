@@ -136,6 +136,105 @@ function modpackWithSingleFile(
   };
 }
 
+function noNormalColorsetMtrl(): XivMtrl {
+  const colorSetData = new Array<number>(256).fill(0);
+  return {
+    signature: 0x00000301,
+    shaderPackRaw: "characterlegacy.shpk",
+    additionalData: new Uint8Array(4),
+    textures: [
+      {
+        texturePath: "chara/foo/texture/mt_foo_m.tex",
+        flags: 0,
+        sampler: {
+          samplerIdRaw: ESamplerId.g_SamplerMask,
+          samplerSettingsRaw: 0,
+        },
+      },
+    ],
+    uvMapStrings: [{ value: "", flags: 0 }],
+    colorsetStrings: [],
+    colorSetData,
+    colorSetDyeData: new Uint8Array(0),
+    shaderKeys: [],
+    shaderConstants: [],
+    materialFlags: 0,
+    materialFlags2: 0,
+    mtrlPath: "chara/foo/material/mt_foo.mtrl",
+  };
+}
+
+function alreadyDawntrailMtrl(): XivMtrl {
+  return {
+    signature: 0x00000301,
+    shaderPackRaw: "characterlegacy.shpk",
+    additionalData: new Uint8Array(4),
+    textures: [
+      {
+        texturePath: "chara/foo/texture/mt_foo_n.tex",
+        flags: 0,
+        sampler: {
+          samplerIdRaw: ESamplerId.g_SamplerNormal,
+          samplerSettingsRaw: 0,
+        },
+      },
+    ],
+    uvMapStrings: [{ value: "", flags: 0 }],
+    colorsetStrings: [],
+    colorSetData: new Array<number>(1024).fill(0),
+    colorSetDyeData: new Uint8Array(0),
+    shaderKeys: [],
+    shaderConstants: [],
+    materialFlags: 0,
+    materialFlags2: 0,
+    mtrlPath: "chara/foo/material/mt_foo.mtrl",
+  };
+}
+
+describe("upgradeModpack (material round passthrough)", () => {
+  it("leaves an already-Dawntrail material byte-untouched (no update needed)", () => {
+    const uncompressed = serializeMtrl(alreadyDawntrailMtrl());
+    const input = modpackWithSingleFile(
+      "chara/foo/material/mt_foo.mtrl",
+      uncompressed,
+      FileStorageType.RawUncompressed,
+    );
+
+    const out = upgradeModpack(input);
+    const outFile = out.groups[0]!.options[0]!.files[0]!;
+
+    expect(Array.from(outFile.data)).toEqual(Array.from(uncompressed));
+  });
+
+  it("leaves an unparseable chara/**.mtrl file byte-untouched", () => {
+    const data = new Uint8Array([1, 2, 3, 4, 5]);
+    const input = modpackWithSingleFile(
+      "chara/foo/material/mt_bad.mtrl",
+      data,
+      FileStorageType.RawUncompressed,
+    );
+
+    const out = upgradeModpack(input);
+    const outFile = out.groups[0]!.options[0]!.files[0]!;
+
+    expect(Array.from(outFile.data)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("leaves a colorset material with no resolvable normal texture byte-untouched (regression: C# throws an NRE on normalTex.Dx11Path before the mask code, and its per-material try/catch swallows it, leaving the file untouched)", () => {
+    const uncompressed = serializeMtrl(noNormalColorsetMtrl());
+    const input = modpackWithSingleFile(
+      "chara/foo/material/mt_foo.mtrl",
+      uncompressed,
+      FileStorageType.RawUncompressed,
+    );
+
+    const out = upgradeModpack(input);
+    const outFile = out.groups[0]!.options[0]!.files[0]!;
+
+    expect(Array.from(outFile.data)).toEqual(Array.from(uncompressed));
+  });
+});
+
 describe("upgradeModpack (material round)", () => {
   it("upgrades a chara/**.mtrl EW colorset material and re-encodes it as SqPackCompressed", () => {
     const uncompressed = serializeMtrl(ewColorsetMtrl());

@@ -131,38 +131,43 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
     );
   }
 
-  // EndwalkerUpgrade.cs:912-921 (the base-game idPath refinement at :923-936 is intentionally
-  // omitted here — see Task 8's idPath audit).
+  // EndwalkerUpgrade.cs:912-921. C# dereferences normalTex.Dx11Path UNCONDITIONALLY here, so a
+  // colorset material with no resolvable Normal texture throws (NRE) in C# — which the per-material
+  // try/catch in UpdateEndwalkerMaterials (:522-539) swallows, leaving that file BYTE-UNTOUCHED
+  // (WriteFile at :1069 is never reached). Mirror that exactly: throw so the caller (materialRound)
+  // abandons this material and writes nothing. (The base-game idPath refinement at :923-936 is
+  // intentionally omitted — see Task 8's idPath audit.)
   const normalTex = findByUsage(mtrl, XivTexType.Normal);
-
-  if (normalTex) {
-    const normalPath = dx11Path(normalTex);
-    let idPath = normalPath.replaceAll(".tex", "_id.tex");
-    if (normalPath.includes("_n.tex")) {
-      idPath = normalPath.replaceAll("_n.tex", "_id.tex");
-    }
-
-    // EndwalkerUpgrade.cs:954-968
-    let samplerSettingsRaw = INDEX_SAMPLER_SETTINGS_BASE;
-    if (normalTex.sampler) {
-      samplerSettingsRaw =
-        (INDEX_SAMPLER_SETTINGS_BASE & ~TILING_BITS_MASK) |
-        (normalTex.sampler.samplerSettingsRaw & TILING_BITS_MASK);
-    }
-    mtrl.textures.push({
-      texturePath: idPath,
-      flags: 0,
-      sampler: {
-        samplerIdRaw: ESamplerId.g_SamplerIndex,
-        samplerSettingsRaw,
-      },
-    });
-
-    infos.push({
-      usage: EUpgradeTextureUsage.IndexMaps,
-      files: { normal: normalPath, index: idPath },
-    });
+  if (!normalTex) {
+    throw new Error("colorset material has no resolvable normal texture");
   }
+
+  const normalPath = dx11Path(normalTex);
+  let idPath = normalPath.replaceAll(".tex", "_id.tex");
+  if (normalPath.includes("_n.tex")) {
+    idPath = normalPath.replaceAll("_n.tex", "_id.tex");
+  }
+
+  // EndwalkerUpgrade.cs:954-968
+  let samplerSettingsRaw = INDEX_SAMPLER_SETTINGS_BASE;
+  if (normalTex.sampler) {
+    samplerSettingsRaw =
+      (INDEX_SAMPLER_SETTINGS_BASE & ~TILING_BITS_MASK) |
+      (normalTex.sampler.samplerSettingsRaw & TILING_BITS_MASK);
+  }
+  mtrl.textures.push({
+    texturePath: idPath,
+    flags: 0,
+    sampler: {
+      samplerIdRaw: ESamplerId.g_SamplerIndex,
+      samplerSettingsRaw,
+    },
+  });
+
+  infos.push({
+    usage: EUpgradeTextureUsage.IndexMaps,
+    files: { normal: normalPath, index: idPath },
+  });
 
   // EndwalkerUpgrade.cs:973-1027
   if (mtrl.shaderPackRaw === SHPK_CHARACTER_LEGACY) {

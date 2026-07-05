@@ -6,7 +6,6 @@ import {
   type ModpackOption,
 } from "../model/modpack";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
-import type { XivMtrl } from "../mtrl/types";
 import {
   decodeSqPackFile,
   encodeSqPackFile,
@@ -63,6 +62,10 @@ function uncompressedBytes(f: ModpackFile): Uint8Array {
  * (ttmp SqPackCompressed source -> re-encode as a Standard SqPack entry; pmp
  * RawUncompressed source -> store raw). Keeps writeModpack's single-storage-form
  * invariant intact — see docs/superpowers for the harness spec.
+ *
+ * The hardcoded `SqPackType.Standard` is correct here because this round only rewrites
+ * `.mtrl` files, which are always Standard SqPack entries. A future round that reuses
+ * `restore` for `.mdl`/`.tex` MUST pass the source's decoded entry type instead.
  */
 function restore(f: ModpackFile, bytes: Uint8Array): ModpackFile {
   if (f.storage === FileStorageType.SqPackCompressed) {
@@ -82,16 +85,18 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
   const infos: UpgradeInfo[] = [];
   option.files = option.files.map((f) => {
     if (!IS_CHARA_MTRL.test(f.gamePath)) return f;
-    let mtrl: XivMtrl;
     try {
-      mtrl = parseMtrl(uncompressedBytes(f), f.gamePath);
+      const mtrl = parseMtrl(uncompressedBytes(f), f.gamePath);
+      const got = upgradeMaterial(mtrl);
+      if (got.length === 0) return f; // no update needed
+      infos.push(...got);
+      return restore(f, serializeMtrl(mtrl));
     } catch {
-      return f; // unparseable -> leave untouched (C# catch/continue)
+      // Unparseable, OR a material C# abandons via its own NRE (e.g. a colorset material with no
+      // resolvable normal texture) -> leave the file byte-untouched. Mirrors the per-material
+      // try/catch in UpdateEndwalkerMaterials (EndwalkerUpgrade.cs:522-539).
+      return f;
     }
-    const got = upgradeMaterial(mtrl);
-    if (got.length === 0) return f; // no update needed
-    infos.push(...got);
-    return restore(f, serializeMtrl(mtrl));
   });
   return infos;
 }
