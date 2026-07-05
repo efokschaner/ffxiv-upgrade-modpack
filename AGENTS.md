@@ -32,6 +32,31 @@ corpus) under the v8 provider and writes a text + HTML + json-summary report to
 no overhead) and report-only — no thresholds. Use it to check that tests and the
 corpus exercise the code, not as a pass/fail gate.
 
+## Upgrade golden harness
+
+`npm test` includes an end-to-end `upgrade` check per corpus pack: it runs our
+`upgradeModpack` pipeline and diffs the result against a cached ConsoleTools
+`/upgrade` golden (per `gamePath`, on decompressed content).
+
+- **Goldens are cached** content-addressed under `test/corpus/.upgrade-cache/`
+  (gitignored). First run spawns ConsoleTools per pack; later runs read the cache.
+  A no-op upgrade caches a `<key>.noop` marker (ConsoleTools writes no file when
+  nothing changes) and the pack is then compared against its own input.
+- **Ratchet baseline** lives in `test/corpus/.upgrade-baseline/` (gitignored — it
+  describes packs that only exist locally). A pack passes while its actual diff is
+  a subset of its baseline; a regression (or a new pack that does not fully match)
+  fails. Record/refresh baselines with the bless step:
+
+      $env:UPDATE_UPGRADE_BASELINE = "1"; npm test; Remove-Item Env:\UPDATE_UPGRADE_BASELINE
+
+  A newly added corpus mod has no baseline and is expected to fully match; if it
+  does not, either it is a real bug, or the difference is an intended divergence.
+- **Intended divergences from TexTools** are never ignored: add a rule to
+  `DIVERGENCE_RULES` (`test/helpers/upgrade-compare.ts`) that *confirms* the
+  divergence is exactly the one we meant (e.g. same tex shape, pixels within our
+  documented encoder precision), with a cited reason. Files matched by no rule
+  must be byte-identical to the golden.
+
 ## Conventions
 
 - **Formatting is mechanical.** Biome owns it. Do not hand-format and do not
