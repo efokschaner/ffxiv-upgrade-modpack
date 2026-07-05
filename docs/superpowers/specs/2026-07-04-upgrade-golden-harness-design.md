@@ -150,27 +150,41 @@ For the `noop` golden: compare **ours vs the original input pack** with the same
 engine; any non-`matched` entry is a mismatch (our pipeline changed a file the
 oracle left alone).
 
-### 4.4 Comparison + divergence allow-list — `test/helpers/upgrade-compare.ts`
+### 4.4 Comparison + intentional-divergence confirmations — `test/helpers/upgrade-compare.ts`
 
 Default comparator is **exact decompressed-byte equality** (`bytesEqual`).
 
-An **allow-list** is the only place tolerance lives — a small ordered registry
-of entries, each: a `predicate(gamePath, ours, golden)`, a `comparator`, and a
-**cited reason** string. Example (added only when the texture round lands):
+Where our output intentionally diverges from TexTools, we do **not** ignore the
+divergence — we replace the exact-byte check with a **targeted confirmation that
+the divergence is exactly the one we intended, and nothing else**. So the
+allow-list is a registry of *intentional-divergence assertions*, not tolerances.
+Each entry: a `predicate(gamePath, ours, golden)`, a `confirm(ours, golden)`
+that **positively asserts the expected relationship**, and a **cited reason**.
+`confirm` must be as tight as the intended difference allows, so an *unexpected*
+divergence (wrong channel, wrong dimensions, a real transform bug) still fails —
+it only passes the specific, documented difference. Example (added only when the
+texture round lands):
 
 ```ts
 {
-  reason: "generated _id.tex index map: our BC5 encoder ≠ C#'s (BcnSharp) — " +
-          "bit-exact match impossible; compare decoded pixels within tolerance.",
+  reason: "generated _id.tex index map: we deliberately use our own BC5 encoder " +
+          "(≠ C#'s BcnSharp), so the compressed blocks differ by design. Confirm " +
+          "the intended difference is ONLY the block encoding: same tex header/" +
+          "format/dimensions/mip count, and decoded pixels agree within the " +
+          "precision our encoder is documented to sacrifice.",
   predicate: (p) => /_id\.tex$/.test(p),
-  comparator: (ours, golden) => psnr(decode(ours), decode(golden)) >= INDEX_MAP_PSNR_MIN,
+  confirm: (ours, golden) =>
+    sameTexShape(ours, golden) &&                       // header, format, dims, mips identical
+    maxChannelDelta(decode(ours), decode(golden)) <= INDEX_MAP_MAX_DELTA, // pixels: intended precision loss only
 }
 ```
 
-The allow-list starts **empty** (the skeleton generates nothing) and grows
-alongside the transform rounds. A file not covered by any allow-list entry MUST
-match exactly. This is the mechanism that keeps "intentional divergence from
-TexTools" explicit and documented rather than a blanket softening.
+The registry starts **empty** (the skeleton generates nothing) and grows
+alongside the transform rounds — ideally staying small. A file not covered by
+any entry MUST match exactly. This keeps every divergence from TexTools
+**explicit, reasoned, and actively verified** rather than a blanket softening: a
+divergence is only ever accepted after we confirm it is the difference we meant
+to introduce.
 
 ### 4.5 Baseline ratchet — gitignored, in the corpus tree
 
@@ -250,9 +264,10 @@ Fast, oracle-free unit tests (like `oracle-cache.test.ts`) using synthetic
 - **diff engine:** identical packs → all `matched`; a changed inner file →
   `mismatch`; a golden-only file → `added`; an ours-only file → `removed`;
   option alignment by position.
-- **comparator/allow-list:** exact mismatch fails by default; a matching
-  allow-list entry with a tolerant comparator passes; a `gamePath` outside every
-  entry must match exactly.
+- **comparator / divergence confirmations:** exact mismatch fails by default; a
+  matching divergence entry whose `confirm` holds passes; a matching entry whose
+  `confirm` **fails** (divergence is not the intended one) still fails; a
+  `gamePath` outside every entry must match exactly.
 - **baseline ratchet:** subset → pass; superset/regression → fail; **missing
   entry ⇒ empty baseline ⇒ pass iff zero divergences** (new pack expected to
   match), fail otherwise; bless writes actual→baseline and a re-run passes.
