@@ -5,6 +5,7 @@ import { registerPmpManifestChecks } from "./corpus-pmp";
 import { registerSqpackChecks } from "./corpus-sqpack";
 import { registerTexChecks } from "./corpus-tex";
 import { type CheckKind, enumerateUnits } from "./corpus-units";
+import { registerUpgradeCheck } from "./corpus-upgrade";
 
 // Loaded ONLY inside a Vitest worker (via the virtual corpus-unit module). Statically imports the
 // vitest-dependent check helpers, so it must never be imported from the runner — keep enumeration
@@ -16,6 +17,7 @@ const DISPATCH: Record<CheckKind, (pack: string) => void> = {
   pmp: registerPmpManifestChecks,
   tex: registerTexChecks,
   mdl: registerMdlChecks,
+  upgrade: registerUpgradeCheck,
 };
 
 /** Register the checks for the unit at `index` in enumerateUnits(). Called by the virtual module

@@ -5,7 +5,14 @@ import { join } from "node:path";
 // registration on import, so the Node-API runner can import it outside any test worker. The
 // vitest-dependent dispatch lives in corpus-register.ts (loaded only inside workers).
 
-export type CheckKind = "sqpack" | "golden" | "mtrl" | "pmp" | "tex" | "mdl";
+export type CheckKind =
+  | "sqpack"
+  | "golden"
+  | "mtrl"
+  | "pmp"
+  | "tex"
+  | "mdl"
+  | "upgrade";
 export interface Unit {
   pack: string;
   check: CheckKind;
@@ -25,7 +32,7 @@ function sortedPacks(): string[] {
 
 /**
  * Every (pack × check-family) work unit, in a stable order: packs sorted ascending, then per pack
- * the fixed check order [sqpack, golden, mtrl, tex, mdl, (pmp if .pmp)]. sqpack is ONE unit (its three
+ * the fixed check order [sqpack, golden, mtrl, tex, mdl, upgrade, (pmp if .pmp)]. sqpack is ONE unit (its three
  * tests share one decode via beforeAll). The index into this array is the virtual module's identity.
  */
 export function enumerateUnits(): Unit[] {
@@ -36,6 +43,7 @@ export function enumerateUnits(): Unit[] {
     units.push({ pack, check: "mtrl" });
     units.push({ pack, check: "tex" });
     units.push({ pack, check: "mdl" });
+    units.push({ pack, check: "upgrade" });
     if (pack.toLowerCase().endsWith(".pmp")) units.push({ pack, check: "pmp" });
   }
   return units;
