@@ -16,6 +16,7 @@ import {
   GLASS_SHADER_KEYS,
 } from "../../src/upgrade/reference/glass-shader-params";
 import { HAIR_ADDITIONAL_DATA } from "../../src/upgrade/reference/hair-shader-params";
+import { INDEX_PATH_OVERRIDES } from "../../src/upgrade/reference/index-path-overrides";
 import { EUpgradeTextureUsage } from "../../src/upgrade/upgrade-info";
 
 function tex(path: string, samplerId: number): MtrlTexture {
@@ -72,6 +73,26 @@ describe("upgradeMaterial (colorset branch)", () => {
       normal: "chara/x/tex/foo_n.tex",
       index: "chara/x/tex/foo_id.tex",
     });
+  });
+
+  it("applies the base-game idPath override for a material in the override table (EndwalkerUpgrade.cs:923-936)", () => {
+    const entry = Object.entries(INDEX_PATH_OVERRIDES)[0];
+    expect(entry).toBeDefined();
+    const [overridePath, overrideIdx] = entry!;
+    const m = characterColorsetMtrl();
+    m.mtrlPath = overridePath;
+    // A normal whose CONVENTION idPath ("..._id.tex") would differ from the override, proving the
+    // table wins over the naming convention.
+    m.textures = [tex("chara/x/tex/custom_n.tex", ESamplerId.g_SamplerNormal)];
+    const infos = upgradeMaterial(m);
+    const idTex = m.textures.find(
+      (t) => t.sampler?.samplerIdRaw === ESamplerId.g_SamplerIndex,
+    );
+    expect(idTex?.texturePath).toBe(overrideIdx);
+    const idInfo = infos.find(
+      (i) => i.usage === EUpgradeTextureUsage.IndexMaps,
+    );
+    expect(idInfo?.files.index).toBe(overrideIdx);
   });
 
   it("bakes the DX9 '--' marker into the path and clears the flag (EndwalkerUpgrade.cs:757-771)", () => {

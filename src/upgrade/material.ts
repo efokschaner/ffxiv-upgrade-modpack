@@ -18,6 +18,7 @@ import {
   HAIR_ADDITIONAL_DATA,
   HAIR_SHADER_CONSTANTS,
 } from "./reference/hair-shader-params";
+import { INDEX_PATH_OVERRIDES } from "./reference/index-path-overrides";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
 const OLD_SHADER_CONSTANT_1 = 0x36080ad0;
@@ -135,8 +136,7 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
   // colorset material with no resolvable Normal texture throws (NRE) in C# — which the per-material
   // try/catch in UpdateEndwalkerMaterials (:522-539) swallows, leaving that file BYTE-UNTOUCHED
   // (WriteFile at :1069 is never reached). Mirror that exactly: throw so the caller (materialRound)
-  // abandons this material and writes nothing. (The base-game idPath refinement at :923-936 is
-  // intentionally omitted — see Task 8's idPath audit.)
+  // abandons this material and writes nothing.
   const normalTex = findByUsage(mtrl, XivTexType.Normal);
   if (!normalTex) {
     throw new Error("colorset material has no resolvable normal texture");
@@ -146,6 +146,16 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
   let idPath = normalPath.replaceAll(".tex", "_id.tex");
   if (normalPath.includes("_n.tex")) {
     idPath = normalPath.replaceAll("_n.tex", "_id.tex");
+  }
+
+  // EndwalkerUpgrade.cs:923-936 idPath refinement: for a mod overwriting a BASE-GAME material, C#
+  // steals that material's OWN index-sampler path (carries the canonical v{NN}_ version prefix and
+  // drops the material-variant letter) instead of the naming convention above. That path is not
+  // derivable from the mod's bytes, so it is bundled as a base-game material->index table extracted
+  // from the game (scripts/extract-index-overrides.ts). Convention holds for every material NOT in it.
+  const idPathOverride = INDEX_PATH_OVERRIDES[mtrl.mtrlPath];
+  if (idPathOverride !== undefined) {
+    idPath = idPathOverride;
   }
 
   // EndwalkerUpgrade.cs:954-968
