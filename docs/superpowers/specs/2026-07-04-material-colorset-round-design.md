@@ -227,3 +227,51 @@ divergence is silently accepted.
 - `scripts/extract-shader-params.ts`, `scripts/extract-hair-dt-paths.ts` (new) —
   one-time derived-data generators.
 - `test/upgrade/material.test.ts` (new) — unit tests (§7.1).
+
+## 10. Implementation outcome (2026-07-04)
+
+The round shipped and reached **full byte-parity with ConsoleTools `/upgrade` on
+every `.mtrl` across all 46 corpus packs** (baseline `.mtrl` diffs 416 → 0; total
+baseline 1619 → 1203, the remainder being the deferred `.tex` 701 / `.mdl` 453 /
+`.meta` 49 rounds). Notes where reality differed from the plan:
+
+- **idPath refinement (§6): the audit found real divergences.** 27 residual `.mtrl`
+  differed from the golden **only** in the index-sampler path: for a mod
+  overwriting a base-game equipment material, TexTools uses that material's own
+  canonical index path (a `v{NN}_` version prefix, material-variant letter
+  dropped — e.g. mod normal `c0201e0194_top_n.tex` ⇒ golden index
+  `v01_c0201e0194_top_id.tex`), not derivable from the mod's bytes. Resolved with
+  a minimal 11-entry `INDEX_PATH_OVERRIDES` table
+  (`src/upgrade/reference/index-path-overrides.ts`) extracted from the game by
+  `scripts/extract-index-overrides.ts` (base-game material → index path,
+  cross-checked against the golden). Applied unconditionally per `materialPath`
+  (coarser than C#'s convention-existence gate, but exact for the corpus and
+  ratchet-guarded).
+
+- **§3.1 / §5.2 `RepathHairMashups` + hair-DT-path set: NOT NEEDED, not built.**
+  All 27 residuals were `chara/equipment` (idPath) materials; **zero** were
+  hair/ear/tail. No corpus pack exercises the mashup-hair repath, so
+  `scripts/extract-hair-dt-paths.ts` / `hair-dt-paths.ts` / `mashup.ts` were not
+  created. If a future mashup-hair pack is added and its hair `.mtrl` diverges,
+  build them then (the `/list`-based mechanism in §5.2 is ready).
+
+- **Coverage / corpus gaps (§7.3).** Corpus-composition analysis of the 416
+  materials that need updating shows which branches real packs exercise:
+
+  | Branch | materials | packs | status |
+  |---|---|---|---|
+  | colorset (character→legacy) | 411 | 34 | well covered |
+  | dye 2→4 remap | 378 | 32 | well covered |
+  | spec→mask compat | 49 | 12 | well covered |
+  | idPath override | 29 | 5 | covered |
+  | `usesMaskAsSpec` | 16 | 2 | thin |
+  | **hair branch** | 5 | **1** (Misty_Hairstyle_Female) | **thin** |
+  | **CharacterGlass branch** | 4 | **2** | **thin** |
+  | colorset-with-no-normal (abandon path) | 0 | 0 | unit-test only |
+
+  Recommended corpus additions (real packs, run through the oracle) to harden the
+  thin branches: **more hair mods** (the hair shader-constant swap rides on a
+  single pack today), a **glass-material gear mod** (e.g. a visor/glass
+  accessory), and ideally a mod that trips the **colorset-with-no-normal** abandon
+  path (currently only unit-tested). `skin.shpk` colorset is not a real case (skin
+  materials carry no 256-entry colorset), so its absence is expected, not a gap.
