@@ -10,10 +10,16 @@ import {
 } from "../src/model/modpack";
 import { encodeSqPackFile, SqPackType } from "../src/sqpack/sqpack";
 import {
+  compareToBaseline,
+  loadBaseline,
+  saveBaseline,
+} from "./helpers/upgrade-baseline";
+import {
   confirmDivergence,
   DIVERGENCE_RULES,
   type DivergenceRule,
 } from "./helpers/upgrade-compare";
+import type { FileDiff } from "./helpers/upgrade-diff";
 import { diffUpgrade } from "./helpers/upgrade-diff";
 import { upgradeGoldenCached } from "./helpers/upgrade-golden";
 
@@ -324,3 +330,44 @@ function rawPackTtmp2(): ModpackData {
     ],
   };
 }
+
+describe("baseline ratchet", () => {
+  const diff = (
+    gamePath: string,
+    index: number,
+    status: FileDiff["status"],
+  ): FileDiff => ({ gamePath, index, status });
+
+  it("save then load round-trips entries", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ub-"));
+    expect(loadBaseline("k", dir)).toBeNull();
+    const entries = [diff("a.mtrl", 0, "mismatch")];
+    saveBaseline("k", entries, dir);
+    expect(loadBaseline("k", dir)).toEqual(entries);
+  });
+
+  it("passes when actual is a subset of baseline", () => {
+    const baseline = [diff("a", 0, "mismatch"), diff("b", 0, "added")];
+    const actual = [diff("a", 0, "mismatch")];
+    expect(compareToBaseline(actual, baseline).ok).toBe(true);
+  });
+
+  it("flags a regression not present in the baseline", () => {
+    const baseline = [diff("a", 0, "mismatch")];
+    const actual = [diff("a", 0, "mismatch"), diff("c", 0, "removed")];
+    const { ok, regressions } = compareToBaseline(actual, baseline);
+    expect(ok).toBe(false);
+    expect(regressions).toEqual([diff("c", 0, "removed")]);
+  });
+
+  it("treats a status change on the same file as a regression", () => {
+    const baseline = [diff("a", 0, "added")];
+    const actual = [diff("a", 0, "mismatch")];
+    expect(compareToBaseline(actual, baseline).ok).toBe(false);
+  });
+
+  it("empty baseline: any diff is a regression", () => {
+    expect(compareToBaseline([diff("a", 0, "mismatch")], []).ok).toBe(false);
+    expect(compareToBaseline([], []).ok).toBe(true);
+  });
+});
