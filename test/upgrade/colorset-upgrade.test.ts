@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { SHPK_CHARACTER_LEGACY } from "../../src/mtrl/shader";
+import {
+  SHPK_CHARACTER_GLASS,
+  SHPK_CHARACTER_LEGACY,
+} from "../../src/mtrl/shader";
 import {
   upgradeColorsetData,
   upgradeDyeData,
@@ -23,6 +26,34 @@ describe("upgradeColorsetData", () => {
     expect(out[26]).toBe(floatToHalf(1.0));
     // untouched extra rows carry the default template
     expect(out[16 * 32 + 7 * 4 + 0]).toBe(floatToHalf(16.0));
+  });
+
+  it("copies every row-0 field with the legacy spec-power/gloss swaps (raw halves preserved)", () => {
+    const old = new Array<number>(256).fill(0);
+    for (let k = 0; k < 16; k++) old[k] = 0x1000 + k; // distinct non-zero raw halves in row 0
+    const out = upgradeColorsetData(old, SHPK_CHARACTER_LEGACY);
+    // diffuse rgb + legacy diffuse-alpha = old specular-power slot (index 7)
+    expect(out.slice(0, 4)).toEqual([0x1000, 0x1001, 0x1002, 0x1007]);
+    // specular rgb + legacy specular-alpha = old diffuse-gloss slot (index 3)
+    expect(out.slice(4, 8)).toEqual([0x1004, 0x1005, 0x1006, 0x1003]);
+    // emissive rgb
+    expect(out.slice(8, 11)).toEqual([0x1008, 0x1009, 0x100a]);
+    // unknown/subsurface-material-id: out[25] = old[11]; out[26] = 1.0 (injected constant)
+    expect(out[25]).toBe(0x100b);
+    expect(out[26]).toBe(floatToHalf(1.0));
+    // subsurface scaling copies old[12..15]
+    expect(out.slice(28, 32)).toEqual([0x100c, 0x100d, 0x100e, 0x100f]);
+  });
+
+  it("injects the glass specular constant and copies diffuse for CharacterGlass", () => {
+    const old = new Array<number>(256).fill(0);
+    old[0] = 0x2001;
+    old[1] = 0x2002;
+    old[2] = 0x2003; // diffuse rgb
+    const out = upgradeColorsetData(old, SHPK_CHARACTER_GLASS);
+    expect(out.slice(0, 3)).toEqual([0x2001, 0x2002, 0x2003]); // diffuse copied verbatim
+    const glassSpec = floatToHalf(0.8100586);
+    expect(out.slice(4, 7)).toEqual([glassSpec, glassSpec, glassSpec]); // glass specular constant
   });
 });
 
