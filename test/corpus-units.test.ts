@@ -6,11 +6,11 @@ describe("enumerateUnits", () => {
   const units = enumerateUnits();
   const packs = corpusInputs();
 
-  it("emits sqpack+golden+mtrl+tex+mdl for every pack, plus pmp for .pmp packs", () => {
+  it("emits sqpack+golden+mtrl+tex+mdl+upgrade for every pack, plus pmp for .pmp packs", () => {
     const pmpCount = packs.filter((p) =>
       p.toLowerCase().endsWith(".pmp"),
     ).length;
-    expect(units.length).toBe(packs.length * 5 + pmpCount);
+    expect(units.length).toBe(packs.length * 6 + pmpCount);
   });
 
   it("is deterministic and sorted by pack path, fixed check order per pack", () => {
@@ -22,12 +22,12 @@ describe("enumerateUnits", () => {
     });
     const packOrder = [...firstIdxOfPack.keys()];
     expect(packOrder).toEqual([...packOrder].sort());
-    // per pack, the checks appear in [sqpack, golden, mtrl, tex, mdl, (pmp)] order
+    // per pack, the checks appear in [sqpack, golden, mtrl, tex, mdl, upgrade, (pmp)] order
     for (const pack of packOrder) {
       const checks = units.filter((u) => u.pack === pack).map((u) => u.check);
       const expected = pack.toLowerCase().endsWith(".pmp")
-        ? ["sqpack", "golden", "mtrl", "tex", "mdl", "pmp"]
-        : ["sqpack", "golden", "mtrl", "tex", "mdl"];
+        ? ["sqpack", "golden", "mtrl", "tex", "mdl", "upgrade", "pmp"]
+        : ["sqpack", "golden", "mtrl", "tex", "mdl", "upgrade"];
       expect(checks).toEqual(expected);
     }
   });
