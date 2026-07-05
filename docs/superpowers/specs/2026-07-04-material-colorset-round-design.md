@@ -140,9 +140,10 @@ These are pure, table-driven, and independently unit-testable.
 
 Every game read the C# material path performs is over **bounded reference data**.
 We extract the specific values we consume once, at dev time, from the local game
-install, and check them in as **plain constants / path sets** — a derivative
-interoperability table, never the copyrighted asset. Provenance in a header
-comment + `NOTICE`. Raw game files are never committed.
+install, and check them in as **plain constants / path sets** — the same as any
+other derived table in the codebase. Each generated file carries a one-line
+pointer to the script that regenerates it (operational, not a provenance
+statement); raw game files are never committed.
 
 ### 5.1 Shader params — `src/upgrade/reference/{hair,glass}-shader-params.ts`
 
@@ -226,4 +227,3 @@ divergence is silently accepted.
 - `scripts/extract-shader-params.ts`, `scripts/extract-hair-dt-paths.ts` (new) —
   one-time derived-data generators.
 - `test/upgrade/material.test.ts` (new) — unit tests (§7.1).
-- `NOTICE` (modify) — cite provenance of the derived tables.
