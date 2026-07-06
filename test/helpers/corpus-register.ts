@@ -1,3 +1,4 @@
+import { registerGeometryChecks } from "./corpus-geometry";
 import { registerGoldenCheck } from "./corpus-golden";
 import { registerMdlChecks } from "./corpus-mdl";
 import { registerMtrlChecks } from "./corpus-mtrl";
@@ -17,6 +18,7 @@ const DISPATCH: Record<CheckKind, (pack: string) => void> = {
   pmp: registerPmpManifestChecks,
   tex: registerTexChecks,
   mdl: registerMdlChecks,
+  geometry: registerGeometryChecks,
   upgrade: registerUpgradeCheck,
 };
 
