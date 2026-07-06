@@ -9,7 +9,7 @@ import {
   VertexUsageType,
 } from "../../../src/mdl/geometry/format";
 import type { TtVertex } from "../../../src/mdl/geometry/vertex-data";
-import { floatToHalf } from "../../../src/util/half-float";
+import { floatToHalf } from "../../../src/util/float16";
 
 function vertex(over: Partial<TtVertex>): TtVertex {
   return {

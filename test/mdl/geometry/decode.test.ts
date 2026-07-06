@@ -6,7 +6,7 @@ import {
   VertexUsageType,
 } from "../../../src/mdl/geometry/format";
 import type { MeshGeometryInfo } from "../../../src/mdl/geometry/offsets";
-import { floatToHalf } from "../../../src/util/half-float";
+import { floatToHalf } from "../../../src/util/float16";
 
 // One vertex: stream0 = Position Half4 (8 B); stream1 = Binormal Ubyte4n (4) + Color (4).
 const elements: VertexElement[] = [

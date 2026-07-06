@@ -7,7 +7,7 @@ import {
   upgradeColorsetData,
   upgradeDyeData,
 } from "../../src/upgrade/colorset-upgrade";
-import { floatToHalf } from "../../src/util/half-float";
+import { floatToHalf } from "../../src/util/float16";
 
 describe("upgradeColorsetData", () => {
   it("expands 256 halves to 1024 and places row 0 diffuse", () => {

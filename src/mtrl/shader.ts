@@ -1,4 +1,4 @@
-import { floatToHalf } from "../util/half-float";
+import { floatToHalf } from "../util/float16";
 import type { XivMtrl } from "./types";
 
 export const SHPK_CHARACTER = "character.shpk";
