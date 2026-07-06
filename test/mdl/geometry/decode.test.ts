@@ -91,3 +91,55 @@ describe("decodeVertexData", () => {
     ).toThrow();
   });
 });
+
+describe("decodeVertexData - unmodeled second UV pair guard", () => {
+  // One vertex: stream0 = TextureCoordinate Half4, count=1 (the third texcoord slot).
+  const texElements: VertexElement[] = [
+    {
+      stream: 0,
+      offset: 0,
+      type: VertexDataType.Half4,
+      usage: VertexUsageType.TextureCoordinate,
+      count: 1,
+    },
+  ];
+
+  const texMesh: MeshGeometryInfo = {
+    vertexCount: 1,
+    indexCount: 0,
+    meshPartIndex: 0,
+    meshPartCount: 1,
+    indexDataOffset: 0,
+    vertexDataOffset0: 0,
+    vertexDataOffset1: 8,
+    vertexDataEntrySize0: 8,
+    vertexDataEntrySize1: 0,
+  };
+
+  function buildTexFile(vec1: [number, number]): Uint8Array {
+    const bytes = new Uint8Array(8);
+    const dv = new DataView(bytes.buffer);
+    dv.setUint16(0, floatToHalf(0.25), true);
+    dv.setUint16(2, floatToHalf(0.75), true);
+    dv.setUint16(4, floatToHalf(vec1[0]), true);
+    dv.setUint16(6, floatToHalf(vec1[1]), true);
+    return bytes;
+  }
+
+  it("throws when the second UV pair of a count!=0 texcoord is non-zero", () => {
+    expect(() =>
+      decodeVertexData(buildTexFile([0.5, 0.5]), texMesh, texElements, 0, 8),
+    ).toThrow(/unmodeled second UV pair/);
+  });
+
+  it("decodes fine when the second UV pair of a count!=0 texcoord is zero", () => {
+    const vd = decodeVertexData(
+      buildTexFile([0, 0]),
+      texMesh,
+      texElements,
+      0,
+      8,
+    );
+    expect(vd.textureCoordinates2[0]).toEqual([0.25, 0.75]);
+  });
+});

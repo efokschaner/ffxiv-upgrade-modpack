@@ -53,6 +53,9 @@ function pushVectorData(
     pushF32(out, data[1]);
     pushF32(out, data[2]);
   } else if (type === VertexDataType.Ubyte4n) {
+    // Ubyte4n-only is deliberate fidelity to a reference typo (Mdl.cs:4147: `Ubyte4n ||
+    // Ubyte4n`, meant to be `Ubyte4`); a Ubyte4 binormal/flow would fail loud below (stream
+    // size mismatch), not silently.
     pushBinormalBytes(out, data, handedness ? -1 : 1);
   }
 }
@@ -116,6 +119,9 @@ function encodeElement(out: number[], e: VertexElement, v: TtVertex): void {
       break;
     case VertexUsageType.TextureCoordinate:
       if (e.count === 0) pushUv(out, e.type, v.uv1, v.uv2);
+      // Intentionally more permissive than the reference writer here, which only ever
+      // emits Float2/Half2 for the count!=0 texcoord (Mdl.cs:4260-4273); harmless since
+      // decode now guards the unmodeled non-zero second pair a Half4/Float4 would imply.
       else pushUv(out, e.type, v.uv3, [0, 0]);
       break;
     case VertexUsageType.BoneWeight:

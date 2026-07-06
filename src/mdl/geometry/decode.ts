@@ -119,6 +119,16 @@ function readData(vd: VertexData, c: Cursor, e: VertexElement): void {
         vd.textureCoordinates0.push(r.vec0);
         vd.textureCoordinates1.push(r.vec1);
       } else {
+        // The reference writer never emits Half4/Float4 for the count!=0 texcoord
+        // (Mdl.cs:4260-4273 only branches Float2/Half2), and we don't model a 4th
+        // texcoord to hold a real vec1 here. If one ever appears, fail loud rather
+        // than silently dropping it (it would otherwise mismatch byte-exact and pass
+        // silently through the divergence fallback).
+        if (r.vec1[0] !== 0 || r.vec1[1] !== 0) {
+          throw new Error(
+            `mdl: unmodeled second UV pair in count!=0 texcoord (type 0x${e.type.toString(16)})`,
+          );
+        }
         vd.textureCoordinates2.push(r.vec0);
       }
       break;
