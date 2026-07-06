@@ -21,26 +21,79 @@ describe("tex encode: uncompressed", () => {
     expect(Array.from(decodeToRgba(parsed))).toEqual(Array.from(rgba));
   });
 
-  it("generates a full mip chain by 2x2 box average, rounded not truncated", () => {
-    // Four distinct texels so the 1x1 result is a real average, not an input echo.
-    // R channel: 10, 20, 30, 43 -> sum 103 -> (103+2)>>2 = 26. Plain truncation
-    // (103>>2 = 25) would give a different value, so this proves the "+2" rounding
-    // term is actually applied and that the R inputs are genuinely averaged.
-    const rgba = new Uint8Array([
-      10, 0, 100, 255, 20, 0, 100, 255, 30, 0, 100, 255, 43, 0, 100, 255,
+  it("downsamples by point-sample decimation (top-left of each 2x2 block), not averaging", () => {
+    // 4x4 image, R = the linear texel index (0..15), so each mip texel's R reveals exactly which
+    // source texel it copied. Nvtt/box averaging would blend neighbours and produce non-index R
+    // values; CreateFast8888DDS instead takes the top-left texel of each 2x2 block.
+    const rgba = new Uint8Array(4 * 4 * 4);
+    for (let i = 0; i < 16; i++) {
+      rgba[i * 4] = i; // R = index
+      rgba[i * 4 + 3] = 255; // A
+    }
+    const chain = generateMipmaps(rgba, 4, 4);
+    expect(chain).toHaveLength(2); // 4x4, 2x2 — stops at min-dim 2, not 1x1
+    // 2x2 mip = top-left texel of each 2x2 block: indices 0, 2, 8, 10.
+    expect(Array.from(chain[1]!)).toEqual([
+      0, 0, 0, 255, 2, 0, 0, 255, 8, 0, 0, 255, 10, 0, 0, 255,
     ]);
-    const chain = generateMipmaps(rgba, 2, 2);
-    expect(chain).toHaveLength(2);
-    expect(chain[1]).toHaveLength(4);
-    expect(Array.from(chain[1]!)).toEqual([26, 0, 100, 255]);
   });
 
   it("multi-mip encode reports the right mipCount and total size", () => {
     const rgba = new Uint8Array(4 * 4 * 4).fill(128);
     const tex = encodeUncompressedTex(rgba, 4, 4, { mips: true });
     const parsed = parseTex(tex);
-    expect(parsed.mipCount).toBe(3); // 4x4,2x2,1x1
-    expect(parsed.mipData).toHaveLength(64 + 16 + 4);
+    expect(parsed.mipCount).toBe(2); // 4x4,2x2 — max(1, floor(log2(4))) levels
+    expect(parsed.mipData).toHaveLength(64 + 16);
+  });
+
+  it("matches a faithful port of CreateFast8888DDS across sizes (oracle-free parity)", () => {
+    // Independent transcription of xivModdingFramework's CreateFast8888DDS mip loop (Tex.cs:823),
+    // written to mirror the C# integer offsets literally. Its agreement with generateMipmaps is the
+    // parity check that replaces the old captured-oracle fixture (design spec §6): the real filter is
+    // a deterministic decimation, not Nvtt, so no oracle capture is needed.
+    const reference = (data: Uint8Array, width: number, height: number) => {
+      const minDim = Math.min(height, width);
+      const mipCount = Math.max(1, Math.trunc(Math.log(minDim) / Math.log(2)));
+      const mips: Uint8Array[] = [data];
+      let last = data;
+      let curw = width;
+      let curh = height;
+      for (let i = 1; i < mipCount; i++) {
+        curw = Math.trunc(curw / 2);
+        curh = Math.trunc(curh / 2);
+        const mip = new Uint8Array(curw * curh * 4);
+        for (let y = 0; y < curh; y++) {
+          for (let x = 0; x < curw; x++) {
+            const dest = (y * curw + x) * 4;
+            const source = (y * 2 * (curw * 2) + x * 2) * 4;
+            for (let c = 0; c < 4; c++) mip[dest + c] = last[source + c]!;
+          }
+        }
+        mips.push(mip);
+        last = mip;
+      }
+      return mips;
+    };
+    const sizes: Array<[number, number]> = [
+      [64, 64],
+      [128, 32],
+      [32, 128],
+      [16, 16],
+      [8, 4],
+      [4, 4],
+      [2, 2],
+      [256, 64],
+    ];
+    for (const [w, h] of sizes) {
+      const rgba = new Uint8Array(w * h * 4);
+      for (let i = 0; i < rgba.length; i++) rgba[i] = (i * 97 + 13) & 0xff;
+      const ours = generateMipmaps(rgba, w, h);
+      const ref = reference(rgba, w, h);
+      expect(ours).toHaveLength(ref.length);
+      for (let m = 0; m < ref.length; m++) {
+        expect(Array.from(ours[m]!)).toEqual(Array.from(ref[m]!));
+      }
+    }
   });
 
   it("resizes via nearest-neighbor point sampling with asserted pixel values", () => {

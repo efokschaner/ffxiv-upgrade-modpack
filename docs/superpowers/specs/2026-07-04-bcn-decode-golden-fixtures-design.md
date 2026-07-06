@@ -207,9 +207,8 @@ test/tex/fixtures/bcn/
 4. Assert **byte-exact** equality against the `expected` golden.
 5. A guard assertion confirms all 8 BC7 modes are present (coverage cannot silently shrink).
 
-Pure data-driven; no external tooling at test time; part of the normal `npm test` gate. Follows the
-existing `node:fs` fixture-reading pattern in `tex-fixtures.test.ts` and lives alongside the other
-`test/tex/` files.
+Pure data-driven; no external tooling at test time; part of the normal `npm test` gate. Uses the
+standard `node:fs` fixture-reading pattern and lives alongside the other `test/tex/` files.
 
 ---
 

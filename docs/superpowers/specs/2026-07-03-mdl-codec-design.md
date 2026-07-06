@@ -209,7 +209,6 @@ test/mdl/make-mdl.ts        hand-built minimal v5 + v6 .mdl byte builders
 test/mdl/mdl-types.test.ts  MdlModelData round-trip + constants
 test/mdl/mdl-parse.test.ts  parse of hand-built v5/v6 files: header fields, MdlModelData, section spans
 test/mdl/mdl-roundtrip.test.ts  serializeMdl(parseMdl(x)) === x (synthetic) + index re-export
-test/mdl/mdl-fixtures.test.ts   extracted .mdl round-trip; skips if fixtures absent
 test/helpers/corpus-mdl.ts      registerMdlChecks(pack) — corpus self round-trip gate
 test/helpers/corpus-units.ts    MODIFY: add "mdl" CheckKind + per-pack unit
 test/helpers/corpus-register.ts MODIFY: dispatch "mdl" -> registerMdlChecks

@@ -37,38 +37,43 @@ export function resizeToPowerOfTwo(
   return { rgba: out, width: tw, height: th };
 }
 
-/** Full RGBA mip chain to 1x1 via 2x2 box average. The edge clamp (x1/y1 clamped to w-1/h-1) exists
- *  to handle the 1xN / Nx1 plateau at the top of the chain; in the real pipeline all input dimensions
- *  are power-of-two because resizeToPowerOfTwo runs first, so this is not claiming general odd-dimension
- *  box coverage. Structural match to Nvtt's default box filter; exact byte parity is validated later
- *  against a captured oracle tex (design spec §6, tier 2). */
+/** Downsampled mip chain — a faithful port of xivModdingFramework's `CreateFast8888DDS`
+ *  (`Tex.cs:823`), the filter the Dawntrail upgrade ACTUALLY uses for regenerated `A8R8G8B8`
+ *  textures. `FrameworkSettings.DefaultTextureFormat` is `A8R8G8B8`, so every regenerated texture
+ *  takes `ConvertToDDS(..., allowFast8888: true)`'s fast path (`EndwalkerUpgrade.cs:1213/1222/2069/
+ *  2094`) — a nearest-neighbour DECIMATION (the top-left texel of each 2×2 block, NOT a box average;
+ *  its own author calls it "the world's singularly worst MipMaps") producing `max(1, floor(log2(min(
+ *  w,h))))` levels, i.e. it stops at a 2-pixel minimum dimension, not 1×1. We match it byte-for-byte
+ *  (design spec §6); the oracle-free parity test lives in test/tex/tex-encode.test.ts. Inputs are
+ *  power-of-two (resizeToPowerOfTwo runs first), so the integer floor-log2 equals C#'s
+ *  `(int)Math.Log(minDim, 2)`. */
 export function generateMipmaps(
   rgba: Uint8Array,
   width: number,
   height: number,
 ): Uint8Array[] {
+  const minDim = Math.min(width, height);
+  let mipCount = 0;
+  while (2 ** (mipCount + 1) <= minDim) mipCount++;
+  mipCount = Math.max(1, mipCount);
+
   const chain: Uint8Array[] = [rgba];
   let src = rgba,
     w = width,
     h = height;
-  while (w > 1 || h > 1) {
-    const nw = Math.max(1, w >> 1),
-      nh = Math.max(1, h >> 1);
+  for (let level = 1; level < mipCount; level++) {
+    const nw = w >> 1,
+      nh = h >> 1;
     const dst = new Uint8Array(nw * nh * 4);
     for (let y = 0; y < nh; y++) {
       for (let x = 0; x < nw; x++) {
-        const x0 = Math.min(w - 1, x * 2),
-          x1 = Math.min(w - 1, x * 2 + 1);
-        const y0 = Math.min(h - 1, y * 2),
-          y1 = Math.min(h - 1, y * 2 + 1);
-        for (let c = 0; c < 4; c++) {
-          const s =
-            src[(y0 * w + x0) * 4 + c]! +
-            src[(y0 * w + x1) * 4 + c]! +
-            src[(y1 * w + x0) * 4 + c]! +
-            src[(y1 * w + x1) * 4 + c]!;
-          dst[(y * nw + x) * 4 + c] = (s + 2) >> 2; // rounded average
-        }
+        // Top-left texel of the 2×2 block: source (2x, 2y) in the previous mip (row stride w).
+        const so = (y * 2 * w + x * 2) * 4;
+        const o = (y * nw + x) * 4;
+        dst[o] = src[so]!;
+        dst[o + 1] = src[so + 1]!;
+        dst[o + 2] = src[so + 2]!;
+        dst[o + 3] = src[so + 3]!;
       }
     }
     chain.push(dst);

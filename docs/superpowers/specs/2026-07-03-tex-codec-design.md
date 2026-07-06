@@ -97,7 +97,8 @@ difference, not to the codec silently normalizing a header; and (3) retention ke
 behaviours permanently reachable — if matching the oracle ever requires *preserving* an original header
 we can replay it, and if it requires *canonicalizing* we already do (`buildCanonicalTexHeader`). Lossy
 would have discarded the original header irrecoverably. The genuine oracle-match difficulty lives in the
-canonical header port and Nvtt mip/encode parity (§6), which retention neither creates nor solves.
+canonical header port and the lossy BCn-encode parity (§6/§10), which retention neither creates nor
+solves. (The mip filter, once assumed a soft spot, is a trivial deterministic decimation — see §6.)
 
 ---
 
@@ -168,9 +169,9 @@ test/tex-header.test.ts     full-header round-trip + canonical-header builder
 test/tex-parse.test.ts      parse of hand-built canonical file
 test/tex-roundtrip.test.ts  serializeTex(parseTex(x)) === x (synthetic) + index re-export
 test/tex-decode.test.ts     known-block BCn decode + uncompressed unpacks -> exact RGBA
-test/tex-mipmaps.test.ts    mip chain sizes/count/dims (tier-1) + isolated Nvtt-filter fixture (tier-2, §6)
+test/tex-encode.test.ts     uncompressed encode/round-trip + mip decimation parity vs a ported
+                            CreateFast8888DDS (oracle-free, §6); resizeToPowerOfTwo pixel checks
 test/tex-corpus.test.ts     corpus self round-trip (byte-exact); skips gracefully
-test/tex-fixtures.test.ts   extracted .tex round-trip + decode smoke; skips if fixtures absent
 ```
 
 ---
@@ -200,27 +201,36 @@ downstream index/mask transforms read specific channels.
 
 - `encodeUncompressedTex(rgba, width, height, { mips })` → `A8R8G8B8` `XivTex` built via
   `buildCanonicalTexHeader`. Trivial and byte-exact.
-- `generateMipmaps(rgba, w, h)` — box (2×2 average) downsample to a full chain.
+- `generateMipmaps(rgba, w, h)` — nearest-neighbour decimation (see correction below).
 - `resizeToPowerOfTwo(rgba, w, h)` — the `ResizeXivTx` pre-step (`EndwalkerUpgrade.cs:1098`) for
   non-power-of-two sources.
 
-**Nvtt mip-filter parity (the one soft spot) is NOT blocked on the transforms.** In C#, mip generation
-for regenerated textures runs through Nvtt (inside `ConvertToDDS`), so exact byte-parity depends on the
-downsample kernel. We validate it in three tiers, earliest first:
+> **Correction (2026-07-05): the mip filter is NOT Nvtt.** This section originally assumed regenerated
+> textures are mipped by Nvtt's 2×2 box average (inside `ConvertToDDS`), to be verified against a
+> captured "tier-2" oracle fixture. That premise is wrong. `FrameworkSettings.DefaultTextureFormat` is
+> `A8R8G8B8` (`XivCache.cs:68`), so every texture the upgrade regenerates takes the **byte[]**
+> `ConvertToDDS(..., A8R8G8B8, useMips: true, ..., allowFast8888: true)` overload
+> (`EndwalkerUpgrade.cs:1213/1222/2069/2094`), whose `allowFast8888 && A8R8G8B8` branch returns
+> **`CreateFast8888DDS`** (`Tex.cs:773`). That is not Nvtt and not a box filter: it is a nearest-neighbour
+> **decimation** — the top-left texel of each 2×2 block (its own author calls it *"the world's singularly
+> worst MipMaps"*) — and it produces `max(1, floor(log2(min(w,h))))` levels, i.e. it stops at a 2-pixel
+> minimum dimension rather than 1×1. (Nvtt *is* used by the `/wrap` image-import path and by BC7, but the
+> upgrade's `A8R8G8B8` regeneration never reaches it.)
 
-1. **No oracle — from day one.** Mip chain length, per-level sizes, and dimensions are pure format math
-   (`texMipSizes`); unit-tested directly.
-2. **Isolated filter fixture — as soon as `generateMipmaps` exists, no transforms needed.** Capture
-   **one** ConsoleTools-produced uncompressed multi-mip `.tex` (any `/upgrade` that regenerates a texture
-   emits an `A8R8G8B8` mipped tex — `ConvertToDDS(generateMips=true)` runs Nvtt even for uncompressed).
-   Then: decode its **top mip** → RGBA (lossless, it is `A8R8G8B8`), run **our** `generateMipmaps` on
-   that exact top mip, and diff our levels `1..N` against the fixture's. This compares **only** the
-   filter — decode, transform, and canonical-serialize are all factored out. Nvtt's default is a 2×2 box
-   average, which we expect to reproduce exactly; if not, we tune the kernel against this one fixture.
-3. **End-to-end golden — later, belt-and-suspenders.** Full `/upgrade` diff once the transforms land;
-   confirms decode + transform + mip + serialize together, but is no longer the *only* parity check.
+**Consequence — no oracle capture is needed.** Because the real filter is a trivial deterministic
+function, mip parity collapses from a three-tier oracle strategy to a single oracle-free unit test:
 
-Capturing the tier-2 fixture is a one-time oracle run, fitting the repo's existing oracle/corpus tooling.
+1. **Structural (format math).** Mip chain length, per-level sizes, and dimensions via `texMipSizes`.
+2. **Filter parity (oracle-free).** `generateMipmaps` is a faithful port of `CreateFast8888DDS` and is
+   checked against an independent transcription of the same C# loop in `test/tex/tex-encode.test.ts` —
+   no ConsoleTools, no captured fixture, always runs. Decision (2026-07-05, operator): **match TexTools
+   byte-for-byte** rather than keep the higher-quality box average, per the repo's byte-exact-vs-golden
+   philosophy.
+3. **End-to-end golden — belt-and-suspenders.** The full `/upgrade` diff (upgrade harness) confirms
+   decode + transform + mip + serialize together once the texture transform (Task 8) is wired in.
+
+`resizeToPowerOfTwo` (the `ResizeXivTx` pre-step) is a separate filter whose exact parity is still open
+and validated end-to-end when the transform lands.
 
 ---
 
@@ -242,7 +252,8 @@ are absent, following the existing `corpusInputs()` / `describe.skipIf` pattern.
    RGBA; uncompressed unpacks → exact RGBA.
 3. **Synthetic header/round-trip units.** Full-header round-trip; `buildCanonicalTexHeader` field layout;
    `serializeTex(parseTex(x)) === x` over a hand-built canonical file (`test/helpers/make-tex.ts`).
-4. **Mip units.** Tier-1 structural (chain sizes/count/dims) + tier-2 isolated Nvtt-filter fixture (§6).
+4. **Mip units.** Structural (chain sizes/count/dims) + oracle-free decimation parity against a ported
+   `CreateFast8888DDS` (§6).
 5. **Optional extracted fixtures.** A couple of real `.tex` files for a corpus-free round-trip + decode
    smoke.
 6. **Deferred end-to-end.** Index-map golden vs ConsoleTools (uncompressed output) — validates decode +
