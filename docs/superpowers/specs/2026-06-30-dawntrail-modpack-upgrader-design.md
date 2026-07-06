@@ -1,7 +1,9 @@
 # Dawntrail Modpack Upgrader — Static Site Design
 
-**Date:** 2026-06-30
-**Status:** Brainstorming / design in progress (paused before final design sign-off)
+**Date:** 2026-06-30 (roadmap refreshed 2026-07-06)
+**Status:** Design signed off; foundation shipped, upgrade transforms in progress.
+Codecs, container I/O, the golden harness, and the material round are merged — see
+§8 for the living roadmap of the full upgrade and what remains.
 **Goal:** Build a static, client-side website (hostable on GitHub Pages) that performs the single
 operation of **upgrading a pre-Dawntrail FFXIV modpack to Dawntrail format** — the equivalent of
 TexTools' *Tools → Dawntrail Upgrades → Upgrade Modpack*.
@@ -206,11 +208,78 @@ is easier to automate but brittle to incidental ordering / timestamps).
 
 ---
 
-## 8. Next steps (on resume)
+## 8. Delivery status & remaining rounds (living roadmap)
 
-1. Finish brainstorming sign-off on this design (and the §6 pass-criterion decision).
-2. Re-clone reference repos to a stable, git-ignored location.
-3. Build the test corpus: gather real pre-Dawntrail modpacks; generate goldens with `ConsoleTools /upgrade`.
-4. Extract reference assets / build minimal JSON lookup tables (§5).
-5. Move to **writing-plans** to produce the implementation plan (codecs first, then transforms,
-   then container I/O, then UI), TDD against the golden/round-trip tests.
+The design is signed off and the build is well underway. The §6 open pass-criterion
+resolved to **exact decompressed-byte equality by default, with an explicit
+intentional-divergence allow-list** (see the harness spec §4.4). Reference repos, the
+corpus, and the cached goldens are all in place. This section is the living map of
+what the *full* upgrade comprises and what remains.
+
+### 8.1 Sub-project decomposition
+
+The C# port (`ModpackUpgrader` orchestration + ~2,200 lines of `EndwalkerUpgrade`
+transforms) is too large for one spec; it is built as **sequential sub-projects**,
+each its own spec→plan→implement cycle. Status as of 2026-07-06:
+
+| # | Sub-project | Spec | Status |
+|---|---|---|---|
+| — | sqpack / mtrl / tex+BCn / mdl codecs + container I/O (ttmp2 / pmp / legacy) | their own specs (`*-codec-design.md`) | ✅ shipped |
+| 1 | E2E golden harness + `/upgrade` cache + baseline ratchet | `2026-07-04-upgrade-golden-harness-design.md` | ✅ shipped |
+| 2 | Orchestration + material/colorset round | `2026-07-04-material-colorset-round-design.md` | ✅ shipped (`.mtrl` 416 → 0) |
+| 3 | **Model round** (v5→v6) | *(next)* | ⏳ 453 `.mdl` |
+| 4 | **Texture round** (index maps, gear masks, hair maps) | *(later)* | ⏳ 701 `.tex` |
+| 5 | **Metadata round** (EQDP race-set backfill) | *(later; newly scoped)* | ⏳ 49 `.meta` |
+| 6 | **Partials + reference-asset bundling** | *(later)* | ⏳ (no corpus coverage yet) |
+| 7 | **Site / UI** (static GitHub Pages) | *(later)* | ⏳ |
+
+### 8.2 What each remaining round does
+
+- **Round 3 — Model round (v5→v6).** Port of the `.mdl` EW→DT normalization
+  (`EndwalkerUpgrade` model pass / `Mdl.cs`). Self-contained on the modpack's own
+  model bytes; the `.mdl` codec is already built. Expected **byte-exact** vs the
+  golden — no encoder divergence — exactly like the material round. 453 diffs.
+
+- **Round 4 — Texture round.** Port of `UpgradeRemainingTextures`: consumes the
+  `UpgradeInfo` targets the material round records (`IndexMaps`,
+  `GearMaskLegacy`/`New`, `HairMaps`) and **generates** the new `.tex` files — the DT
+  "index" map from the mod's own normal + colorset, upgraded gear masks, hair maps —
+  BCn-encoded. This is the **first round that will not byte-match**: our BC5/BC7
+  encoder is not bit-identical to C#'s (BcnSharp/DirectXTex), so every generated
+  `.tex` needs an **intentional-divergence allow-list** entry (harness §4.4) that
+  positively confirms *only* the block encoding differs (same header/format/dims/mip
+  count; decoded pixels within our documented encoder precision). tex+BCn codec
+  built. 701 diffs.
+
+- **Round 5 — Metadata round** *(newly scoped — not in the harness spec's original
+  five)*. The golden's `.meta` files are consistently **larger** than ours (e.g.
+  182→192, 291→313 bytes). Traced to `ItemMetadata` re-serialization: on read,
+  `DeserializeEqdpData` **backfills an EQDP row for every race missing from
+  `Eqp.PlayableRaces`** (Dawntrail added races, 5 bytes/row —
+  `ItemMetadata.cs:782-788`), and the re-serialized metadata carries them. This
+  requires a **new metadata codec surface** — we currently pass `.meta` through as
+  **opaque bytes** (no `ItemMetadata` parse/serialize exists): parse the synthesized
+  `.meta` binary into its EQDP/IMC/EQP/EST/GMP sections, backfill the race set,
+  re-serialize. Expected byte-exact. Small (49 diffs) but it is new codec work, not
+  just a transform — hence a candidate to fold in alongside the model round.
+
+- **Round 6 — Partials + reference bundling.** Port of the `includePartials`
+  heuristics: unclaimed hair textures, eye mask→diffuse, skin repaths. Needs the
+  bundled reference assets deferred from §5 (eye textures, iris `(race,face)→path`
+  table, canonical hair/ear/tail sampler-path tables). No corpus pack exercises these
+  today; the ratchet records them once real mods are added. Most complex; last of the
+  transforms.
+
+- **Round 7 — Site / UI.** The actual product (§4): a static GitHub Pages page —
+  upload `.ttmp2` / `.pmp` / folder → `upgradeModpack` in-browser → download. The
+  transform seam (`upgradeModpack(data): ModpackData`, exported from `src/index.ts`)
+  is stable, so the UI can be built in parallel against the current partial pipeline
+  and gains correctness as each round lands.
+
+### 8.3 Burndown
+
+The gitignored ratchet baseline **is** the burndown chart (harness §4.5). Total
+non-matching diffs across the 46 corpus packs: **1619** at material-round start →
+**1203 today** (`.mtrl` 0, `.mdl` 453, `.tex` 701, `.meta` 49). End state: every
+baseline empty, with the committed allow-list holding only the intended
+texture-encoder divergences.
