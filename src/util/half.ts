@@ -42,3 +42,19 @@ export function floatToHalf(value: number): number {
   }
   return sign | result;
 }
+
+/** IEEE-754 binary16 raw uint16 -> number. Exact (every half is representable). */
+export function halfToFloat(raw: number): number {
+  const sign = raw & 0x8000 ? -1 : 1;
+  const exp = (raw >> 10) & 0x1f;
+  const mant = raw & 0x3ff;
+  if (exp === 0) {
+    // Zero or subnormal: value = mant * 2^-24.
+    return sign * mant * 2 ** -24;
+  }
+  if (exp === 0x1f) {
+    return mant === 0 ? sign * Number.POSITIVE_INFINITY : Number.NaN;
+  }
+  // Normal: value = (1 + mant/1024) * 2^(exp-15).
+  return sign * (1 + mant / 1024) * 2 ** (exp - 15);
+}
