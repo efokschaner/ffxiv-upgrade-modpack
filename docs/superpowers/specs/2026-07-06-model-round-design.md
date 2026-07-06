@@ -1,151 +1,131 @@
-# Model Round (v5→v6) — Design
+# Model Round — Design (CORRECTED: full model normalizer)
 
-**Date:** 2026-07-06
-**Status:** Design approved (brainstorming); ready for implementation plan.
+**Date:** 2026-07-06 (corrected 2026-07-06 after the FixOldModel finding)
+**Status:** Byte-patch premise SUPERSEDED. Re-scoped as a two-phase port; each
+phase gets its own spec→plan. This doc is the model-round master/decomposition
+design.
 **Parent:** `2026-06-30-dawntrail-modpack-upgrader-design.md` (§8, round 3).
-**Depends on:** the shipped `.mdl` codec (`src/mdl/*` — `parseMdl`/`serializeMdl`
-byte-exact round-trip, `MdlModelData` struct), the sqpack codec
-(`SqPackType.Model` encode/decode), the golden harness + baseline ratchet, and
-the orchestration seam shipped with the material round (`src/upgrade/upgrade.ts`).
+**Research:** `2026-07-06-model-normalizer-research.md` (the authoritative
+source map for the port — read it before speccing either phase).
 
 ---
 
-## 1. Where this sits
+## 0. Correction notice — why this was re-scoped
 
-Sub-project #3 of the upgrade port (foundation §8). It fills the `modelRound`
-no-op stub with the **model** half of round 1 — the port of C#
-`EndwalkerUpgrade.FastMdlv6Upgrade` (`EndwalkerUpgrade.cs:282–476`), the
-byte-level v5→v6 MDL patch that the modpack `/upgrade` path actually runs
-(`UpdateEndwalkerModel`, `:250`). Scope is `chara/**.mdl` only, per option,
-byte-exact against the ConsoleTools golden. Success = the corpus `.mdl` baseline
-(453 diffs today) collapses to zero, every upgraded `.mdl` byte-matching the
-golden (models carry **no** intended divergence — they are not on the allow-list).
+The original version of this spec assumed the modpack `/upgrade` model transform
+was `EndwalkerUpgrade.FastMdlv6Upgrade` — a **size-preserving in-place v5→v6 byte
+patch**. That was built and run (see the reference branch, §4), and the corpus
+immediately falsified it: the `.mdl` burndown was **453 → 452** (one model
+matched). Root cause (systematic-debugging, evidence in the research doc):
 
-Texture generation (round 2/4), metadata (round 5), and partials (round 6)
-remain no-op passes after this round.
+- ConsoleTools `/upgrade` does **not** rely on `FastMdlv6Upgrade`. It normalizes
+  every model via `EndwalkerUpgrade.FixOldModel`, run at **read** time
+  (`WizardData.FromModpack`, gated on TTMP version major < 2), which does a full
+  `GetXivMdl → TTModel.FromRaw → MakeUncompressedMdlFile` round-trip.
+- That round-trip **keeps LoD0 only** (the observed 9→3 mesh collapse), re-welds
+  vertices per part, rebuilds vertex declarations, and **re-encodes every vertex**
+  with a Half→Float precision upgrade on position/normal/UV. Even already-1-LoD
+  models are re-emitted (a 2-byte compaction was observed).
+- Our `.mdl` codec **preserves structure by construction** (byte-exact round-trip
+  of the *same* bytes; it carries `vertexInfo` and geometry as opaque blobs), so
+  it can never reproduce a normalizing golden. Corpus split of the 452 residuals:
+  235 need LoD-collapse (>10k byte drop), 211 are single-LoD needing
+  compaction/content normalization (71 same-size, different bytes).
+- Golden **determinism confirmed** (per a re-run of ConsoleTools): the decompressed
+  golden models are byte-identical across runs — a legitimate deterministic
+  normalization, not a bad output.
 
-## 2. Key fact: the modpack path uses the *fast byte-patch*, not a re-import
+**Decision (user, 2026-07-06):** commit to full byte-parity — port the normalizer
+faithfully. Foreseeability note: the foundation §6 and harness §3 both already said
+"/upgrade *normalizes* `.mdl` (uncompressed size changes)"; the original
+model-round spec missed it.
 
-C# has two model upgraders:
+## 1. What byte-parity actually requires
 
-- `FixOldModel` (`:190`) — full `TTModel.FromRaw` → `MakeUncompressedMdlFile`
-  re-import. Used on other routes, **not** the modpack path.
-- `FastMdlv6Upgrade` (`:282`) — an **in-place byte patch** over the uncompressed
-  MDL via `BinaryReader`/`BinaryWriter` at fixed offsets. This is what
-  `UpdateEndwalkerModel` calls on the modpack path (`files != null`).
+Reproduce, byte-for-byte, `FixOldModel`'s normalized **uncompressed** model. Per the
+research doc, that is a genuine **vertex-geometry re-encode**, not a structural
+slice. Concretely:
 
-So the golden is produced by the fast byte-patch. To byte-match it we mirror the
-**byte-patch semantics**, not a codec re-serialize-from-model. Crucially, our
-`.mdl` codec parses the file into structured sections and `serializeMdl` replays
-it **byte-for-byte**, so we can express the patch as edits to the parsed model
-(clearer, testable) and still land identical bytes — *provided* the codec
-round-trips v5 input exactly (§5, the precondition gate).
+- **Decode geometry** — parse the 136-byte-per-mesh vertex declarations and fully
+  decode LoD0's vertex/index buffers (positions, normals, binormals+handedness,
+  flow, 2× colors, 3× UVs, bone weights/indices, indices), block0/block1 streams,
+  Half decode (port of `MdlVertexReader`). Currently opaque in `src/mdl`.
+- **Rebuild** — keep **LoD0 only**; per-part weld/sort/dedupe of vertices (order and
+  count can change vs the source); build a TTModel-equivalent.
+- **Re-serialize** (`MakeUncompressedMdlFile`) — rebuild vertex declarations from
+  usage, re-encode every vertex with the **Half→Float** widening and the byte
+  quantizers, recompute all headers/offsets/counts, v6 bone sets, recomputed
+  bounding boxes, copy the handful of opaque `ogMdl` sub-blocks, emit `version=6`,
+  `lodCount=1`. The round-trip is deterministic and effectively lossless for the
+  game formats, so byte-parity is feasible.
 
-Every mutation `FastMdlv6Upgrade` makes is **size-preserving** (that is why C#
-patches in place): no section grows or shrinks, so no offsets downstream of an
-edit move. This is what makes the structured port safe.
+Gate: apply the normalizer to `chara/*.mdl` only when the pack is **TTMP major < 2**
+(mirror `DoesModpackNeedFix`, `TTMP.cs:918`). **PMP** packs never call
+`FixOldModel` — their models only see `FastMdlv6Upgrade`; the byte-patch (reference
+branch, §4) is the correct behavior there. Our corpus is all TTMP v1.x, so every
+corpus model is normalized; the PMP path is currently unexercised.
 
-## 3. The transform (`src/upgrade/model.ts`, new)
+## 2. Scope — this is the largest sub-project so far
 
-`upgradeModel(mdl: XivMdl): boolean` — mutates `mdl` in place to v6, returning
-whether any change was made (mirroring `FastMdlv6Upgrade`'s `anyChanges`). The
-caller re-serializes only when it returns `true`.
+Effectively a new **MDL geometry codec** plus a **model rebuilder**, porting a large
+fraction of `Mdl.cs` / `TTModel` / `ModelModifiers` / `MdlVertexReader`. Net-new work
+(the research doc §6): vertex-declaration parser, geometry decoder, TTModel-equivalent
+with weld, `MakeUncompressedMdlFile` serializer, and the gate. Reuse from `src/mdl` is
+framing-only (locate blocks, copy opaque sub-blocks, `MdlModelData` read/write).
 
-**Guards → no change** (return `false`, leave file byte-untouched):
-- `header.version !== 5` (already v6, or not a versioned model).
-- `header.meshCount === 0`.
-- `modelData.boneSetCount === 0 || modelData.boneCount === 0` — C# refuses
-  boneless meshes ("Not 100% sure how to update boneless meshes to v6 yet, so
-  don't upgrade for safety", `:325`).
+## 3. Decomposition — two phased sub-projects
 
-**Mutations** (all size-preserving):
+Mirrors the repo's "codecs first, then transforms" pattern. Each gets its own
+spec→plan→PR; B depends on A.
 
-1. **Header** (`header.bytes`, the serialize source of truth — `mdl/types.ts:13`):
-   version `5→6` (u16 @0); `lodCount → 1` (u8 @64).
-2. **modelData:** `lodCount → 1`; `boneSetSize → 64 × boneSetCount`. Re-serialized
-   by `serializeMdlModelData` (fixed 56-byte struct; physical size unchanged).
-3. **`sections.boneSets` v5→v6 reformat** (total length `132 × boneSetCount`,
-   unchanged — C# zero-fills the tail to preserve span, `:424–430`):
-   - Read each v5 entry: 128 bytes bone data (64 × u16) + a u32 count.
-   - Write v6 in the same buffer: first a header block of
-     `[u16 offset placeholder, u16 boneCount]` per set; then, per set,
-     `boneCount × 2` bytes of bone data, plus a 2-byte pad when `boneCount` is
-     odd, backfilling each set's offset field = `(dataPos − headerPos) / 4`.
-   - Zero-fill the remainder of the section.
-   - Note: `boneCount` here is the **per-set** count read from the v5 entry, not
-     `modelData.boneCount`.
-4. **`sections.boundingBoxes`:** keep the 4 leading standard boxes (128 bytes:
-   base / model / water / shadow); overwrite the following `modelData.boneCount`
-   per-bone boxes with a uniform radius-derived box —
-   `min = (−r/20, −r/20, −r/20, 1)`, `max = (+r/20, +r/20, +r/20, 1)`,
-   `r = modelData.radius`, `_Divisor = 20` (`:459–466`). Each box is 32 bytes
-   (2 × `float32×4`).
+- **Sub-project A — MDL geometry codec.** Vertex-declaration parse + full geometry
+  decode/encode (positions/normals/binormals/flow/colors×2/UV0-2/weights/indices;
+  Half↔Float; byte quantizers; block0/block1 streams; per-mesh/part offsets & sizes).
+  **Verifiable in isolation**: decode→encode round-trip byte-exact on real corpus
+  model geometry (like the sqpack/mtrl/tex codec corpus checks). This de-risks the
+  precision-sensitive core (research risks R3/R4/R6) before the harder rebuild.
+- **Sub-project B — model normalizer.** TTModel-equivalent (LoD0 weld/sort/dedupe) +
+  `MakeUncompressedMdlFile` serializer + LoD-collapse + v6 + gate + wiring into
+  `upgrade.ts`. Driven by the corpus `.mdl` golden ratchet (453 → 0). Folds in the
+  reusable bits from the reference branch (§4).
 
-The transform touches only `header`, `modelData`, `sections.boneSets`, and
-`sections.boundingBoxes`; all other sections and `geometry` pass through
-untouched.
+Open risks to carry into the phase specs (research doc §6): R1 version→6 (already
+empirically confirmed the golden is v6); R2 tangent path (implement binormals-present
+first); R3 Half↔Float bit-exactness; R4 float32 radius/bbox order; R5 weld
+determinism edge cases; R6 `WriteVertex` full body; R7 every `chara` model changes.
 
-## 4. Orchestration wiring (`src/upgrade/upgrade.ts`)
+## 4. Reference branch — `feat/upgrade-model-round` (how to use it)
 
-- **`modelRound(option)` becomes real:** map each `chara/**.mdl` file through
-  `parseMdl → upgradeModel → serializeMdl`, same per-option shape as
-  `materialRound`, but it records **no** `UpgradeInfo`. Wrap per-file in the same
-  try/catch-skip discipline (an unparseable/odd model is left byte-untouched,
-  mirroring C#'s per-file resilience). C# runs materials **before** models within
-  a `UpdateEndwalkerFiles` pass (`:168` then `:172`); we keep that order.
-- **Fix `restore()` to honour the source SqPack type.** Today it hardcodes
-  `SqPackType.Standard`, and its own docstring flags that a `.mdl` round must pass
-  the source's real type. `.mdl` ttmp entries are `SqPackType.Model` (type 3).
-  Thread the decoded entry's type out of `uncompressedBytes` and into `restore`
-  so each file re-encodes with its own type (Model for `.mdl`, Standard for
-  `.mtrl`), removing the hardcoded constant. `decodeSqPackFile` already returns
-  the type; a `.mdl`→`Model` path helper exists in `sqpack.ts` as a fallback for
-  the pmp raw path.
+The superseded byte-patch was implemented on branch **`feat/upgrade-model-round`**
+and is **kept as a reference**, NOT merged (its `modelRound` would emit non-matching,
+possibly game-invalid models). It is NOT abandoned work — three pieces are correct and
+**must be folded into sub-project B** when we build it:
 
-## 5. Testing & workflow
+- **`restore()` source-SqPack-type fix** (commit `cca61fa`): re-encode `.mdl` as
+  `SqPackType.Model` (type 3), not the hardcoded `Standard`. Needed regardless of
+  approach. Also carries the `uncompressedBytes → {bytes,type}` threading.
+- **`reformatBoneSetsV5toV6`** helper (commit `b185e1e`): the v6 bone-set layout the
+  serializer needs (research §2.2; C# `Getv6BoneSet`).
+- **`buildRadiusBoundingBox`** helper (commit `b185e1e`): the per-bone ±radius/20 cube
+  (research §2.2; C# `Mdl.cs:3732-3746`).
 
-1. **Precondition gate — v5 round-trip parity (do this first).** The corpus
-   `.mdl` inputs are **v5**; the codec was primarily validated on v6 game models.
-   Assert `parseMdl → serializeMdl` is **byte-identical** on every corpus v5
-   `.mdl` before writing the transform. This isolates codec bugs from transform
-   bugs and confirms the parser delimits the v5 `boneSets` section
-   (`132 × count`) correctly. A failure here is a **codec fix**, not a transform
-   task.
-2. **Unit tests (TDD the pure pieces):** the boneset v5→v6 reformat and the
-   radius-box fill against known vectors; the three guards (v6 input → unchanged;
-   `meshCount === 0` → unchanged; boneless → unchanged).
-3. **Corpus ratchet (primary gate):** run `npm test`; the `.mdl` diffs burn down.
-   Re-bless the baseline
-   (`$env:UPDATE_UPGRADE_BASELINE = "1"; npm test; Remove-Item Env:\UPDATE_UPGRADE_BASELINE`)
-   to record the smaller remainder (`.tex` 701, `.meta` 49). Any **new**
-   divergence (a regressed `.mdl`, or an unexpected diff) fails.
-4. **Coverage (corpus iteration):** after the round lands,
-   `npm run test:coverage` over `model.ts`; flag any under-exercised branch
-   (e.g. odd per-set bone counts, the boneless guard) and note real mods to add
-   if a branch is unhit by the corpus.
+The `upgradeModel` byte-patch orchestration itself (commit `4e2a557` + the `modelRound`
+wiring in `cca61fa`) is **discarded** — the normalizer replaces it. Branch commits stay
+in local history as the reference; nothing from this branch ships to `main` directly.
 
-## 6. Expected result & divergences
+Sub-projects A and B are built on **fresh branches off `main`** (A first). B cherry-picks
+or re-derives the three reusable pieces above from the reference branch.
 
-All 453 `.mdl` baseline diffs are expected to be **v5 models needing the
-upgrade**; a v6 `.mdl` is a no-op on **both** sides and already byte-matches
-(so it should not appear in the baseline). If any residual v6 `.mdl` still
-differs after this round, that is a **separate investigation** (not expected here)
-— models carry no intended divergence, so nothing about this round is added to
-the allow-list. The round is done when the `.mdl` baseline is zero.
+## 5. Out of scope
 
-## 7. Out of scope
+- Round-2 texture generation, round-5 metadata, round-6 partials, round-7 UI.
+- PMP model handling beyond the existing byte-patch (unexercised by the corpus; the
+  reference-branch `FastMdlv6Upgrade` port is the intended PMP behavior, gated).
 
-- Round 2/4 texture generation, round 5 metadata, round 6 partials, round 7 UI
-  (foundation §8).
-- The `FixOldModel` full re-import path (unused on the modpack route).
-- Any `.mdl` change beyond the v5→v6 fast patch (e.g. bone/material repaths) —
-  `/upgrade` does not perform them on this route.
+## 6. Next steps
 
-## 8. File plan
-
-- `src/upgrade/model.ts` (new) — `upgradeModel(mdl): boolean` + helpers
-  (boneset reformat, radius-box fill).
-- `src/upgrade/upgrade.ts` (modify) — real `modelRound`; `restore()` +
-  `uncompressedBytes()` thread the source SqPack type.
-- `test/upgrade/model.test.ts` (new) — unit tests (§5.2).
-- `test/mdl/*` (modify, only if §5.1 surfaces a v5 round-trip gap) — codec fix.
+1. Land this correction + the research doc + the pivot plan on `main` (done in the
+   commit carrying this file).
+2. Brainstorm/spec **sub-project A (MDL geometry codec)** on a fresh branch; TDD the
+   decode/encode against a corpus geometry round-trip.
+3. Brainstorm/spec **sub-project B (model normalizer)**; drive the `.mdl` ratchet to 0.
