@@ -40,6 +40,7 @@ export {
 } from "./tex/tex";
 export type { XivTex } from "./tex/types";
 export { cloneModpack, upgradeModpack } from "./upgrade/upgrade";
+export { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade/upgrade-info";
 
 export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
   const fmt = detectFormat(name);
