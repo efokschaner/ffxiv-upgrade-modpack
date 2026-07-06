@@ -283,3 +283,37 @@ non-matching diffs across the 46 corpus packs: **1619** at material-round start 
 **1203 today** (`.mtrl` 0, `.mdl` 453, `.tex` 701, `.meta` 49). End state: every
 baseline empty, with the committed allow-list holding only the intended
 texture-encoder divergences.
+
+### 8.4 Path to a complete end-to-end tool & known gaps
+
+**Remaining path.** A shippable end-to-end upgrader is: transforms complete
+(rounds 3→4→5→6, which drive the ratchet to zero) **plus** the UI (round 7) wired
+to the stable `upgradeModpack` seam. Transforms land in that order; the UI is
+decoupled from them (stable seam) and can start in parallel at any point, gaining
+correctness as rounds land. "Feature-complete" = the ratchet is empty except for
+the intended texture-encoder allow-list; "product-complete" = that, behind the
+static GitHub Pages page.
+
+**Known gaps & open risks** (each is a place the system is not yet whole):
+
+- **Thin corpus coverage on already-shipped branches** (material round §10):
+  hair rides on **1** pack, CharacterGlass on **2**, and the
+  colorset-with-no-normal abandon path is **unit-test-only**. These pass today but
+  are under-exercised; widening the corpus with real mods hardens them. This
+  concern **rides on every future round**, not just the material one.
+- **Partials (round 6) have zero corpus coverage** and depend on **bundled
+  reference assets not yet extracted** (eye textures, iris `(race,face)→path`,
+  canonical hair/ear/tail sampler tables — §5). Both the assets and the exercising
+  mods must be added when that round is built.
+- **Metadata (round 5) format is not fully pinned:** the golden `.meta` size
+  deltas (e.g. +22 bytes) do **not** fit a pure 5-byte-per-race EQDP model, so a
+  short scoping spike is needed before that round can be estimated confidently.
+- **Texture (round 4) divergence from TexTools is permanent by design** (our BCn
+  encoder ≠ C#'s), bounded and actively confirmed by the allow-list (harness
+  §4.4) — the `.tex` baseline reaches "allow-listed", never byte-zero.
+- **No CI; the only gate is the local ratchet + ConsoleTools oracle.** A fresh
+  clone cannot reproduce the ratchet without the local corpus and cached goldens
+  (both gitignored). The gate lives on the maintainer's machine by design (§6),
+  which is a resilience gap to be aware of.
+- **The site/UI (round 7) is unstarted.** The seam exists and is stable, so this
+  is greenfield work rather than a blocked dependency.
