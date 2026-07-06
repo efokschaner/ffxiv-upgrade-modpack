@@ -73,6 +73,10 @@ corpus exercise the code, not as a pass/fail gate.
   or format it (it is gitignored).
 - **Design lives in `docs/superpowers/`.** Specs in `specs/`, implementation
   plans in `plans/`. Follow spec-then-plan discipline for non-trivial work.
+  - **Start here:** `docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md`
+    is the **foundation / roadmap design** — the project overview, the sub-project
+    decomposition, and the living burndown (§8). Read it first to see where a piece
+    of work fits; new specs link back to it.
   - **Specs are durable; plans are transient.** A spec captures *why* and *what*
     (decisions, invariants, trade-offs) and is kept indefinitely — other docs and
     source READMEs link to it. A plan is an execution checklist for a spec: commit
