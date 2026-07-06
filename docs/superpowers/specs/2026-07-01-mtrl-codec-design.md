@@ -207,7 +207,7 @@ corpus is absent (CI has none), following the harness pattern already in the rep
 
 3. **Bundled fixtures (optional, noted for the plan).** The framework ships
    `Resources/DefaultTextures/default_material.mtrl` (EW) and `default_material_dt.mtrl` (DT). Copying
-   these small GPL-covered files into `test/fixtures/` would seed one EW-format and one DT-format
+   these small GPL-covered files into `test/mtrl/fixtures/` would seed one EW-format and one DT-format
    round-trip case that runs even without the corpus. Decide during planning.
 
 Not in this stage: any `/resave` or `/upgrade` differential (those are transform-stage gates, compared on
