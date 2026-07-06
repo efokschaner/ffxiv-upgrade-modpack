@@ -8,7 +8,7 @@ import {
   XivTexType,
 } from "../../src/mtrl/shader";
 import type { XivMtrl } from "../../src/mtrl/types";
-import { floatToHalf } from "../../src/util/half";
+import { floatToHalf } from "../../src/util/half-float";
 
 function mtrl(
   shpk: string,

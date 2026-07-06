@@ -3,7 +3,7 @@
 // Iterating the declaration in sorted-offset order reproduces WriteVertex byte-for-byte on a
 // canonical declaration, and is byte-exact by construction for any decodable source.
 
-import { floatToHalf } from "../../util/half";
+import { floatToHalf } from "../../util/half-float";
 import type { VertexElement } from "./declaration";
 import { VertexDataType, VertexUsageType } from "./format";
 import type { TtVertex, Vec2, Vec3 } from "./vertex-data";

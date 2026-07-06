@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { floatToHalf, halfToFloat } from "../../src/util/half";
+import { floatToHalf, halfToFloat } from "../../src/util/half-float";
 
 describe("floatToHalf", () => {
   it("encodes exact half values", () => {

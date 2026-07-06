@@ -3,7 +3,7 @@ import {
   SHPK_CHARACTER_GLASS,
   SHPK_CHARACTER_LEGACY,
 } from "../mtrl/shader";
-import { floatToHalf } from "../util/half";
+import { floatToHalf } from "../util/half-float";
 
 const HALF_ONE = floatToHalf(1.0);
 const HALF_GLASS_SPEC = floatToHalf(0.8100586);

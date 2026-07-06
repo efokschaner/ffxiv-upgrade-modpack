@@ -80,7 +80,7 @@ Faithfulness over cleverness for the precision-sensitive core (kickoff mandate; 
 | `src/mdl/geometry/decode.ts` | `decodeVertexData(...) → VertexData`; `decodeIndices(...) → number[]` | `MdlVertexReader.ReadVertexData` / `ReadData` / `Read*` |
 | `src/mdl/geometry/encode.ts` | `encodeVertexData(TtVertex[], VertexElement[]) → {stream0, stream1}`; `encodeIndices(number[]) → Uint8Array` | `Mdl.cs:4164 WriteVertex`, `4081/4121 WriteVectorData`, `4032 ConvertVectorBinormalToBytes` |
 
-Plus one addition to `src/util/half.ts`: **`halfToFloat(raw: number): number`**, the
+Plus one addition to `src/util/half-float.ts`: **`halfToFloat(raw: number): number`**, the
 exact reverse of the existing `floatToHalf`. Half→float is exact and
 implementation-independent, so it carries no parity risk (see R3).
 
