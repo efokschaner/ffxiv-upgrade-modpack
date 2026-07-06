@@ -12,6 +12,7 @@ export type CheckKind =
   | "pmp"
   | "tex"
   | "mdl"
+  | "geometry"
   | "upgrade";
 export interface Unit {
   pack: string;
@@ -32,7 +33,7 @@ function sortedPacks(): string[] {
 
 /**
  * Every (pack × check-family) work unit, in a stable order: packs sorted ascending, then per pack
- * the fixed check order [sqpack, golden, mtrl, tex, mdl, upgrade, (pmp if .pmp)]. sqpack is ONE unit (its three
+ * the fixed check order [sqpack, golden, mtrl, tex, mdl, geometry, upgrade, (pmp if .pmp)]. sqpack is ONE unit (its three
  * tests share one decode via beforeAll). The index into this array is the virtual module's identity.
  */
 export function enumerateUnits(): Unit[] {
@@ -43,6 +44,7 @@ export function enumerateUnits(): Unit[] {
     units.push({ pack, check: "mtrl" });
     units.push({ pack, check: "tex" });
     units.push({ pack, check: "mdl" });
+    units.push({ pack, check: "geometry" });
     units.push({ pack, check: "upgrade" });
     if (pack.toLowerCase().endsWith(".pmp")) units.push({ pack, check: "pmp" });
   }
