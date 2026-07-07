@@ -67,8 +67,8 @@ describe("mergeGeometryData weld", () => {
       vertices: vd5([2, 4, 2, 0, 4, 2, 3, 1, 4]),
       indexCount: 9,
       parts: [
-        { indexOffset: 0, indexCount: 6 },
-        { indexOffset: 6, indexCount: 3 },
+        { indexOffset: 0, indexCount: 6, attributeMask: 0 },
+        { indexOffset: 6, indexCount: 3, attributeMask: 0 },
       ],
     });
     const m = emptyModel();
@@ -105,7 +105,7 @@ describe("mergeGeometryData weld", () => {
     const rm = rmOf({
       vertices: vd5([0, 1, 2], uv2),
       indexCount: 3,
-      parts: [{ indexOffset: 0, indexCount: 3 }],
+      parts: [{ indexOffset: 0, indexCount: 3, attributeMask: 0 }],
     });
     const m = emptyModel();
     mergeGeometryData(m, rm);

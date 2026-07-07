@@ -13,6 +13,7 @@ import type { XivMdl } from "../types";
 export interface ReadPart {
   indexOffset: number;
   indexCount: number;
+  attributeMask: number; // u32 at byte 8 of the 16-byte mesh-part header (Mdl.cs:1362-1373)
 }
 
 export interface ReadMesh {
@@ -353,6 +354,12 @@ export function readEditableModel(bytes: Uint8Array, mdl: XivMdl): ReadMdl {
     meshHeaderBytes.byteOffset,
     meshHeaderBytes.byteLength,
   );
+  const meshPartsBytes = mdl.sections.meshParts;
+  const meshPartsDv = new DataView(
+    meshPartsBytes.buffer,
+    meshPartsBytes.byteOffset,
+    meshPartsBytes.byteLength,
+  );
 
   // Mirror the reference's null-material guard (Mdl.cs:639-642): an out-of-range material index
   // (e.g. one that pointed at a "shp"-diverted entry) is clamped to 0.
@@ -376,7 +383,14 @@ export function readEditableModel(bytes: Uint8Array, mdl: XivMdl): ReadMdl {
     const boneSetIndex = meshHeaderDv.getInt16(o + 14, true);
     const parts = layout.parts
       .slice(mesh.meshPartIndex, mesh.meshPartIndex + mesh.meshPartCount)
-      .map((p) => ({ indexOffset: p.indexOffset, indexCount: p.indexCount }));
+      .map((p, localIdx) => ({
+        indexOffset: p.indexOffset,
+        indexCount: p.indexCount,
+        attributeMask: meshPartsDv.getUint32(
+          (mesh.meshPartIndex + localIdx) * 16 + 8,
+          true,
+        ),
+      }));
     const meshType = meshTypeOf(mdl.sections.lodHeaders, meshIndexInLod0);
     meshes.push({
       vertices,

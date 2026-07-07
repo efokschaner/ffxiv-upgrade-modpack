@@ -1,7 +1,7 @@
-// Ported from xivModdingFramework Models/Helpers/ModelModifiers.cs, MergeGeometryData
-// (ModelModifiers.cs:376-576). This module mirrors ModelModifiers.cs; only the per-part
-// vertex weld (MergeGeometryData) lives here for now -- the other merges (attribute/
-// material/shape/flags) are a later task ("split, don't blend").
+// Ported from xivModdingFramework Models/Helpers/ModelModifiers.cs: MergeGeometryData
+// (:376-576), MergeAttributeData (:578-623), MergeMaterialData (:626-655), MergeFlags
+// (:2284-2295). MergeShapeData (:658) and FixUpSkinReferences (:2309) are deferred stubs
+// (see their doc comments below) -- "split, don't blend".
 
 import type { TtVertex, Vec2, VertexData } from "../geometry/vertex-data";
 import type { ReadMdl, ReadMesh } from "./read-model";
@@ -150,4 +150,100 @@ export function mergeGeometryData(model: TTModel, rm: ReadMdl): void {
 
     model.meshGroups.push(group);
   });
+}
+
+/** Port of ModelModifiers.MergeAttributeData (ModelModifiers.cs:578-623): for each LoD0
+ *  mesh/part, decode the part's attribute bitmask into `attributeList` names and add them
+ *  to the matching `TTMeshPart.attributes`. Only loops meshes/parts that already exist on
+ *  `model` (built by `mergeGeometryData`), mirroring the reference's bounds checks. */
+export function mergeAttributeData(model: TTModel, rm: ReadMdl): void {
+  const attributes = rm.pathData.attributeList;
+  rm.meshes.forEach((mesh, mIdx) => {
+    const localMesh = model.meshGroups[mIdx];
+    if (localMesh === undefined) return;
+
+    mesh.parts.forEach((part, pIdx) => {
+      const localPart = localMesh.parts[pIdx];
+      if (localPart === undefined) return;
+
+      const mask = part.attributeMask >>> 0;
+      for (let i = 0; i < 32; i++) {
+        const bit = (1 << i) >>> 0;
+        if ((mask & bit) === 0) continue;
+        // Can't add attributes that don't exist (should never be hit, but sanity).
+        if (i >= attributes.length) continue;
+        localPart.attributes.add(attributes[i]!);
+      }
+    });
+  });
+}
+
+/** Port of ModelModifiers.MergeMaterialData (ModelModifiers.cs:626-655): sets each LoD0
+ *  mesh group's material from `materialList[materialIndex]`, falling back to
+ *  `materialList[0]` when the index is out of range (read-model.ts already clamps this on
+ *  read, so this is a belt-and-braces mirror of the reference, not the primary guard). */
+export function mergeMaterialData(model: TTModel, rm: ReadMdl): void {
+  rm.meshes.forEach((mesh, mIdx) => {
+    const localMesh = model.meshGroups[mIdx];
+    if (localMesh === undefined) return;
+
+    const matIdx = mesh.materialIndex;
+    localMesh.material =
+      rm.pathData.materialList[matIdx] ?? rm.pathData.materialList[0] ?? "";
+  });
+}
+
+/** DEFERRED: full MergeShapeData (ModelModifiers.cs:658) not yet ported; models with shape
+ *  data will not byte-match until it is. Tracked for the Task 11 phase. This stub only
+ *  guarantees the model carries no shape data (mirrors ModelModifiers.ClearShapeData, the
+ *  fallback path FromRaw takes today for every model since no shape merge runs yet). */
+export function mergeShapeData(model: TTModel, _rm: ReadMdl): void {
+  // No ShapeParts field exists on TTMeshPart yet, so there is nothing to clear on the
+  // parts themselves -- only the model-level list needs forcing to empty.
+  model.shapeNames = [];
+}
+
+/** DEFERRED: race-tree skin-material remap (ModelModifiers.cs:2309) not yet ported; no-op
+ *  for single-race corpus. Revisit in Task 11 if the ratchet shows skin-material string
+ *  diffs. */
+export function fixUpSkinReferences(
+  _model: TTModel,
+  _sourcePath: string,
+): void {
+  // Intentionally no-op.
+}
+
+/** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2284-2295): anisotropic lighting is
+ *  enabled iff any LoD0 mesh's vertex declaration carried a Flow usage (mirrored here by
+ *  the presence of decoded flow-direction data); flags1 is copied verbatim. */
+export function mergeFlags(model: TTModel, rm: ReadMdl): void {
+  model.anisotropicLighting = rm.meshes.some(
+    (mesh) => mesh.vertices.flowDirections.length > 0,
+  );
+  model.flags1 = rm.og.modelData.flags1;
+}
+
+// R8: .NET SortedSet<string> uses the culture-sensitive default comparer. For ASCII
+// identifiers this usually matches en-US linguistic order. Centralized so the Task 11
+// ratchet can reconcile it in one place if a model's bone/material/attribute order diverges.
+export function compareStrings(a: string, b: string): number {
+  return a.localeCompare(b, "en-US");
+}
+
+function sortedUnique(values: Iterable<string>): string[] {
+  return [...new Set(values)].sort(compareStrings);
+}
+
+/** Mirrors the TTModel computed getters `Materials`/`Attributes`/`Bones`/`ShapeNames`
+ *  (TTModel.cs:845-900,964-982): sorted-unique projections over the mesh groups/parts.
+ *  `shapeNames` is forced empty until shape data is ported (see `mergeShapeData`). */
+export function computeModelLists(model: TTModel): void {
+  model.materials = sortedUnique(
+    model.meshGroups.map((g) => g.material).filter((mat) => mat !== ""),
+  );
+  model.attributes = sortedUnique(
+    model.meshGroups.flatMap((g) => g.parts.flatMap((p) => [...p.attributes])),
+  );
+  model.bones = sortedUnique(model.meshGroups.flatMap((g) => g.bones));
+  model.shapeNames = [];
 }
