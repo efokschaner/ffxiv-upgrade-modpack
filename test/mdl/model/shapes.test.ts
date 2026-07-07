@@ -12,6 +12,7 @@ import {
   shapeNames,
   type TTModel,
 } from "../../../src/mdl/model/tt-model";
+import type { XivMdl } from "../../../src/mdl/types";
 import { corpusModels } from "../../helpers/corpus-models";
 
 function emptyModel(): TTModel {
@@ -90,8 +91,7 @@ function rmWithOneShape(): ReadMdl {
     },
     neckMorph: [],
     modelBoundingBoxes: [],
-    // biome-ignore lint/suspicious/noExplicitAny: test fixture stub for the opaque passthrough field
-    og: {} as any,
+    og: {} as unknown as XivMdl, // opaque passthrough field, unused by these tests
   };
 }
 

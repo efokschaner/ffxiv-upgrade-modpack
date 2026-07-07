@@ -13,6 +13,7 @@ import {
 } from "../../../src/mdl/model/model-modifiers";
 import type { ReadMdl, ReadMesh } from "../../../src/mdl/model/read-model";
 import type { TTModel } from "../../../src/mdl/model/tt-model";
+import type { XivMdl } from "../../../src/mdl/types";
 
 function vd5(indices: number[]): VertexData {
   const v = emptyVertexData();
@@ -64,8 +65,7 @@ function rmOf(
     shapeData: { info: [], parts: [], data: [] },
     neckMorph: [],
     modelBoundingBoxes: [],
-    // biome-ignore lint/suspicious/noExplicitAny: test fixture stub for the opaque passthrough field
-    og: {} as any,
+    og: {} as unknown as XivMdl, // opaque passthrough field, unused by these tests
     ...over,
   } as ReadMdl;
 }

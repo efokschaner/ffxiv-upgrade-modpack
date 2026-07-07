@@ -3,13 +3,14 @@ import {
   VertexDataType as T,
   VertexUsageType as U,
 } from "../../../src/mdl/geometry/format";
+import type { TtVertex } from "../../../src/mdl/geometry/vertex-data";
 import {
   buildDeclarations,
   streamEntrySizes,
 } from "../../../src/mdl/model/build-declarations";
 import type { TTModel } from "../../../src/mdl/model/tt-model";
 
-function oneVertModel(over: Partial<any> = {}): TTModel {
+function oneVertModel(over: Partial<TtVertex> = {}): TTModel {
   const w = new Uint8Array(8);
   w[0] = 255; // hasWeights
   const v = {

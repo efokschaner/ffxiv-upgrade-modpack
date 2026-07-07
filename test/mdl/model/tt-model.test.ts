@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { TtVertex } from "../../../src/mdl/geometry/vertex-data";
 import {
   getUsageInfo,
   getV6BoneSet,
+  type TTMeshGroup,
   type TTModel,
 } from "../../../src/mdl/model/tt-model";
 
-function vert(over: Partial<any> = {}) {
+function vert(over: Partial<TtVertex> = {}): TtVertex {
   return {
     position: [0, 0, 0],
     normal: [0, 0, 0],
@@ -22,7 +24,7 @@ function vert(over: Partial<any> = {}) {
     ...over,
   };
 }
-function model(groups: any[]): TTModel {
+function model(groups: TTMeshGroup[]): TTModel {
   return {
     source: "",
     mdlVersion: 6,
@@ -58,6 +60,7 @@ describe("getUsageInfo", () => {
                 weights: w,
               }),
             ],
+            shapeParts: new Map(),
           },
         ],
       },
@@ -81,6 +84,7 @@ describe("getUsageInfo", () => {
             attributes: new Set<string>(),
             triangleIndices: [],
             vertices: [vert()],
+            shapeParts: new Map(),
           },
         ],
       },
@@ -104,6 +108,7 @@ describe("getUsageInfo", () => {
             attributes: new Set<string>(),
             triangleIndices: [],
             vertices: [vert({ uv3: [0, 0.2] })],
+            shapeParts: new Map(),
           },
         ],
       },
