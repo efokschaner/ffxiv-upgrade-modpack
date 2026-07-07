@@ -12,6 +12,7 @@ import {
   SqPackType,
 } from "../sqpack/sqpack";
 import { upgradeMaterial } from "./material";
+import { needsMdlFix, normalizeModel } from "./model";
 import type { UpgradeInfo } from "./upgrade-info";
 
 interface Decoded {
@@ -114,9 +115,25 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
   return infos;
 }
 
-/** Round 1 (model half of UpdateEndwalkerFiles): per-option mdl EW->DT. */
-function modelRound(_option: ModpackOption): void {
-  // round N: ported later
+const IS_MDL = /\.mdl$/;
+
+/**
+ * Round 1 (model half of UpdateEndwalkerFiles): normalize every `.mdl` via FixOldModel
+ * when the pack needs the fix (TTMP major < 2). Re-wrapped as a Model (Type-3) entry.
+ * Throws from the normalizer are surfaced (not swallowed) so the golden ratchet exposes
+ * any unported model structure rather than silently passing the source through.
+ */
+function modelRound(option: ModpackOption, gate: boolean): void {
+  if (!gate) return;
+  option.files = option.files.map((f) => {
+    if (!IS_MDL.test(f.gamePath)) return f;
+    const { bytes, type } = uncompressedBytes(f);
+    return restore(
+      f,
+      normalizeModel(bytes, f.gamePath),
+      type ?? SqPackType.Model,
+    );
+  });
 }
 
 /** Round 2 (UpgradeRemainingTextures): normal+colorset textures -> index maps. */
@@ -136,10 +153,11 @@ function partials(): void {
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
+  const gate = needsMdlFix(data);
   const upgradeTargets: UpgradeInfo[] = [];
   for (const group of out.groups) {
     for (const option of group.options) {
-      modelRound(option);
+      modelRound(option, gate);
       upgradeTargets.push(...materialRound(option));
     }
   }
