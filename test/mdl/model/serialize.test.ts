@@ -3,6 +3,7 @@ import { parseMdl } from "../../../src/mdl/mdl";
 import { fromRaw } from "../../../src/mdl/model/from-raw";
 import { readEditableModel } from "../../../src/mdl/model/read-model";
 import { makeUncompressedMdl } from "../../../src/mdl/model/serialize";
+import { hasShapeData } from "../../../src/mdl/model/tt-model";
 import { corpusModels } from "../../helpers/corpus-models";
 
 describe("makeUncompressedMdl", () => {
@@ -53,5 +54,38 @@ describe("makeUncompressedMdl", () => {
     // Sanity: `skipped` only counts models this task's fail-loud scope boundary rejects
     // (HasExtraMeshes / neckMorphTableSize>0 / furniture boxes); it's never negative.
     expect(skipped).toBeGreaterThanOrEqual(0);
+  }, 600_000);
+
+  it("re-parses shape-bearing corpus models with shapeCount > 0 (shape-2)", () => {
+    let scanned = 0;
+    let successes = 0;
+    for (const cm of corpusModels()) {
+      const rm = readEditableModel(cm.bytes, parseMdl(cm.bytes, cm.gamePath));
+      if (rm.shapeData.info.length === 0) continue;
+      if (++scanned > 30) break;
+
+      const m = fromRaw(rm);
+      if (!hasShapeData(m)) continue;
+      m.mdlVersion = 6;
+
+      let out: Uint8Array;
+      try {
+        out = makeUncompressedMdl(m, rm);
+      } catch {
+        continue; // out-of-scope structure (HasExtraMeshes / neckMorph / furniture boxes)
+      }
+      const re = parseMdl(out, cm.gamePath);
+      expect(re.modelData.shapeCount).toBeGreaterThan(0);
+      expect(re.modelData.shapePartCount).toBeGreaterThan(0);
+      expect(re.modelData.shapeDataCount).toBeGreaterThan(0);
+
+      // The re-parse's own section-length walk + combinedDataBlockSize self-check inside
+      // makeUncompressedMdl already validate offsets; round-trip the geometry too.
+      const rm2 = readEditableModel(out, re);
+      expect(rm2.meshes.length).toBe(m.meshGroups.length);
+
+      successes++;
+    }
+    expect(successes).toBeGreaterThan(0);
   }, 600_000);
 });

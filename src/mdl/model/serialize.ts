@@ -24,7 +24,15 @@ import {
 } from "./bounding-box";
 import { buildDeclarations, streamEntrySizes } from "./build-declarations";
 import type { ReadMdl } from "./read-model";
-import { hasWeights, type TTModel } from "./tt-model";
+import {
+  getRawShapeParts,
+  hasShapeData,
+  hasWeights,
+  shapeDataCount,
+  shapePartCount,
+  shapePartCounts,
+  type TTModel,
+} from "./tt-model";
 
 const MDL_HEADER_SIZE = 68;
 const LOD_HEADER_SIZE = 60;
@@ -128,6 +136,9 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   // Built as a chunk list + running length (not a flat number[]) because
   // `arr.push(...bigTypedArray)` blows the call stack once a stream exceeds V8's
   // argument-count limit -- real corpus meshes routinely do.
+  const modelHasShapeData = hasShapeData(model);
+  const rawShapeParts = modelHasShapeData ? getRawShapeParts(model) : undefined;
+
   const vertexChunks: Uint8Array[] = [];
   let vertexDataLength = 0;
   const indexDataBlock: number[] = [];
@@ -160,6 +171,13 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
 
     meshIndexOffsets.push(meshIndexOffset);
     meshIndexCount.push(meshIndices.length);
+
+    // Mdl.cs:2778-2793: shape vertices are orphaned (index-less) vertices appended after
+    // the mesh's real geometry -- written into the SAME vertex stream buffers, encoded
+    // together with the base vertices below. Index data (computed above) is unchanged.
+    if (rawShapeParts !== undefined) {
+      for (const v of rawShapeParts.vertices[mi] ?? []) meshVertices.push(v);
+    }
     meshVertexCount.push(meshVertices.length);
 
     const { stream0, stream1 } = encodeVertexData(meshVertices, decl[mi]!);
@@ -204,9 +222,16 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     materialOffsets.push(pathBytes.length);
     pushCString(pathBytes, s);
   }
-  // model.shapeNames is always empty in this scope (mergeShapeData clears it); loop kept
-  // for fidelity with the reference's `if (ttModel.HasShapeData)` gate, which is a no-op.
-  for (const s of model.shapeNames) pushCString(pathBytes, s);
+  // Mdl.cs:2886-2901: shape names, gated on HasShapeData -- written after materials,
+  // before extra paths. Record each name's path-block offset (shapeOffsetList) for the
+  // FullShapeDataBlock's shapeInfo sub-block below.
+  const shapeOffsetList: number[] = [];
+  if (modelHasShapeData) {
+    for (const s of model.shapeNames) {
+      shapeOffsetList.push(pathBytes.length);
+      pushCString(pathBytes, s);
+    }
+  }
   for (const s of rm.pathData.extraPathList) pushCString(pathBytes, s);
   padTo(pathBytes, 4);
 
@@ -218,7 +243,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     model.attributes.length +
     model.bones.length +
     model.materials.length +
-    model.shapeNames.length +
+    (modelHasShapeData ? model.shapeNames.length : 0) +
     rm.pathData.extraPathList.length;
 
   const pathInfoBlock = concatBytes([
@@ -262,9 +287,9 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     materialCount: model.materials.length,
     boneCount: model.bones.length,
     boneSetCount: weighted ? meshCount : 0,
-    shapeCount: 0,
-    shapePartCount: 0,
-    shapeDataCount: 0,
+    shapeCount: modelHasShapeData ? model.shapeNames.length : 0,
+    shapePartCount: modelHasShapeData ? shapePartCount(model) : 0,
+    shapeDataCount: modelHasShapeData ? shapeDataCount(model) : 0,
     lodCount: 1,
     flags1: ogMd.flags1,
     elementIdCount: ogMd.elementIdCount,
@@ -395,8 +420,64 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
 
   // ---- Phase 3.13: boneSetsBlock (already built above, alongside boneSetSize).
 
-  // ---- Phase 3.14: fullShapeDataBlock -- always empty (no shapes in scope).
-  const fullShapeDataBlock = new Uint8Array(0);
+  // ---- Phase 3.14: fullShapeDataBlock (Mdl.cs:3459-3555): three concatenated
+  // sub-blocks -- per-shape-name info, per-shapeList-entry part descriptors, and the raw
+  // (baseIndex, shapeVertex) replacement pairs -- empty when the model carries no shapes.
+  let fullShapeDataBlock = new Uint8Array(0);
+  if (modelHasShapeData && rawShapeParts !== undefined) {
+    const counts = shapePartCounts(model);
+
+    // (a) shapeInfo -- 16 B/shape name: nameOffset (i32) + {partOffset,0,0} (i16 x3,
+    // LoD0 only) + {partCount,0,0} (i16 x3, LoD0 only).
+    const shapeInfoBuilder = new ByteBuilder();
+    let runningPartOffset = 0;
+    for (let s = 0; s < model.shapeNames.length; s++) {
+      const count = counts[s]!;
+      shapeInfoBuilder
+        .i32(shapeOffsetList[s]!)
+        .u16(runningPartOffset)
+        .u16(0)
+        .u16(0)
+        .u16(count)
+        .u16(0)
+        .u16(0);
+      runningPartOffset += count;
+    }
+
+    // (b) shapeParts -- 12 B/`rawShapeParts.shapeList` entry: meshIndexOffset (i32, same
+    // u16-units value as that mesh's header), indexCount (i32), shapeDataOffset (i32,
+    // running count of replacement pairs written so far).
+    const shapePartsBuilder = new ByteBuilder();
+    let runningShapeDataOffset = 0;
+    for (const entry of rawShapeParts.shapeList) {
+      const count = entry.indexReplacements.size;
+      shapePartsBuilder
+        .i32(meshIndexOffsets[entry.meshId]!)
+        .i32(count)
+        .i32(runningShapeDataOffset);
+      runningShapeDataOffset += count;
+    }
+
+    // (c) shapeData -- 4 B/replacement pair: baseIndex (u16) + shapeVertex (u16), in
+    // `shapeList` order and, within each entry, Map insertion order.
+    const shapeDataBuilder = new ByteBuilder();
+    for (const entry of rawShapeParts.shapeList) {
+      for (const [baseIndex, shapeVertex] of entry.indexReplacements) {
+        if (baseIndex > 0xffff || shapeVertex > 0xffff) {
+          throw new Error(
+            `mdl: mesh group ${entry.meshId} has too many total vertices/triangle indices for shape data (baseIndex=${baseIndex}, shapeVertex=${shapeVertex})`,
+          );
+        }
+        shapeDataBuilder.u16(baseIndex).u16(shapeVertex);
+      }
+    }
+
+    fullShapeDataBlock = concatBytes([
+      shapeInfoBuilder.toUint8Array(),
+      shapePartsBuilder.toUint8Array(),
+      shapeDataBuilder.toUint8Array(),
+    ]);
+  }
 
   // ---- Phase 3.15: partBoneSetsBlock (Mdl.cs:3564-3585).
   const partBoneSetsData: number[] = [];

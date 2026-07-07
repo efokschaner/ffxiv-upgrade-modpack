@@ -156,8 +156,8 @@ describe("hasShapeData / shapeNames (corpus)", () => {
       if (!hasShapeData(model)) continue;
 
       expect(shapeNames(model).length).toBeGreaterThan(0);
-      // decoupling: the serialized-list field stays forced empty until shape-2 wires it in.
-      expect(model.shapeNames).toEqual([]);
+      // shape-2: computeModelLists now flips `model.shapeNames` on to match the getter.
+      expect(model.shapeNames).toEqual(shapeNames(model));
 
       if (++successes >= 3) break;
     }

@@ -19,6 +19,7 @@ import type {
 import {
   compareStrings,
   getPartRelevantVertexInformation,
+  shapeNames,
   type TTMeshGroup,
   type TTMeshPart,
   type TTModel,
@@ -493,9 +494,8 @@ export function computeModelLists(model: TTModel): void {
     model.meshGroups.flatMap((g) => g.parts.flatMap((p) => [...p.attributes])),
   );
   model.bones = sortedUnique(model.meshGroups.flatMap((g) => g.bones));
-  // shapeNames stays empty until the serializer emits shapes (shape-2); populating it now
-  // would put shape strings in the path block with no shape block -> broken output. See
-  // `mergeShapeData`/`shapeNames` in tt-model.ts, which now populate `shapeParts` and are
-  // ready for shape-2 to wire in here.
-  model.shapeNames = [];
+  // Port of TTModel.ShapeNames (TTModel.cs:964-982): flips shapes "on" for the serializer
+  // (shape-2) -- the path block, basicModelBlock counts, and FullShapeDataBlock all key off
+  // `hasShapeData(model)`, which reads `model.shapeNames`/`p.shapeParts` directly.
+  model.shapeNames = shapeNames(model);
 }
