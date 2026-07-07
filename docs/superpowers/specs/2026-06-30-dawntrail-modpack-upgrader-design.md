@@ -227,7 +227,7 @@ each its own spec→plan→implement cycle. Status as of 2026-07-06:
 | — | sqpack / mtrl / tex+BCn / mdl codecs + container I/O (ttmp2 / pmp / legacy) | their own specs (`*-codec-design.md`) | ✅ shipped |
 | 1 | E2E golden harness + `/upgrade` cache + baseline ratchet | `2026-07-04-upgrade-golden-harness-design.md` | ✅ shipped |
 | 2 | Orchestration + material/colorset round | `2026-07-04-material-colorset-round-design.md` | ✅ shipped (`.mtrl` 416 → 0) |
-| 3 | **Model round** — full normalizer, re-scoped into **3a** MDL geometry codec + **3b** model normalizer | `2026-07-06-model-round-design.md` (+ `-model-normalizer-research.md`) | ⏳ **3a** geometry codec ✅ shipped (PR #12); **3b** normalizer pending — 453 `.mdl` |
+| 3 | **Model round** — full normalizer, re-scoped into **3a** MDL geometry codec + **3b** model normalizer | `2026-07-06-model-round-design.md` (+ `-model-normalizer-research.md`, `-model-normalizer-design.md`) | ✅ shipped — **3a** geometry codec (PR #12) + **3b** normalizer (`.mdl` 453 → 0; all 459 corpus models byte-exact vs golden) |
 | 4 | **Texture round** (index maps, gear masks, hair maps) | *(later)* | ⏳ 701 `.tex` |
 | 5 | **Metadata round** (EQDP race-set backfill) | *(later; newly scoped)* | ⏳ 49 `.meta` |
 | 6 | **Partials + reference-asset bundling** | *(later)* | ⏳ (no corpus coverage yet) |
@@ -248,9 +248,14 @@ each its own spec→plan→implement cycle. Status as of 2026-07-06:
   entry. 453 diffs. See `2026-07-06-model-round-design.md` (§0 correction) and
   `2026-07-06-model-normalizer-research.md`. **Update 2026-07-06:** 3a (the MDL
   geometry codec — vertex-declaration codec + geometry decode/encode, corpus
-  round-trip verified) shipped via PR #12; 3b (the TTModel weld +
-  `MakeUncompressedMdlFile` serializer + gate + wiring) is the remaining work
-  that drives the 453 `.mdl` ratchet.
+  round-trip verified) shipped via PR #12. **Update 2026-07-07:** 3b shipped — the
+  TTModel weld + merges + `MakeUncompressedMdlFile` serializer (incl. v6 bone-set
+  zero-extension, shape data, and the shape-vertex binormal copy) + the TTMP-version
+  gate + wiring drive the `.mdl` ratchet **453 → 0**; **all 459 corpus models are
+  byte-exact** vs the ConsoleTools golden (`src/mdl/model/`, spec
+  `2026-07-06-model-normalizer-design.md`). Deferred-but-documented: `FixUpSkinReferences`
+  (no-op stub, never fired on the corpus) and non-chara/extra-mesh/neck-morph/furniture
+  models (serializer fails loud — none in the corpus).
 
 - **Round 4 — Texture round.** Port of `UpgradeRemainingTextures`: consumes the
   `UpgradeInfo` targets the material round records (`IndexMaps`,
