@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { parseMdl } from "../../../src/mdl/mdl";
-import { readEditableModel } from "../../../src/mdl/model/read-model";
+import {
+  readAsciiCString,
+  readEditableModel,
+} from "../../../src/mdl/model/read-model";
 import { corpusModels } from "../../helpers/corpus-models";
+
+describe("readAsciiCString", () => {
+  it("throws instead of scanning past the end of an unterminated buffer", () => {
+    const bytes = new Uint8Array([0x61, 0x62, 0x63]); // "abc", no NUL terminator
+    expect(() => readAsciiCString(bytes, 0)).toThrow(/unterminated/i);
+  });
+});
 
 describe("readEditableModel", () => {
   it("assembles a consistent LoD0 read model for real corpus models", () => {

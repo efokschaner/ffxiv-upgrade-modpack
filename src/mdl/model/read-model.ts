@@ -75,13 +75,21 @@ export interface ReadMdl {
 }
 
 /** Reads a NUL-terminated ASCII string at `pos` from `bytes`; returns the string and the
- *  position just past the terminator (IOUtil.ReadNullTerminatedString(br, utf8: false)). */
-function readAsciiCString(
+ *  position just past the terminator (IOUtil.ReadNullTerminatedString(br, utf8: false)).
+ *  The scan is bounded by `bytes.length`: a malformed/truncated path block with no terminator
+ *  throws rather than running off the end of the slice (the reference's BinaryReader.ReadByte
+ *  throws on EOF; we surface loudly rather than corrupt output -- see mdl/parse.ts). */
+export function readAsciiCString(
   bytes: Uint8Array,
   pos: number,
 ): { value: string; next: number } {
   let end = pos;
-  while (bytes[end] !== 0) end++;
+  while (end < bytes.length && bytes[end] !== 0) end++;
+  if (end >= bytes.length) {
+    throw new Error(
+      "mdl: unterminated string in path block (no NUL before end of section)",
+    );
+  }
   let value = "";
   for (let i = pos; i < end; i++) value += String.fromCharCode(bytes[i]!);
   return { value, next: end + 1 };
