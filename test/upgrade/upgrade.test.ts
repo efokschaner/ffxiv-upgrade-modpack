@@ -1,9 +1,6 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadModpack, upgradeModpack } from "../../src/index";
+import { upgradeModpack } from "../../src/index";
 import {
-  allFiles,
   FileStorageType,
   type ModpackData,
   ModpackFormat,
@@ -17,6 +14,7 @@ import {
   SqPackType,
 } from "../../src/sqpack/sqpack";
 import { restore, uncompressedBytes } from "../../src/upgrade/upgrade";
+import { firstCorpusModel } from "../helpers/corpus-models";
 
 function sampleData(): ModpackData {
   return {
@@ -293,29 +291,6 @@ describe("upgradeModpack (skeleton)", () => {
   });
 });
 
-const INPUTS = "test/corpus/inputs";
-
-/** First decodable Model .mdl across the local corpus packs (the repo's tests require the corpus). */
-function firstCorpusModel() {
-  for (const name of readdirSync(INPUTS)) {
-    if (!/\.(ttmp2|ttmp|pmp)$/i.test(name)) continue;
-    const data = loadModpack(
-      name,
-      new Uint8Array(readFileSync(join(INPUTS, name))),
-    );
-    for (const f of allFiles(data)) {
-      if (f.storage !== FileStorageType.SqPackCompressed) continue;
-      if (!f.gamePath.toLowerCase().endsWith(".mdl")) continue;
-      try {
-        if (decodeSqPackFile(f.data).type === SqPackType.Model) return f;
-      } catch {
-        /* skip undecodable legacy model */
-      }
-    }
-  }
-  throw new Error("no decodable Model .mdl found in test/corpus/inputs");
-}
-
 describe("restore threads the source SqPack type", () => {
   it("round-trips a Standard entry (mechanism, arbitrary bytes)", () => {
     const raw = new Uint8Array([1, 2, 3, 4, 5]);
@@ -333,10 +308,15 @@ describe("restore threads the source SqPack type", () => {
   });
 
   it("re-encodes a real Model .mdl as SqPackType.Model (lossless re-wrap)", () => {
-    const f = firstCorpusModel();
-    const { bytes, type } = uncompressedBytes(f);
-    expect(type).toBe(SqPackType.Model);
-    const re = decodeSqPackFile(restore(f, bytes, type).data);
+    const bytes = firstCorpusModel().bytes;
+    const f = {
+      gamePath: "chara/x.mdl",
+      data: encodeSqPackFile(bytes, SqPackType.Model),
+      storage: FileStorageType.SqPackCompressed,
+    };
+    const dec = uncompressedBytes(f);
+    expect(dec.type).toBe(SqPackType.Model);
+    const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data);
     expect(re.type).toBe(SqPackType.Model);
     expect(Array.from(re.data)).toEqual(Array.from(bytes));
   });
