@@ -226,6 +226,29 @@ export function clearShapeData(model: TTModel): void {
   }
 }
 
+/** Copies each shape vertex's binormal + handedness from the base part vertex it replaces
+ *  (ModelModifiers.CopyShapeTangentsForPart, ModelModifiers.cs:2257-2270). This is the ONLY
+ *  byte-affecting part of the otherwise-omitted CalculateTangents fast path (R2): base-vertex
+ *  binormals are left untouched, but a shape vertex's own decoded binormal is discarded in
+ *  favour of the base vertex's — so this must run for shape-bearing models. (Tangent is also
+ *  copied in the reference but is never serialized, so it is not modelled here.) */
+export function copyShapeBinormals(model: TTModel): void {
+  for (const g of model.meshGroups) {
+    for (const p of g.parts) {
+      for (const sp of p.shapeParts.values()) {
+        for (const [partIdx, shapeIdx] of sp.vertexReplacements) {
+          const shpV = sp.vertices[shapeIdx];
+          const baseV = p.vertices[partIdx];
+          if (shpV && baseV) {
+            shpV.binormal = baseV.binormal;
+            shpV.handedness = baseV.handedness;
+          }
+        }
+      }
+    }
+  }
+}
+
 /** Per-mesh, non-deduplicated old bone names indexed by raw bone id (ModelModifiers.cs:
  *  700-706): unlike `buildMeshBones` (which de-dupes for `TTMeshGroup.Bones`), shape vertex
  *  bone remap indexes this list directly by the vertex's raw per-mesh bone id, so it must

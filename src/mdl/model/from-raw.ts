@@ -1,12 +1,14 @@
 // Port of TTModel.FromRaw (TTModel.cs:2695-2729). Builds the editable TTModel from a
 // ReadMdl. Tangent calculation (ModelModifiers.CalculateTangents, TTModel.cs:2728) is
-// omitted -- the FromRaw fast path only writes the (unserialized) Tangent and leaves
-// binormal/handedness untouched (R2, confirmed by the Task 3 corpus binormals scan), so it
-// has no effect on output bytes.
+// omitted for BASE vertices -- the fast path only writes the (unserialized) Tangent and
+// leaves base binormal/handedness untouched (R2, confirmed by the Task 3 corpus binormals
+// scan). Its shape-vertex binormal/handedness copy IS byte-affecting, so that one piece is
+// ported as copyShapeBinormals (run below).
 
 import {
   clearShapeData,
   computeModelLists,
+  copyShapeBinormals,
   fixUpSkinReferences,
   mergeAttributeData,
   mergeFlags,
@@ -49,7 +51,10 @@ export function fromRaw(rm: ReadMdl): TTModel {
   model.mdlVersion = rm.mdlVersion;
   fixUpSkinReferences(model, rm.source); // deferred no-op
   mergeFlags(model, rm);
-  // UVState = SE_Space (implicit).
+  // UVState = SE_Space (implicit). CalculateTangents (TTModel.cs:2728) is omitted for base
+  // vertices (no byte effect, R2), but its shape-vertex binormal/handedness copy IS byte-
+  // affecting, so we run just that piece.
+  copyShapeBinormals(model);
   computeModelLists(model);
   return model;
 }
