@@ -371,6 +371,11 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     let currentBoneOffset = 0;
     let boundingBoxIdx = 0;
     let globalPartIdx = 0;
+    // GetAttributeBitmask throws above 32 attributes (TTModel.cs:1440-1443): the bitmask is a
+    // u32, and JS `1 << 32` wraps to bit 0, so guard fail-loud rather than emit a wrong mask.
+    if (model.attributes.length > 32) {
+      throw new Error("mdl: model cannot have more than 32 total attributes");
+    }
     // Mdl.cs:3314-3318: on the SOURCE model's HasBonelessParts flag (not our recomputed
     // one, which the reference also reads from the pre-modification `ogMdl.ModelData`) --
     // out of scope here (that's the furniture per-part-bbox path), but the model
