@@ -5,6 +5,7 @@
 // has no effect on output bytes.
 
 import {
+  clearShapeData,
   computeModelLists,
   fixUpSkinReferences,
   mergeAttributeData,
@@ -19,8 +20,11 @@ import type { TTModel } from "./tt-model";
 /** Builds and returns a fully-populated `TTModel` from a `ReadMdl` (TTModel.FromRaw,
  *  TTModel.cs:2695-2729). Order matters: geometry/attribute/material merges run before
  *  `computeModelLists`; `source`/`mdlVersion` are set before `fixUpSkinReferences`, which
- *  reads `model.source`. Shape merge and skin-reference fixup are deferred stubs (see
- *  their doc comments in model-modifiers.ts). */
+ *  reads `model.source`. `mergeShapeData` is wrapped in try/catch -> `clearShapeData`,
+ *  mirroring FromRaw's own try/catch around `MergeShapeData` (TTModel.cs:2711-2718): an
+ *  unexpected structural problem in the shape data drops all shapeParts rather than failing
+ *  the whole model load. Skin-reference fixup is a deferred no-op stub (see its doc comment
+ *  in model-modifiers.ts). */
 export function fromRaw(rm: ReadMdl): TTModel {
   const model: TTModel = {
     source: "",
@@ -36,7 +40,11 @@ export function fromRaw(rm: ReadMdl): TTModel {
   mergeGeometryData(model, rm);
   mergeAttributeData(model, rm);
   mergeMaterialData(model, rm);
-  mergeShapeData(model, rm); // deferred stub (clears shapes)
+  try {
+    mergeShapeData(model, rm);
+  } catch {
+    clearShapeData(model);
+  }
   model.source = rm.source;
   model.mdlVersion = rm.mdlVersion;
   fixUpSkinReferences(model, rm.source); // deferred no-op

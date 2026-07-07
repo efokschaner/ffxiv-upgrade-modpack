@@ -1,11 +1,31 @@
 // Ported from xivModdingFramework Models/Helpers/ModelModifiers.cs: MergeGeometryData
-// (:376-576), MergeAttributeData (:578-623), MergeMaterialData (:626-655), MergeFlags
-// (:2284-2295). MergeShapeData (:658) and FixUpSkinReferences (:2309) are deferred stubs
-// (see their doc comments below) -- "split, don't blend".
+// (:376-576), MergeAttributeData (:578-623), MergeMaterialData (:626-655), MergeShapeData
+// (:658-846), ClearShapeData (:848-860), MergeFlags (:2284-2295). FixUpSkinReferences
+// (:2309) is a deferred stub (see its doc comment below) -- "split, don't blend".
 
-import type { TtVertex, Vec2, VertexData } from "../geometry/vertex-data";
-import type { ReadMdl, ReadMesh } from "./read-model";
-import type { TTMeshGroup, TTMeshPart, TTModel } from "./tt-model";
+import type {
+  Rgba,
+  TtVertex,
+  Vec2,
+  Vec3,
+  VertexData,
+} from "../geometry/vertex-data";
+import type {
+  ReadMdl,
+  ReadMesh,
+  ReadShapeInfo,
+  ReadShapePart,
+} from "./read-model";
+import {
+  compareStrings,
+  getPartRelevantVertexInformation,
+  type TTMeshGroup,
+  type TTMeshPart,
+  type TTModel,
+  type TTShapePart,
+} from "./tt-model";
+
+export { compareStrings } from "./tt-model";
 
 /** HasBonelessParts (EMeshFlags2, ModelModifiers.cs:416). */
 const HAS_BONELESS_PARTS = 0x01;
@@ -125,6 +145,7 @@ function buildMeshPart(
     vertices,
     triangleIndices,
     attributes: new Set(),
+    shapeParts: new Map(),
   };
 }
 
@@ -193,14 +214,249 @@ export function mergeMaterialData(model: TTModel, rm: ReadMdl): void {
   });
 }
 
-/** DEFERRED: full MergeShapeData (ModelModifiers.cs:658) not yet ported; models with shape
- *  data will not byte-match until it is. Tracked for the Task 11 phase. This stub only
- *  guarantees the model carries no shape data (mirrors ModelModifiers.ClearShapeData, the
- *  fallback path FromRaw takes today for every model since no shape merge runs yet). */
-export function mergeShapeData(model: TTModel, _rm: ReadMdl): void {
-  // No ShapeParts field exists on TTMeshPart yet, so there is nothing to clear on the
-  // parts themselves -- only the model-level list needs forcing to empty.
-  model.shapeNames = [];
+/** Port of ModelModifiers.ClearShapeData (ModelModifiers.cs:848-860): drops every part's
+ *  shapeParts. Used by fromRaw as the failure fallback around `mergeShapeData`, mirroring
+ *  FromRaw's `try { MergeShapeData(...) } catch { ClearShapeData(...) }` (TTModel.cs:2711-2718). */
+export function clearShapeData(model: TTModel): void {
+  for (const g of model.meshGroups) {
+    for (const p of g.parts) {
+      p.shapeParts.clear();
+    }
+  }
+}
+
+/** Per-mesh, non-deduplicated old bone names indexed by raw bone id (ModelModifiers.cs:
+ *  700-706): unlike `buildMeshBones` (which de-dupes for `TTMeshGroup.Bones`), shape vertex
+ *  bone remap indexes this list directly by the vertex's raw per-mesh bone id, so it must
+ *  preserve the meshBoneSet's exact order/duplicates. */
+function buildRawMeshBoneNames(rm: ReadMdl, mesh: ReadMesh): string[] {
+  const set = rm.meshBoneSets[mesh.boneSetIndex];
+  if (set === undefined) return [];
+  return set.map((boneIndex) => rm.pathData.boneList[boneIndex]!);
+}
+
+/** Builds one new shape TTVertex from the mesh's raw VertexData at `vId` (ModelModifiers.cs:
+ *  746-786). Distinct from both `buildTtVertex` (the weld) and `transpose`: color/color2
+ *  default to zero (not white/[0,0,0,255]) when the source array is short, UV3 is never set
+ *  (left at the TTVertex default (0,0) -- the C# code has no UV3 assignment here at all,
+ *  ported faithfully, not "fixed"), and the bone loop remaps old bone id -> old bone NAME ->
+ *  new index in `group.bones` (appending to `group.bones` if the name isn't there yet). */
+function buildShapeVertex(
+  vd: VertexData,
+  vId: number,
+  oldBoneNames: string[],
+  group: TTMeshGroup,
+): TtVertex {
+  const color: Rgba = vd.colors[vId] ?? [0, 0, 0, 0];
+  const color2: Rgba = vd.colors2[vId] ?? [0, 0, 0, 0];
+
+  const weights = new Uint8Array(8);
+  const boneIds = new Uint8Array(8);
+  // ModelModifiers.cs:768: unguarded `BoneWeights[vId]` -- a missing entry is a genuine
+  // structural surprise in the source data, so this throws (propagates to fromRaw's
+  // try/catch -> clearShapeData) rather than silently defaulting, mirroring the C# behavior.
+  const w = vd.boneWeights[vId];
+  if (w === undefined) {
+    throw new Error(`mergeShapeData: vertex ${vId} has no bone weight entry`);
+  }
+  const b = vd.boneIndices[vId];
+  for (let i = 0; i < w.length; i++) {
+    if (i >= 8) {
+      throw new Error(
+        `mergeShapeData: vertex ${vId} has more than 8 bone weights`,
+      );
+    }
+    const oldBoneId = b?.[i];
+    if (oldBoneId === undefined) {
+      throw new Error(`mergeShapeData: vertex ${vId} missing bone index ${i}`);
+    }
+    const boneName = oldBoneNames[oldBoneId];
+    if (boneName === undefined) {
+      throw new Error(
+        `mergeShapeData: old bone id ${oldBoneId} out of range for the mesh's bone set`,
+      );
+    }
+    let newBoneId = group.bones.indexOf(boneName);
+    if (newBoneId < 0) {
+      group.bones.push(boneName);
+      newBoneId = group.bones.length - 1;
+    }
+    weights[i] = Math.round(w[i]! * 255);
+    boneIds[i] = newBoneId;
+  }
+
+  return {
+    position: vd.positions[vId] ?? [0, 0, 0],
+    normal: vd.normals[vId] ?? [0, 0, 0],
+    binormal: vd.biNormals[vId] ?? [0, 0, 0],
+    handedness: (vd.biNormalHandedness[vId] ?? 0) !== 0,
+    flowDirection: vd.flowDirections[vId] ?? [0, 0, 0],
+    vertexColor: color,
+    vertexColor2: color2,
+    uv1: vd.textureCoordinates0[vId] ?? [0, 0],
+    uv2: vd.textureCoordinates1[vId] ?? [0, 0],
+    uv3: [0, 0],
+    weights,
+    boneIds,
+  };
+}
+
+function cloneVertex(v: TtVertex): TtVertex {
+  return {
+    position: [...v.position] as Vec3,
+    normal: [...v.normal] as Vec3,
+    binormal: [...v.binormal] as Vec3,
+    handedness: v.handedness,
+    flowDirection: [...v.flowDirection] as Vec3,
+    vertexColor: [...v.vertexColor] as Rgba,
+    vertexColor2: [...v.vertexColor2] as Rgba,
+    uv1: [...v.uv1] as Vec2,
+    uv2: [...v.uv2] as Vec2,
+    uv3: [...v.uv3] as Vec2,
+    boneIds: v.boneIds.slice(),
+    weights: v.weights.slice(),
+  };
+}
+
+interface ShapePartAssignment {
+  part: ReadShapePart;
+  meshNumber: number;
+}
+
+/** Port of ShapeData.AssignMeshAndLodNumbers (ShapeData.cs:52-91), restricted to LoD0 --
+ *  the only LoD `MergeShapeData` consumes (ModelModifiers.cs:676, `lIdx = 0`). read-model.ts's
+ *  `ReadShapePart` doesn't carry MeshNumber/LodLevel/ShapeName, so this recomputes the
+ *  association: for each of a shape's LoD0 parts (sliced by `info.lods[0]`), find the mesh
+ *  number by matching the part's `meshIndexOffset` against each LoD0 mesh's
+ *  `indexDataOffset` -- LAST match wins (the C# loop has no `break` on match). */
+function resolveShapeLod0Parts(
+  rm: ReadMdl,
+  info: ReadShapeInfo,
+): ShapePartAssignment[] {
+  const lod0 = info.lods[0];
+  if (lod0 === undefined) return [];
+  const slice = rm.shapeData.parts.slice(
+    lod0.partOffset,
+    lod0.partOffset + lod0.partCount,
+  );
+  return slice.map((part) => {
+    let meshNumber = -1;
+    for (let m = 0; m < rm.meshes.length; m++) {
+      if (rm.meshes[m]!.indexDataOffset === part.meshIndexOffset) {
+        meshNumber = m; // no break: last matching mesh wins
+      }
+    }
+    return { part, meshNumber };
+  });
+}
+
+/** Port of ModelModifiers.MergeShapeData (ModelModifiers.cs:658-846): populates each
+ *  `TTMeshPart.shapeParts` from the read shape data. LoD0 only. For every shape, for every
+ *  mesh group: resolve which of the shape's parts belong to this mesh (see
+ *  `resolveShapeLod0Parts`); for each such part, build the new shape vertices and an
+ *  old-vertex-id -> shape-vertex-id replacement map (skipping -- "badPart" -- a shape part
+ *  whose data references an out-of-range triangle index, ModelModifiers.cs:738-742); then
+ *  attribute each replaced vertex to the TTMeshPart that owns it
+ *  (`getPartRelevantVertexInformation`) and add/merge a `TTShapePart` there, seeding an
+ *  "original" identity shapePart the first time any part gains shape data
+ *  (ModelModifiers.cs:821-833).
+ *
+ *  Unexpected structural errors (e.g. a vertex missing bone-weight data, or a raw bone id
+ *  with no name in the mesh's bone set) are allowed to throw, matching the C#'s unguarded
+ *  array accesses in the same spots -- the caller (fromRaw) is responsible for the
+ *  try/catch -> `clearShapeData` fallback (TTModel.cs:2711-2718), not this function. */
+export function mergeShapeData(model: TTModel, rm: ReadMdl): void {
+  if (rm.shapeData.info.length === 0) {
+    return;
+  }
+
+  for (const info of rm.shapeData.info) {
+    const name = info.name;
+    const resolvedParts = resolveShapeLod0Parts(rm, info);
+
+    for (let mIdx = 0; mIdx < model.meshGroups.length; mIdx++) {
+      // "No shape data for groups that don't exist in the old model" (ModelModifiers.cs:709).
+      if (mIdx >= rm.meshes.length) break;
+
+      const mesh = rm.meshes[mIdx]!;
+      const group = model.meshGroups[mIdx]!;
+      const oldBoneNames = buildRawMeshBoneNames(rm, mesh);
+
+      const shpParts = resolvedParts.filter((r) => r.meshNumber === mIdx);
+      if (shpParts.length === 0) continue;
+
+      for (const { part } of shpParts) {
+        const data = rm.shapeData.data.slice(
+          part.shapeDataOffset,
+          part.shapeDataOffset + part.indexCount,
+        );
+
+        const vertices = new Map<number, TtVertex>();
+        // Old (pre-weld, raw mesh) vertex id -> shape vertex id. Insertion-order-sensitive
+        // (mirrors .NET Dictionary<int,int>), and `.Add` throws on a duplicate key in C# --
+        // mirror that with an explicit throw rather than Map's silent overwrite.
+        const vertexReplacements = new Map<number, number>();
+        let badPart = false;
+
+        for (const d of data) {
+          const vId = d.shapeVertex;
+          if (vertices.has(vId)) continue;
+
+          if (d.baseIndex >= mesh.vertices.indices.length) {
+            badPart = true;
+            break;
+          }
+          const oldVertexId = mesh.vertices.indices[d.baseIndex]!;
+          if (vertexReplacements.has(oldVertexId)) {
+            throw new Error(
+              `mergeShapeData: duplicate vertex replacement for old vertex ${oldVertexId}`,
+            );
+          }
+          vertexReplacements.set(oldVertexId, vId);
+
+          vertices.set(
+            vId,
+            buildShapeVertex(mesh.vertices, vId, oldBoneNames, group),
+          );
+        }
+
+        if (badPart) continue;
+
+        const shapePartsByPartId = new Map<number, TTShapePart>();
+        for (const [oldVertexId, vId] of vertexReplacements) {
+          const info2 = getPartRelevantVertexInformation(group, oldVertexId);
+          let shp = shapePartsByPartId.get(info2.partId);
+          if (shp === undefined) {
+            shp = { name, vertices: [], vertexReplacements: new Map() };
+            shapePartsByPartId.set(info2.partId, shp);
+          }
+          const newShapeVertexId = shp.vertices.length;
+          shp.vertexReplacements.set(
+            info2.partRelevantOffset,
+            newShapeVertexId,
+          );
+          shp.vertices.push(vertices.get(vId)!);
+        }
+
+        for (const [partId, shp] of shapePartsByPartId) {
+          if (partId === -1) continue;
+          const ttPart = group.parts[partId]!;
+          if (ttPart.shapeParts.size === 0) {
+            // Guarantee we can always restore back to the original shape.
+            const original: TTShapePart = {
+              name: "original",
+              vertices: ttPart.vertices.map(cloneVertex),
+              vertexReplacements: new Map(
+                ttPart.vertices.map((_, i) => [i, i] as [number, number]),
+              ),
+            };
+            ttPart.shapeParts.set("original", original);
+          }
+          ttPart.shapeParts.set(shp.name, shp);
+        }
+      }
+    }
+  }
 }
 
 /** DEFERRED: race-tree skin-material remap (ModelModifiers.cs:2309) not yet ported; no-op
@@ -223,20 +479,12 @@ export function mergeFlags(model: TTModel, rm: ReadMdl): void {
   model.flags1 = rm.og.modelData.flags1;
 }
 
-// R8: .NET SortedSet<string> uses the culture-sensitive default comparer. For ASCII
-// identifiers this usually matches en-US linguistic order. Centralized so the Task 11
-// ratchet can reconcile it in one place if a model's bone/material/attribute order diverges.
-export function compareStrings(a: string, b: string): number {
-  return a.localeCompare(b, "en-US");
-}
-
 function sortedUnique(values: Iterable<string>): string[] {
   return [...new Set(values)].sort(compareStrings);
 }
 
 /** Mirrors the TTModel computed getters `Materials`/`Attributes`/`Bones`/`ShapeNames`
- *  (TTModel.cs:845-900,964-982): sorted-unique projections over the mesh groups/parts.
- *  `shapeNames` is forced empty until shape data is ported (see `mergeShapeData`). */
+ *  (TTModel.cs:845-900,964-982): sorted-unique projections over the mesh groups/parts. */
 export function computeModelLists(model: TTModel): void {
   model.materials = sortedUnique(
     model.meshGroups.map((g) => g.material).filter((mat) => mat !== ""),
@@ -245,5 +493,9 @@ export function computeModelLists(model: TTModel): void {
     model.meshGroups.flatMap((g) => g.parts.flatMap((p) => [...p.attributes])),
   );
   model.bones = sortedUnique(model.meshGroups.flatMap((g) => g.bones));
+  // shapeNames stays empty until the serializer emits shapes (shape-2); populating it now
+  // would put shape strings in the path block with no shape block -> broken output. See
+  // `mergeShapeData`/`shapeNames` in tt-model.ts, which now populate `shapeParts` and are
+  // ready for shape-2 to wire in here.
   model.shapeNames = [];
 }
