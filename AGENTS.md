@@ -31,9 +31,23 @@ intuition** when the two conflict:
   not yet reproduce faithfully? **Throw.** A documented gap that fails loudly is safe;
   a best-effort wrong output corrupts a mod and can slip past the golden diff.
 - **Confidence comes from AB-testing TexTools.** We prove parity by running our
-  pipeline over a corpus of **both real mods and synthetic fixtures**, diffing every
-  byte against the cached TexTools golden, and using **coverage** to confirm the
-  corpus actually exercises the ported code. See *Upgrade golden harness*.
+  pipeline over the mod corpus and diffing every byte against the cached TexTools
+  golden, backed by synthetic unit tests for logic real mods don't exercise, with
+  **coverage** confirming what the corpus and tests actually reach. See *Upgrade
+  golden harness* and *Synthetic tests*.
+
+## Glossary
+
+- **xivModdingFramework / TexTools** — the C# library (and its GUI app) we port from;
+  `reference/` vendors it.
+- **ConsoleTools** — TexTools' CLI; its `/upgrade` command is our oracle.
+- **golden** — the ConsoleTools `/upgrade` output we diff our result against, byte-for-byte.
+- **corpus** — the mod packs we test over (`test/corpus/inputs/`, gitignored / local; real
+  mods today).
+- **ratchet / baseline** — the per-pack record of currently-known diffs; a pack passes while
+  its diff stays a subset of its baseline, so regressions fail but pre-existing gaps don't block.
+- **divergence** — an intended, documented deviation from the golden, confirmed by a
+  `DIVERGENCE_RULES` entry.
 
 ## Commands
 
@@ -63,8 +77,12 @@ tests.
 This is the AB test that anchors the whole port. `npm test` includes an end-to-end
 `upgrade` check per corpus pack: it runs our `upgradeModpack` pipeline and diffs the
 result against a cached ConsoleTools `/upgrade` golden (per `gamePath`, on
-decompressed content). The corpus deliberately mixes **real mods** (broad, realistic
-coverage) with **synthetic fixtures** (edge cases real mods don't reach).
+decompressed content).
+
+The **corpus** lives at `test/corpus/inputs/` and is **gitignored / local-only** — it
+is real third-party mods we don't redistribute, so a fresh clone starts empty and the
+`upgrade` check no-ops until you populate it. It is **real mods only** today; edge cases
+they don't reach are pinned by synthetic unit tests instead (see *Synthetic tests*).
 
 - **Goldens are cached** content-addressed under `test/corpus/.upgrade-cache/`
   (gitignored). First run spawns ConsoleTools per pack; later runs read the cache. A
@@ -88,9 +106,27 @@ coverage) with **synthetic fixtures** (edge cases real mods don't reach).
 - **Use coverage to find blind spots.** `npm run test:coverage` runs the same suite
   under v8 and writes a text + HTML + json-summary report to `coverage/`. It is
   report-only (no thresholds — the gate stays unbrittle); its job is to show which
-  ported logic the corpus and tests actually exercise. Close a gap by extending the
-  corpus (a real or synthetic pack — preferred, since it reuses the golden oracle),
-  else a synthetic unit test; code reachable by neither should be a fail-loud guard.
+  ported logic the corpus and tests actually exercise. Close a gap by adding a corpus
+  mod that hits it (preferred — it reuses the golden oracle) or a synthetic unit test;
+  code reachable by neither should be a fail-loud guard.
+
+## Synthetic tests
+
+The golden harness only covers behaviour some real corpus mod happens to exercise.
+Everything else is pinned by **synthetic unit tests** — hand-built minimal inputs with
+asserted expected output — living beside the code under `test/` (e.g.
+`test/mdl/model/*.test.ts`). Reach for one when the logic is precision-sensitive, no
+corpus mod hits the path, or you want a fast, isolated regression that fails closer to
+the cause than a whole-pack byte diff. Fixtures are hand-derived from the C# (we can't
+run TexTools per-unit), so cite the reasoning like any other port.
+
+**Planned — synthetic modpacks.** We have none yet; "synthetic" today means unit tests
+only. Real mods can't cover everything — some structures never appear in the wild — so
+we should eventually keep a small set of *authored* modpacks, **checked in** (unlike the
+gitignored real corpus, since we make these ourselves), that flow through the same
+`/upgrade` golden harness. That would let us AB-test TexTools on constructed inputs and
+lock the result byte-for-byte, instead of only asserting our own expectations in a unit
+test. Until that exists, such cases fall to synthetic unit tests.
 
 ## Porting fidelity — split, don't blend
 
