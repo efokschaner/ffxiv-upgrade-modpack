@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadModpack, upgradeModpack } from "../../src/index";
+import { loadModpack, upgradeModpack, writeModpack } from "../../src/index";
 import { oracleKey } from "./oracle";
+import { diffArchives } from "./upgrade-archive-diff";
 import {
   compareToBaseline,
   loadBaseline,
@@ -23,8 +24,7 @@ export function registerUpgradeCheck(pack: string): void {
   describe(`upgrade golden: ${name}`, () => {
     it("matches ConsoleTools /upgrade within the ratchet baseline", () => {
       const bytes = new Uint8Array(readFileSync(pack));
-      const ours = upgradeModpack(loadModpack(name, bytes));
-
+      const oursModel = upgradeModpack(loadModpack(name, bytes));
       const golden = upgradeGoldenCached(name, bytes);
       if (golden === null) {
         throw new Error(
@@ -32,12 +32,25 @@ export function registerUpgradeCheck(pack: string): void {
             `Run with ConsoleTools installed to populate test/corpus/.upgrade-cache.`,
         );
       }
-      // A no-op upgrade writes no golden; the correct reference is the original input,
-      // so this still exercises our whole load->upgrade->reduce pipeline end to end.
+      // A no-op upgrade writes no golden; the correct reference is the original input, so this
+      // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
       const reference =
         golden.kind === "noop" ? loadModpack(name, bytes) : golden.data;
+      const goldenBytes = golden.kind === "noop" ? bytes : golden.bytes;
 
-      const diff = diffUpgrade(name, ours, reference, confirmDivergence);
+      // Exercise the real writer on the oracle path (audit blind spot #5), then compare archive
+      // STRUCTURE + MANIFEST alongside the unchanged payload diff. See the parity design spec.
+      const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
+      const oursArchive = writeModpack(oursModel, target);
+
+      const payload = diffUpgrade(
+        name,
+        oursModel,
+        reference,
+        confirmDivergence,
+      );
+      const archive = diffArchives(oursArchive, goldenBytes);
+      const diff = { ...payload, files: [...payload.files, ...archive] };
       const key = oracleKey(bytes);
 
       if (BLESS) {
