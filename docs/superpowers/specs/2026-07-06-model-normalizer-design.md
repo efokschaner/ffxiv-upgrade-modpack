@@ -7,7 +7,7 @@
 is its **phase B**).
 **Research (authoritative source map):** `2026-07-06-model-normalizer-research.md` — read
 it before implementing any piece; this spec cites into it and into
-`reference/xivModdingFramework/xivModdingFramework/` (abbreviated `…/`).
+`reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/` (abbreviated `…/`).
 **Prerequisite:** sub-project **3a — MDL geometry codec** (`src/mdl/geometry/`), merged to
 `main` (PR #12). B consumes 3a's decoder, encoder, declaration codec, and offset model.
 

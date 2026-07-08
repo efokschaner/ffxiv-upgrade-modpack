@@ -8,7 +8,7 @@ design; this is **sub-project A**). Roadmap row 3a in
 **Research:** `2026-07-06-model-normalizer-research.md` — the authoritative source
 map. §3 (`MdlVertexReader` read shape), §4 (`vertexInfoBlock` / `WriteVertex`
 encoders), §5 (why it is a genuine re-encode), §6 + risks R3/R4/R6 are the input.
-**Reference (read-only, gitignored):** `reference/xivModdingFramework/xivModdingFramework/`
+**Reference (read-only, gitignored):** `reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/`
 — chiefly `Models/FileTypes/Mdl.cs`, `Models/FileTypes/MdlVertexReader.cs`,
 `Models/Helpers/ModelModifiers.cs`, `Models/DataContainers/TTModel.cs`.
 

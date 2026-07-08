@@ -2,7 +2,7 @@
 
 Goal: reproduce, byte-for-byte, what ConsoleTools `/upgrade` does to a `.mdl` when
 producing its decompressed golden. All citations are into
-`reference/xivModdingFramework/xivModdingFramework/` (paths abbreviated as `…/`).
+`reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/` (paths abbreviated as `…/`).
 
 **Headline result up front:** the LoD-collapse + v6 + geometry shrink you observed is
 **NOT** produced by `FastMdlv6Upgrade` and **NOT** by the Type-3 re-compressor. It is

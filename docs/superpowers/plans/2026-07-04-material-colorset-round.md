@@ -35,7 +35,7 @@ checked in as numeric constant tables.
 - **End-of-task ritual:** `npm run check` && `npm run typecheck` && `npm test`
   green before any task is considered done.
 - **Faithful port:** every transform detail cites its C# origin
-  (`reference/xivModdingFramework/xivModdingFramework/Mods/EndwalkerUpgrade.cs`,
+  (`reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/Mods/EndwalkerUpgrade.cs`,
   `.../Materials/DataContainers/ShaderHelpers.cs`). When our model and C# differ,
   match C#'s *output bytes*, proven by the ratchet.
 

@@ -104,7 +104,7 @@ solves. (The mip filter, once assumed a soft spot, is a trivial deterministic de
 
 ## 3. Reference source map (what we are porting)
 
-C# logic lives under `reference/xivModdingFramework/xivModdingFramework/Textures/`.
+C# logic lives under `reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/Textures/`.
 
 | C# location | Role | Ported to |
 |---|---|---|

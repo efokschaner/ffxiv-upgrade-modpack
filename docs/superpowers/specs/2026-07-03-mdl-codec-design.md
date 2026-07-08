@@ -117,7 +117,7 @@ v6, so the gate exercises both bone-set encodings (§5).
 
 ## 3. Reference source map (what we are porting)
 
-C# logic lives under `reference/xivModdingFramework/xivModdingFramework/Models/`.
+C# logic lives under `reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/Models/`.
 
 | C# location | Role | Ported to |
 |---|---|---|
@@ -352,7 +352,7 @@ possible.
 
 - **No new dependencies** (the walker is ported source; the SQPack Type-3 layer already handles
   compression).
-- **Reference:** the existing gitignored `reference/xivModdingFramework` checkout (`Mdl.cs`,
+- **Reference:** the existing gitignored `reference/FFXIV_TexTools_UI/lib/xivModdingFramework` checkout (`Mdl.cs`,
   `MdlModelData.cs`, `EndwalkerUpgrade.cs`). GPL-3.0 → GPL-3.0 port; no per-file license/SPDX
   headers (licensing is carried repo-wide by LICENSE + NOTICE).
 - **Extracted `.mdl` fixtures** (if added) are GPL-3.0 framework/game resources covered by the

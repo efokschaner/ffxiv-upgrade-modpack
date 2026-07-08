@@ -70,7 +70,7 @@ across the codebase and file it repeatedly. Three mechanisms prevent that:
   references heavily) in one domain so blending/placement is judged with full context; split
   only oversized domains, telling each half the other's file list.
 - Skim a few files to confirm the current citation style (e.g. `EndwalkerUpgrade.cs:797-873`)
-  and the `reference/` layout (`reference/xivModdingFramework/...`,
+  and the `reference/` layout (`reference/FFXIV_TexTools_UI/lib/xivModdingFramework/...`,
   `reference/FFXIV_TexTools_UI/...`).
 
 ### Phase 1 — parallel domain audit

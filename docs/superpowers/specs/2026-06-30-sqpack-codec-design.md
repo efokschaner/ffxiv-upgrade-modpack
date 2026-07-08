@@ -50,7 +50,7 @@ the proven container layer for no current benefit); decode-only-now (user declin
 
 ## 3. Reference source map (what we are porting)
 
-The C# logic lives in `reference/xivModdingFramework/xivModdingFramework/`. Decode is centralized in
+The C# logic lives in `reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/`. Decode is centralized in
 `SqPack/FileTypes/Dat.cs`; encode is scattered across `Dat.cs`, `Models/FileTypes/Mdl.cs`, and
 `Textures/FileTypes/Tex.cs`, orchestrated by `Mods/SmartImport.cs`.
 

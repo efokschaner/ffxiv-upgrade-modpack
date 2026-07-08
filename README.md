@@ -32,38 +32,40 @@ repository ships no game assets.
 
 ## Upstream provenance — what we port from
 
-The port is a snapshot in time of specific upstream commits. Recording them lets us
-do **incremental upgrades** later: bump the pins, diff upstream between old and new,
-and port only what changed. `reference/` is gitignored (vendored third-party C#), so
-these SHAs — not the working tree — are the record of what a given state of this repo
-was ported against.
+The port is a snapshot in time of specific upstream commits. **The porting baseline is
+the installed TexTools release** — the same build that generates our goldens — so the
+C# we *read* is exactly the C# that *produces the bytes we diff against*. `reference/`
+is gitignored (vendored third-party C#), so these SHAs — not the working tree — are the
+record of what a given state of this repo was ported against.
 
-There are two distinct things to pin, and today they differ:
+**Baseline: TexTools `v3.1.0.2`.** The oracle is the *installed* ConsoleTools
+(`test/helpers/oracle.ts:17`),
+`C:\Program Files\FFXIV TexTools\FFXIV_TexTools\ConsoleTools.exe`, ProductVersion
+`1.0.0+b83feb57…` — i.e. FFXIV_TexTools_UI tag `v3.1.0.2`. `reference/` is pinned to
+match it exactly:
 
-**1. The source we read and port from** (`reference/*`, read-only maps):
+| Path in `reference/` | Repo | Commit | = |
+|----------------------|------|--------|---|
+| `FFXIV_TexTools_UI/` | [FFXIV_TexTools_UI](https://github.com/TexTools/FFXIV_TexTools_UI) (app + **ConsoleTools**) | `b83feb57b59a8f061ee458e9e8b416a99225110b` | **tag v3.1.0.2** |
+| `FFXIV_TexTools_UI/lib/xivModdingFramework/` | [xivModdingFramework](https://github.com/TexTools/xivModdingFramework) (most ported logic) | `e20179a014ab86269e8f4da3762be1003bc611ab` | submodule pin @ v3.1.0.2 |
+| `bc7enc_rdo/` | [bc7enc_rdo](https://github.com/richgel999/bc7enc_rdo) (BC7 codec reference) | `dbe416d28a5530b4e8cc45b14bf034dc6b96bbde` | — |
 
-| Repo | Role | Commit | Date |
-|------|------|--------|------|
-| [xivModdingFramework](https://github.com/TexTools/xivModdingFramework) | the modding framework — most ported logic | `bbc7069c84b2ac9dcddaacb8a9c1877fcc0083cc` | 2026-05-25 |
-| [FFXIV_TexTools_UI](https://github.com/TexTools/FFXIV_TexTools_UI) | the TexTools app; **ConsoleTools** (our CLI oracle) is a project within it | `6f4ababa2fc9a1f71c19f86296b92e0a3cc75214` | 2026-05-25 |
-| [bc7enc_rdo](https://github.com/richgel999/bc7enc_rdo) | BC7 texture codec reference (used transitively for `.tex`) | `dbe416d28a5530b4e8cc45b14bf034dc6b96bbde` | 2026-02-26 |
+`xivModdingFramework` is vendored as the **real git submodule** of `FFXIV_TexTools_UI`
+(at `lib/xivModdingFramework`), so the parent's pin *enforces* the correct commit — the
+two can't silently drift apart. It was formerly a separate side-by-side clone tracking
+`master` (ahead of the release); it was rolled back to the `v3.1.0.2` pin so the read
+source matches the oracle. That rollback required **no ported-code changes**: the core
+transform (`EndwalkerUpgrade.cs`) and every codec (`Mdl.cs`/`TTMP`/`Dat`/`DDS`/`Tex`/
+`ShaderHelpers`/…) are byte-identical between `master` and `v3.1.0.2`; the only
+`master`-side differences in files we cite are unported subsystems (item catalogs,
+install-time auto-assign) and the additive PMP "Combining" group feature, which our port
+carries opaquely via `raw`.
 
-(All on `master`; the clones carry no release tags, so commit SHAs are the pin.)
-
-**2. The oracle binary that generates goldens** — the *installed* ConsoleTools, not
-built from the clones above (`test/helpers/oracle.ts:17`):
-
-- `C:\Program Files\FFXIV TexTools\FFXIV_TexTools\ConsoleTools.exe`,
-  ProductVersion `1.0.0+b83feb57b59a8f061ee458e9e8b416a99225110b` — i.e. built from
-  FFXIV_TexTools_UI commit `b83feb57…`.
-
-> ⚠️ **Drift caveat.** The oracle's build commit (`b83feb57…`) is **not** the
-> `reference/FFXIV_TexTools_UI` clone HEAD (`6f4abab…`) and is not even present in that
-> clone. So the C# we *read* and the binary that *defines correct output* are not
-> verified to be the same tree. Byte-parity is judged against the installed oracle; the
-> `reference/` clones are the map. When upgrading, re-pin **both** together — check out
-> the reference clones at the exact commit the installed ConsoleTools was built from
-> (its ProductVersion `+hash`), regenerate the goldens, then port the upstream diff.
+**Incremental upgrade.** To move to a newer TexTools release: install that ConsoleTools,
+read its ProductVersion `+hash`, check out `reference/FFXIV_TexTools_UI` at the matching
+tag and `git submodule update` (which moves `lib/xivModdingFramework` to that release's
+pin), regenerate the goldens, then port only the upstream diff between the old and new
+pins.
 
 ## Development
 

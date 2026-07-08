@@ -12,7 +12,7 @@
 Add a self-contained TypeScript module that **parses a raw uncompressed `.mtrl` (material) file into a
 structured `XivMtrl` model and serializes it back to bytes** — a faithful port of
 `Mtrl.GetXivMtrl(byte[])` and `Mtrl.XivMtrlToUncompressedMtrl` from
-`reference/xivModdingFramework/xivModdingFramework/Materials/`.
+`reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/Materials/`.
 
 This is the first *semantic* codec (the SQPack codec handled the compression wrapper; this handles the
 file format inside it). It is a prerequisite for the Endwalker→Dawntrail material transform (a later
@@ -56,7 +56,7 @@ and the fiddly round-trip reconstructions (string-block rebuild, sampler double-
 
 ## 3. Reference source map (what we are porting)
 
-The C# logic lives in `reference/xivModdingFramework/xivModdingFramework/Materials/`.
+The C# logic lives in `reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/Materials/`.
 
 | Our module | C# source |
 |---|---|
