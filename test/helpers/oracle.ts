@@ -13,10 +13,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import { corpusPacks } from "./corpus-roots";
 
 const CONSOLE_TOOLS =
   "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
-const CORPUS_INPUTS = join(__dirname, "..", "corpus", "inputs");
 const GOLDEN_UPGRADE = join(__dirname, "..", "corpus", "golden-upgrade");
 
 /** Content-addressed cache of ConsoleTools /unwrap outputs. Lives inside the gitignored
@@ -101,15 +101,12 @@ export function oracleAvailable(): boolean {
 }
 
 export function corpusInputs(): string[] {
-  if (!existsSync(CORPUS_INPUTS)) return [];
-  return readdirSync(CORPUS_INPUTS)
-    .filter((f) => /\.(ttmp2?|pmp)$/i.test(f))
-    .map((f) => join(CORPUS_INPUTS, f));
+  return corpusPacks();
 }
 
 /**
  * Policy guard for corpus-dependent tests: they FAIL (not skip) when the local corpus is absent,
- * so a missing test/corpus/inputs is a loud red signal rather than a silently-green no-op. Call
+ * so a missing test/corpus/real is a loud red signal rather than a silently-green no-op. Call
  * inside a dedicated `it(...)` in each corpus test file. `what` labels the required inputs in the
  * error (e.g. ".pmp corpus inputs" for the PMP-only tests).
  */
@@ -119,8 +116,8 @@ export function assertCorpusPresent(
 ): void {
   if (inputs.length === 0) {
     throw new Error(
-      `No ${what} in test/corpus/inputs — corpus-dependent tests require the local ` +
-        `(gitignored, user-provided) corpus. Populate test/corpus/inputs to run these tests.`,
+      `No ${what} in test/corpus/real — corpus-dependent tests require the local ` +
+        `(gitignored, user-provided) corpus. Populate test/corpus/real to run these tests.`,
     );
   }
 }

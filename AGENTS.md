@@ -50,7 +50,7 @@ intuition** when the two conflict:
   `reference/` vendors it.
 - **ConsoleTools** — TexTools' CLI; its `/upgrade` command is our oracle.
 - **golden** — the ConsoleTools `/upgrade` output we diff our result against, byte-for-byte.
-- **corpus** — the mod packs we test over (`test/corpus/inputs/`, gitignored / local; real
+- **corpus** — the mod packs we test over (`test/corpus/real/`, gitignored / local; real
   mods today).
 - **ratchet / baseline** — the per-pack record of currently-known diffs; a pack passes while
   its diff stays a subset of its baseline, so regressions fail but pre-existing gaps don't block.
@@ -87,10 +87,12 @@ This is the AB test that anchors the whole port. `npm test` includes an end-to-e
 result against a cached ConsoleTools `/upgrade` golden (per `gamePath`, on
 decompressed content).
 
-The **corpus** lives at `test/corpus/inputs/` and is **gitignored / local-only** — it
+The **corpus** lives at `test/corpus/real/` and is **gitignored / local-only** — it
 is real third-party mods we don't redistribute, so a fresh clone starts empty and the
 `upgrade` check no-ops until you populate it. It is **real mods only** today; edge cases
 they don't reach are pinned by synthetic unit tests instead (see *Synthetic tests*).
+Authored synthetic packs live in the sister `test/corpus/synthetic/` (also gitignored)
+and run the identical pipeline.
 
 - **Goldens are cached** content-addressed under `test/corpus/.upgrade-cache/`
   (gitignored). First run spawns ConsoleTools per pack; later runs read the cache. A

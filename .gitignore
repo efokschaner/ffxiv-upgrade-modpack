@@ -17,5 +17,6 @@ Thumbs.db
 # Subagent-driven-development scratch
 /.superpowers/
 
-# Real modpack corpus + goldens for converter tests — user-provided, not committed.
+# Modpack corpus (test/corpus/real/ real mods + test/corpus/synthetic/ authored packs) + goldens
+# and caches for converter tests — local-only, not committed.
 /test/corpus/

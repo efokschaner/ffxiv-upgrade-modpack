@@ -4,7 +4,7 @@ import { loadModpack } from "../../src/index";
 import { allFiles, FileStorageType } from "../../src/model/modpack";
 import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
 
-const INPUTS = "test/corpus/inputs";
+const INPUTS = "test/corpus/real";
 
 export interface CorpusModel {
   pack: string;
@@ -13,7 +13,7 @@ export interface CorpusModel {
 }
 
 /** Lazily yields every decodable Model .mdl (decompressed) across the local corpus packs.
- *  The repo's tests require the local corpus (gitignored, 46 packs under test/corpus/inputs). */
+ *  The repo's tests require the local corpus (gitignored, 46 packs under test/corpus/real). */
 export function* corpusModels(): Generator<CorpusModel> {
   for (const name of readdirSync(INPUTS)) {
     if (!/\.(ttmp2|ttmp|pmp)$/i.test(name)) continue;
@@ -39,5 +39,5 @@ export function* corpusModels(): Generator<CorpusModel> {
 /** The first decodable Model .mdl in the corpus (throws if none). */
 export function firstCorpusModel(): CorpusModel {
   for (const m of corpusModels()) return m;
-  throw new Error("no decodable Model .mdl found in test/corpus/inputs");
+  throw new Error("no decodable Model .mdl found in test/corpus/real");
 }
