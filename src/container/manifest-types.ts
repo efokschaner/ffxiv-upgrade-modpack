@@ -48,7 +48,7 @@ export interface OriginalModPackJson {
   DatFile: string;
 }
 
-// Mirrors reference/.../Mods/FileTypes/PMP.cs:1400-1525
+// Mirrors reference/.../Mods/FileTypes/PMP.cs:1369-1543
 export interface PmpMetaJson {
   FileVersion: number;
   Name: string;

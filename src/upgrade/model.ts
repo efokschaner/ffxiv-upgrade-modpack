@@ -1,5 +1,5 @@
 // Model-normalizer gate + entry (upgrade layer). Mirrors EndwalkerUpgrade/TTMP
-// DoesModpackNeedFix (TTMP.cs:918): FixOldModel runs on .mdl when TTMP major < 2.
+// DoesModpackNeedFix (TTMP.cs:916): FixOldModel runs on .mdl when TTMP major < 2.
 // The normalizer itself is EndwalkerUpgrade.FixOldModel (EndwalkerUpgrade.cs:190):
 // GetXivMdl -> TTModel.FromRaw -> MakeUncompressedMdlFile, emitting a v6 model.
 import { parseMdl } from "../mdl/mdl";
