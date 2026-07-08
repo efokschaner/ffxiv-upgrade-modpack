@@ -71,6 +71,17 @@ corpus exercise the code, not as a pass/fail gate.
 - **`reference/` is off-limits.** It is vendored third-party C#
   (xivModdingFramework / TexTools) kept for porting reference. Never edit, lint,
   or format it (it is gitignored).
+- **Porting fidelity — split, don't blend.** This is a hand-port of
+  xivModdingFramework; the C# source is the map we navigate by. **Splitting** a
+  large C# file into several focused TS modules is encouraged (e.g. `Mdl.cs` is
+  carved into `src/mdl/geometry/{decode,encode,declaration,offsets}.ts`), and each
+  such module should map to a named C# symbol and cite its source (`file · symbol ·
+  lines`) in a header comment. What makes the port hard to maintain is **blending**:
+  do not merge logic from *different* C# files/symbols into one TS module, and keep
+  a member with its original owner (e.g. `TTModel.Getv6BoneSet`/`GetUsageInfo`
+  belong with the `TTModel` equivalent, not the serializer). Traceability back to
+  the original is worth more than tidier-looking groupings. Prefer this over
+  reshuffling already-merged, tested port code purely for aesthetics.
 - **Design lives in `docs/superpowers/`.** Specs in `specs/`, implementation
   plans in `plans/`. Follow spec-then-plan discipline for non-trivial work.
   - **Start here:** `docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md`

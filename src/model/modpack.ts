@@ -58,6 +58,7 @@ export interface ModpackMeta {
   image: string;
   tags: string[];
   minimumFrameworkVersion: string;
+  sourceTtmpVersion?: string;
   raw?: unknown; // opaque carry-through: full original PMP meta.json (e.g.
   // DefaultPreferredItems, FileVersion). Re-emitted verbatim.
 }

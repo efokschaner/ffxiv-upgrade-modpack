@@ -13,6 +13,8 @@ import {
   encodeSqPackFile,
   SqPackType,
 } from "../../src/sqpack/sqpack";
+import { restore, uncompressedBytes } from "../../src/upgrade/upgrade";
+import { firstCorpusModel } from "../helpers/corpus-models";
 
 function sampleData(): ModpackData {
   return {
@@ -286,5 +288,36 @@ describe("upgradeModpack (skeleton)", () => {
       storage: FileStorageType.RawUncompressed,
     });
     expect(input.groups[0]!.options[0]!.files.length).toBe(1);
+  });
+});
+
+describe("restore threads the source SqPack type", () => {
+  it("round-trips a Standard entry (mechanism, arbitrary bytes)", () => {
+    const raw = new Uint8Array([1, 2, 3, 4, 5]);
+    const f = {
+      gamePath: "chara/x.mtrl",
+      data: encodeSqPackFile(raw, SqPackType.Standard),
+      storage: FileStorageType.SqPackCompressed,
+    };
+    const { bytes, type } = uncompressedBytes(f);
+    expect(type).toBe(SqPackType.Standard);
+    expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
+    expect(decodeSqPackFile(restore(f, bytes, type).data).type).toBe(
+      SqPackType.Standard,
+    );
+  });
+
+  it("re-encodes a real Model .mdl as SqPackType.Model (lossless re-wrap)", () => {
+    const bytes = firstCorpusModel().bytes;
+    const f = {
+      gamePath: "chara/x.mdl",
+      data: encodeSqPackFile(bytes, SqPackType.Model),
+      storage: FileStorageType.SqPackCompressed,
+    };
+    const dec = uncompressedBytes(f);
+    expect(dec.type).toBe(SqPackType.Model);
+    const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data);
+    expect(re.type).toBe(SqPackType.Model);
+    expect(Array.from(re.data)).toEqual(Array.from(bytes));
   });
 });

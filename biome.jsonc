@@ -27,6 +27,11 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
+      "suspicious": {
+        // Ban `any` outright: it silently disables type checking. Prefer a
+        // real type, or `x as unknown as T` for a deliberate opaque test stub.
+        "noExplicitAny": "error"
+      },
       "style": {
         // The codebase uses non-null assertions idiomatically alongside
         // tsconfig's noUncheckedIndexedAccess (e.g. `textures[i]!.path`).

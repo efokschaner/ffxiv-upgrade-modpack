@@ -12,7 +12,14 @@ import {
   SqPackType,
 } from "../sqpack/sqpack";
 import { upgradeMaterial } from "./material";
+import { needsMdlFix, normalizeModel } from "./model";
 import type { UpgradeInfo } from "./upgrade-info";
+
+interface Decoded {
+  bytes: Uint8Array;
+  /** Source SqPack entry type (Standard/Model/Texture); undefined for a RawUncompressed pmp file. */
+  type?: SqPackType;
+}
 
 // The Dawntrail upgrade pipeline. Ported incrementally from C#
 // ModpackUpgrader.cs (orchestration) + EndwalkerUpgrade.cs (transforms). This
@@ -50,26 +57,28 @@ export function cloneModpack(data: ModpackData): ModpackData {
   };
 }
 
-/** Uncompresses a ModpackFile's opaque bytes for a codec to read, regardless of source form. */
-function uncompressedBytes(f: ModpackFile): Uint8Array {
-  return f.storage === FileStorageType.SqPackCompressed
-    ? decodeSqPackFile(f.data).data
-    : f.data;
+/** Uncompresses a ModpackFile for a codec to read, carrying the source SqPack entry type. */
+export function uncompressedBytes(f: ModpackFile): Decoded {
+  if (f.storage === FileStorageType.SqPackCompressed) {
+    const d = decodeSqPackFile(f.data);
+    return { bytes: d.data, type: d.type };
+  }
+  return { bytes: f.data };
 }
 
 /**
- * Re-wraps transformed uncompressed bytes back into the file's original storage form
- * (ttmp SqPackCompressed source -> re-encode as a Standard SqPack entry; pmp
- * RawUncompressed source -> store raw). Keeps writeModpack's single-storage-form
- * invariant intact — see docs/superpowers for the harness spec.
- *
- * The hardcoded `SqPackType.Standard` is correct here because this round only rewrites
- * `.mtrl` files, which are always Standard SqPack entries. A future round that reuses
- * `restore` for `.mdl`/`.tex` MUST pass the source's decoded entry type instead.
+ * Re-wraps transformed uncompressed bytes into the file's original storage form. For a
+ * SqPackCompressed source, re-encode with the SOURCE entry's own type — Standard for
+ * .mtrl, Model for .mdl — so models stay valid Type-3 entries the game can load; for a
+ * RawUncompressed (pmp) source, store raw. Keeps writeModpack's single-storage-form invariant.
  */
-function restore(f: ModpackFile, bytes: Uint8Array): ModpackFile {
+export function restore(
+  f: ModpackFile,
+  bytes: Uint8Array,
+  type: SqPackType | undefined,
+): ModpackFile {
   if (f.storage === FileStorageType.SqPackCompressed) {
-    return { ...f, data: encodeSqPackFile(bytes, SqPackType.Standard) };
+    return { ...f, data: encodeSqPackFile(bytes, type ?? SqPackType.Standard) };
   }
   return { ...f, data: bytes };
 }
@@ -86,13 +95,14 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
   option.files = option.files.map((f) => {
     if (!IS_CHARA_MTRL.test(f.gamePath)) return f;
     try {
-      const mtrl = parseMtrl(uncompressedBytes(f), f.gamePath);
+      const { bytes, type } = uncompressedBytes(f);
+      const mtrl = parseMtrl(bytes, f.gamePath);
       const got = upgradeMaterial(mtrl);
       if (got.length === 0) return f; // no update needed
       // Record the texture-upgrade targets only AFTER the rewrite is committed: a throw from
       // serializeMtrl/restore (caught below -> file left untouched) must not leave orphaned targets
       // in the returned set pointing at a material that was never actually rewritten.
-      const restored = restore(f, serializeMtrl(mtrl));
+      const restored = restore(f, serializeMtrl(mtrl), type);
       infos.push(...got);
       return restored;
     } catch {
@@ -105,9 +115,25 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
   return infos;
 }
 
-/** Round 1 (model half of UpdateEndwalkerFiles): per-option mdl EW->DT. */
-function modelRound(_option: ModpackOption): void {
-  // round N: ported later
+const IS_MDL = /\.mdl$/;
+
+/**
+ * Round 1 (model half of UpdateEndwalkerFiles): normalize every `.mdl` via FixOldModel
+ * when the pack needs the fix (TTMP major < 2). Re-wrapped as a Model (Type-3) entry.
+ * Throws from the normalizer are surfaced (not swallowed) so the golden ratchet exposes
+ * any unported model structure rather than silently passing the source through.
+ */
+function modelRound(option: ModpackOption, gate: boolean): void {
+  if (!gate) return;
+  option.files = option.files.map((f) => {
+    if (!IS_MDL.test(f.gamePath)) return f;
+    const { bytes, type } = uncompressedBytes(f);
+    return restore(
+      f,
+      normalizeModel(bytes, f.gamePath),
+      type ?? SqPackType.Model,
+    );
+  });
 }
 
 /** Round 2 (UpgradeRemainingTextures): normal+colorset textures -> index maps. */
@@ -127,10 +153,11 @@ function partials(): void {
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
+  const gate = needsMdlFix(data);
   const upgradeTargets: UpgradeInfo[] = [];
   for (const group of out.groups) {
     for (const option of group.options) {
-      modelRound(option);
+      modelRound(option, gate);
       upgradeTargets.push(...materialRound(option));
     }
   }

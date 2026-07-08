@@ -54,6 +54,7 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
     image: "",
     tags: [],
     minimumFrameworkVersion: mpl.MinimumFrameworkVersion ?? "1.0.0.0",
+    sourceTtmpVersion: mpl.TTMPVersion,
   };
 
   if (mpl.SimpleModsList) {
