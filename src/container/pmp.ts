@@ -107,8 +107,39 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   };
 }
 
-function safeName(s: string): string {
-  return (s || "_").replace(/[^A-Za-z0-9._-]/g, "_");
+// Port of PMP.MakePMPPathSafe (PMP.cs:1316-1326) -> IOUtil.MakePathSafe (IOUtil.cs:738-759).
+// QUIRK: Path.GetInvalidFileNameChars() is platform-dependent; goldens are generated on Windows,
+// so we reproduce the WINDOWS set — control chars 0x00-0x1F plus these nine. (Unix would be just
+// \0 and /.) Replace invalid chars with '_' (_PMPSafeNameReplacement, PMP.cs:47), lowercase the
+// rest (makeLowercase=true), then Trim(). "." -> "_", ".." -> "__" (PMP.cs:1319-1323).
+const WINDOWS_INVALID_FILENAME_CHARS = new Set<number>([
+  0x22,
+  0x3c,
+  0x3e,
+  0x7c,
+  0x3a,
+  0x2a,
+  0x3f,
+  0x5c,
+  0x2f, // " < > | : * ? \ /
+]);
+function isInvalidFileNameChar(code: number): boolean {
+  return code <= 0x1f || WINDOWS_INVALID_FILENAME_CHARS.has(code);
+}
+function makePathSafe(name: string): string {
+  // IOUtil.MakePathSafe iterates UTF-16 chars; match that (not code points) for fidelity.
+  let out = "";
+  for (let i = 0; i < name.length; i++) {
+    out += isInvalidFileNameChar(name.charCodeAt(i))
+      ? "_"
+      : name[i]!.toLowerCase();
+  }
+  return out.trim();
+}
+export function safeName(s: string): string {
+  if (s === ".") return "_";
+  if (s === "..") return "__";
+  return makePathSafe(s.normalize("NFKC"));
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
