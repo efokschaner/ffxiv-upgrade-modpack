@@ -50,8 +50,9 @@ intuition** when the two conflict:
   `reference/` vendors it.
 - **ConsoleTools** — TexTools' CLI; its `/upgrade` command is our oracle.
 - **golden** — the ConsoleTools `/upgrade` output we diff our result against, byte-for-byte.
-- **corpus** — the mod packs we test over (`test/corpus/real/`, gitignored / local; real
-  mods today).
+- **corpus** — the mod packs we test over, both gitignored / local and both driving the
+  same `/upgrade` golden harness: `test/corpus/real/` (real third-party mods) and
+  `test/corpus/synthetic/` (minimal packs we author ourselves). "Corpus" means both roots.
 - **ratchet / baseline** — the per-pack record of currently-known diffs; a pack passes while
   its diff stays a subset of its baseline, so regressions fail but pre-existing gaps don't block.
 - **divergence** — an intended, documented deviation from the golden, confirmed by a
@@ -87,12 +88,13 @@ This is the AB test that anchors the whole port. `npm test` includes an end-to-e
 result against a cached ConsoleTools `/upgrade` golden (per `gamePath`, on
 decompressed content).
 
-The **corpus** lives at `test/corpus/real/` and is **gitignored / local-only** — it
-is real third-party mods we don't redistribute, so a fresh clone starts empty and the
-`upgrade` check no-ops until you populate it. It is **real mods only** today; edge cases
-they don't reach are pinned by synthetic unit tests instead (see *Synthetic tests*).
-Authored synthetic packs live in the sister `test/corpus/synthetic/` (also gitignored)
-and run the identical pipeline.
+The **corpus** spans two **gitignored / local-only** sister roots, both driving the same
+`upgrade` check: `test/corpus/real/` (real third-party mods we don't redistribute) and
+`test/corpus/synthetic/` (minimal packs we author to exercise paths real mods don't reach —
+e.g. the F1 filename repro). Because both are gitignored, a fresh clone starts empty and the
+`upgrade` check no-ops until you populate `real/` (supply the mods) and/or rebuild the
+synthetic packs (run their committed builder scripts — see *Synthetic tests*). Edge cases no
+pack reaches at all are pinned by synthetic unit tests instead (see *Synthetic tests*).
 
 - **Goldens are cached** content-addressed under `test/corpus/.upgrade-cache/`
   (gitignored). First run spawns ConsoleTools per pack; later runs read the cache. A
@@ -130,13 +132,15 @@ corpus mod hits the path, or you want a fast, isolated regression that fails clo
 the cause than a whole-pack byte diff. Fixtures are hand-derived from the C# (we can't
 run TexTools per-unit), so cite the reasoning like any other port.
 
-**Planned — synthetic modpacks.** We have none yet; "synthetic" today means unit tests
-only. Real mods can't cover everything — some structures never appear in the wild — so
-we should eventually keep a small set of *authored* modpacks, **checked in** (unlike the
-gitignored real corpus, since we make these ourselves), that flow through the same
-`/upgrade` golden harness. That would let us AB-test TexTools on constructed inputs and
-lock the result byte-for-byte, instead of only asserting our own expectations in a unit
-test. Until that exists, such cases fall to synthetic unit tests.
+**Synthetic modpacks.** Real mods can't cover everything — some structures never appear in
+the wild — so we also keep *authored* modpacks under `test/corpus/synthetic/` that flow
+through the same `/upgrade` golden harness, AB-testing TexTools on constructed inputs and
+locking the result instead of only asserting our own expectations in a unit test. Each pack
+is produced by a **committed builder script** (e.g. `scripts/build-synthetic-f1.mjs`); the
+built `.pmp`/`.ttmp2` is gitignored like the real corpus, so a fresh clone regenerates it by
+running the builder — no third-party mod needed. (Whether to *also* check in the built packs
+and their goldens is still open.) Cases too deep or edge-casey for a golden to reach still
+fall to synthetic unit tests.
 
 ## Porting fidelity — split, don't blend
 
