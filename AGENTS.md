@@ -136,9 +136,9 @@ run TexTools per-unit), so cite the reasoning like any other port.
 the wild — so we also keep *authored* modpacks under `test/corpus/synthetic/` that flow
 through the same `/upgrade` golden harness, AB-testing TexTools on constructed inputs and
 locking the result instead of only asserting our own expectations in a unit test. Each pack
-is produced by a **committed builder script** (e.g. `scripts/build-synthetic-f1.mjs`); the
-built `.pmp`/`.ttmp2` is gitignored like the real corpus, so a fresh clone regenerates it by
-running the builder — no third-party mod needed. (Whether to *also* check in the built packs
+is produced by a **committed builder script** under `scripts/generate-synthetics/` (e.g.
+`scripts/generate-synthetics/build-synthetic-f1.mjs`); the built `.pmp`/`.ttmp2` is gitignored like
+the real corpus, so a fresh clone regenerates it by running the builder — no third-party mod needed. (Whether to *also* check in the built packs
 and their goldens is still open.) Cases too deep or edge-casey for a golden to reach still
 fall to synthetic unit tests.
 

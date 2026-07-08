@@ -1,7 +1,8 @@
 // Builds test/corpus/synthetic/f1-safename.pmp: a wizard PMP whose group Name has spaces + capitals,
 // so TexTools' MakePMPPathSafe emits "group_001_weareable ears options.json" while the pre-fix TS
 // safeName emits "group_001_Weareable_Ears_Options.json". Reproduces audit finding F1 (see the
-// parity design spec §6). The .pmp is gitignored; regenerate locally with `node scripts/build-synthetic-f1.mjs`.
+// parity design spec §6). The .pmp is gitignored; regenerate locally with
+// `node scripts/generate-synthetics/build-synthetic-f1.mjs`.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -9,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const outDir = join(here, "..", "test", "corpus", "synthetic");
+const outDir = join(here, "..", "..", "test", "corpus", "synthetic");
 const enc = (o) => new TextEncoder().encode(JSON.stringify(o, null, 2));
 
 // One already-Dawntrail-safe dummy file at a gamePath /upgrade ignores, so ConsoleTools no-ops.
