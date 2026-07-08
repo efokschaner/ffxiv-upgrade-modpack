@@ -35,6 +35,14 @@ intuition** when the two conflict:
   golden, backed by synthetic unit tests for logic real mods don't exercise, with
   **coverage** confirming what the corpus and tests actually reach. See *Upgrade
   golden harness* and *Synthetic tests*.
+- **A found divergence is a test-coverage gap too.** When we discover our output
+  differs from TexTools (or any correctness bug), the first question is *why didn't a
+  test catch this?* — close that gap as part of the fix. Prefer a **real golden** (add
+  a corpus mod that exercises the path) or a **synthetic golden** (an authored modpack
+  run through the `/upgrade` harness) that reproduces the divergence first and then
+  proves the fix. Fall back to a **synthetic unit test** derived from our reading of
+  the C# only when the case is too deep or edge-casey for a golden to reach it. A fix
+  without a test that would have caught the bug is incomplete.
 
 ## Glossary
 
