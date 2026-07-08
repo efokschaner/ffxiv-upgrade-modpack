@@ -128,6 +128,9 @@ function isInvalidFileNameChar(code: number): boolean {
 }
 function makePathSafe(name: string): string {
   // IOUtil.MakePathSafe iterates UTF-16 chars; match that (not code points) for fidelity.
+  // NOTE: C#'s Char.ToLower uses CurrentCulture; we use JS's locale-invariant toLowerCase.
+  // These agree for the ASCII/BMP names in practice; a cased non-ASCII letter under a
+  // non-invariant culture (e.g. Turkish dotless-i) could in theory diverge — negligible here.
   let out = "";
   for (let i = 0; i < name.length; i++) {
     out += isInvalidFileNameChar(name.charCodeAt(i))
