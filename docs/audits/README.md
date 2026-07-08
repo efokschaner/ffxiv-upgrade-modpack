@@ -92,6 +92,13 @@ across the codebase and file it repeatedly. Three mechanisms prevent that:
   lost.
 - **Self-verify:** the orchestrator independently spot-checks a few HIGH/CONFIRMED findings
   (open the cited TS + C#) — subagents make systematic errors; do not relay blind.
+- **Grep the mechanical checks, don't trust per-domain reading for them.** Low-severity,
+  *pattern*-shaped conventions (per-file SPDX/license markers, banned tokens, `Copyright`
+  lines, hand-formatting tells) are exactly what reading-based auditors under-detect when the
+  pattern is uniform within a domain and file-scoping hides the repo-wide spread. Run one
+  repo-wide `grep` per such check in consolidation and reconcile it against the domains'
+  "no convention violations" verdicts. (The 2026-07-07 run missed 10 of 11 `(GPL-3.0)`
+  markers this way — see that report's Theme E correction.)
 - Build the suspicion queue: each `SUSPECTED` finding worth resolving, deduped by theory.
 
 ### Phase 2b — central follow-up

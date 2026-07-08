@@ -149,11 +149,37 @@ For 6-5, match the bones-count predicate (or document equivalence) and add the c
 
 ## Theme E — Conventions  [C]
 
-| ID | Location | Issue |
-|----|----------|-------|
-| 6-4 | `mdl/model/tt-model.ts:5` | `(GPL-3.0)` license marker in a per-file header — banned (licensing lives in LICENSE/NOTICE); also inconsistent with `model-modifiers.ts`. Drop it, keep the provenance. |
+Per-file `(GPL-3.0)` license markers — banned (licensing lives only in top-level
+LICENSE/NOTICE). **11 files** carry one, all in the `mdl` subsystem, each appended as a
+parenthetical to a provenance comment rather than as a standalone SPDX header:
 
-No SPDX/copyright headers elsewhere; no evidence of edits into `reference/`.
+- `mdl/types.ts:3`
+- `mdl/geometry/`: `declaration.ts:2`, `decode.ts:1`, `encode.ts:2`, `format.ts:1`,
+  `vertex-data.ts:3`, `offsets.ts:3`
+- `mdl/model/`: `tt-model.ts:5` (the original finding 6-4), `serialize.ts:1`,
+  `bone-sets.ts:2`, `bounding-box.ts:3`
+
+Fix: strip the `(GPL-3.0)` token, keep the provenance. **Not** a violation:
+`tex/bc7.ts:2`'s `Copyright (c) 2020-2021 Richard Geldreich, Jr. (MIT / Unlicense) —
+see NOTICE` — the conventions explicitly allow a brief upstream-origin attribution for
+ported third-party code.
+
+No SPDX headers; no `Copyright` lines beyond bc7.ts's allowed attribution; no evidence
+of edits into `reference/`.
+
+> **Audit correction (2026-07-08).** The original run recorded this as a single finding
+> (6-4, `tt-model.ts` only); the mdl-core and mdl-model-a domains explicitly reported
+> "no convention violations." That was an under-count — 10 further files carry the same
+> marker. How it slipped, honestly: **(1)** the rubric primed auditors to look for a
+> *standalone SPDX/license header*, so an inline `(GPL-3.0)` tacked onto the end of a
+> provenance line didn't read as one; **(2)** within mdl-core / mdl-model-a the marker is
+> *uniform*, so nothing looked anomalous — mdl-model-b caught it only because its two
+> files disagree (`tt-model.ts` has it, `model-modifiers.ts` doesn't) and that contrast
+> made it pop; **(3)** file-scoped partitioning (the dedup mechanism) means no single
+> auditor saw the repo-wide spread, and consolidation trusted each domain's "clean"
+> verdict instead of running one repo-wide `grep`. Lesson: back low-severity *mechanical*
+> checks (license markers, SPDX, banned tokens) with a grep in consolidation rather than
+> relying on per-domain reading — folded into `docs/audits/README.md`.
 
 ---
 
