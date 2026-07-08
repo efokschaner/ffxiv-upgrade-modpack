@@ -342,7 +342,7 @@ describe("baseline ratchet", () => {
     gamePath: string,
     index: number,
     status: FileDiff["status"],
-  ): FileDiff => ({ gamePath, index, status });
+  ): FileDiff => ({ kind: "payload", gamePath, index, status });
 
   it("save then load round-trips entries", () => {
     const dir = mkdtempSync(join(tmpdir(), "ub-"));

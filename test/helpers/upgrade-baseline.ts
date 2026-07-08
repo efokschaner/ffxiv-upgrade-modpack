@@ -26,8 +26,9 @@ function baselinePath(key: string, dir: string): string {
 //     bytes change without a re-bless avoids churning the baseline on every transform iteration.
 // Once the baseline is burned to empty (all divergences either byte-exact or covered by a content-
 // aware DIVERGENCE_RULE), this coarseness is moot: an empty baseline rejects any divergence outright.
+// Ratchet identity. `kind` defaults to "payload" so pre-kind baselines (payload-only) still match.
 function idOf(f: FileDiff): string {
-  return `${f.gamePath}#${f.index}:${f.status}`;
+  return `${f.kind ?? "payload"}|${f.gamePath}#${f.index}:${f.status}`;
 }
 
 export function loadBaseline(

@@ -27,7 +27,7 @@ export const DEFAULT_UPGRADE_CACHE = join(
 );
 
 export type GoldenResult =
-  | { kind: "pack"; data: ModpackData }
+  | { kind: "pack"; data: ModpackData; bytes: Uint8Array }
   | { kind: "noop" };
 
 /** Golden container extension implied by the source name. Format is preserved: pmp->pmp; every
@@ -94,6 +94,7 @@ export function upgradeGoldenCached(
     return {
       kind: "pack",
       data: loadModpack(`golden.${goldenExt(name)}`, hit),
+      bytes: hit,
     };
   }
 
@@ -108,5 +109,9 @@ export function upgradeGoldenCached(
     return { kind: "noop" };
   }
   oracleCachePut(key, out, dir);
-  return { kind: "pack", data: loadModpack(`golden.${goldenExt(name)}`, out) };
+  return {
+    kind: "pack",
+    data: loadModpack(`golden.${goldenExt(name)}`, out),
+    bytes: out,
+  };
 }

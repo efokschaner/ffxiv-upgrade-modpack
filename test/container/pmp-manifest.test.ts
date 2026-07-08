@@ -77,12 +77,14 @@ function makeImcPmp(): Uint8Array {
 describe("pmp manifest fidelity (Imc/Combining extras)", () => {
   it("preserves Imc AttributeMask, option Priority, meta extras; adds no spurious keys", () => {
     const out = readZip(writePmp(readPmp(makeImcPmp())));
-    const imcOpt = JSON.parse(dec.decode(out.get("group_002_Ears.json")!))
+    // Group filenames are lowercased by safeName (PMP.MakePMPPathSafe port, PMP.cs:1316-1326;
+    // see src/container/pmp.ts), so "Models"/"Ears" become "models"/"ears" on disk.
+    const imcOpt = JSON.parse(dec.decode(out.get("group_002_ears.json")!))
       .Options[0];
     expect(imcOpt.AttributeMask).toBe(5);
     expect("Files" in imcOpt).toBe(false); // Imc options have no Files
     expect("Image" in imcOpt).toBe(false); // and no Image
-    const multiOpt = JSON.parse(dec.decode(out.get("group_001_Models.json")!))
+    const multiOpt = JSON.parse(dec.decode(out.get("group_001_models.json")!))
       .Options[0];
     expect(multiOpt.Priority).toBe(7);
     const meta = JSON.parse(dec.decode(out.get("meta.json")!));

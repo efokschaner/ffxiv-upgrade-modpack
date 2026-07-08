@@ -1,9 +1,8 @@
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { corpusPacks } from "./corpus-roots";
 
-// Pure enumeration of corpus work units. Depends ONLY on node:fs/node:path and runs NO test
-// registration on import, so the Node-API runner can import it outside any test worker. The
-// vitest-dependent dispatch lives in corpus-register.ts (loaded only inside workers).
+// Pure enumeration of corpus work units. Depends ONLY on node:fs/node:path (via corpus-roots) and
+// runs NO test registration on import, so the Node-API runner can import it outside any test
+// worker. The vitest-dependent dispatch lives in corpus-register.ts (loaded only inside workers).
 
 export type CheckKind =
   | "sqpack"
@@ -19,18 +18,6 @@ export interface Unit {
   check: CheckKind;
 }
 
-// Mirrors oracle.ts CORPUS_INPUTS, but SORTED so the unit order is deterministic and identical
-// between the runner (which imports this to count specs) and the workers (which index into it).
-const CORPUS_INPUTS = join(__dirname, "..", "corpus", "inputs");
-
-function sortedPacks(): string[] {
-  if (!existsSync(CORPUS_INPUTS)) return [];
-  return readdirSync(CORPUS_INPUTS)
-    .filter((f) => /\.(ttmp2?|pmp)$/i.test(f))
-    .sort() // deterministic order (single source of truth)
-    .map((f) => join(CORPUS_INPUTS, f));
-}
-
 /**
  * Every (pack × check-family) work unit, in a stable order: packs sorted ascending, then per pack
  * the fixed check order [sqpack, golden, mtrl, tex, mdl, geometry, upgrade, (pmp if .pmp)]. sqpack is ONE unit (its three
@@ -38,7 +25,7 @@ function sortedPacks(): string[] {
  */
 export function enumerateUnits(): Unit[] {
   const units: Unit[] = [];
-  for (const pack of sortedPacks()) {
+  for (const pack of corpusPacks()) {
     units.push({ pack, check: "sqpack" });
     units.push({ pack, check: "golden" });
     units.push({ pack, check: "mtrl" });

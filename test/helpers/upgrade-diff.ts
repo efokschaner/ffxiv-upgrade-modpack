@@ -8,8 +8,10 @@ import { decodeSqPackFile } from "../../src/sqpack/sqpack";
 import { bytesEqual, compareBytesLex } from "./compare";
 
 export type DiffStatus = "added" | "removed" | "mismatch";
+export type DiffKind = "payload" | "manifest" | "structure";
 export interface FileDiff {
-  gamePath: string;
+  kind: DiffKind;
+  gamePath: string; // for manifest/structure diffs this holds the archive member name
   index: number; // position within this path's sorted diff list — a stable id for the ratchet
   status: DiffStatus;
   detail?: string;
@@ -94,6 +96,7 @@ export function diffUpgrade(
     let index = 0;
     for (let i = 0; i < n; i++) {
       files.push({
+        kind: "payload",
         gamePath: gp,
         index: index++,
         status: "mismatch",
@@ -102,6 +105,7 @@ export function diffUpgrade(
     }
     for (let i = n; i < gRemaining.length; i++) {
       files.push({
+        kind: "payload",
         gamePath: gp,
         index: index++,
         status: "added",
@@ -110,6 +114,7 @@ export function diffUpgrade(
     }
     for (let i = n; i < oFinal.length; i++) {
       files.push({
+        kind: "payload",
         gamePath: gp,
         index: index++,
         status: "removed",

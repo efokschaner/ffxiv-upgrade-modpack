@@ -6,7 +6,7 @@ import { assertCorpusPresent, corpusInputs } from "./helpers/oracle";
 // any unit existing. Same assertions/messages as the pre-parallelization corpus files.
 describe("corpus presence", () => {
   const inputs = corpusInputs();
-  it("requires the local corpus (fails if test/corpus/inputs is empty)", () => {
+  it("requires the local corpus (fails if test/corpus/real is empty)", () => {
     assertCorpusPresent(inputs);
   });
   it("requires .pmp packs in the local corpus (fails if none present)", () => {
