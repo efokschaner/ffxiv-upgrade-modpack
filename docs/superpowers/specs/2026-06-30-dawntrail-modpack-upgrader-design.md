@@ -260,13 +260,27 @@ each its own spec→plan→implement cycle. Status as of 2026-07-06:
 - **Round 4 — Texture round.** Port of `UpgradeRemainingTextures`: consumes the
   `UpgradeInfo` targets the material round records (`IndexMaps`,
   `GearMaskLegacy`/`New`, `HairMaps`) and **generates** the new `.tex` files — the DT
-  "index" map from the mod's own normal + colorset, upgraded gear masks, hair maps —
-  BCn-encoded. This is the **first round that will not byte-match**: our BC5/BC7
-  encoder is not bit-identical to C#'s (BcnSharp/DirectXTex), so every generated
-  `.tex` needs an **intentional-divergence allow-list** entry (harness §4.4) that
-  positively confirms *only* the block encoding differs (same header/format/dims/mip
-  count; decoded pixels within our documented encoder precision). tex+BCn codec
-  built. 701 diffs.
+  "index" map from the mod's own normal + colorset, upgraded gear masks, hair maps.
+  **Target: byte-exact — no allow-list needed.** *(Corrected 2026-07-09.)* An earlier
+  draft of this section assumed the generated textures were BC5/BC7 and that our block
+  encoder could never match C#'s BcnSharp bit-for-bit, so every `.tex` would need an
+  intentional-divergence allow-list entry. That premise is **wrong for our oracle**:
+  headless ConsoleTools uses the framework default `DefaultTextureFormat =
+  XivTexFormat.A8R8G8B8` (`XivCache.cs:68`), and every generation site in the round
+  writes **uncompressed A8R8G8B8** — the `?:` at `EndwalkerUpgrade.cs:1105` collapses
+  to `A8R8G8B8`, and the hair/gear/eye paths (`:1213`/`:1222`/`:2069`/`:2094`) pass
+  `DefaultTextureFormat` directly. There is **no block compressor in the golden
+  path**, so the pixel generation is deterministic per-texel integer math
+  (`TextureHelpers.CreateIndexTexture`/`CreateHairMaps`/`UpgradeGearMask`) plus the
+  already-ported A8R8G8B8 pack + nearest-neighbour decimation mipmaps
+  (`src/tex/encode.ts`). We therefore **aim for byte-exact** and keep the allow-list as
+  a *fallback* for whatever narrow cases prove to resist parity, confirmed empirically
+  rather than assumed. Known parity traps to pin during the spec: (1) C# `Math.Round`
+  is banker's rounding (round-half-to-even), unlike JS `Math.round`
+  (`CreateIndexTexture:247`); (2) the NPOT Bicubic resize (`:1098`, ImageSharp) would
+  be hard to match — but only fires for non-power-of-two source textures (`encode.ts`
+  fails loud there today), so the first question is whether any corpus `.tex` diff is
+  NPOT-sourced. tex codec built. 701 diffs.
 
 - **Round 5 — Metadata round** *(newly scoped — not in the harness spec's original
   five)*. The golden's `.meta` files are consistently **larger** than ours (e.g.
@@ -298,8 +312,9 @@ each its own spec→plan→implement cycle. Status as of 2026-07-06:
 The gitignored ratchet baseline **is** the burndown chart (harness §4.5). Total
 non-matching diffs across the 46 corpus packs: **1619** at material-round start →
 **1203 today** (`.mtrl` 0, `.mdl` 453, `.tex` 701, `.meta` 49). End state: every
-baseline empty, with the committed allow-list holding only the intended
-texture-encoder divergences.
+baseline empty (byte-zero), with the committed allow-list holding only whatever
+narrow paths prove empirically to resist parity (see §8.2 — the texture round is now
+targeted byte-exact, not assumed divergent).
 
 ### 8.4 Path to a complete end-to-end tool & known gaps
 
@@ -307,8 +322,9 @@ texture-encoder divergences.
 (rounds 3→4→5→6, which drive the ratchet to zero) **plus** the UI (round 7) wired
 to the stable `upgradeModpack` seam. Transforms land in that order; the UI is
 decoupled from them (stable seam) and can start in parallel at any point, gaining
-correctness as rounds land. "Feature-complete" = the ratchet is empty except for
-the intended texture-encoder allow-list; "product-complete" = that, behind the
+correctness as rounds land. "Feature-complete" = the ratchet is empty (byte-zero),
+with any allow-list entries confined to narrow paths empirically shown to resist
+parity (see §8.2/§8.4 — none assumed up front); "product-complete" = that, behind the
 static GitHub Pages page.
 
 **Known gaps & open risks** (each is a place the system is not yet whole):
@@ -325,9 +341,14 @@ static GitHub Pages page.
 - **Metadata (round 5) format is not fully pinned:** the golden `.meta` size
   deltas (e.g. +22 bytes) do **not** fit a pure 5-byte-per-race EQDP model, so a
   short scoping spike is needed before that round can be estimated confidently.
-- **Texture (round 4) divergence from TexTools is permanent by design** (our BCn
-  encoder ≠ C#'s), bounded and actively confirmed by the allow-list (harness
-  §4.4) — the `.tex` baseline reaches "allow-listed", never byte-zero.
+- **Texture (round 4) is now targeted as byte-exact, not a permanent divergence.**
+  *(Corrected 2026-07-09 — see §8.2.)* The "our BCn encoder ≠ C#'s" premise does not
+  apply: ConsoleTools writes the regenerated textures uncompressed (A8R8G8B8,
+  `XivCache.cs:68`), so no block compressor is in the golden path and the `.tex`
+  baseline can reach byte-zero. The allow-list (harness §4.4) is held in reserve only
+  for narrow paths empirically shown to resist parity (candidate: NPOT Bicubic resize
+  via ImageSharp, `EndwalkerUpgrade.cs:1098`; and the round-6 eye-mask Gaussian blur),
+  not applied to the round wholesale.
 - **No CI; the only gate is the local ratchet + ConsoleTools oracle.** A fresh
   clone cannot reproduce the ratchet without the local corpus and cached goldens
   (both gitignored). The gate lives on the maintainer's machine by design (§6),
