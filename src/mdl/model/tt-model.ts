@@ -1,8 +1,10 @@
 // TTModel container types + TTModel members, ported from xivModdingFramework
 // Models/DataContainers/TTModel.cs (container shape; GetUsageInfo :1308-1367; Getv6BoneSet
-// :1373-1391; TTShapePart :357-386; GetPartRelevantVertexInformation :514-534; HasShapeData
-// :953-959; ShapeNames :964-982; ShapePartCount :987-1007; ShapeDataCount :1012-1045;
-// ShapePartCounts :1051-1074; GetRawShapeParts :1089-1245) (GPL-3.0).
+// :1373-1391; TTShapePart :357-386; GetPartRelevantVertexInformation :514-534;
+// GetMeshTypeOffset/GetMeshTypeCount :903-947; HasShapeData :953-959; ShapeNames :964-982;
+// ShapePartCount :987-1007; ShapeDataCount :1012-1045; ShapePartCounts :1051-1074;
+// Materials/Attributes/Bones getters :845-900; GetMaterialIndex :1419-1430;
+// GetAttributeBitmask :1437-1462; GetRawShapeParts :1089-1245).
 // Split, don't blend: this holds only the TTModel container + its own methods, no
 // serializer/read logic (see src/mdl/geometry for the codec this builds on).
 
@@ -88,18 +90,13 @@ export function getUsageInfo(m: TTModel): UsageInfo {
   return { usesVColor2, maxUv, needsEightWeights };
 }
 
-/** True if any vertex in the model carries a nonzero bone weight. */
+/** Port of TTModel.HasWeights (TTModel.cs:1251-1264): true iff any mesh group carries bones.
+ *  Keyed off Bones.Count, NOT a per-vertex weight scan — a group with a bone list but all-zero
+ *  weights still counts as weighted (and so drives the weighted vertex declaration + bone tables in
+ *  makeUncompressedMdl). For valid models the two predicates agree (weights reference bones); the
+ *  bones-count form is the faithful one. */
 export function hasWeights(m: TTModel): boolean {
-  for (const group of m.meshGroups) {
-    for (const part of group.parts) {
-      for (const v of part.vertices) {
-        for (let i = 0; i < v.weights.length; i++) {
-          if (v.weights[i]! > 0) return true;
-        }
-      }
-    }
-  }
-  return false;
+  return m.meshGroups.some((group) => group.bones.length > 0);
 }
 
 /** Port of TTModel.Getv6BoneSet (TTModel.cs:1373-1391): the group's bones packed
@@ -114,6 +111,32 @@ export function getV6BoneSet(m: TTModel, groupIndex: number): Uint8Array {
     dv.setInt16(i * 2, idx, true);
   }
   return out;
+}
+
+/** Port of TTModel.GetMeshTypeOffset/GetMeshTypeCount (TTModel.cs:903-947) specialized to
+ *  our 4-bucket meshType tag (0=Standard,1=Water,2=Shadow,3=Fog; read-model.ts's
+ *  meshTypeOf). ASSUMPTION: after the stable sort in makeUncompressedMdl, groups of the same
+ *  tag are contiguous, so offset(type) is simply the cumulative count of lower-tag-value
+ *  groups. This matches the reference exactly for the common case (all-Standard, or a single
+ *  extra type) but is not a faithful port of the reference's true EMeshType-ordinal walk
+ *  (real ordinal order is Standard<Water<Fog<...<Shadow<TerrainShadow, which differs from
+ *  our bucket order Standard<Water<Shadow<Fog). The only present-type combination that
+ *  actually reorders is Shadow+Fog coexisting (EMeshType puts Fog first, our bucket puts
+ *  Shadow first); makeUncompressedMdl now fails loud on that shape, so this helper is only
+ *  ever reached on combinations where bucket order == EMeshType order. */
+export function meshTypeCounts(groups: { meshType: number }[]): {
+  offset: number[];
+  count: number[];
+} {
+  const count = [0, 0, 0, 0];
+  for (const g of groups) count[g.meshType] = (count[g.meshType] ?? 0) + 1;
+  const offset = [
+    0,
+    count[0]!,
+    count[0]! + count[1]!,
+    count[0]! + count[1]! + count[2]!,
+  ];
+  return { offset, count };
 }
 
 // R8: .NET SortedSet<string>/List<string>.Sort use the culture-sensitive default comparer.
@@ -195,6 +218,30 @@ export function shapePartCounts(m: TTModel): number[] {
       m.meshGroups.filter((g) => g.parts.some((p) => p.shapeParts.has(name)))
         .length,
   );
+}
+
+/** Port of TTModel.GetMaterialIndex (TTModel.cs:1419-1430): the group's material's index
+ *  into the model's material list. Preserves the reference's `index > 0 ? index : 0` quirk
+ *  verbatim (note: `> 0`, not `>= 0`), which also folds a not-found `indexOf` of -1 to 0. */
+export function getMaterialIndex(model: TTModel, group: TTMeshGroup): number {
+  const matIdx = model.materials.indexOf(group.material);
+  return matIdx > 0 ? matIdx : 0;
+}
+
+/** Port of TTModel.GetAttributeBitmask (TTModel.cs:1437-1462): the u32 bitmask of a part's
+ *  attributes by their index into the model's attribute list. Includes the reference's
+ *  >32-attribute fail-loud guard (TTModel.cs:1440-1443): the mask is a u32 and JS
+ *  `1 << 32` wraps to bit 0, so throw rather than emit a wrong mask. */
+export function getAttributeBitmask(model: TTModel, part: TTMeshPart): number {
+  if (model.attributes.length > 32) {
+    throw new Error("mdl: model cannot have more than 32 total attributes");
+  }
+  let attributeMask = 0;
+  for (const attr of part.attributes) {
+    const ai = model.attributes.indexOf(attr);
+    if (ai >= 0) attributeMask |= (1 << ai) >>> 0;
+  }
+  return attributeMask;
 }
 
 /** Port of TTMeshGroup.GetPartRelevantVertexInformation (TTModel.cs:514-534): given a
@@ -369,4 +416,24 @@ export function getRawShapeParts(m: TTModel): RawShapeParts {
   });
 
   return { shapeList, vertices: finalVertices };
+}
+
+function sortedUnique(values: Iterable<string>): string[] {
+  return [...new Set(values)].sort(compareStrings);
+}
+
+/** Mirrors the TTModel computed getters `Materials`/`Attributes`/`Bones`/`ShapeNames`
+ *  (TTModel.cs:845-900,964-982): sorted-unique projections over the mesh groups/parts. */
+export function computeModelLists(model: TTModel): void {
+  model.materials = sortedUnique(
+    model.meshGroups.map((g) => g.material).filter((mat) => mat !== ""),
+  );
+  model.attributes = sortedUnique(
+    model.meshGroups.flatMap((g) => g.parts.flatMap((p) => [...p.attributes])),
+  );
+  model.bones = sortedUnique(model.meshGroups.flatMap((g) => g.bones));
+  // Port of TTModel.ShapeNames (TTModel.cs:964-982): flips shapes "on" for the serializer
+  // (shape-2) -- the path block, basicModelBlock counts, and FullShapeDataBlock all key off
+  // `hasShapeData(model)`, which reads `model.shapeNames`/`p.shapeParts` directly.
+  model.shapeNames = shapeNames(model);
 }

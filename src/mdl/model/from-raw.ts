@@ -7,7 +7,6 @@
 
 import {
   clearShapeData,
-  computeModelLists,
   copyShapeBinormals,
   fixUpSkinReferences,
   mergeAttributeData,
@@ -17,7 +16,7 @@ import {
   mergeShapeData,
 } from "./model-modifiers";
 import type { ReadMdl } from "./read-model";
-import type { TTModel } from "./tt-model";
+import { computeModelLists, type TTModel } from "./tt-model";
 
 /** Builds and returns a fully-populated `TTModel` from a `ReadMdl` (TTModel.FromRaw,
  *  TTModel.cs:2695-2729). Order matters: geometry/attribute/material merges run before
