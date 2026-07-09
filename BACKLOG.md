@@ -16,10 +16,14 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   closes that ratchet. Blocks the U4 decision below.
 - **Partials round (round 3).** `partials` (`src/upgrade/upgrade.ts:145`) is a no-op stub
   for `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths`.
-- **`fixUpSkinReferences` (audit 6-1).** `src/mdl/model/model-modifiers.ts:489` is a
-  deferred no-op; C# rewrites serialized skin-material strings
-  (`ModelModifiers.cs:2309/2347`). Port the race-tree skin-material remap. Latent on the
-  current corpus, so no live corruption today.
+- **`fixUpSkinReferences` (audit 6-1).** `src/mdl/model/model-modifiers.ts` is a deferred no-op;
+  C# rewrites a mesh's skin-material race/body code to the model's resolved skin race when they
+  differ (`ModelModifiers.cs:2309-2399`), changing serialized `.mdl` bytes. This is a **silent
+  divergence risk**, not just a missing convenience — but a precise fail-loud guard needs
+  `XivRaceTree.GetSkinRace` (the full race tree + `SkinRaces` set, `XivRace.cs:165-183`), because a
+  naive race-mismatch throw would over-throw the common correct case (a child race referencing its
+  parent's skin, which C# leaves untouched). So the guard rides with the port. Latent on the
+  current single-race corpus (0 `.mdl` mismatches), which is why the golden doesn't catch it.
 
 ## Unprioritized
 

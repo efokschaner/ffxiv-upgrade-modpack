@@ -12,8 +12,9 @@ function nextPow2(n: number): number {
  *  ResizeXivTx pre-step (EndwalkerUpgrade.cs:1098), whose real resample filter is Bicubic. That
  *  filter is not yet ported, so a genuine NPOT resize FAILS LOUD rather than emit a point-sampled
  *  (non-byte-parity) result — an earlier placeholder did exactly that and would have silently
- *  diverged. Reachable only from encodeTex, which the upgrade pipeline does not yet call (latent);
- *  the throw hardens the path for when it is wired in. */
+ *  diverged. Currently uncalled by any production path (only re-exported via the tex barrel and
+ *  exercised by unit tests); the upgrade pipeline never resizes, so this is latent. The throw
+ *  hardens the path for when the encoder is wired in. */
 export function resizeToPowerOfTwo(
   rgba: Uint8Array,
   width: number,

@@ -269,8 +269,9 @@ type-only modules, `float16`/`binary` primitives, thin glue.
 The 47-pack corpus (43 TTMP, 4 PMP) with cached goldens and ratchet baselines was swept:
 no baseline contains any `.mtrl` mismatch (→ M1/M2 placeholder path unreached) or any TTMP
 `.mdl` mismatch (→ 5-2 mixed-mesh path unreached); `makeUncompressedMdl` **throws** on
-`HAS_EXTRA_MESHES` uncaught (→ 4-1 fails loud downstream); `resizeToPowerOfTwo` is only
-reachable from `encodeTex`, which `upgradeModpack` never calls (→ T1 latent). The 705 tex
+`HAS_EXTRA_MESHES` uncaught (→ 4-1 fails loud downstream); `resizeToPowerOfTwo` has no
+production caller at all (only re-exported + unit-tested), and `upgradeModpack` never resizes
+(→ T1 latent). The 705 tex
 baseline entries are the unimplemented texture round (U4), not T1. **None are LIVE-MASKED.**
 F1 is the sole live divergence, and it is invisible because of the headline process gap.
 

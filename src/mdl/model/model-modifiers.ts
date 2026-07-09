@@ -443,14 +443,20 @@ export function mergeShapeData(model: TTModel, rm: ReadMdl): void {
   }
 }
 
-/** DEFERRED: race-tree skin-material remap (ModelModifiers.cs:2309) not yet ported; no-op
- *  for single-race corpus. Revisit in Task 11 if the ratchet shows skin-material string
- *  diffs. */
+/** DEFERRED (audit 6-1): race-tree skin-material remap (ModelModifiers.cs:2309-2399), a **silent
+ *  divergence risk**, not mere convenience. C# rewrites a mesh's skin-material race/body code
+ *  (`c####`/`b####`) to the model path's resolved skin race whenever they differ, changing the
+ *  serialized `.mdl` bytes; we no-op. This is UNLIKE the other fail-loud guards in this remediation:
+ *  we cannot cheaply throw on the exact divergent case because it needs `XivRaceTree.GetSkinRace`
+ *  (the full race tree). A naive throw on any race-mismatched skin reference would OVER-throw the
+ *  common, correct case (e.g. a Highlander model referencing Midlander skin, which C# leaves
+ *  untouched). So — like F6 — this stays a documented gap until the race tree is ported (BACKLOG.md).
+ *  Latent on the current single-race corpus (0 `.mdl` mismatches), which is why it slips the golden. */
 export function fixUpSkinReferences(
   _model: TTModel,
   _sourcePath: string,
 ): void {
-  // Intentionally no-op.
+  // Intentionally no-op until XivRaceTree.GetSkinRace is ported (see doc comment + BACKLOG.md).
 }
 
 /** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2284-2295): anisotropic lighting is
