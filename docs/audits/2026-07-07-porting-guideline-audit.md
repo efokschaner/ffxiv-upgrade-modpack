@@ -85,7 +85,6 @@ silently corrupt a future mod and slip past the ratchet.
 
 | ID | Location | Silent behaviour vs C# | Sev | Reachability |
 |----|----------|------------------------|-----|--------------|
-| 6-1 | `mdl/model/model-modifiers.ts:489` | `fixUpSkinReferences` no-ops; C# rewrites serialized material strings (ModelModifiers.cs:2309/2347) | HIGH | latent |
 | 5-2 | `mdl/model/serialize.ts:64-115` | mesh-type order ≠ `EMeshType` ordinal for mixed models (Fog<Shadow) | HIGH | latent (all-Standard corpus) |
 | T1 | `tex/encode.ts:16` | NPOT resize point-samples vs C# Bicubic (`TextureHelpers.cs:394`) | HIGH | latent (only unit tests; `textureRound` is a stub) |
 | U1 | `upgrade/material.ts:212` | `?.` tolerates null sampler where C# NREs→abandons material untouched (EndwalkerUpgrade.cs:1028) | HIGH | latent — CONFIRMED structurally producible |
@@ -221,8 +220,15 @@ of edits into `reference/`.
     audit itself downgraded HIGH→MED.
   - **U4** DEFERRED to `BACKLOG.md` (unprioritized): throwing today converts the 705 baselined
     `.tex` diffs into hard crashes; revisit when the texture round lands.
-  - **6-1** (`fixUpSkinReferences` no-op) filed in `BACKLOG.md` (prioritized) as unported
-    `/upgrade` feature work, not a quick guard.
+  - **6-1** WITHDRAWN as a **non-issue** (2026-07-09). The finding assumed C#'s
+    `FixUpSkinReferences` rewrites material strings in `/upgrade`; it does not. `FixOldModel`
+    (`EndwalkerUpgrade.cs:194`) builds the model via `Mdl.GetXivMdl(uncomp)` with no path, and
+    `GetXivMdl(byte[], string mdlPath = "")` (`Mdl.cs:349`) defaults `MdlPath` to `""`, so
+    `FromRaw` calls `FixUpSkinReferences(ttModel, "")` whose path regex never matches — the fixup
+    is inert throughout `/upgrade`. Our no-op therefore matches the golden byte-for-byte; there is
+    no divergence. A full faithful port (GetSkinRace + rewrite + hairFix) was built and reverted
+    once this was confirmed (git history, branch `feat/skin-reference-fixup`). The `model-modifiers.ts`
+    stub carries the explanation.
 - **Theme D** (quirk "fixes") — **RESOLVED 2026-07-08**:
   - **6-5** RESOLVED: `hasWeights` (`tt-model.ts`) now ports `TTModel.HasWeights` (TTModel.cs:
     1251-1264) as `MeshGroups.Any(Bones.Count > 0)` with citation, replacing the per-vertex weight

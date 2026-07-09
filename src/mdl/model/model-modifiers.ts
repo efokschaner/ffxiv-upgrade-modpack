@@ -443,20 +443,22 @@ export function mergeShapeData(model: TTModel, rm: ReadMdl): void {
   }
 }
 
-/** DEFERRED (audit 6-1): race-tree skin-material remap (ModelModifiers.cs:2309-2399), a **silent
- *  divergence risk**, not mere convenience. C# rewrites a mesh's skin-material race/body code
- *  (`c####`/`b####`) to the model path's resolved skin race whenever they differ, changing the
- *  serialized `.mdl` bytes; we no-op. This is UNLIKE the other fail-loud guards in this remediation:
- *  we cannot cheaply throw on the exact divergent case because it needs `XivRaceTree.GetSkinRace`
- *  (the full race tree). A naive throw on any race-mismatched skin reference would OVER-throw the
- *  common, correct case (e.g. a Highlander model referencing Midlander skin, which C# leaves
- *  untouched). So — like F6 — this stays a documented gap until the race tree is ported (BACKLOG.md).
- *  Latent on the current single-race corpus (0 `.mdl` mismatches), which is why it slips the golden. */
+/** No-op — and byte-parity-correct as such. C# `ModelModifiers.FixUpSkinReferences`
+ *  (ModelModifiers.cs:2309-2399) rewrites skin/hair material race codes, but in the `/upgrade`
+ *  pipeline it never fires: `EndwalkerUpgrade.FixOldModel` (EndwalkerUpgrade.cs:194) builds the model
+ *  via `Mdl.GetXivMdl(uncomp)` with no path, and `GetXivMdl(byte[], string mdlPath = "")` (Mdl.cs:349)
+ *  defaults `MdlPath` to `""`. `TTModel.FromRaw` then calls `FixUpSkinReferences(ttModel, "")`, whose
+ *  `(c[0-9]{4})` path regex fails to match `""` and returns immediately. So the fixup is inert
+ *  throughout `/upgrade` and our no-op matches the golden byte-for-byte — there is no divergence to
+ *  reproduce. (Audit 6-1 originally flagged this as a HIGH-severity silent divergence on the assumption
+ *  that MdlPath carried the racial path here; that assumption was wrong. A full faithful port of
+ *  GetSkinRace + the rewrite + hairFix was built and then reverted once the MdlPath="" quirk was
+ *  confirmed — see git history, branch feat/skin-reference-fixup. Investigated & reverted 2026-07-09.) */
 export function fixUpSkinReferences(
   _model: TTModel,
   _sourcePath: string,
 ): void {
-  // Intentionally no-op until XivRaceTree.GetSkinRace is ported (see doc comment + BACKLOG.md).
+  // Intentionally no-op: inert in /upgrade because FixOldModel passes MdlPath="" (see doc comment).
 }
 
 /** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2284-2295): anisotropic lighting is

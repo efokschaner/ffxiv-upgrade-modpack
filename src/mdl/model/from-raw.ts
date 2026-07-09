@@ -24,8 +24,9 @@ import { computeModelLists, type TTModel } from "./tt-model";
  *  reads `model.source`. `mergeShapeData` is wrapped in try/catch -> `clearShapeData`,
  *  mirroring FromRaw's own try/catch around `MergeShapeData` (TTModel.cs:2711-2718): an
  *  unexpected structural problem in the shape data drops all shapeParts rather than failing
- *  the whole model load. Skin-reference fixup is a deferred no-op stub (see its doc comment
- *  in model-modifiers.ts). */
+ *  the whole model load. Skin-reference fixup is a no-op that is byte-parity-correct here: the
+ *  `/upgrade` path always feeds it an empty MdlPath, so C# no-ops too (see its doc comment in
+ *  model-modifiers.ts). */
 export function fromRaw(rm: ReadMdl): TTModel {
   const model: TTModel = {
     source: "",
@@ -48,7 +49,7 @@ export function fromRaw(rm: ReadMdl): TTModel {
   }
   model.source = rm.source;
   model.mdlVersion = rm.mdlVersion;
-  fixUpSkinReferences(model, rm.source); // deferred no-op
+  fixUpSkinReferences(model, rm.source); // no-op: inert in /upgrade (MdlPath="", see model-modifiers)
   mergeFlags(model, rm);
   // UVState = SE_Space (implicit). CalculateTangents (TTModel.cs:2728) is omitted for base
   // vertices (no byte effect, R2), but its shape-vertex binormal/handedness copy IS byte-
