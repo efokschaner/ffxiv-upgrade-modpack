@@ -277,6 +277,24 @@ A scan of the local corpus manifests (2026-07-08) found:
 > already points at the shared root. If instead it *would* rewrite, that is a live latent
 > divergence and the golden/baseline should already reflect it; reconcile before proceeding.
 
+### 5.1 Wider mod-collection scan (938 packs, `C:\Users\user\Documents\XIVModOriginals`, 2026-07-09)
+
+A manifest scan of a 938-pack personal collection (480 `.pmp`, 458 `.ttmp2`) sharpens both branches:
+
+- **Cross-race skin — no actionable exerciser exists.** Only **2** packs ship a *body model at a
+  non-self-skin race* (`Slime Skin.pmp`, `Yet Another Body+.pmp`, both Elezen-F/Miqote-F/Roe-F
+  `b0002` skins) and **both are PMP** → never rebuilt by `/upgrade` (`needsMdlFix` false for PMP,
+  `src/upgrade/model.ts:19-27`). **Zero legacy-`.ttmp2` cross-race skin models** in 938 packs.
+  → the **synthetic cross-race skin pack is mandatory**; those two PMPs are the only real
+  cross-race skin *content* and could seed it (repacked legacy) or serve as a shape reference.
+- **Hair — abundant "runs" coverage, almost certainly all no-op.** **95 legacy-`.ttmp2` packs**
+  ship hair models at races `getHairMaterialRoot` would collapse (multi-race hairstyle families).
+  But **not one** of the 938 ships an *own-race* hair material alongside the collapsing model,
+  strongly implying they already reference the shared/collapsed material → `hairFix` no-op, as
+  with Misty (manifests can't see the model's internal material ref, so this is strong evidence,
+  not proof). → the hairFix **rewrite** branch still needs a synthetic (§6, fixture 3); but these
+  packs are a cheap, real source for the "hairFix runs" branch.
+
 ---
 
 ## 6. Test plan
@@ -285,9 +303,13 @@ Per AGENTS.md, prefer real/synthetic goldens (AB-test TexTools, pin exact bytes)
 use unit tests for paths no golden reaches.
 
 **Goldens (byte-parity via the `/upgrade` harness):**
-1. **Real corpus (no new fixtures):** `Misty_Hairstyle_Female` + `Eliza` already exercise the
-   `hairFix` path. Assertion: after porting, their `.mdl` output stays byte-exact vs the golden
-   (no regression; positive coverage of the hairFix-runs branch).
+1. **Real corpus (hair "runs" branch):** `Misty_Hairstyle_Female` + `Eliza` already exercise the
+   `hairFix` path; after porting, their `.mdl` output must stay byte-exact vs the golden (no
+   regression; positive coverage of the hairFix-runs branch). **Widen cheaply:** add a handful of
+   the 95 legacy-`.ttmp2` multi-race hair packs found in §5.1 to `test/corpus/real/` (e.g. a broad
+   male-`→c0101` one like `[V] FORTY-EIGHT` or `✧ Diver`, plus an `•Arabella•`/`✧` female-`→c0201`
+   one) so the golden AB-tests hairFix across many races — and would catch any real pack that
+   *does* rewrite (see the §5 verification).
 2. **Synthetic cross-race skin pack** — *spec now, build during implementation* (operator,
    2026-07-08). A committed builder under `scripts/generate-synthetics/` produces a **legacy
    TTMP (`major < 2`)** pack containing a model whose path race resolves to a *different* skin
