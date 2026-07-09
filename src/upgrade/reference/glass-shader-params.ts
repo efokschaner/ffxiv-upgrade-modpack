@@ -1,4 +1,7 @@
 // GENERATED — regenerate via `npx tsx scripts/extract-shader-params.ts`. Do not edit by hand.
+// Values are the ShaderKeys/ShaderConstants/AdditionalData of the base-game glass sample
+// material (chara/equipment/e5001/material/v0001/mt_c0101e5001_met_b.mtrl), which EndwalkerUpgrade copies
+// wholesale onto a CharacterGlass mtrl (EndwalkerUpgrade.cs:774-788).
 export const GLASS_SHADER_KEYS: { keyId: number; value: number }[] = [
   { keyId: 3906624354, value: 2072005998 },
 ];

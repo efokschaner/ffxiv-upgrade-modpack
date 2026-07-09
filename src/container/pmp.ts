@@ -1,3 +1,7 @@
+// PMP (Penumbra Mod Pack) container reader/writer, ported from xivModdingFramework
+// Mods/FileTypes/PMP.cs. readPmp mirrors LoadPMP (PMP.cs:124); writePmp mirrors WritePmp
+// (PMP.cs:830) / CreateSimplePmp (:777). optionFromJson/optionToJson map the PMPOptionJson /
+// PMPGroupJson / PMPMetaJson manifest structs (PMP.cs:1485 / :1387 / :1369).
 import {
   allFiles,
   FileStorageType,

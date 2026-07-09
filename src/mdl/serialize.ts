@@ -5,6 +5,7 @@ import type { XivMdl } from "./types";
 
 /** Serializes an XivMdl back to runtime .mdl bytes by replaying the retained header + vertexInfo, the
  *  model-data sections in order (MdlModelData re-serialized at position 2), and the geometry tail.
+ *  Structural inverse of parseMdl; section order follows GetXivMdl's read order (Mdl.cs:349+).
  *  Byte-exact for any parsed input (design spec §6). */
 export function serializeMdl(mdl: XivMdl): Uint8Array {
   const s = mdl.sections;

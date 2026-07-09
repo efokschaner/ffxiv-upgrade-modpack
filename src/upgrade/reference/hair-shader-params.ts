@@ -1,4 +1,7 @@
 // GENERATED — regenerate via `npx tsx scripts/extract-shader-params.ts`. Do not edit by hand.
+// Values are the ShaderConstants/AdditionalData of the base-game sample hair material
+// _SampleHair (chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl, EndwalkerUpgrade.cs:56), which UpgradeHairMaterial copies
+// wholesale over an old hair mtrl (EndwalkerUpgrade.cs:1127-1131).
 export const HAIR_SHADER_CONSTANTS: { constantId: number; values: number[] }[] =
   [
     { constantId: 699138595, values: [0.75] },
