@@ -1,6 +1,6 @@
 // Structured per-LoD/mesh/part geometry offsets & sizes, read from the already-sliced
 // opaque sections of a parsed XivMdl. Field layouts ported from Mdl.GetXivMdl
-// (LoD :475-512, mesh :616-634, part :1362-1373) (GPL-3.0).
+// (LoD :475-512, mesh :616-634, part :1362-1373).
 
 import { LOD_HEADER, MESH_HEADER, type XivMdl } from "../types";
 

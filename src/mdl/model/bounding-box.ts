@@ -1,6 +1,6 @@
 // Model bounding-box extents/radius/block, ported from xivModdingFramework
 // Models/FileTypes/Mdl.cs MakeUncompressedMdlFile: extents/radius (Mdl.cs:2559-2587),
-// bounding-box data block (Mdl.cs:3681-3746) (GPL-3.0). The per-bone cube helper
+// bounding-box data block (Mdl.cs:3681-3746). The per-bone cube helper
 // re-derives reference commit b185e1e's buildRadiusBoundingBox. Split, don't blend:
 // furniture-part boxes (Mdl.cs:3748+) are out of scope here -- a later task fails
 // loud when they would be required.

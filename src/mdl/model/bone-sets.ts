@@ -1,5 +1,5 @@
 // v6 bone-set block assembly, ported from the v6 branch of
-// xivModdingFramework's MakeUncompressedMdlFile (Mdl.cs:3372-3452) (GPL-3.0).
+// xivModdingFramework's MakeUncompressedMdlFile (Mdl.cs:3372-3452).
 // Split, don't blend: per-group packing lives in getV6BoneSet (tt-model.ts);
 // this module only assembles the header table + padded data region around it.
 //
