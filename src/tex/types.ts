@@ -57,6 +57,9 @@ const BPP: Record<number, number> = {
   [D16]: 32,
 };
 
+// Ported from xivModdingFramework XivTexFormats (XivTexFormat.cs): IsCompressedFormat (:78-92),
+// GetBitsPerPixel (:99-128), GetMipMinDimension (:94-97). The COMPRESSED set / BPP table above are
+// the switch arms transcribed into lookups.
 export function isCompressed(format: number): boolean {
   return COMPRESSED.has(format);
 }

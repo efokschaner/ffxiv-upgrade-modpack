@@ -183,6 +183,65 @@ of edits into `reference/`.
 
 ---
 
+## Resolution log (post-audit remediation)
+
+> **Status 2026-07-08.** All actionable code themes are resolved or explicitly deferred to
+> `BACKLOG.md`. Full gate green (`npm run check`, `npm run typecheck`, `npm test` = 776 passing).
+> Remaining open items are the two `BACKLOG.md` reproductions that need a synthetic modpack to pin
+> golden bytes (U4 texture round; M1/M2 empty-sampler placeholder) plus the prioritized unported
+> `/upgrade` rounds. Themes below in order: Headline, F1, C, E, A, D, B.
+
+- **Headline** (serialization/manifest parity) — **RESOLVED** (PR #15): harness now serializes
+  `ours` through the real writers and diffs archive structure + manifest via `diffArchives`.
+- **F1** (`safeName`/`MakePMPPathSafe`) — **RESOLVED** (PR #15): PMP group filenames lowercased
+  to match TexTools; ported + cited at `container/pmp.ts`.
+- **Theme C** (provenance citations) — **RESOLVED 2026-07-08**: F4a/b/c (container-file headers
+  cite PMP.cs LoadPMP/WritePmp/CreateSimplePmp + TTMP.cs GetModpackList/UnzipTtmp/CreateWizard-
+  /CreateSimpleModPack/GetLegacyModpackMpl), U2 (shader-param generator + emitted files cite
+  EndwalkerUpgrade.cs:774-788 / :1127-1131 + sample materials), 4-2 (`header.ts` cites the real
+  read/write header sources, GetXivMdl:355/363 + MakeUncompressedMdlFile:3914-3961), F2
+  (`type4.ts` corrected to DDS.cs:412-419 = `CompressDDSBody`), T2 (`tex/types.ts` cites
+  XivTexFormat.cs IsCompressedFormat:78 / GetBitsPerPixel:99 / GetMipMinDimension:94), 4-4
+  (`mdl/serialize.ts` notes inverse-of-parseMdl / GetXivMdl order).
+- **Theme E** (banned `(GPL-3.0)` markers) — **RESOLVED 2026-07-08**: token stripped from all 11
+  files (provenance retained); `grep GPL-3.0 src/` now empty.
+- **Theme A** (fail-loud gaps) — **RESOLVED / DEFERRED 2026-07-08**:
+  - **5-2** RESOLVED: `makeUncompressedMdl` now throws on models mixing Shadow+Fog meshes (the
+    only present-type combination where our 4-bucket order flips vs EMeshType). Synthetic unit
+    test in `test/mdl/model/serialize.test.ts`.
+  - **T1** RESOLVED: `resizeToPowerOfTwo` throws on a genuine NPOT resize (Bicubic not ported)
+    instead of point-sampling. Test updated in `test/tex/tex-encode.test.ts`.
+  - **U1** RESOLVED: spec/diffuse scan (`upgrade/material.ts`) now dereferences the sampler
+    unguarded, reproducing C#'s NRE→material-abandoned (the mask lookups stay guarded, matching
+    C#'s `x.Sampler != null` asymmetry at :975/:1011 vs :1028-1029). Test in `material.test.ts`.
+  - **F6** RESOLVED as a **documented gap** (`sqpack/blocks.ts` comment + BACKLOG.md): C#'s
+    padding throw is gated on whole-`.dat` context our single-file reader lacks; a partial port
+    would risk over-throwing (a new divergence), so it is documented rather than ported.
+  - **4-1** NO ACTION: already guarded downstream (`serialize.ts` `HAS_EXTRA_MESHES` throw);
+    audit itself downgraded HIGH→MED.
+  - **U4** DEFERRED to `BACKLOG.md` (unprioritized): throwing today converts the 705 baselined
+    `.tex` diffs into hard crashes; revisit when the texture round lands.
+  - **6-1** (`fixUpSkinReferences` no-op) filed in `BACKLOG.md` (prioritized) as unported
+    `/upgrade` feature work, not a quick guard.
+- **Theme D** (quirk "fixes") — **RESOLVED 2026-07-08**:
+  - **6-5** RESOLVED: `hasWeights` (`tt-model.ts`) now ports `TTModel.HasWeights` (TTModel.cs:
+    1251-1264) as `MeshGroups.Any(Bones.Count > 0)` with citation, replacing the per-vertex weight
+    scan. `build-declarations.test.ts` fixture updated to carry a mesh-group bone list.
+  - **M1 / M2** RESOLVED (throw-until-pinned): `serializeMtrl` now fails loud on any empty-sampler
+    placeholder (C#'s `ToLower()` at Mtrl.cs:560 defeats its uppercase `StartsWith(EmptySamplerPrefix)`
+    checks, so C# *writes* placeholders as ordinary textures — our old exclude+index-255 path was the
+    opposite). `getRealSamplerCount` de-special-cased to match C# (M2). Misleading M1 comment
+    corrected. The two tests that pinned the divergent output now assert the throw / the C#-faithful
+    count; byte-exact reproduction filed in `BACKLOG.md` (needs a synthetic modpack — C#'s placeholder
+    path is the lowercased ESamplerId name, not our numeric raw id).
+- **Theme B** (split-don't-blend placement) — **RESOLVED 2026-07-08**: five TTModel/ShapeData members
+  hoisted to their C# owners, behaviour-preserving. `meshTypeCounts` (5-1), `getMaterialIndex` (5-4),
+  and `getAttributeBitmask` (5-3, guard folded inside per TTModel.cs:1440-1443) moved from
+  `serialize.ts` to `tt-model.ts`; `computeModelLists` (6-3) moved from `model-modifiers.ts` to
+  `tt-model.ts` (with its private `sortedUnique`; `compareStrings` centralized in `tt-model.ts`);
+  `resolveShapeLod0Parts` (6-2) moved to a new ShapeData-owned module `src/mdl/model/shape-data.ts`
+  (ShapeData.cs:52-91). Each carries its `file · symbol · lines` citation. Glue left at call sites.
+
 ## Resolved during follow-up (no action / recategorized)
 
 - **F5** (`ttmp2.ts:163` TTMPVersion) — **REFUTED.** Hardcoded `"2.1s"/"2.1w"` is exactly what
@@ -210,8 +269,9 @@ type-only modules, `float16`/`binary` primitives, thin glue.
 The 47-pack corpus (43 TTMP, 4 PMP) with cached goldens and ratchet baselines was swept:
 no baseline contains any `.mtrl` mismatch (→ M1/M2 placeholder path unreached) or any TTMP
 `.mdl` mismatch (→ 5-2 mixed-mesh path unreached); `makeUncompressedMdl` **throws** on
-`HAS_EXTRA_MESHES` uncaught (→ 4-1 fails loud downstream); `resizeToPowerOfTwo` is only
-reachable from `encodeTex`, which `upgradeModpack` never calls (→ T1 latent). The 705 tex
+`HAS_EXTRA_MESHES` uncaught (→ 4-1 fails loud downstream); `resizeToPowerOfTwo` has no
+production caller at all (only re-exported + unit-tested), and `upgradeModpack` never resizes
+(→ T1 latent). The 705 tex
 baseline entries are the unimplemented texture round (U4), not T1. **None are LIVE-MASKED.**
 F1 is the sole live divergence, and it is invisible because of the headline process gap.
 

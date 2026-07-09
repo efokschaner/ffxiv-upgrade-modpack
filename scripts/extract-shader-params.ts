@@ -32,8 +32,17 @@ function load(gamePath: string) {
   return parseMtrl(raw, gamePath);
 }
 
-const banner =
-  "// GENERATED — regenerate via `npx tsx scripts/extract-shader-params.ts`. Do not edit by hand.\n";
+const banner = (provenance: string) =>
+  "// GENERATED — regenerate via `npx tsx scripts/extract-shader-params.ts`. Do not edit by hand.\n" +
+  provenance;
+const HAIR_PROVENANCE =
+  "// Values are the ShaderConstants/AdditionalData of the base-game sample hair material\n" +
+  `// _SampleHair (${HAIR}, EndwalkerUpgrade.cs:56), which UpgradeHairMaterial copies\n` +
+  "// wholesale over an old hair mtrl (EndwalkerUpgrade.cs:1127-1131).\n";
+const GLASS_PROVENANCE =
+  "// Values are the ShaderKeys/ShaderConstants/AdditionalData of the base-game glass sample\n" +
+  `// material (${GLASS}), which EndwalkerUpgrade copies\n` +
+  "// wholesale onto a CharacterGlass mtrl (EndwalkerUpgrade.cs:774-788).\n";
 const consts = (name: string, cs: { constantId: number; values: number[] }[]) =>
   `export const ${name}: { constantId: number; values: number[] }[] = ${JSON.stringify(
     cs.map((c) => ({ constantId: c.constantId, values: c.values })),
@@ -42,7 +51,7 @@ const consts = (name: string, cs: { constantId: number; values: number[] }[]) =>
 const hair = load(HAIR);
 writeFileSync(
   "src/upgrade/reference/hair-shader-params.ts",
-  banner +
+  banner(HAIR_PROVENANCE) +
     consts("HAIR_SHADER_CONSTANTS", hair.shaderConstants) +
     `export const HAIR_ADDITIONAL_DATA: number[] = ${JSON.stringify([...hair.additionalData])};\n`,
 );
@@ -50,7 +59,7 @@ writeFileSync(
 const glass = load(GLASS);
 writeFileSync(
   "src/upgrade/reference/glass-shader-params.ts",
-  banner +
+  banner(GLASS_PROVENANCE) +
     `export const GLASS_SHADER_KEYS: { keyId: number; value: number }[] = ${JSON.stringify(
       glass.shaderKeys.map((k) => ({ keyId: k.keyId, value: k.value })),
     )};\n` +

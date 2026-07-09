@@ -92,7 +92,7 @@ describe("mtrl computed helpers", () => {
     expect(SAMPLER_COLOR_MAP_1).toBeGreaterThan(0); // constant is exported
   });
 
-  it("does not count a secondary double-write for an empty-sampler placeholder", () => {
+  it("counts the secondary double-write for an empty-sampler placeholder, matching C# (audit M2)", () => {
     const m = baseMtrl();
     m.uvMapStrings = [
       { value: "uv1", flags: 0 },
@@ -105,8 +105,10 @@ describe("mtrl computed helpers", () => {
         sampler: { samplerIdRaw: SAMPLER_NORMAL_MAP_0, samplerSettingsRaw: 0 },
       },
     ];
-    // The placeholder writes exactly one sampler (index 255) with no secondary, so the count is 1,
-    // not 2 — even though it carries a primary Map0 sampler in a 2-UV material.
-    expect(getRealSamplerCount(m)).toBe(1);
+    // C# GetRealSamplerCount (XivMtrl.cs:262) does NOT special-case placeholders: this one carries a
+    // primary NormalMap0 sampler in a 2-UV material with no NormalMap1 present, so it counts the
+    // regenerated secondary -> 2. (The prior port skipped placeholders, returning 1 — the M2
+    // divergence.) serializeMtrl fails loud on such a material; this asserts the count in isolation.
+    expect(getRealSamplerCount(m)).toBe(2);
   });
 });

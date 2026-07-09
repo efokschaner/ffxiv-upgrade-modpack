@@ -1,4 +1,4 @@
-// Vertex declaration enums, ported from xivModdingFramework Models/Enums (GPL-3.0).
+// Vertex declaration enums, ported from xivModdingFramework Models/Enums.
 // The enum numeric value IS the on-wire byte (SE's own translation table; Mdl.cs:5360-5391).
 
 export enum VertexUsageType {

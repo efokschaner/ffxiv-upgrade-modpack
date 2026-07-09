@@ -1,4 +1,4 @@
-// Geometry decoder: verbatim port of xivModdingFramework MdlVertexReader.cs (GPL-3.0).
+// Geometry decoder: verbatim port of xivModdingFramework MdlVertexReader.cs.
 // Reads a mesh's block0/block1 vertex streams and its u16 index buffer into SoA VertexData.
 
 import { halfToFloat } from "../../util/float16";

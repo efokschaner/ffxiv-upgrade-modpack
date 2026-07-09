@@ -12,7 +12,7 @@ import type { TTModel } from "../../../src/mdl/model/tt-model";
 
 function oneVertModel(over: Partial<TtVertex> = {}): TTModel {
   const w = new Uint8Array(8);
-  w[0] = 255; // hasWeights
+  w[0] = 255; // nonzero vertex weight (paired with the mesh-group bone list below)
   const v = {
     position: [0, 0, 0],
     normal: [0, 0, 0],
@@ -32,7 +32,7 @@ function oneVertModel(over: Partial<TtVertex> = {}): TTModel {
     source: "",
     mdlVersion: 6,
     attributes: [],
-    bones: [],
+    bones: ["j_root"],
     materials: [],
     shapeNames: [],
     anisotropicLighting: false,
@@ -42,7 +42,7 @@ function oneVertModel(over: Partial<TtVertex> = {}): TTModel {
         name: "g",
         meshType: 0,
         material: "m",
-        bones: [],
+        bones: ["j_root"], // hasWeights (TTModel.HasWeights keys off Bones.Count)
         parts: [
           {
             name: "p",

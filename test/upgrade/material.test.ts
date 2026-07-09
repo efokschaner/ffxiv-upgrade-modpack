@@ -132,6 +132,19 @@ describe("upgradeMaterial (colorset branch)", () => {
     });
   });
 
+  it("abandons (throws on) a material whose texture bound no sampler, mirroring C#'s unguarded spec/diffuse NRE (EndwalkerUpgrade.cs:1028-1029, audit U1)", () => {
+    // C# scans for spec/diffuse with `x.Sampler.SamplerId` UNGUARDED, so a texture that bound no
+    // sampler NREs mid-scan and the per-material try/catch abandons the material byte-untouched.
+    // (The mask lookups above are guarded with `x.Sampler != null`, so they must NOT throw — see
+    // the positive mask tests.) Place the null-sampler texture before the scan reaches a match.
+    const m = characterColorsetMtrl();
+    m.textures.push(
+      { texturePath: "chara/x/tex/foo_s.tex", flags: 0 }, // bound no sampler
+      tex("chara/x/tex/foo_d.tex", ESamplerId.g_SamplerDiffuse),
+    );
+    expect(() => upgradeMaterial(m)).toThrow(/no sampler/);
+  });
+
   it("records a GearMaskLegacy upgrade info for a legacy mask sampler (not mask-as-spec)", () => {
     const m = characterColorsetMtrl();
     m.textures.push(tex("chara/x/tex/foo_m.tex", ESamplerId.g_SamplerMask));

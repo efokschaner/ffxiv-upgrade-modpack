@@ -1,6 +1,6 @@
 // Structural model of a decompressed runtime .mdl. The header and MdlModelData are parsed into
 // fields; every other model-data section is carried as a named byte slice (design spec §4). Ported
-// from xivModdingFramework Mdl.cs / MdlModelData.cs (GPL-3.0).
+// from xivModdingFramework Mdl.cs / MdlModelData.cs.
 
 export const MDL_HEADER = 68; // Mdl._MdlHeaderSize (0x44)
 export const VERTEX_DATA_HEADER = 136; // Mdl._VertexDataHeaderSize (0x88)

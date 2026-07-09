@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { parseMdl } from "../../../src/mdl/mdl";
 import { fromRaw } from "../../../src/mdl/model/from-raw";
+import type { ReadMdl } from "../../../src/mdl/model/read-model";
 import { readEditableModel } from "../../../src/mdl/model/read-model";
 import { makeUncompressedMdl } from "../../../src/mdl/model/serialize";
+import type { TTModel } from "../../../src/mdl/model/tt-model";
 import { hasShapeData } from "../../../src/mdl/model/tt-model";
 import { corpusModels } from "../../helpers/corpus-models";
 
 describe("makeUncompressedMdl", () => {
+  it("fails loud on a model mixing Shadow and Fog meshes (EMeshType ordering not ported, audit 5-2)", () => {
+    // Our 4-bucket sort (Standard<Water<Shadow<Fog) reproduces the real EMeshType walk for every
+    // present-type combination EXCEPT Shadow+Fog coexisting: EMeshType orders Fog before Shadow,
+    // our bucket flips them, mis-ordering the serialized meshes. No corpus model exercises this
+    // (the TTMP corpus is all-Standard), so a minimal hand-built fixture pins the guard. Only the
+    // few entry fields the guard reads before the throw need to be present.
+    const rm = {
+      og: { modelData: { flags2: 0, neckMorphTableSize: 0 } },
+    } as unknown as ReadMdl;
+    const model = {
+      mdlVersion: 6,
+      meshGroups: [{ meshType: 2 }, { meshType: 3 }], // Shadow + Fog
+    } as unknown as TTModel;
+    expect(() => makeUncompressedMdl(model, rm)).toThrow(/Shadow and Fog/);
+  });
+
   it("produces a re-parseable v6, lodCount=1 model for supported corpus models", () => {
     let ok = 0;
     let skipped = 0;

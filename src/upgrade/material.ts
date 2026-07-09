@@ -208,9 +208,19 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
     }
   }
 
-  // EndwalkerUpgrade.cs:1028-1066
-  const specTex = findBySampler(mtrl, ESamplerId.g_SamplerSpecular);
-  const diffuseTex = findBySampler(mtrl, ESamplerId.g_SamplerDiffuse);
+  // EndwalkerUpgrade.cs:1028-1066. Asymmetry vs the mask lookups above: C# scans for spec/diffuse
+  // with `x.Sampler.SamplerId` UNGUARDED (:1028-1029) — unlike the mask lookups (:975/:1011, guarded
+  // with `x.Sampler != null`) — so a texture that bound no sampler NREs mid-scan and the per-material
+  // try/catch (upgrade.ts materialRound) abandons the material BYTE-UNTOUCHED. Reproduce that exactly:
+  // scan without `?.`, throwing before a match if a null-sampler texture is reached first (Array.find
+  // stops at the first match / first throw, matching FirstOrDefault's enumeration order).
+  const findSpecDiffuse = (samplerId: number): MtrlTexture | undefined =>
+    mtrl.textures.find((t) => {
+      if (!t.sampler) throw new Error("mtrl: texture bound no sampler");
+      return t.sampler.samplerIdRaw === samplerId;
+    });
+  const specTex = findSpecDiffuse(ESamplerId.g_SamplerSpecular);
+  const diffuseTex = findSpecDiffuse(ESamplerId.g_SamplerDiffuse);
   if (specTex?.sampler && diffuseTex) {
     specTex.sampler.samplerIdRaw = ESamplerId.g_SamplerMask;
 

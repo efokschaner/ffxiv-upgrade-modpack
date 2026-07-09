@@ -1,5 +1,5 @@
 // Geometry encoder: declaration-driven, over verbatim per-element encoders ported from
-// xivModdingFramework Mdl.cs WriteVertex/WriteVectorData/ConvertVectorBinormalToBytes (GPL-3.0).
+// xivModdingFramework Mdl.cs WriteVertex/WriteVectorData/ConvertVectorBinormalToBytes.
 // Iterating the declaration in sorted-offset order reproduces WriteVertex byte-for-byte on a
 // canonical declaration, and is byte-exact by construction for any decodable source.
 

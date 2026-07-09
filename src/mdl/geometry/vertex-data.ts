@@ -1,6 +1,6 @@
 // Decoded-geometry containers. SoA VertexData mirrors xivModdingFramework's VertexData
 // (MdlVertexReader output); AoS TtVertex mirrors TTVertex (WriteVertex input). The
-// transpose is the identity seam sub-project B replaces with MergeGeometryData (GPL-3.0).
+// transpose is the identity seam sub-project B replaces with MergeGeometryData.
 
 export type Vec2 = [number, number];
 export type Vec3 = [number, number, number];

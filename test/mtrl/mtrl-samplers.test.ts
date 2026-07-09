@@ -21,7 +21,7 @@ describe("mtrl sampler handling", () => {
     expect(serializeMtrl(m)).toEqual(x);
   });
 
-  it("round-trips an index-255 empty sampler as an excluded placeholder texture", () => {
+  it("parses an index-255 empty sampler into a placeholder texture", () => {
     const x = buildEmptySamplerMtrl();
     const m = parseMtrl(x);
 
@@ -29,9 +29,14 @@ describe("mtrl sampler handling", () => {
     expect(isEmptySampler(m.textures[0]!)).toBe(false);
     expect(isEmptySampler(m.textures[1]!)).toBe(true);
     expect(m.textures[1]!.sampler!.samplerIdRaw).toBe(SAMPLER_COLOR_MAP_0);
+  });
 
-    const out = serializeMtrl(m);
-    expect(out[12]).toBe(1); // header texCount byte excludes the placeholder
-    expect(out).toEqual(x);
+  it("fails loud on serializing an empty-sampler placeholder (C# quirk not yet reproduced, audit M1/M2)", () => {
+    // C#'s ToLower (Mtrl.cs:560) defeats its uppercase-const StartsWith exclusion checks, so C#
+    // WRITES placeholders as ordinary textures — the opposite of the old excluding behaviour this
+    // test used to assert. Byte-exact reproduction needs a synthetic modpack (C#'s placeholder path
+    // is the lowercased ESamplerId name, not our numeric raw id), so serialize throws until pinned.
+    const m = parseMtrl(buildEmptySamplerMtrl());
+    expect(() => serializeMtrl(m)).toThrow(/empty-sampler placeholder/);
   });
 });

@@ -1,3 +1,5 @@
+// Legacy (v1) TTMP reader, ported from xivModdingFramework Mods/FileTypes/TTMP.cs
+// GetLegacyModpackMpl (TTMP.cs:408).
 import {
   FileStorageType,
   type ModpackData,

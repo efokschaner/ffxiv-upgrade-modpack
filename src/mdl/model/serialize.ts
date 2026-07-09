@@ -1,4 +1,4 @@
-// Port of Mdl.MakeUncompressedMdlFile (Mdl.cs:2488-3964) (GPL-3.0). Common chara path
+// Port of Mdl.MakeUncompressedMdlFile (Mdl.cs:2488-3964). Common chara path
 // only: LoD0, weighted or unweighted, no shapes / neck-morph / extra-meshes / furniture
 // boxes -- those fail loud (throw) rather than emit a wrong file. Byte-parity against a
 // TexTools golden is the next task's job; this stage's gate is re-parseability and
@@ -25,9 +25,12 @@ import {
 import { buildDeclarations, streamEntrySizes } from "./build-declarations";
 import type { ReadMdl } from "./read-model";
 import {
+  getAttributeBitmask,
+  getMaterialIndex,
   getRawShapeParts,
   hasShapeData,
   hasWeights,
+  meshTypeCounts,
   shapeDataCount,
   shapePartCount,
   shapePartCounts,
@@ -61,30 +64,6 @@ function padTo(out: number[], n: number): void {
   }
 }
 
-/** Port of TTModel.GetMeshTypeOffset/GetMeshTypeCount (TTModel.cs:903-947) specialized to
- *  our 4-bucket meshType tag (0=Standard,1=Water,2=Shadow,3=Fog; read-model.ts's
- *  meshTypeOf). ASSUMPTION: after the stable sort below, groups of the same tag are
- *  contiguous, so offset(type) is simply the cumulative count of lower-tag-value groups.
- *  This matches the reference exactly for the common case (all-Standard, or a single
- *  extra type) but is not a faithful port of the reference's true EMeshType-ordinal walk
- *  (real ordinal order is Standard<Water<Fog<...<Shadow<TerrainShadow, which differs from
- *  our bucket order Standard<Water<Shadow<Fog) -- flagged for the Task 11 ratchet as a
- *  divergence risk only for models mixing Water+Shadow+Fog groups. */
-function meshTypeCounts(groups: { meshType: number }[]): {
-  offset: number[];
-  count: number[];
-} {
-  const count = [0, 0, 0, 0];
-  for (const g of groups) count[g.meshType] = (count[g.meshType] ?? 0) + 1;
-  const offset = [
-    0,
-    count[0]!,
-    count[0]! + count[1]!,
-    count[0]! + count[1]! + count[2]!,
-  ];
-  return { offset, count };
-}
-
 /** Port of MakeUncompressedMdlFile (Mdl.cs:2488-3964). `model.mdlVersion` must already be
  *  6 (the caller's job); `rm` is the ReadMdl this model was built from (for opaque
  *  section copies + scalar flags this stage does not model). */
@@ -103,6 +82,19 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   if (ogMd.neckMorphTableSize > 0) {
     throw new Error(
       "mdl: neck-morph tables are out of scope for makeUncompressedMdl",
+    );
+  }
+
+  // Our 4-bucket meshType sort (below) reproduces the real EMeshType ordinal walk for every
+  // combination of present types EXCEPT when both Shadow (bucket 2) and Fog (bucket 3) groups
+  // exist: EMeshType orders Fog before Shadow, our bucket orders Shadow first, which flips the
+  // serialized mesh order (and the meshTypeCounts offsets). Fail loud rather than emit a
+  // mis-ordered model. (Mdl.cs:2548 / TTModel.cs:806-816; see meshTypeCounts above.)
+  const hasShadow = model.meshGroups.some((g) => g.meshType === 2);
+  const hasFog = model.meshGroups.some((g) => g.meshType === 3);
+  if (hasShadow && hasFog) {
+    throw new Error(
+      "mdl: models with both Shadow and Fog meshes are out of scope for makeUncompressedMdl (EMeshType ordering not yet ported)",
     );
   }
 
@@ -322,8 +314,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     const group = model.meshGroups[mi]!;
     const vertexCount = meshVertexCount[mi]!;
     const indexCount = meshIndexCount[mi]!;
-    const matIdx = model.materials.indexOf(group.material);
-    const materialIndex = matIdx > 0 ? matIdx : 0;
+    const materialIndex = getMaterialIndex(model, group);
     const partCount = useParts ? group.parts.length : 0;
     const boneSetIndex = weighted ? mi : 255;
 
@@ -371,11 +362,6 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     let currentBoneOffset = 0;
     let boundingBoxIdx = 0;
     let globalPartIdx = 0;
-    // GetAttributeBitmask throws above 32 attributes (TTModel.cs:1440-1443): the bitmask is a
-    // u32, and JS `1 << 32` wraps to bit 0, so guard fail-loud rather than emit a wrong mask.
-    if (model.attributes.length > 32) {
-      throw new Error("mdl: model cannot have more than 32 total attributes");
-    }
     // Mdl.cs:3314-3318: on the SOURCE model's HasBonelessParts flag (not our recomputed
     // one, which the reference also reads from the pre-modification `ogMdl.ModelData`) --
     // out of scope here (that's the furniture per-part-bbox path), but the model
@@ -392,11 +378,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
           attributeMask = boundingBoxIdx;
           boundingBoxIdx++;
         } else {
-          attributeMask = 0;
-          for (const attr of part.attributes) {
-            const ai = model.attributes.indexOf(attr);
-            if (ai >= 0) attributeMask |= (1 << ai) >>> 0;
-          }
+          attributeMask = getAttributeBitmask(model, part);
         }
         const boneCount = group.bones.length;
         b.i32(indexOffset)

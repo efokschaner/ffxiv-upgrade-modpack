@@ -4,15 +4,17 @@ import {
   type VertexData,
 } from "../../../src/mdl/geometry/vertex-data";
 import {
-  compareStrings,
-  computeModelLists,
   mergeAttributeData,
   mergeFlags,
   mergeGeometryData,
   mergeMaterialData,
 } from "../../../src/mdl/model/model-modifiers";
 import type { ReadMdl, ReadMesh } from "../../../src/mdl/model/read-model";
-import type { TTModel } from "../../../src/mdl/model/tt-model";
+import {
+  compareStrings,
+  computeModelLists,
+  type TTModel,
+} from "../../../src/mdl/model/tt-model";
 import type { XivMdl } from "../../../src/mdl/types";
 
 function vd5(indices: number[]): VertexData {

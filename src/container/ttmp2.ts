@@ -1,3 +1,7 @@
+// TTMP2 container reader/writer, ported from xivModdingFramework Mods/FileTypes/TTMP.cs.
+// readTtmp2 mirrors GetModpackList / UnzipTtmp (TTMP.cs:378, :488); writeTtmp2 mirrors
+// CreateWizardModPack / CreateSimpleModPack (TTMP.cs:267, :302); buildBlob assembles the .mpd
+// data blob those writers emit.
 import {
   allFiles,
   FileStorageType,
