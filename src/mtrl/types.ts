@@ -1,7 +1,8 @@
-// Internal marker for placeholder textures that only hold an empty (index-255) sampler.
-// Never appears in output bytes (placeholders are excluded from the texture count and string
-// block). Lowercase so it survives serialize's path lowercasing — see serialize.ts. The C#
-// prefix "_EMPTY_SAMPLER_" (Mtrl.cs:70) is uppercase; the exact casing is internal-only.
+// Marker for placeholder textures that hold a sampler bound to no real texture (C# synthesizes one
+// per orphan sampler at Mtrl.cs:396). Lowercase so isEmptySampler still matches after serialize's
+// path-lowercasing. NOTE (audit M1): C#'s prefix const "_EMPTY_SAMPLER_" (Mtrl.cs:70) is UPPERCASE,
+// so its own exclusion checks miss the lowercased path and C# actually WRITES these placeholders to
+// output — a quirk serialize.ts does not yet reproduce (it throws instead; see there + BACKLOG.md).
 export const EMPTY_SAMPLER_PREFIX = "_empty_sampler_";
 
 // ESamplerId raw values needed for the sampler double-write decision (ShaderHelpers.cs:480).
@@ -88,17 +89,17 @@ export function isPrimaryMapSampler(rawId: number): boolean {
   return secondarySamplerId(rawId) !== undefined;
 }
 
-/** Number of samplers written to disk, counting secondary double-writes (XivMtrl.cs:262). */
+/** Faithful port of XivMtrl.GetRealSamplerCount (XivMtrl.cs:262): number of samplers written to
+ *  disk, counting the secondary double-write regenerated for 2-UV materials. Counts every texture
+ *  with a sampler, INCLUDING empty-sampler placeholders (C# counts them too, at :264/:271 — it does
+ *  not special-case them). serialize.ts fails loud before this runs with a placeholder present, so
+ *  the placeholder arm here only matters for direct unit coverage; keeping it faithful avoids the
+ *  divergence-in-spirit the prior `isEmptySampler` skip introduced (audit M2). */
 export function getRealSamplerCount(m: XivMtrl): number {
   let total = m.textures.filter((t) => t.sampler).length;
   if (m.uvMapStrings.length <= 1) return total;
   for (const tex of m.textures) {
     if (!tex.sampler) continue;
-    // Empty-sampler placeholders never get a secondary double-write on serialize (serialize.ts
-    // writes their single sampler with index 255 and no secondary), so they must not add to the
-    // count here. C# (XivMtrl.cs:271) DOES count them — a latent header/write-loop mismatch that
-    // cannot trigger on real corpus data (0 unstable) but which we guard against here.
-    if (isEmptySampler(tex)) continue;
     const secondary = secondarySamplerId(tex.sampler.samplerIdRaw);
     if (secondary === undefined) continue;
     if (

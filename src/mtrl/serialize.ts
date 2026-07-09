@@ -26,12 +26,26 @@ function pad4(len: number): number {
  * Mtrl.cs:558); no other field of the input is mutated.
  */
 export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
-  // Lowercase all texture paths (Mtrl.cs:558). Real SE paths are already lowercase (a no-op).
+  // Lowercase all texture paths (Mtrl.cs:560). Real SE paths are already lowercase (a no-op).
   for (const tex of mtrl.textures)
     tex.texturePath = tex.texturePath.toLowerCase();
 
-  // Placeholder (empty-sampler) textures are excluded from the count, string block, and tables.
-  const realTextures = mtrl.textures.filter((t) => !isEmptySampler(t));
+  // C# QUIRK, not yet reproduced (audit M1/M2): XivMtrlToUncompressedMtrl lowercases every texture
+  // path (Mtrl.cs:560) BEFORE its empty-sampler exclusion checks, which compare against the UPPERCASE
+  // const EmptySamplerPrefix "_EMPTY_SAMPLER_" (:577/:593/:627/:719). The case mismatch defeats every
+  // check, so C# emits empty-sampler placeholders as ORDINARY textures (counted, string-blocked,
+  // normal sampler index + secondary double-write) carrying their lowercased placeholder path. Matching
+  // that byte-for-byte also needs C#'s placeholder path — "_empty_sampler_" + the lowercased ESamplerId
+  // *name* — whereas parse.ts builds it from the numeric raw id, so a synthetic modpack must pin the
+  // exact bytes. No corpus material exercises this (0 unstable). Until pinned, fail loud rather than
+  // emit our (opposite) excluded output, which silently diverges from the golden. See BACKLOG.md.
+  if (mtrl.textures.some(isEmptySampler)) {
+    throw new Error(
+      "mtrl: empty-sampler placeholder serialization not yet ported (C# writes them via a lowercase/StartsWith case-mismatch quirk; needs a synthetic modpack to pin the bytes)",
+    );
+  }
+  // No placeholders past the guard: every texture is a real, written texture.
+  const realTextures = mtrl.textures;
 
   // Build the string block: texture paths -> uv maps -> colorset strings -> shader pack name.
   const stringBytes: number[] = [];
@@ -107,29 +121,22 @@ export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
   for (let i = 0; i < mtrl.textures.length; i++) {
     const tex = mtrl.textures[i]!;
     if (!tex.sampler) continue;
-    if (isEmptySampler(tex)) {
-      b.u32(tex.sampler.samplerIdRaw)
-        .u32(tex.sampler.samplerSettingsRaw)
-        .u8(255)
-        .bytes([0, 0, 0]);
-    } else {
-      b.u32(tex.sampler.samplerIdRaw)
-        .u32(tex.sampler.samplerSettingsRaw)
-        .u8(i)
-        .bytes([0, 0, 0]);
-      if (multiUv) {
-        const secondary = secondarySamplerId(tex.sampler.samplerIdRaw);
-        if (
-          secondary !== undefined &&
-          !mtrl.textures.some(
-            (x) => x.sampler && x.sampler.samplerIdRaw === secondary,
-          )
-        ) {
-          b.u32(secondary)
-            .u32(tex.sampler.samplerSettingsRaw)
-            .u8(i)
-            .bytes([0, 0, 0]);
-        }
+    b.u32(tex.sampler.samplerIdRaw)
+      .u32(tex.sampler.samplerSettingsRaw)
+      .u8(i)
+      .bytes([0, 0, 0]);
+    if (multiUv) {
+      const secondary = secondarySamplerId(tex.sampler.samplerIdRaw);
+      if (
+        secondary !== undefined &&
+        !mtrl.textures.some(
+          (x) => x.sampler && x.sampler.samplerIdRaw === secondary,
+        )
+      ) {
+        b.u32(secondary)
+          .u32(tex.sampler.samplerSettingsRaw)
+          .u8(i)
+          .bytes([0, 0, 0]);
       }
     }
   }
