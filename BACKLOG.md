@@ -6,20 +6,20 @@ finding and/or C# source it traces to, so it can be picked up cold.
 
 ## Prioritized
 
-Ordered `/upgrade`-pipeline work still to port — the rounds our pipeline currently stubs.
-Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+`/upgrade`-pipeline work still to port — the rounds our pipeline currently stubs, roughly
+highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. **Texture round (round 2 — `UpgradeRemainingTextures`).** `textureRound`
-   (`src/upgrade/upgrade.ts:140`) is a no-op stub. It should consume the `UpgradeInfo[]`
-   targets the material round produces (normal + colorset → index maps) and emit the
-   upgraded textures. This is the source of the **705 baselined `.tex` diffs** — porting it
-   closes that ratchet. Blocks the U4 decision below.
-2. **Partials round (round 3).** `partials` (`src/upgrade/upgrade.ts:145`) is a no-op stub
-   for `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths`.
-3. **`fixUpSkinReferences` (audit 6-1).** `src/mdl/model/model-modifiers.ts:489` is a
-   deferred no-op; C# rewrites serialized skin-material strings
-   (`ModelModifiers.cs:2309/2347`). Port the race-tree skin-material remap. Latent on the
-   current corpus, so no live corruption today.
+- **Texture round (round 2 — `UpgradeRemainingTextures`).** `textureRound`
+  (`src/upgrade/upgrade.ts:140`) is a no-op stub. It should consume the `UpgradeInfo[]`
+  targets the material round produces (normal + colorset → index maps) and emit the
+  upgraded textures. This is the source of the **705 baselined `.tex` diffs** — porting it
+  closes that ratchet. Blocks the U4 decision below.
+- **Partials round (round 3).** `partials` (`src/upgrade/upgrade.ts:145`) is a no-op stub
+  for `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths`.
+- **`fixUpSkinReferences` (audit 6-1).** `src/mdl/model/model-modifiers.ts:489` is a
+  deferred no-op; C# rewrites serialized skin-material strings
+  (`ModelModifiers.cs:2309/2347`). Port the race-tree skin-material remap. Latent on the
+  current corpus, so no live corruption today.
 
 ## Unprioritized
 
@@ -28,7 +28,7 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
   while unimplemented when `upgradeTargets.length > 0`. **Deferred deliberately:** throwing
   today converts the 705 documented/ratcheted `.tex` diffs into hard crashes and blocks
   every texture-bearing mod. The ratchet already documents the gap loudly, so it is not a
-  silent divergence. Revisit once item 1 (Prioritized) lands or the ratchet is reworked.
+  silent divergence. Revisit once the texture round (Prioritized) lands or the ratchet is reworked.
 - **M1/M2 — empty-sampler placeholder serialization (audit Theme D).** Reproduce, byte-for-byte,
   C#'s quirk where `XivMtrlToUncompressedMtrl` lowercases texture paths (`Mtrl.cs:560`) before its
   UPPERCASE `StartsWith(EmptySamplerPrefix)` exclusion checks, so placeholders are written as
