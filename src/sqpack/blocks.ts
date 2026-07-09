@@ -51,6 +51,13 @@ export function readBlock(r: BinaryReader): Uint8Array {
     // Old broken spacing: the next block header starts inside the "padding".
     r.seek(r.tell() - (padding.length - sixteenIndex));
   }
+  // DOCUMENTED GAP (audit F6): C#'s readBlockPadding (Dat.cs:2400-2405) additionally throws
+  // "Unexpected real data in compressed data block padding" when padding holds non-zero, non-16
+  // bytes AND `lastInFile && i != blockCount - 1`. That guard keys off whole-.dat read context —
+  // which file is last in the archive, which block is last in the file — that this single-file
+  // block reader does not carry. Reproducing it partially would risk over-throwing on padding C#
+  // legitimately tolerates (a NEW divergence, the opposite failure). It is malformed-input-only and
+  // latent, so we leave it as a documented gap rather than a possibly-wrong throw. See BACKLOG.md.
   return data;
 }
 

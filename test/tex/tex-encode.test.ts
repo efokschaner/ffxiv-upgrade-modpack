@@ -96,19 +96,14 @@ describe("tex encode: uncompressed", () => {
     }
   });
 
-  it("resizes via nearest-neighbor point sampling with asserted pixel values", () => {
-    // 3x1 image, three distinct pixels -> resized to 4x1. sx = min(w-1, floor(x*width/tw)):
-    // x=0 -> 0, x=1 -> floor(3/4)=0, x=2 -> floor(6/4)=1, x=3 -> floor(9/4)=2.
-    // So output pixels = [src0, src0, src1, src2].
+  it("fails loud on a genuine NPOT resize (Bicubic filter not yet ported, audit T1)", () => {
+    // C#'s ResizeXivTx (EndwalkerUpgrade.cs:1098) resamples NPOT->POT with a Bicubic filter we
+    // have not ported. A prior placeholder point-sampled instead, which would silently diverge from
+    // the golden; the port now throws rather than emit non-byte-parity pixels. 3x1 -> 4x1 is NPOT.
     const rgba = new Uint8Array([
       11, 12, 13, 14, 21, 22, 23, 24, 31, 32, 33, 34,
     ]);
-    const r = resizeToPowerOfTwo(rgba, 3, 1);
-    expect(r.width).toBe(4);
-    expect(r.height).toBe(1);
-    expect(Array.from(r.rgba)).toEqual([
-      11, 12, 13, 14, 11, 12, 13, 14, 21, 22, 23, 24, 31, 32, 33, 34,
-    ]);
+    expect(() => resizeToPowerOfTwo(rgba, 3, 1)).toThrow(/NPOT resize/);
   });
 
   it("resize is a no-op that returns the same buffer for an already power-of-two image", () => {

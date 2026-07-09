@@ -8,11 +8,12 @@ function nextPow2(n: number): number {
   return p;
 }
 
-/** Resizes RGBA to the next power-of-two dimensions via nearest-neighbor point sampling (no-op if
- *  already power-of-two). Mirrors the ResizeXivTx pre-step (EndwalkerUpgrade.cs:1098). This is a
- *  placeholder resample filter, not the final one; exact byte-parity against the real filter is
- *  deferred to the oracle-comparison work (design spec §6), so this does not claim fidelity beyond
- *  point sampling. */
+/** Resizes RGBA to the next power-of-two dimensions (no-op if already power-of-two). Mirrors the
+ *  ResizeXivTx pre-step (EndwalkerUpgrade.cs:1098), whose real resample filter is Bicubic. That
+ *  filter is not yet ported, so a genuine NPOT resize FAILS LOUD rather than emit a point-sampled
+ *  (non-byte-parity) result — an earlier placeholder did exactly that and would have silently
+ *  diverged. Reachable only from encodeTex, which the upgrade pipeline does not yet call (latent);
+ *  the throw hardens the path for when it is wired in. */
 export function resizeToPowerOfTwo(
   rgba: Uint8Array,
   width: number,
@@ -21,20 +22,9 @@ export function resizeToPowerOfTwo(
   const tw = nextPow2(width),
     th = nextPow2(height);
   if (tw === width && th === height) return { rgba, width, height };
-  const out = new Uint8Array(tw * th * 4);
-  for (let y = 0; y < th; y++) {
-    const sy = Math.min(height - 1, Math.floor((y * height) / th));
-    for (let x = 0; x < tw; x++) {
-      const sx = Math.min(width - 1, Math.floor((x * width) / tw));
-      const so = (sy * width + sx) * 4,
-        o = (y * tw + x) * 4;
-      out[o] = rgba[so]!;
-      out[o + 1] = rgba[so + 1]!;
-      out[o + 2] = rgba[so + 2]!;
-      out[o + 3] = rgba[so + 3]!;
-    }
-  }
-  return { rgba: out, width: tw, height: th };
+  throw new Error(
+    `tex: NPOT resize (${width}x${height} -> ${tw}x${th}) not yet ported (C# uses a Bicubic filter; point sampling would diverge)`,
+  );
 }
 
 /** Downsampled mip chain — a faithful port of xivModdingFramework's `CreateFast8888DDS`
