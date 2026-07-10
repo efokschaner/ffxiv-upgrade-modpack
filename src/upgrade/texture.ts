@@ -109,7 +109,8 @@ function findFile(
 /** Writes a generated uncompressed .tex into the option, mirroring the storage form of a
  *  reference source file in the same option (a ttmp source is SqPackCompressed -> encode a
  *  Type-4 Texture entry; a pmp source is RawUncompressed -> store raw). Replaces any
- *  existing entry at that path. */
+ *  existing entry at that path. Mirrors WriteFile's replace-or-add-by-path semantics
+ *  (EndwalkerUpgrade.cs:1795-1823). */
 function writeGeneratedTex(
   option: ModpackOption,
   gamePath: string,
@@ -158,8 +159,10 @@ export function upgradeRemainingTextures(
             `hair: Normal and Mask must be in the same option (EndwalkerUpgrade.cs:1862): ${info.files.normal} / ${info.files.mask}`,
           );
         }
-      } else {
-        // GearMaskNew / GearMaskLegacy
+      } else if (
+        info.usage === EUpgradeTextureUsage.GearMaskNew ||
+        info.usage === EUpgradeTextureUsage.GearMaskLegacy
+      ) {
         const old = findFile(option, info.files.mask_old!);
         if (!old) continue;
         const legacy = info.usage === EUpgradeTextureUsage.GearMaskLegacy;
