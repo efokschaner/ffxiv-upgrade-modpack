@@ -3,7 +3,7 @@
 // function here is deterministic integer math, so its output is byte-exact.
 
 /** C#'s default Math.Round is banker's rounding (round-half-to-even), unlike JS
- *  Math.round (half-up). TextureHelpers.cs:219 / CreateIndexTexture:247 rely on it. */
+ *  Math.round (half-up). RemapByte (TextureHelpers.cs:219) relies on it. */
 export function bankersRound(x: number): number {
   const r = Math.round(x);
   // Math.round rounds .5 up; correct only the exact-half case to nearest-even.
