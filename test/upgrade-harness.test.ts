@@ -24,8 +24,11 @@ import { diffUpgrade } from "./helpers/upgrade-diff";
 import { upgradeGoldenCached } from "./helpers/upgrade-golden";
 
 describe("confirmDivergence", () => {
-  it("returns false with the empty live registry", () => {
-    expect(DIVERGENCE_RULES).toEqual([]);
+  it("rejects a non-matching .tex divergence against the live registry", () => {
+    // The live registry carries the BC-source-decode ±1 rule (see upgrade-compare.ts and
+    // its dedicated test). A sub-80-byte .tex can't satisfy that rule's header/format
+    // checks, so confirmDivergence returns false — i.e. an unexplained diff still fails.
+    expect(DIVERGENCE_RULES.length).toBeGreaterThan(0);
     expect(
       confirmDivergence("a/b_id.tex", new Uint8Array([1]), new Uint8Array([2])),
     ).toBe(false);

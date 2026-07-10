@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Worker cap: bounds peak memory when big corpus packs (200–457 MB) load in parallel.
 // Override per run with VITEST_MAX_WORKERS. `forks` isolates per-worker memory better than threads.
@@ -8,6 +8,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    // Keep vitest's defaults, plus never scan the SDD scratch workspace or the vendored
+    // C# reference tree — throwaway *.test.ts diagnostics under .superpowers/ must not
+    // pollute the suite (both dirs are gitignored scratch, not product code).
+    exclude: [...configDefaults.exclude, ".superpowers/**", "reference/**"],
     pool: "forks",
     maxWorkers: MAX_WORKERS,
     coverage: {
