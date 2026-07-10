@@ -13,6 +13,7 @@ import {
 } from "../sqpack/sqpack";
 import { upgradeMaterial } from "./material";
 import { needsMdlFix, normalizeModel } from "./model";
+import { texFixRound } from "./texfix";
 import { upgradeRemainingTextures } from "./texture";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
@@ -166,6 +167,7 @@ function targetKey(info: UpgradeInfo): string {
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
+  texFixRound(out);
   const gate = needsMdlFix(data);
   // Pass 1 (ModpackUpgrader.cs:88-120): model + material per option; collect
   // texture-upgrade targets into a single first-wins-deduped map.
