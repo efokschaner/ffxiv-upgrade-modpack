@@ -39,3 +39,21 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   not carry. Documented as a code comment rather than ported, since a partial reproduction would
   risk over-throwing on legitimately-tolerated padding. Revisit if we ever thread archive-level
   read context (which file/block is last) into the block loop. Malformed-input-only + latent.
+
+- **T2 — full `FixOldTexData` load-time round (only the drop-malformed subset is ported).** The
+  texture round (round 4) surfaced that TexTools runs every `.tex` in an old pack (TTMP major < 2,
+  or exactly 2.0) through `FixOldTexData` at **load** time (`TTMP.cs:1413-1460`, called from
+  `MakeFileStorageInformationDictionary` `TTMP.cs:1367-1379`), gated by `DoesModpackNeedFix`
+  (`TTMP.cs:916-930`). We ported **only the drop-on-decode-failure slice** (`src/upgrade/texfix.ts`
+  `needsTexFix` + `texFixRound`, mirroring the `try { FixOldTexData } catch { continue }` that drops
+  malformed placeholder textures — the fix for the 8 `hd_bunny_sluts` index regressions). The
+  **remaining** `FixOldTexData` behaviour is unported: (1) `ValidateTexFileData`
+  (`EndwalkerUpgrade.cs:2100`) — resize a NPOT texture that has >1 mip up to power-of-two (needs the
+  **ImageSharp Bicubic resampler**, still deferred — same dependency as the texture round's resize
+  gap), and fix up broken mip offsets; (2) the **unconditional recompress** of every kept `.tex` via
+  `Tex.CompressTexFile` (`TTMP.cs:1436`). The recompress is invisible to our golden harness (it
+  compares decompressed content, and recompression preserves it), so it is low-priority; the
+  NPOT-resize *does* change decompressed content and would show as a golden diff if any old-pack
+  corpus texture is NPOT-with-mips. This is a load-time round analogous to the model round's
+  `FixOldModel`; scope it as its own spec→plan when the resampler lands or a corpus pack demands the
+  resize. No corpus coverage forces it today (the ratchet will flag it if a real pack does).
