@@ -45,4 +45,16 @@ describe("type 4 codec", () => {
     const raw = makeUncompressedTex(64, 64, 4);
     expect(decodeType4(encodeType4(raw))).toEqual(raw);
   });
+
+  it("throws when uncompressedFileSize is too small to hold the tex header (malformed)", () => {
+    const raw = makeUncompressedTex(16, 16, 1);
+    const entry = encodeType4(raw);
+    // Patch the SQPack header's uncompressedFileSize field (3rd int32, bytes [8..12)) to 16,
+    // which is less than TEX_HEADER_SIZE (80). Mirrors Dat.cs:908's `new byte[uncompressedFileSize]`
+    // followed by `Array.Copy(texHeader, ...)` throwing ArgumentException when the tex header
+    // (80 bytes) doesn't fit in the declared uncompressedFileSize.
+    const patched = entry.slice();
+    new DataView(patched.buffer, patched.byteOffset).setInt32(8, 16, true);
+    expect(() => decodeType4(patched)).toThrow();
+  });
 });

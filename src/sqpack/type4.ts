@@ -8,22 +8,46 @@ const TEX_HEADER_SIZE = 80;
 // keep resolving texMipSizes from this module. The single source of truth is src/tex/types.
 export { texMipSizes };
 
-/** Decompress a Type 4 (Texture) SQPack entry. Mirrors Dat.ReadSqPackType4 (Dat.cs:877). */
+/**
+ * Decompress a Type 4 (Texture) SQPack entry. Mirrors Dat.ReadSqPackType4 (Dat.cs:877).
+ *
+ * Honors `uncompressedFileSize` the way Dat.cs:908-909 does: the output buffer is
+ * preallocated at exactly that size, and the tex header is copied into it via a
+ * fixed-size `Array.Copy`. A malformed entry whose declared `uncompressedFileSize`
+ * can't even hold the 80-byte tex header throws, just as `Array.Copy` throws
+ * `ArgumentException` in C#. TexTools relies on this throw to detect-and-drop
+ * malformed placeholder textures at load.
+ *
+ * Mip data, by contrast, is copied via CompleteReadCompressedBlocks (Dat.cs:2437-2460),
+ * which grows the buffer (reallocate-and-copy) rather than throwing whenever a block
+ * would overflow it — so an `uncompressedFileSize` too small for the mip chain does
+ * NOT throw; the output simply ends up longer than declared. Conversely, a declared
+ * size larger than the actual header+mip content leaves the output zero-padded at the
+ * tail (untouched preallocated bytes), rather than trimmed the way the previous
+ * concatBytes-based implementation behaved.
+ */
 export function decodeType4(entry: Uint8Array): Uint8Array {
   const r = new BinaryReader(entry);
   const headerLength = r.readInt32();
   const fileType = r.readInt32();
   if (fileType !== 4)
     throw new Error(`sqpack: not a Type 4 entry (fileType=${fileType})`);
-  r.readInt32(); // uncompressedFileSize
+  const uncompressedFileSize = r.readInt32();
   r.readInt32(); // ikd1
   r.readInt32(); // ikd2
   const mipCount = r.readInt32();
 
   const endOfHeader = headerLength;
-  const out: Uint8Array[] = [];
-  // Tex file header (80 bytes) sits right after the SQPack header.
-  out.push(entry.slice(endOfHeader, endOfHeader + TEX_HEADER_SIZE));
+
+  let out = new Uint8Array(uncompressedFileSize);
+  const texHeader = entry.slice(endOfHeader, endOfHeader + TEX_HEADER_SIZE);
+  if (texHeader.length > uncompressedFileSize) {
+    throw new Error(
+      `sqpack: type4 uncompressedFileSize ${uncompressedFileSize} < tex header size ${TEX_HEADER_SIZE} (malformed) — Dat.cs:908-909`,
+    );
+  }
+  out.set(texHeader, 0);
+  let decompOffset = texHeader.length;
 
   const MIP_HEADER = 20;
   for (let i = 0; i < mipCount; i++) {
@@ -35,9 +59,20 @@ export function decodeType4(entry: Uint8Array): Uint8Array {
     const mipParts = r.readInt32();
 
     r.seek(endOfHeader + offsetFromHeaderEnd);
-    for (let p = 0; p < mipParts; p++) out.push(readBlock(r));
+    for (let p = 0; p < mipParts; p++) {
+      const block = readBlock(r);
+      // Mirrors CompleteReadCompressedBlocks' grow-on-overflow (Dat.cs:2448-2453):
+      // reallocate to fit exactly rather than throwing.
+      if (decompOffset + block.length > out.length) {
+        const grown = new Uint8Array(decompOffset + block.length);
+        grown.set(out, 0);
+        out = grown;
+      }
+      out.set(block, decompOffset);
+      decompOffset += block.length;
+    }
   }
-  return concatBytes(out);
+  return out;
 }
 
 /**
