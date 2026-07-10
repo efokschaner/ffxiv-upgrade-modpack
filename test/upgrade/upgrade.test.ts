@@ -6,13 +6,19 @@ import {
   ModpackFormat,
 } from "../../src/model/modpack";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
-import { ESamplerId } from "../../src/mtrl/shader";
+import { ESamplerId, SHPK_CHARACTER } from "../../src/mtrl/shader";
 import type { XivMtrl } from "../../src/mtrl/types";
 import {
   decodeSqPackFile,
   encodeSqPackFile,
   SqPackType,
 } from "../../src/sqpack/sqpack";
+import { createIndexTexture } from "../../src/tex/helpers";
+import {
+  decodeToRgba,
+  encodeUncompressedTex,
+  parseTex,
+} from "../../src/tex/tex";
 import { restore, uncompressedBytes } from "../../src/upgrade/upgrade";
 import { firstCorpusModel } from "../helpers/corpus-models";
 
@@ -288,6 +294,116 @@ describe("upgradeModpack (skeleton)", () => {
       storage: FileStorageType.RawUncompressed,
     });
     expect(input.groups[0]!.options[0]!.files.length).toBe(1);
+  });
+});
+
+function characterColorsetMtrlFor(normalPath: string): XivMtrl {
+  return {
+    signature: 0x00000301,
+    shaderPackRaw: SHPK_CHARACTER,
+    additionalData: new Uint8Array(4),
+    textures: [
+      {
+        texturePath: normalPath,
+        flags: 0,
+        sampler: {
+          samplerIdRaw: ESamplerId.g_SamplerNormal,
+          samplerSettingsRaw: 0,
+        },
+      },
+    ],
+    uvMapStrings: [{ value: "", flags: 0 }],
+    colorsetStrings: [],
+    colorSetData: new Array<number>(256).fill(0),
+    colorSetDyeData: new Uint8Array(0),
+    shaderKeys: [],
+    shaderConstants: [],
+    materialFlags: 0,
+    materialFlags2: 0,
+    mtrlPath: "chara/x/mat/mt_foo.mtrl",
+  };
+}
+
+/**
+ * Builds a one-group/one-option ModpackData containing a chara/**.mtrl colorset
+ * material whose normal sampler points at `normalPath`, plus the normal .tex itself
+ * at `normalPath`. Both files are RawUncompressed so no SqPack round-trip is needed.
+ * Drives the texture-round e2e test: upgradeModpack's material round should rewrite
+ * the mtrl (recording an IndexMaps UpgradeInfo), and the texture round should then
+ * generate the `_id.tex` from the normal.
+ */
+function buildColorsetPack(
+  normalPath: string,
+  normalTexBytes: Uint8Array,
+): ModpackData {
+  const mtrlBytes = serializeMtrl(characterColorsetMtrlFor(normalPath));
+  return {
+    sourceFormat: ModpackFormat.Ttmp2,
+    isSimple: false,
+    meta: {
+      name: "M",
+      author: "A",
+      version: "1",
+      description: "",
+      url: "",
+      image: "",
+      tags: ["t"],
+      minimumFrameworkVersion: "1.0.0.0",
+    },
+    groups: [
+      {
+        name: "G",
+        description: "",
+        image: "",
+        page: 0,
+        priority: 0,
+        selectionType: "Single",
+        defaultSettings: 0,
+        options: [
+          {
+            name: "O",
+            description: "",
+            image: "",
+            priority: 0,
+            fileSwaps: {},
+            manipulations: [],
+            files: [
+              {
+                gamePath: "chara/x/mat/mt_foo.mtrl",
+                data: mtrlBytes,
+                storage: FileStorageType.RawUncompressed,
+              },
+              {
+                gamePath: normalPath,
+                data: normalTexBytes,
+                storage: FileStorageType.RawUncompressed,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe("upgradeModpack texture round (e2e)", () => {
+  it("generates the index tex for a colorset mtrl's normal", () => {
+    const w = 2;
+    const h = 2;
+    const rgba = new Uint8Array([
+      1, 2, 3, 0, 4, 5, 6, 17, 7, 8, 9, 34, 10, 11, 12, 255,
+    ]);
+    const data: ModpackData = buildColorsetPack(
+      "chara/x/tex/foo_n.tex",
+      encodeUncompressedTex(rgba, w, h, { mips: false }),
+    );
+    const out = upgradeModpack(data);
+    const files = out.groups[0]!.options[0]!.files;
+    const idx = files.find((f) => f.gamePath === "chara/x/tex/foo_id.tex");
+    expect(idx).toBeDefined();
+    expect(Array.from(decodeToRgba(parseTex(idx!.data)))).toEqual(
+      Array.from(createIndexTexture(rgba, w, h)),
+    );
   });
 });
 

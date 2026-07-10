@@ -13,7 +13,9 @@ import {
 } from "../sqpack/sqpack";
 import { upgradeMaterial } from "./material";
 import { needsMdlFix, normalizeModel } from "./model";
-import type { UpgradeInfo } from "./upgrade-info";
+import { texFixRound } from "./texfix";
+import { upgradeRemainingTextures } from "./texture";
+import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
 interface Decoded {
   bytes: Uint8Array;
@@ -136,32 +138,55 @@ function modelRound(option: ModpackOption, gate: boolean): void {
   });
 }
 
-/** Round 2 (UpgradeRemainingTextures): normal+colorset textures -> index maps. */
-function textureRound(_upgradeTargets: UpgradeInfo[]): void {
-  // round N: ported later
-}
-
 /** Round 3: UpdateUnclaimedHairTextures / UpdateEyeMask / UpdateSkinPaths. */
 function partials(): void {
   // round N: ported later
 }
 
 /**
- * Upgrade a pre-Dawntrail modpack to Dawntrail. Runs the material round per
- * option; model/texture/partial rounds are structural no-op stubs pending
- * later tasks. Always returns a fresh ModpackData (never mutates `data`).
+ * First-wins dedup key for a texture-upgrade target, mirroring the C# dict keys
+ * ModpackUpgrader builds targets into before round 2 runs:
+ *   IndexMaps -> files.index (EndwalkerUpgrade.cs:970)
+ *   HairMaps  -> files.normal (EndwalkerUpgrade.cs:1141)
+ *   Gear (else) -> files.mask_old (EndwalkerUpgrade.cs:1003/1024)
+ */
+function targetKey(info: UpgradeInfo): string {
+  if (info.usage === EUpgradeTextureUsage.IndexMaps) return info.files.index!;
+  if (info.usage === EUpgradeTextureUsage.HairMaps) return info.files.normal!;
+  return info.files.mask_old!;
+}
+
+/**
+ * Upgrade a pre-Dawntrail modpack to Dawntrail (ModpackUpgrader.cs:88-144).
+ * Pass 1 runs the model + material rounds per option and collects the
+ * texture-upgrade targets they record into a single first-wins-deduped map;
+ * pass 2 applies those targets to every option's textures (round 2,
+ * UpgradeRemainingTextures). The partial round remains a structural stub
+ * pending a later task. Always returns a fresh ModpackData (never mutates
+ * `data`).
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
+  texFixRound(out);
   const gate = needsMdlFix(data);
-  const upgradeTargets: UpgradeInfo[] = [];
+  // Pass 1 (ModpackUpgrader.cs:88-120): model + material per option; collect
+  // texture-upgrade targets into a single first-wins-deduped map.
+  const targets = new Map<string, UpgradeInfo>();
   for (const group of out.groups) {
     for (const option of group.options) {
       modelRound(option, gate);
-      upgradeTargets.push(...materialRound(option));
+      for (const info of materialRound(option)) {
+        const k = targetKey(info);
+        if (!targets.has(k)) targets.set(k, info);
+      }
     }
   }
-  textureRound(upgradeTargets);
+  // Pass 2 (ModpackUpgrader.cs:124-144): apply the global targets to every option.
+  for (const group of out.groups) {
+    for (const option of group.options) {
+      upgradeRemainingTextures(option, targets);
+    }
+  }
   partials();
   return out;
 }
