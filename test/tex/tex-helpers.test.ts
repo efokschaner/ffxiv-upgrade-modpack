@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bankersRound,
+  createHairMaps,
   modifyPixels,
   upgradeGearMask,
 } from "../../src/tex/helpers";
@@ -65,5 +66,24 @@ describe("upgradeGearMask", () => {
     const m = new Uint8Array([10, 50, 20, 200]);
     upgradeGearMask(m, 1, 1, true);
     expect(Array.from(m)).toEqual([20, 50, 10, 200]);
+  });
+});
+
+describe("createHairMaps", () => {
+  it("shuffles mask channels and copies mask.A into normal.B", () => {
+    const normal = new Uint8Array([10, 20, 30, 40]);
+    const mask = new Uint8Array([0, 100, 200, 50]); // m0..m3
+    createHairMaps(normal, mask, 1, 1);
+    // normal[2] = old mask[3] = 50
+    expect(Array.from(normal)).toEqual([10, 20, 50, 40]);
+    // mask: [0]=oldm1=100, [1]=RemapByte(255-oldm0=255)=255, [2]=49, [3]=oldm0=0
+    expect(Array.from(mask)).toEqual([100, 255, 49, 0]);
+  });
+  it("applies the roughness floor remap (RemapByte 0..255 -> 10..255) with banker's round", () => {
+    const normal = new Uint8Array([0, 0, 0, 0]);
+    const mask = new Uint8Array([155, 0, 0, 0]); // newGreen = 255-155 = 100
+    createHairMaps(normal, mask, 1, 1);
+    // RemapByte(100,0,255,10,255) = round(100/255*245 + 10) = round(106.078) = 106
+    expect(mask[1]).toBe(106);
   });
 });

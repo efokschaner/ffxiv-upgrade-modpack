@@ -84,3 +84,38 @@ export function upgradeGearMask(
     maskRgba[offset + 2] = ao;
   });
 }
+
+/** RemapByte (TextureHelpers.cs:216): linear rescale of one byte, banker's-rounded,
+ *  clamped to [0,255]. */
+function remapByte(
+  value: number,
+  oldMin: number,
+  oldMax: number,
+  newMin: number,
+  newMax: number,
+): number {
+  const z = ((value - oldMin) / (oldMax - oldMin)) * (newMax - newMin) + newMin;
+  return Math.max(Math.min(bankersRound(z), 255), 0);
+}
+
+/** Port of TextureHelpers.CreateHairMaps (TextureHelpers.cs:261). Mutates normal + mask
+ *  in place. Reads original mask bytes before overwriting (C# evaluates newGreen and the
+ *  normal.B copy from the pre-mutation mask). */
+export function createHairMaps(
+  normalRgba: Uint8Array,
+  maskRgba: Uint8Array,
+  width: number,
+  height: number,
+): void {
+  modifyPixels(maskRgba, width, height, (offset) => {
+    const m0 = maskRgba[offset + 0]!;
+    const m1 = maskRgba[offset + 1]!;
+    const m3 = maskRgba[offset + 3]!;
+    const newGreen = remapByte((255 - m0) & 0xff, 0, 255, 10, 255);
+    normalRgba[offset + 2] = m3; // Normal Blue <- Mask Alpha (highlight color)
+    maskRgba[offset + 3] = m0; // Mask Alpha <- old Mask Red (albedo)
+    maskRgba[offset + 0] = m1; // Mask Red <- old Mask Green (specular power)
+    maskRgba[offset + 1] = newGreen; // Mask Green <- roughness
+    maskRgba[offset + 2] = 49; // Mask Blue <- SSS thickness constant
+  });
+}
