@@ -5,11 +5,19 @@
 // (DefaultTextureFormat = A8R8G8B8, XivCache.cs:68).
 
 import {
+  FileStorageType,
+  type ModpackFile,
+  type ModpackOption,
+} from "../model/modpack";
+import { encodeSqPackFile, SqPackType } from "../sqpack/sqpack";
+import {
   createHairMaps,
   createIndexTexture,
   upgradeGearMask,
 } from "../tex/helpers";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
+import { uncompressedBytes } from "./upgrade";
+import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
 /** Thrown when a source texture would require an ImageSharp resize (NPOT normalize or
  *  hair normal/mask size mismatch) that this round does not yet port. Caught+skipped at
@@ -89,4 +97,78 @@ export function updateEndwalkerHairTextures(
     }),
     mask: encodeUncompressedTex(mRgba, mTex.width, mTex.height, { mips: true }),
   };
+}
+
+function findFile(
+  option: ModpackOption,
+  gamePath: string,
+): ModpackFile | undefined {
+  return option.files.find((f) => f.gamePath === gamePath);
+}
+
+/** Writes a generated uncompressed .tex into the option, mirroring the storage form of a
+ *  reference source file in the same option (a ttmp source is SqPackCompressed -> encode a
+ *  Type-4 Texture entry; a pmp source is RawUncompressed -> store raw). Replaces any
+ *  existing entry at that path. */
+function writeGeneratedTex(
+  option: ModpackOption,
+  gamePath: string,
+  texBytes: Uint8Array,
+  reference: ModpackFile,
+): void {
+  const file: ModpackFile =
+    reference.storage === FileStorageType.SqPackCompressed
+      ? {
+          gamePath,
+          storage: FileStorageType.SqPackCompressed,
+          data: encodeSqPackFile(texBytes, SqPackType.Texture),
+        }
+      : { gamePath, storage: FileStorageType.RawUncompressed, data: texBytes };
+  const existing = option.files.findIndex((f) => f.gamePath === gamePath);
+  if (existing >= 0) option.files[existing] = file;
+  else option.files.push(file);
+}
+
+/** Port of UpgradeRemainingTextures (EndwalkerUpgrade.cs:1832). For each target, generate
+ *  its texture(s) only if the option locally holds the required source(s); a resize-
+ *  unsupported target is skipped (baselined diff), everything else stays fail-loud. */
+export function upgradeRemainingTextures(
+  option: ModpackOption,
+  targets: Map<string, UpgradeInfo>,
+): void {
+  for (const info of targets.values()) {
+    try {
+      if (info.usage === EUpgradeTextureUsage.IndexMaps) {
+        const normal = findFile(option, info.files.normal!);
+        if (!normal) continue;
+        const idx = createIndexFromNormal(uncompressedBytes(normal).bytes);
+        writeGeneratedTex(option, info.files.index!, idx, normal);
+      } else if (info.usage === EUpgradeTextureUsage.HairMaps) {
+        const normal = findFile(option, info.files.normal!);
+        const mask = findFile(option, info.files.mask!);
+        if (normal && mask) {
+          const res = updateEndwalkerHairTextures(
+            uncompressedBytes(normal).bytes,
+            uncompressedBytes(mask).bytes,
+          );
+          writeGeneratedTex(option, info.files.normal!, res.normal, normal);
+          writeGeneratedTex(option, info.files.mask!, res.mask, mask);
+        } else if (normal || mask) {
+          throw new Error(
+            `hair: Normal and Mask must be in the same option (EndwalkerUpgrade.cs:1862): ${info.files.normal} / ${info.files.mask}`,
+          );
+        }
+      } else {
+        // GearMaskNew / GearMaskLegacy
+        const old = findFile(option, info.files.mask_old!);
+        if (!old) continue;
+        const legacy = info.usage === EUpgradeTextureUsage.GearMaskLegacy;
+        const data = upgradeMaskTex(uncompressedBytes(old).bytes, legacy);
+        writeGeneratedTex(option, info.files.mask_new!, data, old);
+      }
+    } catch (e) {
+      if (e instanceof TextureResizeUnsupported) continue; // localized baselined gap
+      throw e;
+    }
+  }
 }

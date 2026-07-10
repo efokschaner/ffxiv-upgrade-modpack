@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FileStorageType, type ModpackOption } from "../../src/model/modpack";
 import {
   createHairMaps,
   createIndexTexture,
@@ -14,7 +15,12 @@ import {
   TextureResizeUnsupported,
   updateEndwalkerHairTextures,
   upgradeMaskTex,
+  upgradeRemainingTextures,
 } from "../../src/upgrade/texture";
+import {
+  EUpgradeTextureUsage,
+  type UpgradeInfo,
+} from "../../src/upgrade/upgrade-info";
 
 function a8r8g8b8Tex(
   width: number,
@@ -100,5 +106,115 @@ describe("updateEndwalkerHairTextures", () => {
     expect(() => updateEndwalkerHairTextures(n, m)).toThrow(
       TextureResizeUnsupported,
     );
+  });
+});
+
+function option(
+  files: Array<{ gamePath: string; data: Uint8Array }>,
+): ModpackOption {
+  return {
+    name: "O",
+    description: "",
+    image: "",
+    priority: 0,
+    fileSwaps: {},
+    manipulations: [],
+    files: files.map((f) => ({
+      gamePath: f.gamePath,
+      data: f.data,
+      storage: FileStorageType.RawUncompressed,
+    })),
+  };
+}
+
+describe("upgradeRemainingTextures", () => {
+  it("generates the index tex into the option holding the normal", () => {
+    const w = 2,
+      h = 2;
+    const normalPath = "chara/x/tex/foo_n.tex";
+    const indexPath = "chara/x/tex/foo_id.tex";
+    const rgba = new Uint8Array([
+      1, 2, 3, 0, 4, 5, 6, 17, 7, 8, 9, 34, 10, 11, 12, 255,
+    ]);
+    const o = option([{ gamePath: normalPath, data: a8r8g8b8Tex(w, h, rgba) }]);
+    const targets = new Map<string, UpgradeInfo>([
+      [
+        indexPath,
+        {
+          usage: EUpgradeTextureUsage.IndexMaps,
+          files: { normal: normalPath, index: indexPath },
+        },
+      ],
+    ]);
+    upgradeRemainingTextures(o, targets);
+    const idxFile = o.files.find((f) => f.gamePath === indexPath);
+    expect(idxFile).toBeDefined();
+    const got = decodeToRgba(parseTex(idxFile!.data));
+    expect(Array.from(got)).toEqual(Array.from(createIndexTexture(rgba, w, h)));
+  });
+
+  it("no-ops a target whose source is absent from the option", () => {
+    const o = option([
+      {
+        gamePath: "chara/x/tex/other.tex",
+        data: a8r8g8b8Tex(2, 2, new Uint8Array(16)),
+      },
+    ]);
+    const targets = new Map<string, UpgradeInfo>([
+      [
+        "chara/x/tex/foo_id.tex",
+        {
+          usage: EUpgradeTextureUsage.IndexMaps,
+          files: {
+            normal: "chara/x/tex/foo_n.tex",
+            index: "chara/x/tex/foo_id.tex",
+          },
+        },
+      ],
+    ]);
+    upgradeRemainingTextures(o, targets);
+    expect(o.files.some((f) => f.gamePath === "chara/x/tex/foo_id.tex")).toBe(
+      false,
+    );
+  });
+
+  it("throws when hair has the normal but not the mask", () => {
+    const o = option([
+      { gamePath: "n.tex", data: a8r8g8b8Tex(2, 2, new Uint8Array(16)) },
+    ]);
+    const targets = new Map<string, UpgradeInfo>([
+      [
+        "n.tex",
+        {
+          usage: EUpgradeTextureUsage.HairMaps,
+          files: { normal: "n.tex", mask: "m.tex" },
+        },
+      ],
+    ]);
+    expect(() => upgradeRemainingTextures(o, targets)).toThrow(
+      /Normal and Mask/,
+    );
+  });
+
+  it("skips (no throw) a target whose normal is NPOT", () => {
+    const normalPath = "chara/x/tex/npot_n.tex";
+    const indexPath = "chara/x/tex/npot_id.tex";
+    const o = option([
+      {
+        gamePath: normalPath,
+        data: a8r8g8b8Tex(3, 2, new Uint8Array(3 * 2 * 4)),
+      },
+    ]);
+    const targets = new Map<string, UpgradeInfo>([
+      [
+        indexPath,
+        {
+          usage: EUpgradeTextureUsage.IndexMaps,
+          files: { normal: normalPath, index: indexPath },
+        },
+      ],
+    ]);
+    expect(() => upgradeRemainingTextures(o, targets)).not.toThrow();
+    expect(o.files.some((f) => f.gamePath === indexPath)).toBe(false);
   });
 });
