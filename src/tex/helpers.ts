@@ -29,3 +29,34 @@ export function modifyPixels(
     }
   }
 }
+
+/** Port of TextureHelpers.CreateIndexTexture (TextureHelpers.cs:222). Reads ONLY the
+ *  normal's alpha channel; emits an RGBA index map [newRow, newBlend, 0, 255].
+ *  (255*blendRem/17 is always an exact integer, so no rounding ambiguity here.) */
+export function createIndexTexture(
+  normalRgba: Uint8Array,
+  width: number,
+  height: number,
+): Uint8Array {
+  const out = new Uint8Array(width * height * 4);
+  modifyPixels(out, width, height, (offset) => {
+    const originalCset = normalRgba[offset + 3]!;
+    let blendRem = originalCset % 34;
+    let originalRow = Math.trunc(originalCset / 17);
+    if (blendRem > 17) {
+      if (blendRem < 26) {
+        blendRem = 17;
+      } else {
+        blendRem = 0;
+        originalRow++;
+      }
+    }
+    const newBlend = 255 - Math.round((blendRem / 17.0) * 255.0);
+    const newRow = (Math.trunc(originalRow / 2) * 17 + 4) & 0xff;
+    out[offset + 0] = newRow;
+    out[offset + 1] = newBlend;
+    out[offset + 2] = 0;
+    out[offset + 3] = 255;
+  });
+  return out;
+}
