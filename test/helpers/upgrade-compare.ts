@@ -24,6 +24,13 @@ export interface DivergenceRule {
 // header (format/dims/mipCount, byte 0-79), format is A8R8G8B8 (so bytes >= 80 are raw BGRA
 // pixels, not compressed block data — a byte-wise ±1 check is therefore a genuine per-pixel
 // ±1 check), same total length, and every post-header byte within ±1.
+// SCOPE NOTE: this rule is *phenomenon-scoped*, not path-scoped — "was the generation source
+// BC-compressed?" is unknowable at compare time, so any A8R8G8B8 output whose only difference
+// from the golden is a uniform <=±1 is confirmed. A *systematic* ±1 bug in the deterministic
+// transforms (a wrong constant, a rounding-mode slip) could in principle hide here; that
+// residual surface is instead covered by the byte-exact unit tests on every transform
+// (test/tex/tex-helpers.test.ts — the =49 SSS constant, the remapByte→106 value, all
+// createIndexTexture cases), which fail long before the golden harness runs.
 const A8R8G8B8_HEADER_LEN = 80;
 const A8R8G8B8_FORMAT_OFFSET = 4;
 export const DIVERGENCE_RULES: DivergenceRule[] = [
