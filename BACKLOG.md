@@ -9,22 +9,16 @@ finding and/or C# source it traces to, so it can be picked up cold.
 `/upgrade`-pipeline work still to port — the rounds our pipeline currently stubs, roughly
 highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-- **Texture round (round 2 — `UpgradeRemainingTextures`).** `textureRound`
-  (`src/upgrade/upgrade.ts:140`) is a no-op stub. It should consume the `UpgradeInfo[]`
-  targets the material round produces (normal + colorset → index maps) and emit the
-  upgraded textures. This is the source of the **705 baselined `.tex` diffs** — porting it
-  closes that ratchet. Blocks the U4 decision below.
-- **Partials round (round 3).** `partials` (`src/upgrade/upgrade.ts:145`) is a no-op stub
-  for `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths`.
+- **Partials round.** `partials` (`src/upgrade/upgrade.ts`) is a no-op stub for
+  `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
+  Needs the bundled reference assets (eye textures, iris `(race,face)→path`, canonical
+  hair/ear/tail sampler tables) — no corpus coverage exercises it yet.
+- **Metadata round** (roadmap round 5). `.meta` files are passed through opaque; the golden
+  re-serializes them larger (EQDP race-set backfill, `ItemMetadata.cs:782-788`). Source of
+  the baselined `.meta` diffs. Needs a new `ItemMetadata` parse/serialize surface.
 
 ## Unprioritized
 
-- **U4 — fail loud on pending texture upgrades (audit Theme A).** When we decide the WIP
-  texture round should refuse rather than silently shrink packs, make `textureRound` throw
-  while unimplemented when `upgradeTargets.length > 0`. **Deferred deliberately:** throwing
-  today converts the 705 documented/ratcheted `.tex` diffs into hard crashes and blocks
-  every texture-bearing mod. The ratchet already documents the gap loudly, so it is not a
-  silent divergence. Revisit once the texture round (Prioritized) lands or the ratchet is reworked.
 - **M1/M2 — empty-sampler placeholder serialization (audit Theme D).** Reproduce, byte-for-byte,
   C#'s quirk where `XivMtrlToUncompressedMtrl` lowercases texture paths (`Mtrl.cs:560`) before its
   UPPERCASE `StartsWith(EmptySamplerPrefix)` exclusion checks, so placeholders are written as
@@ -57,3 +51,23 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   corpus texture is NPOT-with-mips. This is a load-time round analogous to the model round's
   `FixOldModel`; scope it as its own spec→plan when the resampler lands or a corpus pack demands the
   resize. No corpus coverage forces it today (the ratchet will flag it if a real pack does).
+
+- **T3 — ImageSharp Bicubic/NearestNeighbor resampler (texture-round resize skips + T2).** The
+  texture round throws `TextureResizeUnsupported` (caught → skipped, baselined) whenever a
+  generation source is non-power-of-two (`CreateIndexFromNormal` `:1098`, `UpgradeMaskTex` `:2088`)
+  or a hair normal/mask pair differs in size (`ResizeImages`, `:1205`). C# resizes via ImageSharp
+  (Bicubic, or NearestNeighbor for the pow2 pre-step). **Real corpus case:** `Misty_Hairstyle_Female.ttmp2`
+  hits the hair size-mismatch branch twice (normal 4096² vs mask 1024², c0101/c0201 h0170) — currently
+  baselined skips. **No NPOT source exists anywhere in the ~940-pack scan**, so the NPOT branch has zero
+  real coverage (synthetic-only when built). Porting an ImageSharp-faithful Bicubic resampler is the
+  shared dependency for these skips AND T2's `ValidateTexFileData` NPOT-resize; byte-parity against
+  ImageSharp's float math may be machine-dependent (see texture-round spec §4.4) — likely needs a
+  scoped per-pixel-threshold `DIVERGENCE_RULES` entry for resized outputs. Own spec→plan.
+
+- **T4 — `index-path-overrides` table missing `chara/equipment/e0208` (and likely other) base-game
+  entries.** `The_Final_Requiem_veil.ttmp2` overwrites base-game e0208 materials; the golden's index
+  path uses the canonical override (`EndwalkerUpgrade.cs:923-936`) but `src/upgrade/reference/index-path-overrides.ts`
+  has no e0208 c0101 entry, so we emit at the convention path (golden has `_met_id.tex` we don't →
+  `#0:added`) and the two e0208 `.mtrl` mismatch. The index generation itself is byte-exact once pointed
+  at the right path (triage-confirmed). Fix mechanically by re-running `scripts/extract-index-overrides.ts`
+  against a game install to widen the table; the ratchet baselines the gap until then.
