@@ -57,4 +57,37 @@ describe("type 4 codec", () => {
     new DataView(patched.buffer, patched.byteOffset).setInt32(8, 16, true);
     expect(() => decodeType4(patched)).toThrow();
   });
+
+  it("grows the output buffer when uncompressedFileSize under-declares the header+mip content", () => {
+    const raw = makeUncompressedTex(16, 16, 1);
+    const entry = encodeType4(raw);
+    const expected = decodeType4(entry);
+    expect(expected.length).toBeGreaterThan(TEX_HEADER_SIZE);
+    // Patch uncompressedFileSize to 100: still >= the 80-byte tex header (so it doesn't throw)
+    // but well short of the true header+mip length, so the mip-copy loop's grow-on-overflow
+    // path (Dat.cs:2448-2453, CompleteReadCompressedBlocks) must reallocate to fit everything.
+    const patched = entry.slice();
+    new DataView(patched.buffer, patched.byteOffset).setInt32(8, 100, true);
+    expect(decodeType4(patched)).toEqual(expected);
+  });
+
+  it("zero-pads the tail when uncompressedFileSize over-declares the header+mip content", () => {
+    const raw = makeUncompressedTex(16, 16, 1);
+    const entry = encodeType4(raw);
+    const expected = decodeType4(entry);
+    const declaredSize = expected.length + 32;
+    // Patch uncompressedFileSize larger than the actual content. Mirrors Dat.cs:908's
+    // `new byte[uncompressedFileSize]` preallocation: the tail bytes past the real content
+    // are left as the array's zero-initialized default rather than trimmed.
+    const patched = entry.slice();
+    new DataView(patched.buffer, patched.byteOffset).setInt32(
+      8,
+      declaredSize,
+      true,
+    );
+    const result = decodeType4(patched);
+    expect(result.length).toBe(declaredSize);
+    expect(result.slice(0, expected.length)).toEqual(expected);
+    expect(result.slice(expected.length)).toEqual(new Uint8Array(32));
+  });
 });

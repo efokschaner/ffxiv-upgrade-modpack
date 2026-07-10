@@ -93,7 +93,7 @@ describe("needsTexFix", () => {
     expect(needsTexFix(packWithVersion("2.1s"))).toBe(false);
   });
 
-  it("is false for a TTMP pack with sourceTtmpVersion '3.0' (major>=2, minor!=0)", () => {
+  it("is false for a TTMP pack with sourceTtmpVersion '3.0' (major 3 (>2) → no fix; only major<2 or exactly 2.0 qualify)", () => {
     expect(needsTexFix(packWithVersion("3.0"))).toBe(false);
   });
 
