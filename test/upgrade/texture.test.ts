@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createIndexTexture } from "../../src/tex/helpers";
+import { createIndexTexture, upgradeGearMask } from "../../src/tex/helpers";
 import {
   decodeToRgba,
   encodeUncompressedTex,
@@ -8,6 +8,7 @@ import {
 import {
   createIndexFromNormal,
   TextureResizeUnsupported,
+  upgradeMaskTex,
 } from "../../src/upgrade/texture";
 
 function a8r8g8b8Tex(
@@ -38,6 +39,27 @@ describe("createIndexFromNormal", () => {
   it("throws TextureResizeUnsupported for a non-power-of-two normal", () => {
     const rgba = new Uint8Array(3 * 2 * 4);
     expect(() => createIndexFromNormal(a8r8g8b8Tex(3, 2, rgba))).toThrow(
+      TextureResizeUnsupported,
+    );
+  });
+});
+
+describe("upgradeMaskTex", () => {
+  it("upgrades a pow2 mask (non-legacy) byte-exact vs upgradeGearMask", () => {
+    const w = 2,
+      h = 2;
+    const rgba = new Uint8Array([
+      10, 0, 20, 200, 30, 255, 40, 100, 5, 60, 70, 255, 1, 2, 3, 4,
+    ]);
+    const out = upgradeMaskTex(a8r8g8b8Tex(w, h, rgba), false);
+    const got = decodeToRgba(parseTex(out));
+    const expected = rgba.slice();
+    upgradeGearMask(expected, w, h, false);
+    expect(Array.from(got)).toEqual(Array.from(expected));
+  });
+  it("throws TextureResizeUnsupported for a NPOT mask", () => {
+    const rgba = new Uint8Array(6 * 4 * 4);
+    expect(() => upgradeMaskTex(a8r8g8b8Tex(6, 4, rgba), true)).toThrow(
       TextureResizeUnsupported,
     );
   });

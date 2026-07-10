@@ -4,7 +4,7 @@
 // textures, applies a transform, and re-encodes as uncompressed A8R8G8B8
 // (DefaultTextureFormat = A8R8G8B8, XivCache.cs:68).
 
-import { createIndexTexture } from "../tex/helpers";
+import { createIndexTexture, upgradeGearMask } from "../tex/helpers";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
 
 /** Thrown when a source texture would require an ImageSharp resize (NPOT normalize or
@@ -32,4 +32,22 @@ export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
   return encodeUncompressedTex(indexRgba, tex.width, tex.height, {
     mips: true,
   });
+}
+
+/** Port of UpgradeMaskTex (EndwalkerUpgrade.cs:2082). Decodes the mask, applies the
+ *  gear-mask channel remap, re-encodes A8R8G8B8 with mips. NPOT masks resize (:2088) ->
+ *  throw the resize sentinel. */
+export function upgradeMaskTex(
+  maskTexBytes: Uint8Array,
+  legacy: boolean,
+): Uint8Array {
+  const tex = parseTex(maskTexBytes);
+  if (!isPowerOfTwo(tex.width) || !isPowerOfTwo(tex.height)) {
+    throw new TextureResizeUnsupported(
+      `gearmask: NPOT mask ${tex.width}x${tex.height} needs a resize (EndwalkerUpgrade.cs:2088)`,
+    );
+  }
+  const rgba = decodeToRgba(tex);
+  upgradeGearMask(rgba, tex.width, tex.height, legacy);
+  return encodeUncompressedTex(rgba, tex.width, tex.height, { mips: true });
 }
