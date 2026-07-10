@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createIndexTexture, upgradeGearMask } from "../../src/tex/helpers";
+import {
+  createHairMaps,
+  createIndexTexture,
+  upgradeGearMask,
+} from "../../src/tex/helpers";
 import {
   decodeToRgba,
   encodeUncompressedTex,
@@ -8,6 +12,7 @@ import {
 import {
   createIndexFromNormal,
   TextureResizeUnsupported,
+  updateEndwalkerHairTextures,
   upgradeMaskTex,
 } from "../../src/upgrade/texture";
 
@@ -60,6 +65,39 @@ describe("upgradeMaskTex", () => {
   it("throws TextureResizeUnsupported for a NPOT mask", () => {
     const rgba = new Uint8Array(6 * 4 * 4);
     expect(() => upgradeMaskTex(a8r8g8b8Tex(6, 4, rgba), true)).toThrow(
+      TextureResizeUnsupported,
+    );
+  });
+});
+
+describe("updateEndwalkerHairTextures", () => {
+  it("regenerates normal+mask byte-exact vs createHairMaps (equal pow2 sizes)", () => {
+    const w = 2,
+      h = 2;
+    const nRgba = new Uint8Array([
+      10, 20, 30, 40, 11, 21, 31, 41, 12, 22, 32, 42, 13, 23, 33, 43,
+    ]);
+    const mRgba = new Uint8Array([
+      0, 100, 200, 50, 1, 101, 201, 51, 2, 102, 202, 52, 3, 103, 203, 53,
+    ]);
+    const res = updateEndwalkerHairTextures(
+      a8r8g8b8Tex(w, h, nRgba),
+      a8r8g8b8Tex(w, h, mRgba),
+    );
+    const expN = nRgba.slice();
+    const expM = mRgba.slice();
+    createHairMaps(expN, expM, w, h);
+    expect(Array.from(decodeToRgba(parseTex(res.normal)))).toEqual(
+      Array.from(expN),
+    );
+    expect(Array.from(decodeToRgba(parseTex(res.mask)))).toEqual(
+      Array.from(expM),
+    );
+  });
+  it("throws TextureResizeUnsupported when normal and mask differ in size", () => {
+    const n = a8r8g8b8Tex(4, 4, new Uint8Array(4 * 4 * 4));
+    const m = a8r8g8b8Tex(2, 2, new Uint8Array(2 * 2 * 4));
+    expect(() => updateEndwalkerHairTextures(n, m)).toThrow(
       TextureResizeUnsupported,
     );
   });

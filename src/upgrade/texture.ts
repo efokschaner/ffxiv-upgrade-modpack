@@ -4,7 +4,11 @@
 // textures, applies a transform, and re-encodes as uncompressed A8R8G8B8
 // (DefaultTextureFormat = A8R8G8B8, XivCache.cs:68).
 
-import { createIndexTexture, upgradeGearMask } from "../tex/helpers";
+import {
+  createHairMaps,
+  createIndexTexture,
+  upgradeGearMask,
+} from "../tex/helpers";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
 
 /** Thrown when a source texture would require an ImageSharp resize (NPOT normalize or
@@ -50,4 +54,39 @@ export function upgradeMaskTex(
   const rgba = decodeToRgba(tex);
   upgradeGearMask(rgba, tex.width, tex.height, legacy);
   return encodeUncompressedTex(rgba, tex.width, tex.height, { mips: true });
+}
+
+/** Port of UpdateEndwalkerHairTextures (EndwalkerUpgrade.cs:1175). Decodes normal + mask,
+ *  applies CreateHairMaps, re-encodes both A8R8G8B8 with mips. C# resizes each to pow2
+ *  (:1195) then to their common max size (ResizeImages, :1205, Bicubic); we do not port
+ *  that resampler, so any NPOT input or size mismatch throws the resize sentinel. When
+ *  sizes already match and are pow2 (the common case), ResizeImages is a no-op (early
+ *  return, TextureHelpers.cs:368) and the result is byte-exact. */
+export function updateEndwalkerHairTextures(
+  normalTexBytes: Uint8Array,
+  maskTexBytes: Uint8Array,
+): { normal: Uint8Array; mask: Uint8Array } {
+  const nTex = parseTex(normalTexBytes);
+  const mTex = parseTex(maskTexBytes);
+  for (const t of [nTex, mTex]) {
+    if (!isPowerOfTwo(t.width) || !isPowerOfTwo(t.height)) {
+      throw new TextureResizeUnsupported(
+        `hair: NPOT texture ${t.width}x${t.height} needs a resize (EndwalkerUpgrade.cs:1195)`,
+      );
+    }
+  }
+  if (nTex.width !== mTex.width || nTex.height !== mTex.height) {
+    throw new TextureResizeUnsupported(
+      `hair: normal ${nTex.width}x${nTex.height} != mask ${mTex.width}x${mTex.height} needs a resize (EndwalkerUpgrade.cs:1205)`,
+    );
+  }
+  const nRgba = decodeToRgba(nTex);
+  const mRgba = decodeToRgba(mTex);
+  createHairMaps(nRgba, mRgba, nTex.width, nTex.height);
+  return {
+    normal: encodeUncompressedTex(nRgba, nTex.width, nTex.height, {
+      mips: true,
+    }),
+    mask: encodeUncompressedTex(mRgba, mTex.width, mTex.height, { mips: true }),
+  };
 }
