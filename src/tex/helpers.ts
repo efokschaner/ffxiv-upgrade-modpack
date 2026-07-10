@@ -60,3 +60,27 @@ export function createIndexTexture(
   });
   return out;
 }
+
+/** Port of TextureHelpers.UpgradeGearMask (TextureHelpers.cs:288). Mutates the mask in
+ *  place: R<-spec(oldB), G<-roughness, B<-ao(oldR); alpha untouched. Non-legacy inverts
+ *  gloss->roughness and floors 0 at 1; legacy keeps gloss as roughness. */
+export function upgradeGearMask(
+  maskRgba: Uint8Array,
+  width: number,
+  height: number,
+  legacy: boolean,
+): void {
+  modifyPixels(maskRgba, width, height, (offset) => {
+    const ao = maskRgba[offset + 0]!;
+    const gloss = maskRgba[offset + 1]!;
+    const spec = maskRgba[offset + 2]!;
+    let rough = gloss;
+    if (!legacy) {
+      rough = (255 - gloss) & 0xff;
+      if (rough === 0) rough = 1;
+    }
+    maskRgba[offset + 0] = spec;
+    maskRgba[offset + 1] = rough;
+    maskRgba[offset + 2] = ao;
+  });
+}
