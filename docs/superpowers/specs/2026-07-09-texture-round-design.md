@@ -156,20 +156,42 @@ Pass 2 requires **both** normal and mask present in the option, else C# throws
 
 ## 5. The divergence rule (scoped, not blanket)
 
-Non-resized textures **must be byte-identical** to the golden — they carry no
+Non-divergent textures **must be byte-identical** to the golden — they carry no
 `DIVERGENCE_RULES` entry and any diff fails.
 
-For resize-triggering textures only, add a **narrowly-scoped** `DIVERGENCE_RULES` entry
-(`test/helpers/upgrade-compare.ts`) that:
+Add a **narrowly-scoped** `DIVERGENCE_RULES` entry (`test/helpers/upgrade-compare.ts`)
+only for a genuine, confirmed divergence, that:
 
-1. matches only the specific resize-expected `.tex` gamePaths (not all `.tex`);
-2. confirms identical tex **shape** — format (`A8R8G8B8`), dimensions, mip count;
-3. asserts **every pixel within a tight threshold** (value set empirically from observed
-   drift; ImageSharp bicubic float math may be machine-dependent, hence the threshold as
-   a safety net over logically-identical code — not a licence for large deviation).
+1. is scoped as tightly as the phenomenon allows — **by path** where the eligible files
+   are identifiable at compare time, or **programmatically, by the divergence's own
+   intrinsic signature**, where they are not (see the update below);
+2. confirms identical tex **shape** — format (`A8R8G8B8`), dimensions, mip count, length;
+3. asserts **every pixel within a tight threshold** (±1 for the decode-precision case
+   below; an empirically-set threshold for the machine-dependent resize case) — never a
+   licence for large deviation.
 
-The rule cites this section as its reason. If no corpus texture triggers a resize (a §6
-finding), no rule is committed at all and the entire `.tex` baseline reaches byte-zero.
+The rule cites this section as its reason.
+
+**Update 2026-07-10 — what shipped, and a note on scoping.** The design originally
+assumed the only divergence would be resize-triggered, and therefore path-scoped (keyed
+to the specific resize-expected gamePaths). In practice the one divergence that
+materialised is different: generated output *encodes* exactly (A8R8G8B8), but a
+**BC-compressed generation source** decodes ±1 differently in our BC decoder vs C#
+(implementation-defined S3TC/RGTC rounding — the class already accepted for BC5 in
+`src/tex/decode.ts`), and that ±1 propagates into the generated pixels. "Was this file's
+source BC-compressed?" is **not knowable at compare time** — the rule sees only the two
+output byte-buffers — so a path predicate cannot express the eligible set. **A narrow,
+justified _programmatic_ exception keyed to the phenomenon's intrinsic signature is
+therefore acceptable in addition to path-scoping.** The shipped rule matches any `.tex`
+whose two buffers are byte-identical in header/format/dims/mipCount/length, are A8R8G8B8
+(so post-header bytes are raw pixels, not compressed block data), and differ by ≤1 per
+byte. That signature can *only* be produced by the decode→transform→re-encode path —
+resize (dims differ), trailing-trim (length differs), BC pass-through (format ≠
+A8R8G8B8), and material/meta/manifest all fail it. The one residual risk — a *systematic*
+±1 transform bug also matching the signature — is closed by the byte-exact transform unit
+tests (`test/tex/tex-helpers.test.ts`), which fail long before the golden harness runs.
+The still-deferred **resize** divergence (ImageSharp float drift, BACKLOG T3) will, when
+built, use the path/threshold form of (1)–(3) above.
 
 ---
 

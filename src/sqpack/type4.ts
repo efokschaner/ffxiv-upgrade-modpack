@@ -62,7 +62,9 @@ export function decodeType4(entry: Uint8Array): Uint8Array {
     for (let p = 0; p < mipParts; p++) {
       const block = readBlock(r);
       // Mirrors CompleteReadCompressedBlocks' grow-on-overflow (Dat.cs:2448-2453):
-      // reallocate to fit exactly rather than throwing.
+      // reallocate to fit exactly rather than throwing. We test `>` where C# tests `>=`
+      // (Dat.cs:2448); at exact fit C#'s `>=` reallocates to the SAME length, so output
+      // bytes and length are byte-for-byte identical to C# either way.
       if (decompOffset + block.length > out.length) {
         const grown = new Uint8Array(decompOffset + block.length);
         grown.set(out, 0);

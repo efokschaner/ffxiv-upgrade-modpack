@@ -30,7 +30,10 @@ export interface DivergenceRule {
 // transforms (a wrong constant, a rounding-mode slip) could in principle hide here; that
 // residual surface is instead covered by the byte-exact unit tests on every transform
 // (test/tex/tex-helpers.test.ts — the =49 SSS constant, the remapByte→106 value, all
-// createIndexTexture cases), which fail long before the golden harness runs.
+// createIndexTexture cases), which fail long before the golden harness runs. The
+// rationale for accepting a programmatic (phenomenon-scoped) exception here, rather than
+// the path-scoping the design first envisioned, is written up in the texture-round spec §5
+// (docs/superpowers/specs/2026-07-09-texture-round-design.md).
 const A8R8G8B8_HEADER_LEN = 80;
 const A8R8G8B8_FORMAT_OFFSET = 4;
 export const DIVERGENCE_RULES: DivergenceRule[] = [

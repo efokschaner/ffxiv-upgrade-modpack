@@ -110,7 +110,15 @@ function findFile(
  *  reference source file in the same option (a ttmp source is SqPackCompressed -> encode a
  *  Type-4 Texture entry; a pmp source is RawUncompressed -> store raw). Replaces any
  *  existing entry at that path. Mirrors WriteFile's replace-or-add-by-path semantics
- *  (EndwalkerUpgrade.cs:1795-1823). */
+ *  (EndwalkerUpgrade.cs:1795-1823).
+ *
+ *  Choosing the storage form is a port-specific adaptation: C#'s WriteFile targets a
+ *  transaction/file-dict that carries no explicit per-file storage form, whereas our
+ *  ModpackData does. Mirroring a sibling source's form preserves writeModpack's
+ *  single-storage-form invariant (all files in a pack share one form, so any source is a
+ *  valid reference), and the choice is parity-neutral: the golden harness compares
+ *  DECOMPRESSED content, so the container form cannot affect the diff, and encode/decode
+ *  round-trips (tested). */
 function writeGeneratedTex(
   option: ModpackOption,
   gamePath: string,
