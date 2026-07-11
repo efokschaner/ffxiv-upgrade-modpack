@@ -230,6 +230,34 @@ describe("reconstructMeta EST reconstruction", () => {
     expect(() => reconstructMeta(mod, mod.path)).toThrow();
   });
 
+  it("Body EST for a mod race the base est file has no table for at all fails loud (KeyNotFoundException equivalent, PmpManipulation.cs:275)", () => {
+    // The real corpus-scoped Body table happens to carry all 18 PLAYABLE_RACES (this scenario is
+    // latent today, per the task brief), so there's no naturally-occurring race gap to exercise
+    // this branch. Simulate the C# condition that DOES exist in principle -- a base est file
+    // that never carried a given race's table at all -- by removing one race's entry from the
+    // real table for the duration of this test, then restoring it.
+    const race = 1701;
+    expect(EST_TABLE.Body[race]).toBeDefined(); // sanity: the fixture below actually removes something
+    const saved = EST_TABLE.Body[race];
+    delete (EST_TABLE.Body as Record<number, unknown>)[race];
+    try {
+      const setId = 256;
+      const est: EstEntry[] = [{ race, setId, skelId: 13 }];
+      const mod: ItemMeta = {
+        version: 2,
+        path: "chara/equipment/e0256/e0256_top.meta",
+        imc: null,
+        eqp: null,
+        eqdp: null,
+        est,
+        gmp: null,
+      };
+      expect(() => reconstructMeta(mod, mod.path)).toThrow();
+    } finally {
+      EST_TABLE.Body[race] = saved!;
+    }
+  });
+
   it("leaves a meta with no EST segment untouched in EST", () => {
     const eqdp = [{ race: 101, value: 1 }];
     const mod: ItemMeta = {
@@ -319,7 +347,7 @@ describe("reconstructMeta IMC reconstruction", () => {
     expect(out.imc![2]).not.toEqual(new Uint8Array(base[2]!));
   });
 
-  it("passes an IMC segment through unchanged when IMC_TABLE has no entry for the key (out-of-corpus item)", () => {
+  it("fails loud on an equipment IMC segment when IMC_TABLE has no entry for the key (out-of-corpus Set item -- base seed can't be reproduced, ItemMetadata.cs:238-241)", () => {
     expect(IMC_TABLE["equipment/999999/top"]).toBeUndefined();
     const imc = [new Uint8Array([1, 2, 3, 4, 5, 6])];
     const mod: ItemMeta = {
@@ -331,7 +359,22 @@ describe("reconstructMeta IMC reconstruction", () => {
       est: null,
       gmp: null,
     };
-    expect(reconstructMeta(mod, mod.path).imc).toEqual(imc);
+    expect(() => reconstructMeta(mod, mod.path)).toThrow(/IMC_TABLE/);
+  });
+
+  it("fails loud on an accessory IMC segment when IMC_TABLE has no entry for the key (out-of-corpus Set item)", () => {
+    expect(IMC_TABLE["accessory/999999/ear"]).toBeUndefined();
+    const imc = [new Uint8Array([1, 2, 3, 4, 5, 6])];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/accessory/a999999/a999999_ear.meta",
+      imc,
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    expect(() => reconstructMeta(mod, mod.path)).toThrow(/IMC_TABLE/);
   });
 
   it("passes a weapon's IMC segment through unchanged (NonSet, not in the Set-only IMC_TABLE)", () => {

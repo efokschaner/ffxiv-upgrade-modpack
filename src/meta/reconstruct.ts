@@ -59,6 +59,19 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       for (const race of PLAYABLE_RACES) {
         const raceTable = baseByRace[race];
         if (raceTable === undefined) {
+          // PmpManipulation.cs:275 `metadata.EstEntries[race]` applies a manipulation by
+          // indexing the base-seeded dict for this race -- a KeyNotFoundException in C# if the
+          // base est file never carried the race at all. A mod entry for this race can't be
+          // silently dropped (it would vanish with no trace instead of failing like TexTools
+          // does); a mod entry the base doesn't cover for a race the base DOES carry is fine
+          // (handled by the raceTable[setId] ?? 0 default below).
+          if (byRace.has(race)) {
+            throw new Error(
+              `meta: ${gamePath} has an EST entry for race ${race}, but the base est file ` +
+                `has no ${estType} table for that race (KeyNotFoundException equivalent, ` +
+                "PmpManipulation.cs:275)",
+            );
+          }
           continue;
         }
         const override = byRace.get(race);
@@ -125,7 +138,21 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       }
       imc = grown;
     }
-    // else: no base entry for this key -- pass mod.imc through unchanged (see comment above).
+    // else: no base entry for this key. For weapon/monster (NonSet) roots, IMC_TABLE never
+    // carries a key at all (it's Set-only) -- pass mod.imc through unchanged, verified byte-exact
+    // against the corpus (see comment above). For equipment/accessory (Set) roots, though, a
+    // missing key means the golden's base seed (ItemMetadata.cs:238-241 GetFullImcInfo, reading
+    // the real item's .imc from the game) is something IMC_TABLE -- corpus-scoped -- cannot
+    // reproduce: silently passing the mod's IMC through could ship a possibly-under-grown IMC
+    // (missing the base game's trailing variants) that doesn't match what ConsoleTools would
+    // produce. Fail loud instead of guessing.
+    else if (root.itemType === "equipment" || root.itemType === "accessory") {
+      throw new Error(
+        `meta: ${gamePath} has no IMC_TABLE entry for key "${key}" (Set item outside the ` +
+          "corpus-scoped table; cannot faithfully reproduce the base IMC seed, " +
+          "ItemMetadata.cs:238-241)",
+      );
+    }
   }
 
   return { ...mod, eqdp, est, imc };
