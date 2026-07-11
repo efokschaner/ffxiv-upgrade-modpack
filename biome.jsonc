@@ -6,12 +6,19 @@
     "useIgnoreFile": true
   },
   "files": {
-    // .gitignore already excludes reference/, node_modules/, dist/, test/corpus/.
-    // Also skip the generated test oracle cache, and the generated meta reference tables
-    // (est-table.ts / imc-table.ts): they are machine-emitted by scripts/extract-meta-reference.ts
-    // ("do not edit by hand"), and formatting the large IMC table (~1.2 MB of packed number arrays)
-    // to 80-col would explode it into hundreds of thousands of lines for no benefit.
-    "includes": ["**", "!**/.oracle-cache", "!src/meta/reference"]
+    // reference/, node_modules/, dist/, test/corpus/ (incl. its .oracle-cache) are all gitignored
+    // and thus already skipped via useIgnoreFile above — no need to restate them here. The only
+    // excludes we must spell out are committed (non-gitignored) files: the two generated meta
+    // reference tables (est-table.ts / imc-table.ts), machine-emitted by
+    // scripts/extract-meta-reference.ts ("do not edit by hand"), where formatting the large IMC
+    // table (~1.2 MB of packed number arrays) to 80-col would explode it into hundreds of
+    // thousands of lines for no benefit. Listed by exact filename (not the whole src/meta/reference
+    // folder) so any hand-written file added there is still linted.
+    "includes": [
+      "**",
+      "!src/meta/reference/imc-table.ts",
+      "!src/meta/reference/est-table.ts"
+    ]
   },
   "formatter": {
     "enabled": true,
