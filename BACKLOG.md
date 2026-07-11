@@ -32,6 +32,17 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
 
 ## Unprioritized
 
+- **General (all-base-items) IMC reference table.** `src/meta/reference/imc-table.ts` (Task 8a,
+  `scripts/extract-meta-reference.ts`) is **corpus-derived, not exhaustive** — only the 28
+  equipment/accessory items referenced by a `.meta` gamePath in the current
+  `test/corpus/{real,synthetic}` corpus are extracted (same precedent as
+  `src/upgrade/reference/index-path-overrides.ts`, Task T4). A future mod referencing an item
+  outside this set will have `IMC_TABLE` return `undefined` for its `(itemType, primaryId, slot)`
+  key. If the shipped tool needs items beyond the corpus, widen the extractor to walk the game's
+  full equipment/accessory id range (or a canonical item list) instead of scanning `.meta`
+  gamePaths. Also out of scope: NonSet (weapon/monster/demihuman) `.imc` files — blocked on
+  `parseMetaRoot` (`src/meta/root.ts`) not yet recognizing those roots (see the entry above).
+
 - **M1/M2 — empty-sampler placeholder serialization (audit Theme D).** Reproduce, byte-for-byte,
   C#'s quirk where `XivMtrlToUncompressedMtrl` lowercases texture paths (`Mtrl.cs:560`) before its
   UPPERCASE `StartsWith(EmptySamplerPrefix)` exclusion checks, so placeholders are written as

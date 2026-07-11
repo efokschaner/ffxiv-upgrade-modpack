@@ -1,9 +1,15 @@
-// Generates src/meta/reference/est-table.ts.
+// Generates src/meta/reference/est-table.ts and src/meta/reference/imc-table.ts.
 //
 // EST reconstruction (Task 7, src/meta/reconstruct.ts) seeds each .meta's EST segment from the
 // base game before applying the mod's own deltas (mirrors Est.GetExtraSkeletonEntry falling back
 // to the base-game entries, Est.cs:345-360). That requires a (race, setId) -> skelId lookup per
 // EST type, extracted directly from the four base-game EST files ConsoleTools ships.
+//
+// IMC reconstruction (Task 8b, src/meta/reconstruct.ts) similarly seeds a .meta's IMC segment
+// from the base game, growing the variant list to the base game's subset count when the mod
+// supplies fewer variants (PMP.cs:455-480; docs/superpowers/specs/2026-07-10-metadata-round-
+// design.md §3.2-3.3). That requires a (itemType, primaryId, slot) -> ordered base variant-entry
+// table, extracted from base-game .imc files for the items the corpus's .meta files reference.
 //
 // NOTE (authorized scope change from the round-5 task-6 brief): EQP/GMP extraction was
 // intentionally dropped. The scoping spike found EQP/GMP segments never grow and never mismatch
@@ -13,13 +19,29 @@
 //
 // Regenerate via `npx tsx scripts/extract-meta-reference.ts`.
 
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadModpack } from "../src/index";
+import { deserializeMeta } from "../src/meta/deserialize";
+import { parseMetaRoot } from "../src/meta/root";
+import { allFiles, FileStorageType } from "../src/model/modpack";
+import { decodeSqPackFile } from "../src/sqpack/sqpack";
 
-// oracle.ts reads __dirname at module scope (Vite-only global); shim it before importing. See
-// scripts/extract-shader-params.ts for the rationale.
+// oracle.ts (and corpus-roots.ts, which it depends on) read __dirname at module scope
+// (Vite-only global); shim it before importing either. See scripts/extract-shader-params.ts
+// for the rationale. corpus-roots.ts is dynamically imported (not statically, like the src/
+// modules above) for the same reason: a static import would evaluate its module-scope
+// `__dirname` read before this shim runs.
 (globalThis as unknown as { __dirname: string }).__dirname = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -27,6 +49,7 @@ import { fileURLToPath } from "node:url";
   "helpers",
 );
 const { extractGameFile } = await import("../test/helpers/oracle");
+const { corpusPacks } = await import("../test/helpers/corpus-roots");
 
 // Est.EstType, minus Invalid (which never selects a file) -- Est.cs:24-31. Named EstFileType (not
 // EstType) to avoid clashing with src/meta/root.ts's EstType, which additionally includes null for
@@ -186,5 +209,366 @@ if (!failed) {
   console.log(`wrote ${outPath} (${Buffer.byteLength(out, "utf8")} bytes)`);
 } else {
   console.log("\nNot writing est-table.ts due to failures above.");
+  process.exitCode = 1;
+}
+
+// ---------------------------------------------------------------------------------------------
+// IMC extraction (Task 8a).
+//
+// Port of Imc.GetFullImcInfo (Imc.cs:351-451): a .imc file is `int16 subsetCount, int16
+// TypeIdentifier` then a DEFAULT subset followed by `subsetCount` variant subsets. We only
+// support ImcType.Set (31) here -- equipment/accessory, whose SecondaryType is always null
+// (Imc.cs:265-270 SaveEntries) -- because that is the only shape parseMetaRoot (src/meta/root.ts)
+// currently recognizes; ImcType.NonSet (weapon/monster/demihuman) is out of scope until root.ts
+// widens (see BACKLOG.md). Each ImcType.Set subset is 5 slot entries of 6 bytes each
+// (MaterialSet u8, Decal u8, Mask u16 LE, Vfx u8, Animation u8 -- SerializeEntry/DeserializeEntry,
+// Imc.cs:310-342).
+//
+// The slot->column mapping is Imc.SlotOffsetDictionary (Imc.cs:547-559), which merges the
+// equipment and accessory slot->offset dictionaries (their key sets are disjoint, so one lookup
+// serves both item types):
+const IMC_SLOT_OFFSET: Record<string, number> = {
+  met: 0,
+  top: 1,
+  glv: 2,
+  dwn: 3,
+  sho: 4,
+  ear: 0,
+  nek: 1,
+  wrs: 2,
+  rir: 3,
+  ril: 4,
+};
+
+const IMC_TYPE_SET = 31; // ImcType.Set, Imc.cs:43
+const IMC_ENTRY_SIZE = 6;
+const IMC_SLOTS_PER_SUBSET = 5;
+
+type ImcItemType = "equipment" | "accessory";
+
+interface ParsedImc {
+  subsetCount: number;
+  // subsets[0] is the DEFAULT subset; subsets[1..subsetCount] are the variant subsets, in file
+  // order (Imc.cs:408-442). Each subset is 5 slot entries of 6 raw bytes each.
+  subsets: number[][][];
+}
+
+// Port of the ImcType.Set branch of Imc.GetFullImcInfo (Imc.cs:408-442).
+function parseImcFile(data: Uint8Array, label: string): ParsedImc {
+  if (data.byteLength < 4) {
+    throw new Error(
+      `${label}: file too short for header (${data.byteLength} bytes)`,
+    );
+  }
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const subsetCount = view.getInt16(0, true);
+  const typeIdentifier = view.getInt16(2, true);
+  if (typeIdentifier !== IMC_TYPE_SET) {
+    throw new Error(
+      `${label}: unsupported ImcType ${typeIdentifier} (only ImcType.Set=31 is ported; ` +
+        `NonSet weapon/monster/demihuman items are out of scope, see BACKLOG.md)`,
+    );
+  }
+  const subsetTotal = 1 + subsetCount; // default + variants, Imc.cs:365-366,425
+  const expectedLength =
+    4 + IMC_ENTRY_SIZE * IMC_SLOTS_PER_SUBSET * subsetTotal;
+  if (data.byteLength !== expectedLength) {
+    throw new Error(
+      `${label}: subsetCount ${subsetCount} implies length ${expectedLength}, but file is ${data.byteLength} bytes`,
+    );
+  }
+  const subsets: number[][][] = [];
+  let offset = 4;
+  for (let s = 0; s < subsetTotal; s++) {
+    const slots: number[][] = [];
+    for (let slot = 0; slot < IMC_SLOTS_PER_SUBSET; slot++) {
+      const entry: number[] = [];
+      for (let b = 0; b < IMC_ENTRY_SIZE; b++) {
+        entry.push(data[offset]!);
+        offset++;
+      }
+      slots.push(entry);
+    }
+    subsets.push(slots);
+  }
+  return { subsetCount, subsets };
+}
+
+// Port of the column selection XivDependencyRoot.GetImcEntryPaths performs
+// (XivDependencyRoot.cs:1133-1202) + Imc.GetEntries reading each pointed-to entry
+// (Imc.cs:189-238): the entries a .meta's IMC section carries for `slot` are the DEFAULT
+// subset's slot column, then each variant subset's slot column, in subset order.
+function imcSlotColumn(parsed: ParsedImc, slot: string): number[][] {
+  const slotIdx = IMC_SLOT_OFFSET[slot];
+  if (slotIdx === undefined) {
+    throw new Error(
+      `imc: unknown slot "${slot}" (not in Imc.SlotOffsetDictionary)`,
+    );
+  }
+  return parsed.subsets.map((subset) => subset[slotIdx]!);
+}
+
+// Enumerate every equipment/accessory item referenced by a .meta gamePath across the corpus.
+// parseMetaRoot doesn't yet recognize weapon/monster/demihuman roots (Task 8b widening,
+// BACKLOG.md) -- skip (log) those rather than fail loud, per the task-8a brief. itemType "other"
+// (hair/face, human roots) never carries IMC (Imc.UsesImc excludes human, Imc.cs:76-85) and is
+// skipped too.
+interface ImcItemRef {
+  itemType: ImcItemType;
+  primaryId: number;
+  slots: Set<string>;
+}
+const imcItems = new Map<string, ImcItemRef>();
+let metaCount = 0;
+let unrecognizedRoots = 0;
+for (const pack of corpusPacks()) {
+  const packBytes = new Uint8Array(readFileSync(pack));
+  const packData = loadModpack(pack, packBytes);
+  for (const f of allFiles(packData)) {
+    if (!f.gamePath.endsWith(".meta")) continue;
+    metaCount++;
+    let root: ReturnType<typeof parseMetaRoot>;
+    try {
+      root = parseMetaRoot(f.gamePath);
+    } catch {
+      unrecognizedRoots++;
+      continue;
+    }
+    if (root.itemType !== "equipment" && root.itemType !== "accessory")
+      continue;
+    const key = `${root.itemType}/${root.primaryId}`;
+    let ref = imcItems.get(key);
+    if (!ref) {
+      ref = {
+        itemType: root.itemType,
+        primaryId: root.primaryId,
+        slots: new Set(),
+      };
+      imcItems.set(key, ref);
+    }
+    ref.slots.add(root.slot);
+  }
+}
+console.log(
+  `\nIMC: scanned ${metaCount} .meta gamePaths across the corpus, ${unrecognizedRoots} ` +
+    `unrecognized roots skipped (weapon/monster/demihuman), ${imcItems.size} equipment/accessory ` +
+    `items to extract`,
+);
+
+const imcTable: Record<string, number[][]> = {};
+let imcExtracted = 0;
+let imcMissing = 0;
+let imcParseFailed = false;
+for (const ref of imcItems.values()) {
+  const prefix = ref.itemType === "equipment" ? "e" : "a";
+  const idStr = String(ref.primaryId).padStart(4, "0");
+  const gamePath = `chara/${ref.itemType}/${prefix}${idStr}/${prefix}${idStr}.imc`;
+  const dir = mkdtempSync(join(tmpdir(), "imc-"));
+  const dest = join(dir, "file.imc");
+  let bytes: Uint8Array;
+  try {
+    extractGameFile(gamePath, dest);
+    bytes = new Uint8Array(readFileSync(dest));
+  } catch (err) {
+    console.log(
+      `  SKIP ${gamePath}: not present in game (${(err as Error).message.split("\n")[0]})`,
+    );
+    imcMissing++;
+    continue;
+  }
+  let parsed: ParsedImc;
+  try {
+    parsed = parseImcFile(bytes, gamePath);
+  } catch (err) {
+    console.error(`FAILED parsing ${gamePath}: ${(err as Error).message}`);
+    imcParseFailed = true;
+    continue;
+  }
+  for (const slot of ref.slots) {
+    try {
+      imcTable[`${ref.itemType}/${ref.primaryId}/${slot}`] = imcSlotColumn(
+        parsed,
+        slot,
+      );
+    } catch (err) {
+      console.error(
+        `FAILED: ${gamePath} slot "${slot}": ${(err as Error).message}`,
+      );
+      imcParseFailed = true;
+    }
+  }
+  imcExtracted++;
+}
+console.log(
+  `  extracted ${imcExtracted} items, ${imcMissing} not present in game`,
+);
+
+// Golden spot-check (required, per the task-8a brief): confirm IMC_TABLE reproduces the base
+// portion of the two known IMC-variant-growth residue cases (e6137_top 2->3, e0724_top 4->7).
+// A .meta's IMC section length grows from the mod's own variant count up to the base game's
+// (PMP.cs:455-480); entries at indices >= the mod's own variant count are pure base data, so they
+// must equal IMC_TABLE's corresponding entries exactly. This is how we validate the slot-index
+// and entry-ordering port above against real ConsoleTools output, not just our own reading of the
+// C#.
+function uncompress(f: {
+  storage: FileStorageType;
+  data: Uint8Array;
+}): Uint8Array {
+  return f.storage === FileStorageType.SqPackCompressed
+    ? decodeSqPackFile(f.data).data
+    : f.data;
+}
+const UPGRADE_CACHE_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "test",
+  "corpus",
+  ".upgrade-cache",
+);
+const VALIDATION_TARGETS = [
+  {
+    gamePath: "chara/equipment/e6137/e6137_top.meta",
+    key: "equipment/6137/top",
+  },
+  {
+    gamePath: "chara/equipment/e0724/e0724_top.meta",
+    key: "equipment/724/top",
+  },
+];
+let validationFailed = false;
+for (const target of VALIDATION_TARGETS) {
+  const table = imcTable[target.key];
+  if (!table) {
+    console.error(
+      `VALIDATION FAILED: IMC_TABLE["${target.key}"] was not extracted (needed for the golden spot-check)`,
+    );
+    validationFailed = true;
+    continue;
+  }
+  let found = false;
+  for (const pack of corpusPacks()) {
+    const modBytes = new Uint8Array(readFileSync(pack));
+    const modData = loadModpack(pack, modBytes);
+    const modFile = allFiles(modData).find(
+      (f) => f.gamePath === target.gamePath,
+    );
+    if (!modFile) continue;
+
+    const cacheKey = createHash("sha256").update(modBytes).digest("hex");
+    const goldenFile = existsSync(UPGRADE_CACHE_DIR)
+      ? readdirSync(UPGRADE_CACHE_DIR).find(
+          (f) => f.startsWith(cacheKey) && f.endsWith(".bin"),
+        )
+      : undefined;
+    if (!goldenFile) continue; // no cached golden for this pack yet (or it's a no-op upgrade)
+
+    const goldenBytes = new Uint8Array(
+      readFileSync(join(UPGRADE_CACHE_DIR, goldenFile)),
+    );
+    const goldenData = loadModpack(pack, goldenBytes);
+    const goldenMetaFile = allFiles(goldenData).find(
+      (f) => f.gamePath === target.gamePath,
+    );
+    if (!goldenMetaFile) continue;
+
+    found = true;
+    const modMeta = deserializeMeta(uncompress(modFile));
+    const goldenMeta = deserializeMeta(uncompress(goldenMetaFile));
+    if (!modMeta.imc || !goldenMeta.imc) {
+      console.error(
+        `VALIDATION FAILED: ${target.gamePath} in ${pack}: mod or golden .meta has no IMC segment`,
+      );
+      validationFailed = true;
+      break;
+    }
+    const modLen = modMeta.imc.length;
+    const goldenLen = goldenMeta.imc.length;
+    if (goldenLen !== table.length) {
+      console.error(
+        `VALIDATION FAILED: ${target.gamePath}: golden has ${goldenLen} variant entries, ` +
+          `IMC_TABLE["${target.key}"] has ${table.length}`,
+      );
+      validationFailed = true;
+      break;
+    }
+    let mismatches = 0;
+    for (let i = modLen; i < goldenLen; i++) {
+      const g = goldenMeta.imc[i]!;
+      const t = table[i]!;
+      const same = g.length === 6 && g.every((b, j) => b === t[j]);
+      if (!same) {
+        mismatches++;
+        console.error(
+          `  entry ${i}: golden=[${Array.from(g).join(",")}] table=[${t.join(",")}]`,
+        );
+      }
+    }
+    if (mismatches > 0) {
+      console.error(
+        `VALIDATION FAILED: ${target.gamePath}: ${mismatches}/${goldenLen - modLen} residue entries diverge from IMC_TABLE`,
+      );
+      validationFailed = true;
+    } else {
+      console.log(
+        `  VALIDATED ${target.gamePath} against ${pack.split(/[\\/]/).pop()}: ` +
+          `${goldenLen - modLen} residue entries (index ${modLen}..${goldenLen - 1}) match IMC_TABLE`,
+      );
+    }
+    break;
+  }
+  if (!found) {
+    console.error(
+      `VALIDATION FAILED: no corpus pack + cached /upgrade golden found for ${target.gamePath}`,
+    );
+    validationFailed = true;
+  }
+}
+
+if (!imcParseFailed && !validationFailed) {
+  const sortedKeys = Object.keys(imcTable).sort();
+  const body = sortedKeys
+    .map((key) => {
+      const entries = imcTable[key]!.map(
+        (entry) => `[${entry.join(", ")}]`,
+      ).join(", ");
+      return `  ${JSON.stringify(key)}: [${entries}],`;
+    })
+    .join("\n");
+  const out =
+    "// GENERATED — regenerate via npx tsx scripts/extract-meta-reference.ts. Do not edit by hand.\n" +
+    "//\n" +
+    "// Base-game IMC lookup, port of Imc.GetFullImcInfo (Imc.cs:351-451) restricted to ImcType.Set\n" +
+    "// (equipment/accessory), combined with the (default, variant) column selection\n" +
+    "// XivDependencyRoot.GetImcEntryPaths performs (XivDependencyRoot.cs:1133-1202) via\n" +
+    "// Imc.GetEntries (Imc.cs:189-238). Key is itemType/primaryId/slot; the value is the\n" +
+    "// ordered [DefaultSubset[slot], Subset[0][slot], ..., Subset[subsetCount-1][slot]] 6-byte\n" +
+    "// entries (MaterialSet, Decal, Mask lo, Mask hi, Vfx, Animation -- SerializeEntry/\n" +
+    "// DeserializeEntry, Imc.cs:310-342), i.e. exactly what a base .meta's IMC section would\n" +
+    "// contain for that item+slot. Slot -> column index per Imc.SlotOffsetDictionary\n" +
+    "// (Imc.cs:547-559). See scripts/extract-meta-reference.ts for the extraction/parsing logic,\n" +
+    "// provenance, and the golden spot-check that validates this port.\n" +
+    "//\n" +
+    "// SCOPE: corpus-derived, not exhaustive -- only equipment/accessory items referenced by a\n" +
+    "// .meta gamePath in the current test/corpus/{real,synthetic} corpus are extracted (same\n" +
+    "// precedent as src/upgrade/reference/index-path-overrides.ts, Task T4). A general\n" +
+    "// (all-base-items) IMC table is BACKLOG follow-up if the shipped tool needs items beyond the\n" +
+    "// corpus. NonSet (weapon/monster/demihuman) items are out of scope until parseMetaRoot\n" +
+    "// (src/meta/root.ts) recognizes those roots -- see BACKLOG.md.\n" +
+    "export const IMC_TABLE: Record<string, number[][]> = {\n" +
+    body +
+    "\n};\n";
+  const imcOutDir = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "src",
+    "meta",
+    "reference",
+  );
+  mkdirSync(imcOutDir, { recursive: true });
+  const imcOutPath = join(imcOutDir, "imc-table.ts");
+  writeFileSync(imcOutPath, out);
+  console.log(`wrote ${imcOutPath} (${Buffer.byteLength(out, "utf8")} bytes)`);
+} else {
+  console.log("\nNot writing imc-table.ts due to failures above.");
   process.exitCode = 1;
 }
