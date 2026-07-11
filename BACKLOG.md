@@ -13,9 +13,22 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
   Needs the bundled reference assets (eye textures, iris `(race,face)→path`, canonical
   hair/ear/tail sampler tables) — no corpus coverage exercises it yet.
-- **Metadata round** (roadmap round 5). `.meta` files are passed through opaque; the golden
-  re-serializes them larger (EQDP race-set backfill, `ItemMetadata.cs:782-788`). Source of
-  the baselined `.meta` diffs. Needs a new `ItemMetadata` parse/serialize surface.
+- **Metadata round** (roadmap round 5) — **EQDP slice landed** (`src/meta/reconstruct.ts`,
+  `metadataRound` in `src/upgrade/upgrade.ts`): pure-EQDP `.meta` diffs (e.g. accessories) now
+  byte-match the golden. **EST/EQP/GMP/IMC reconstruction still pass through unchanged**
+  (`reconstructMeta` only touches `eqdp`) — remaining baselined `.meta` diffs are all
+  equipment `met`/`top` slots (which carry EST) per
+  `docs/superpowers/specs/2026-07-10-metadata-round-design.md` §5.
+- **`parseMetaRoot` (`src/meta/root.ts`) doesn't recognize weapon/monster paths**
+  (`chara/weapon/wNNNN/.../wNNNNbNNNN.meta`, `chara/monster/mNNNN/.../mNNNNbNNNN.meta`) —
+  only equipment/accessory/hair/face are ported (Task 4, round 5). Discovered 2026-07-10 via
+  two real corpus packs (`Persona 3 Evoker.ttmp2` w2021, `[Atelier Jaque] Balloon of Stars.ttmp2`
+  m8045); both metas carry only an IMC segment (no EQDP), so `reconstructMeta` currently gates
+  its `parseMetaRoot` validation on `eqdp` being present specifically to let these no-op rather
+  than fail-loud. Once a later task ports IMC (needs the base-game variant table anyway, see the
+  metadata-round design doc §3.3), `parseMetaRoot` will need a weapon/monster root shape too —
+  widen it then, and drop the `if (eqdp)` gate in `reconstruct.ts` once every segment type is
+  covered so an unrecognized root always fails loud again.
 
 ## Unprioritized
 
