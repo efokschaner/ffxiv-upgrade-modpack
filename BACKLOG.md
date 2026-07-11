@@ -13,11 +13,56 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
   Needs the bundled reference assets (eye textures, iris `(race,face)→path`, canonical
   hair/ear/tail sampler tables) — no corpus coverage exercises it yet.
-- **Metadata round** (roadmap round 5). `.meta` files are passed through opaque; the golden
-  re-serializes them larger (EQDP race-set backfill, `ItemMetadata.cs:782-788`). Source of
-  the baselined `.meta` diffs. Needs a new `ItemMetadata` parse/serialize surface.
 
 ## Unprioritized
+
+- **v1 metadata support.** `src/meta/deserialize.ts` now throws on any `.meta` with
+  `version !== 2` rather than silently mis-upgrading it. An empirical probe
+  (`local-notes/probe-v1-meta.ts`: downgrade a real pack's v2 equipment meta to v1 --
+  `version=1`, EST/GMP stripped -- run it through ConsoleTools `/upgrade`, inspect the golden)
+  confirmed ConsoleTools cleanly upgrades v1 -> v2 by **injecting base-game data** the v1 meta
+  lacks, per C#'s `dataVersion==1` default-injection branches:
+  - `DeserializeEstData` (`ItemMetadata.cs:823-826`) defaults a missing EST segment to
+    `Est.GetExtraSkeletonEntries(root)` -- the est-table (`src/meta/reference/est-table.ts`)
+    already supports computing this, so EST injection is portable today.
+  - `DeserializeGmpData` (`ItemMetadata.cs:851-855`) defaults a missing GMP segment to
+    `GetGimmickParameter(root, true)` -- this needs a **new per-item base-game GMP reference
+    table + extraction**, which round 5 deliberately skipped (Task 6 extracted IMC/EST but not
+    GMP). Without it, a v1 upgrade can't be reproduced faithfully.
+  Extinct in the wild (0 v1 metas across 1431 real corpus `.meta`s), so deferred behind the
+  fail-loud guard in `deserialize.ts` rather than ported. Re-run the probe script (still present,
+  not wired into the harness) to re-verify against a fresh ConsoleTools build if this is ever
+  picked up. `src/meta/serialize.ts` always writes version `2` on output regardless of input
+  version (`ItemMetadata.Serialize`, `ItemMetadata.cs:509`), so this is purely a read-side gap.
+
+- **NonSet (weapon/monster/demihuman) IMC reference table.** `src/meta/reference/imc-table.ts`
+  (`scripts/extract-meta-reference.ts`) is now **exhaustive over base-game equipment/accessory** —
+  it extracts every `(item, slot)` root in the framework's `item_sets.db` `roots` table (~1555
+  items / ~7775 keys), so `reconstructMeta`'s IMC step (`src/meta/reconstruct.ts`) covers every
+  base-game equipment/accessory item, not just corpus-referenced ones. What remains: `IMC_TABLE`
+  is **Set-only**. NonSet items — weapon/monster/demihuman — use a different on-disk `.imc` shape
+  (`Imc.cs` `ImcType.NonSet`, a 1-entry default + 1-entry subsets vs Set's 5-slot subsets), so they
+  are never extracted, and weapon/monster `.meta`s take the pass-through branch (verified byte-exact
+  on the corpus, ratchet-guarded). `parseMetaRoot` recognizes weapon/monster roots (Task 8b) only to
+  produce a lookup key that misses `IMC_TABLE`. A general tool wanting NonSet IMC growth needs: (1) a
+  NonSet `.imc` parser (the current `parseImcFile` handles only `ImcType.Set`), (2) its own NonSet
+  extraction pass over the `weapon`/`monster`/`demihuman` `item_sets.db` roots, and (3) the NonSet
+  column selection in `reconstructMeta`. Until then a NonSet meta that *would* grow its IMC silently
+  passes through — no corpus pack exercises this, so the ratchet would flag it if a real one did.
+  (Note: an equipment/accessory item genuinely absent from the exhaustive table — e.g. added to the
+  game after the last `imc-table.ts` regen — now **fails loud** in `reconstructMeta`, signalling
+  "regenerate the table", not a silent wrong output.)
+
+- **EQDP reconstruction drops mod rows for non-playable races (latent).** `reconstructMeta`'s EQDP
+  step (`src/meta/reconstruct.ts`, round 5) emits exactly the 18 `Eqp.PlayableRaces` in canonical
+  order (mod value or 0). C#'s `DeserializeEqdpData` (`ItemMetadata.cs:773-788`) instead keeps
+  *every* race the mod file carries and then backfills the missing playable races — so a mod EQDP
+  row for a **non-playable** race would be preserved by C# but is silently dropped by our port.
+  Unreachable today: game EQDP files are playable-race-scoped, so no real `.meta` carries a
+  non-playable EQDP row (flagged in the round-5 final review as a latent fail-loud/fidelity
+  asymmetry, unlike the EST/IMC out-of-range cases which were made to throw). Revisit only if a real
+  pack ever exercises it; the honest fix is to keep the mod's extra rows (matching C#) rather than
+  drop or throw.
 
 - **M1/M2 — empty-sampler placeholder serialization (audit Theme D).** Reproduce, byte-for-byte,
   C#'s quirk where `XivMtrlToUncompressedMtrl` lowercases texture paths (`Mtrl.cs:560`) before its
@@ -71,3 +116,46 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `#0:added`) and the two e0208 `.mtrl` mismatch. The index generation itself is byte-exact once pointed
   at the right path (triage-confirmed). Fix mechanically by re-running `scripts/extract-index-overrides.ts`
   against a game install to widen the table; the ratchet baselines the gap until then.
+
+- **MDL — Half-precision large-vertex-buffer fallback (model round `FixOldModel`).** The model
+  normalizer throws `mdl: vertex buffer would overflow 8MB; Half-precision path unsupported`
+  (`src/mdl/model/build-declarations.ts:62-66`) when a model's estimated vertex buffer reaches the
+  8 MB `_MaxVertexBufferSize`. TexTools handles this by *not* doing the Half→Float precision upgrade
+  for that model — it falls back to a Half-precision vertex declaration (`Mdl.cs:2513-2542`, consumed
+  by the element-set construction `Mdl.cs:2614-2711`). We deliberately fail loud rather than emit a
+  byte-incompatible declaration (the guard's own comment notes the corpus "never approaches" this).
+  **Surfaced 2026-07-10:** `[V] [AM] Spring Florals.ttmp2` (Vermillion, 12 MB, in `XIVModOriginals`)
+  is a real pack that trips it, so the "no corpus hits this" assumption no longer holds. Porting the
+  Half-precision declaration path is its own scope; add Spring Florals (or a smaller repro) to the
+  corpus once it lands so the ratchet locks it. Unrelated to the metadata round — found incidentally
+  during the round-5 corpus scan.
+
+- **Vet page-load and upgrade-operation performance once a working webpage exists.** The
+  library is consumed client-side, but there is no real page to profile yet. When one lands,
+  measure the two things that matter to a user: (1) **initial page load** — JS parse/eval and
+  time-to-interactive, and (2) the **upgrade operation itself** — wall-clock and peak memory of
+  running `upgradeModpack` over representative packs. Profile the real app on real hardware
+  (include a low-end/mobile-class device), find where the time and bytes actually go, and only
+  then decide whether anything is worth optimizing. Keep the investigation unbiased — do not
+  presume a culprit. One incidental data point already gathered (2026-07-11): the current lib
+  build is `dist/index.js` 1,568 KB raw / 111 KB gzip, of which the two generated base-game
+  reference tables (`src/meta/reference/imc-table.ts`, `est-table.ts`) are ~90% of the raw bytes
+  but only ~62% of the gzip (they're highly repetitive, so gzip/brotli crush them). That suggests
+  wire size is already small and any real cost is more likely eager parse/eval or the upgrade
+  compute path — but treat that as a hypothesis to test, not a conclusion, and let the profiler
+  point at whatever is actually hot. Housekeeping / perf; no correctness impact.
+
+- **Audit temp-dir usage for leaks (`mkdtemp` cleanup).** Several helpers create OS temp working
+  directories via `mkdtempSync(join(tmpdir(), …))` but never remove the *directory* (only inner
+  files), so they accumulate across runs. The worst offenders run on **every `npm test`**:
+  `test/helpers/oracle.ts:169` (`oracle-*`, a per-worker module singleton `ORACLE_TMP`, never rm'd)
+  and `test/helpers/upgrade-golden.ts:49` (`upgrade-*`, `UPGRADE_TMP`, never rm'd) — these left the
+  stale `oracle-*`/`upgrade-*` dirs found on 2026-07-10. Occasional offenders: `scripts/extract-index-overrides.ts:87`
+  (`idxover-*`) and `scripts/extract-shader-params.ts:26` (`shparam-*`) (manual runs), and the test
+  files `test/oracle-cache.test.ts` (`oc-*`) / `test/upgrade-harness.test.ts` (`ug-*`/`ub-*`).
+  **Good examples to follow:** `test/sqpack/fixtures/regen.ts:64` and `test/tex/fixtures/bcn/regen.ts:431`
+  both `rmSync(tmp, { recursive: true, force: true })` when done. Fix: give each `mkdtemp` site a
+  guaranteed cleanup (try/finally, `afterAll`, or a `process.on("exit")` unlink for the singleton
+  harness dirs), and consider a lint/grep guard so new `mkdtemp` calls without a paired removal are
+  caught. Note `oracle.ts` already sweeps stale `.tmp` files in its *cache* dir (`:48-65`) — extend
+  that discipline to the mkdtemp working dirs. Housekeeping; no correctness impact.
