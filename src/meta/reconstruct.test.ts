@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { PLAYABLE_RACES } from "./playable-races";
 import { reconstructMeta } from "./reconstruct";
-import type { ItemMeta } from "./types";
+import { EST_TABLE } from "./reference/est-table";
+import type { EstEntry, ItemMeta } from "./types";
 
 describe("reconstructMeta EQDP expansion", () => {
   it("expands EQDP to canonical 18 races, mod value or 0, dropping mod order", () => {
@@ -56,5 +58,109 @@ describe("reconstructMeta EQDP expansion", () => {
       gmp: null,
     };
     expect(reconstructMeta(mod, mod.path).eqdp).toBeNull();
+  });
+});
+
+describe("reconstructMeta EST reconstruction", () => {
+  // e5035_met (Purrfection ears): base Head est has a self-mapping identity entry for race 1601
+  // (Hrothgar female, added in Dawntrail) — EST_TABLE.Head[1601][5035] === 5035 — which the mod,
+  // authored before Dawntrail added the race, never covered. Confirm the real reference table has
+  // this shape so the fixture below is not made up.
+  const HEAD_SET_ID = 5035;
+  const HEAD_BASE_SKEL_ID = EST_TABLE.Head[1601]![HEAD_SET_ID];
+
+  function preDawntrailEst(
+    setId: number,
+    skelIdFor: (race: number) => number,
+  ): EstEntry[] {
+    return PLAYABLE_RACES.filter((race) => race !== 1601).map((race) => ({
+      race,
+      setId,
+      skelId: skelIdFor(race),
+    }));
+  }
+
+  it("adds a race missing from the mod using the base table's skelId (Est.GetExtraSkeletonEntries port)", () => {
+    expect(HEAD_BASE_SKEL_ID).toBe(5035);
+    const est = preDawntrailEst(HEAD_SET_ID, (race) => race);
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e5035/e5035_met.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.est!.map((e) => e.race)).toEqual(PLAYABLE_RACES);
+    // Every mod-supplied race is untouched.
+    for (const e of est) {
+      expect(out.est!.find((x) => x.race === e.race)).toEqual(e);
+    }
+    // The race the mod never covered is filled from the base table, not defaulted to 0.
+    expect(out.est!.find((e) => e.race === 1601)).toEqual({
+      race: 1601,
+      setId: HEAD_SET_ID,
+      skelId: HEAD_BASE_SKEL_ID,
+    });
+  });
+
+  it("a mod EST value for a present race overrides the base seed", () => {
+    const est = [
+      ...preDawntrailEst(HEAD_SET_ID, (race) => race),
+      { race: 1601, setId: HEAD_SET_ID, skelId: 42 },
+    ];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e5035/e5035_met.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    // Mod's explicit 1601 entry wins over the base table's skelId (5035).
+    expect(out.est!.find((e) => e.race === 1601)).toEqual({
+      race: 1601,
+      setId: HEAD_SET_ID,
+      skelId: 42,
+    });
+  });
+
+  it("hair EST is left byte-identical, even though the mod covers only one race (corpus-observed: Hair/Face never get the base-seed reconstruction)", () => {
+    // Corpus evidence (Misty_Hairstyle_Female.ttmp2, chara/human/c0201/obj/hair/h0170/
+    // c0201h0170_hir.meta): the mod's EST supplies only race 201, and EST_TABLE.Hair[1601][170]
+    // etc. DO have real base data for this setId (unlike Head's e5035 case), yet the /upgrade
+    // golden is byte-identical to the mod's own single-entry EST — no base-fill happens for Hair.
+    // See the comment above reconstruct.ts's `root.itemType === "equipment"` gate.
+    const hairId = 170;
+    expect(EST_TABLE.Hair[1601]?.[hairId]).toBe(171); // base data exists but must NOT be pulled in
+    const est: EstEntry[] = [{ race: 201, setId: hairId, skelId: 113 }];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/human/c0201/obj/hair/h0170/c0201h0170_hir.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    expect(reconstructMeta(mod, mod.path).est).toEqual(est);
+  });
+
+  it("leaves a meta with no EST segment untouched in EST", () => {
+    const eqdp = [{ race: 101, value: 1 }];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e0256/e0256_top.meta",
+      imc: null,
+      eqp: null,
+      eqdp,
+      est: null,
+      gmp: null,
+    };
+    expect(reconstructMeta(mod, mod.path).est).toBeNull();
   });
 });
