@@ -149,11 +149,10 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
   if (imc) {
     // Base-seed key mirrors Imc.GetFullImcInfo's (itemType, primaryId) lookup + the `slot` column
     // selection XivDependencyRoot.GetImcEntryPaths performs (Imc.cs:189-238, 351-451) -- see
-    // imc-table.ts's header for the exact extraction. IMC_TABLE (Task 8a) is corpus-derived and
-    // Set-only (equipment/accessory); it never carries a weapon/monster (NonSet) key or an
-    // out-of-corpus equipment/accessory item, so the lookup below misses for those and falls to
-    // the pass-through branch -- documented, ratchet-guarded (BACKLOG.md "General (all-base-items)
-    // IMC reference table").
+    // imc-table.ts's header for the exact extraction. IMC_TABLE is exhaustive over base-game
+    // equipment/accessory (every item_sets.db root), but Set-only: it never carries a
+    // weapon/monster (NonSet) key, so the lookup below misses for those and falls to the
+    // pass-through branch -- documented, ratchet-guarded (BACKLOG.md "NonSet IMC reference table").
     const key = `${root.itemType}/${root.primaryId}/${root.slot}`;
     const base = IMC_TABLE[key];
     if (base) {
@@ -171,17 +170,17 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
     }
     // else: no base entry for this key. For weapon/monster (NonSet) roots, IMC_TABLE never
     // carries a key at all (it's Set-only) -- pass mod.imc through unchanged, verified byte-exact
-    // against the corpus (see comment above). For equipment/accessory (Set) roots, though, a
-    // missing key means the golden's base seed (ItemMetadata.cs:238-241 GetFullImcInfo, reading
-    // the real item's .imc from the game) is something IMC_TABLE -- corpus-scoped -- cannot
-    // reproduce: silently passing the mod's IMC through could ship a possibly-under-grown IMC
-    // (missing the base game's trailing variants) that doesn't match what ConsoleTools would
-    // produce. Fail loud instead of guessing.
+    // against the corpus (see comment above). For equipment/accessory (Set) roots the table is
+    // exhaustive over item_sets.db, so a miss means a genuinely unknown item (e.g. one added to the
+    // game after the table was last regenerated, or one with no .imc): the golden's base seed
+    // (ItemMetadata.cs:238-241 GetFullImcInfo, reading the real item's .imc from the game) is
+    // something IMC_TABLE cannot reproduce, and silently passing the mod's IMC through could ship a
+    // possibly-under-grown IMC. Fail loud instead of guessing.
     else if (root.itemType === "equipment" || root.itemType === "accessory") {
       throw new Error(
-        `meta: ${gamePath} has no IMC_TABLE entry for key "${key}" (Set item outside the ` +
-          "corpus-scoped table; cannot faithfully reproduce the base IMC seed, " +
-          "ItemMetadata.cs:238-241)",
+        `meta: ${gamePath} has no IMC_TABLE entry for key "${key}" (unknown Set item, not in the ` +
+          "item_sets.db-derived table; regenerate imc-table.ts or investigate — cannot " +
+          "faithfully reproduce the base IMC seed, ItemMetadata.cs:238-241)",
       );
     }
   }

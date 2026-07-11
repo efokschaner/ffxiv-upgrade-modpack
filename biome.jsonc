@@ -7,8 +7,11 @@
   },
   "files": {
     // .gitignore already excludes reference/, node_modules/, dist/, test/corpus/.
-    // Also skip the generated test oracle cache.
-    "includes": ["**", "!**/.oracle-cache"]
+    // Also skip the generated test oracle cache, and the generated meta reference tables
+    // (est-table.ts / imc-table.ts): they are machine-emitted by scripts/extract-meta-reference.ts
+    // ("do not edit by hand"), and formatting the large IMC table (~1.2 MB of packed number arrays)
+    // to 80-col would explode it into hundreds of thousands of lines for no benefit.
+    "includes": ["**", "!**/.oracle-cache", "!src/meta/reference"]
   },
   "formatter": {
     "enabled": true,

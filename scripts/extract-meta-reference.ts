@@ -17,8 +17,14 @@
 // EQP/GMP seed is never consulted. Bundling them would be dead data; the golden ratchet will flag
 // the theoretical mod-omits-EQP/GMP case if it ever appears, at which point we'd extract them.
 //
-// Regenerate via `npx tsx scripts/extract-meta-reference.ts`.
+// Regenerate (needs a game install + ConsoleTools, and node's --experimental-sqlite for the
+// item_sets.db item enumeration behind the exhaustive IMC table):
+//   $env:NODE_OPTIONS='--experimental-sqlite'; npx tsx scripts/extract-meta-reference.ts
+// Add `--imc-only` to regenerate just imc-table.ts (leaving est-table.ts untouched) — the IMC
+// extraction is ~1555 ConsoleTools spawns (a parallel pool, a few minutes); EST is 4 files.
+// The generated tables (est-table.ts / imc-table.ts) are excluded from Biome (see biome.jsonc).
 
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -31,9 +37,9 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { loadModpack } from "../src/index";
 import { deserializeMeta } from "../src/meta/deserialize";
-import { parseMetaRoot } from "../src/meta/root";
 import { allFiles, FileStorageType } from "../src/model/modpack";
 import { decodeSqPackFile } from "../src/sqpack/sqpack";
 
@@ -50,6 +56,32 @@ import { decodeSqPackFile } from "../src/sqpack/sqpack";
 );
 const { extractGameFile } = await import("../test/helpers/oracle");
 const { corpusPacks } = await import("../test/helpers/corpus-roots");
+
+// --imc-only regenerates ONLY imc-table.ts, leaving est-table.ts untouched (this script normally
+// regenerates BOTH). Use it to widen the IMC table without re-running the EST extraction.
+const IMC_ONLY = process.argv.includes("--imc-only");
+// IMC_LIMIT=N extracts only the first N items and neither validates nor writes imc-table.ts — a
+// cheap smoke test of the item_sets.db enumeration + parallel extraction before the full ~1555 run.
+const IMC_LIMIT = process.env.IMC_LIMIT
+  ? Number(process.env.IMC_LIMIT)
+  : Number.POSITIVE_INFINITY;
+
+// Local async ConsoleTools /extract for the parallel IMC pool. We do NOT touch oracle.ts's
+// synchronous extractGameFile (shared with EST extraction); this is a self-contained async variant
+// so a bug here can never affect the EST path. Same command as oracle.run (["/extract", path, dest]).
+const CONSOLE_TOOLS_EXE =
+  "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
+const execFileAsync = promisify(execFile);
+async function extractGameFileAsync(
+  gamePath: string,
+  dest: string,
+): Promise<void> {
+  // execFile rejects on ConsoleTools' non-zero exit (missing file) -- caller treats that as "not
+  // present in game". maxBuffer raised so chatty stdout never spuriously rejects a real extract.
+  await execFileAsync(CONSOLE_TOOLS_EXE, ["/extract", gamePath, dest], {
+    maxBuffer: 16 * 1024 * 1024,
+  });
+}
 
 // Est.EstType, minus Invalid (which never selects a file) -- Est.cs:24-31. Named EstFileType (not
 // EstType) to avoid clashing with src/meta/root.ts's EstType, which additionally includes null for
@@ -161,55 +193,62 @@ function serializeRaceSetSkel(table: RaceSetSkel, indent: string): string {
   return `{\n${raceLines.join("\n")}\n${indent}}`;
 }
 
-const EST_TYPES: EstFileType[] = ["Head", "Body", "Hair", "Face"];
-const table: Partial<Record<EstFileType, RaceSetSkel>> = {};
-let failed = false;
+// EST extraction + est-table.ts write, gated by --imc-only (skipped when only widening IMC).
+if (!IMC_ONLY) {
+  const EST_TYPES: EstFileType[] = ["Head", "Body", "Hair", "Face"];
+  const table: Partial<Record<EstFileType, RaceSetSkel>> = {};
+  let failed = false;
 
-for (const type of EST_TYPES) {
-  const gamePath = EST_FILES[type];
-  const dir = mkdtempSync(join(tmpdir(), "est-"));
-  const dest = join(dir, "file.est");
-  try {
-    extractGameFile(gamePath, dest);
-    const bytes = new Uint8Array(readFileSync(dest));
-    table[type] = parseEstFile(bytes, `${type} (${gamePath})`);
-  } catch (err) {
-    console.error(
-      `FAILED extracting/parsing ${type} (${gamePath}): ${(err as Error).message}`,
-    );
-    failed = true;
+  for (const type of EST_TYPES) {
+    const gamePath = EST_FILES[type];
+    const dir = mkdtempSync(join(tmpdir(), "est-"));
+    const dest = join(dir, "file.est");
+    try {
+      extractGameFile(gamePath, dest);
+      const bytes = new Uint8Array(readFileSync(dest));
+      table[type] = parseEstFile(bytes, `${type} (${gamePath})`);
+    } catch (err) {
+      console.error(
+        `FAILED extracting/parsing ${type} (${gamePath}): ${(err as Error).message}`,
+      );
+      failed = true;
+    }
   }
-}
 
-if (!failed) {
-  const body = EST_TYPES.map(
-    (type) => `  ${type}: ${serializeRaceSetSkel(table[type]!, "  ")},`,
-  ).join("\n");
-  const out =
-    "// GENERATED — regenerate via npx tsx scripts/extract-meta-reference.ts. Do not edit by hand.\n" +
-    "//\n" +
-    "// Base-game EST lookup: race code -> setId -> skelId, per EST type. Mirrors Est.GetEstFile's\n" +
-    "// Dictionary<XivRace, Dictionary<ushort, ExtraSkeletonEntry>> (Est.cs:362-386), flattened to\n" +
-    "// plain numbers (skelId is all ExtraSkeletonEntry callers here need). See\n" +
-    "// scripts/extract-meta-reference.ts for the extraction/parsing logic and provenance.\n" +
-    'export type EstFileType = "Head" | "Body" | "Hair" | "Face";\n' +
-    "export const EST_TABLE: Record<EstFileType, Record<number, Record<number, number>>> = {\n" +
-    body +
-    "\n};\n";
-  const outDir = join(
-    dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "src",
-    "meta",
-    "reference",
-  );
-  mkdirSync(outDir, { recursive: true });
-  const outPath = join(outDir, "est-table.ts");
-  writeFileSync(outPath, out);
-  console.log(`wrote ${outPath} (${Buffer.byteLength(out, "utf8")} bytes)`);
+  if (!failed) {
+    const body = EST_TYPES.map(
+      (type) => `  ${type}: ${serializeRaceSetSkel(table[type]!, "  ")},`,
+    ).join("\n");
+    const out =
+      "// GENERATED — regenerate via npx tsx scripts/extract-meta-reference.ts. Do not edit by hand.\n" +
+      "//\n" +
+      "// Base-game EST lookup: race code -> setId -> skelId, per EST type. Mirrors Est.GetEstFile's\n" +
+      "// Dictionary<XivRace, Dictionary<ushort, ExtraSkeletonEntry>> (Est.cs:362-386), flattened to\n" +
+      "// plain numbers (skelId is all ExtraSkeletonEntry callers here need). See\n" +
+      "// scripts/extract-meta-reference.ts for the extraction/parsing logic and provenance.\n" +
+      'export type EstFileType = "Head" | "Body" | "Hair" | "Face";\n' +
+      "export const EST_TABLE: Record<EstFileType, Record<number, Record<number, number>>> = {\n" +
+      body +
+      "\n};\n";
+    const outDir = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "src",
+      "meta",
+      "reference",
+    );
+    mkdirSync(outDir, { recursive: true });
+    const outPath = join(outDir, "est-table.ts");
+    writeFileSync(outPath, out);
+    console.log(`wrote ${outPath} (${Buffer.byteLength(out, "utf8")} bytes)`);
+  } else {
+    console.log("\nNot writing est-table.ts due to failures above.");
+    process.exitCode = 1;
+  }
 } else {
-  console.log("\nNot writing est-table.ts due to failures above.");
-  process.exitCode = 1;
+  console.log(
+    "--imc-only: skipping est-table.ts regeneration (left unchanged).",
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -319,63 +358,101 @@ interface ImcItemRef {
   slots: Set<string>;
 }
 const imcItems = new Map<string, ImcItemRef>();
-let metaCount = 0;
-let unrecognizedRoots = 0;
-for (const pack of corpusPacks()) {
-  const packBytes = new Uint8Array(readFileSync(pack));
-  const packData = loadModpack(pack, packBytes);
-  for (const f of allFiles(packData)) {
-    if (!f.gamePath.endsWith(".meta")) continue;
-    metaCount++;
-    let root: ReturnType<typeof parseMetaRoot>;
-    try {
-      root = parseMetaRoot(f.gamePath);
-    } catch {
-      unrecognizedRoots++;
-      continue;
-    }
-    if (root.itemType !== "equipment" && root.itemType !== "accessory")
-      continue;
-    const key = `${root.itemType}/${root.primaryId}`;
-    let ref = imcItems.get(key);
-    if (!ref) {
-      ref = {
-        itemType: root.itemType,
-        primaryId: root.primaryId,
-        slots: new Set(),
-      };
-      imcItems.set(key, ref);
-    }
-    ref.slots.add(root.slot);
+// Exhaustive enumeration from the framework's item_sets.db `roots` table (the authoritative
+// dependency-root list) -- every equipment/accessory (item, slot), NOT just the items a corpus
+// .meta happens to reference. This makes the IMC table cover every base-game equipment/accessory
+// item (see BACKLOG.md; supersedes the earlier corpus-scoped enumeration). reference/ is gitignored
+// (the maintainer re-clones the framework); node:sqlite needs --experimental-sqlite (set via
+// NODE_OPTIONS -- see the regen command in this file's header).
+const ITEM_SETS_DB = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "reference",
+  "FFXIV_TexTools_UI",
+  "lib",
+  "xivModdingFramework",
+  "xivModdingFramework",
+  "Resources",
+  "DB",
+  "item_sets.db",
+);
+const { DatabaseSync } = await import("node:sqlite");
+const rootsDb = new DatabaseSync(ITEM_SETS_DB, { readOnly: true });
+const roots = rootsDb
+  .prepare(
+    "SELECT primary_type AS itemType, primary_id AS primaryId, slot FROM roots " +
+      "WHERE primary_type IN ('equipment', 'accessory')",
+  )
+  .all() as { itemType: ImcItemType; primaryId: number; slot: string }[];
+rootsDb.close();
+for (const r of roots) {
+  const key = `${r.itemType}/${r.primaryId}`;
+  let ref = imcItems.get(key);
+  if (!ref) {
+    ref = { itemType: r.itemType, primaryId: r.primaryId, slots: new Set() };
+    imcItems.set(key, ref);
   }
+  ref.slots.add(r.slot);
 }
 console.log(
-  `\nIMC: scanned ${metaCount} .meta gamePaths across the corpus, ${unrecognizedRoots} ` +
-    `unrecognized roots skipped (weapon/monster/demihuman), ${imcItems.size} equipment/accessory ` +
-    `items to extract`,
+  `\nIMC: item_sets.db lists ${roots.length} equipment/accessory (item,slot) roots across ` +
+    `${imcItems.size} distinct items to extract` +
+    (IMC_LIMIT !== Number.POSITIVE_INFINITY
+      ? ` (IMC_LIMIT=${IMC_LIMIT}: smoke test, will not validate or write)`
+      : ""),
 );
 
 const imcTable: Record<string, number[][]> = {};
 let imcExtracted = 0;
 let imcMissing = 0;
 let imcParseFailed = false;
-for (const ref of imcItems.values()) {
+
+const allItems = [...imcItems.values()];
+const items =
+  IMC_LIMIT === Number.POSITIVE_INFINITY
+    ? allItems
+    : allItems.slice(0, IMC_LIMIT);
+const imcGamePath = (ref: ImcItemRef): string => {
   const prefix = ref.itemType === "equipment" ? "e" : "a";
   const idStr = String(ref.primaryId).padStart(4, "0");
-  const gamePath = `chara/${ref.itemType}/${prefix}${idStr}/${prefix}${idStr}.imc`;
-  const dir = mkdtempSync(join(tmpdir(), "imc-"));
+  return `chara/${ref.itemType}/${prefix}${idStr}/${prefix}${idStr}.imc`;
+};
+
+// Parallel extraction pool: ConsoleTools spawns (~0.9s each) dominate wall time, so a small
+// concurrency pool over the items turns a ~20-minute sequential run into a few minutes. Each worker
+// uses its own temp dest (no shared-file race). Slow extraction runs concurrently; parsing +
+// table-building (fast, order-sensitive) runs sequentially afterward for deterministic output.
+const CONCURRENCY = 8;
+const extractedBytes = new Map<string, Uint8Array>(); // "type/id" -> .imc bytes (misses absent)
+let cursor = 0;
+async function extractWorker(wid: number): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), `imc-w${wid}-`));
   const dest = join(dir, "file.imc");
-  let bytes: Uint8Array;
-  try {
-    extractGameFile(gamePath, dest);
-    bytes = new Uint8Array(readFileSync(dest));
-  } catch (err) {
-    console.log(
-      `  SKIP ${gamePath}: not present in game (${(err as Error).message.split("\n")[0]})`,
-    );
-    imcMissing++;
-    continue;
+  while (true) {
+    const i = cursor++;
+    if (i >= items.length) break;
+    const ref = items[i]!;
+    try {
+      await extractGameFileAsync(imcGamePath(ref), dest);
+      extractedBytes.set(
+        `${ref.itemType}/${ref.primaryId}`,
+        new Uint8Array(readFileSync(dest)),
+      );
+    } catch {
+      imcMissing++; // no .imc in the game for this item id (not every id has one)
+    }
+    if ((i + 1) % 200 === 0)
+      console.log(`  ...extracted ${i + 1}/${items.length}`);
   }
+}
+await Promise.all(
+  Array.from({ length: CONCURRENCY }, (_, w) => extractWorker(w)),
+);
+
+for (const ref of items) {
+  const bytes = extractedBytes.get(`${ref.itemType}/${ref.primaryId}`);
+  if (!bytes) continue; // missing (counted in imcMissing)
+  const gamePath = imcGamePath(ref);
   let parsed: ParsedImc;
   try {
     parsed = parseImcFile(bytes, gamePath);
@@ -402,6 +479,16 @@ for (const ref of imcItems.values()) {
 console.log(
   `  extracted ${imcExtracted} items, ${imcMissing} not present in game`,
 );
+
+// IMC_LIMIT smoke test: enumeration + parallel extraction exercised on a subset; do NOT validate
+// (needs the specific golden-target items) or overwrite the committed imc-table.ts.
+if (IMC_LIMIT !== Number.POSITIVE_INFINITY) {
+  console.log(
+    `\nIMC_LIMIT=${IMC_LIMIT} smoke test done (${imcExtracted} extracted, ` +
+      `${Object.keys(imcTable).length} keys). Not validating or writing imc-table.ts.`,
+  );
+  process.exit(imcParseFailed ? 1 : 0);
+}
 
 // Golden spot-check (required, per the task-8a brief): confirm IMC_TABLE reproduces the base
 // portion of the two known IMC-variant-growth residue cases (e6137_top 2->3, e0724_top 4->7).
@@ -548,12 +635,12 @@ if (!imcParseFailed && !validationFailed) {
     "// (Imc.cs:547-559). See scripts/extract-meta-reference.ts for the extraction/parsing logic,\n" +
     "// provenance, and the golden spot-check that validates this port.\n" +
     "//\n" +
-    "// SCOPE: corpus-derived, not exhaustive -- only equipment/accessory items referenced by a\n" +
-    "// .meta gamePath in the current test/corpus/{real,synthetic} corpus are extracted (same\n" +
-    "// precedent as src/upgrade/reference/index-path-overrides.ts, Task T4). A general\n" +
-    "// (all-base-items) IMC table is BACKLOG follow-up if the shipped tool needs items beyond the\n" +
-    "// corpus. NonSet (weapon/monster/demihuman) items are out of scope until parseMetaRoot\n" +
-    "// (src/meta/root.ts) recognizes those roots -- see BACKLOG.md.\n" +
+    "// SCOPE: exhaustive over base-game equipment/accessory. Every (item, slot) root in the\n" +
+    "// framework's item_sets.db `roots` table is extracted (~1555 items / ~7775 keys), so this\n" +
+    "// covers every base-game equipment/accessory item -- not just the ones a corpus .meta happens\n" +
+    "// to reference. NonSet (weapon/monster/demihuman) items use a different .imc shape (ImcType.\n" +
+    "// NonSet) and remain out of scope until parseMetaRoot (src/meta/root.ts) recognizes those\n" +
+    "// roots -- see BACKLOG.md.\n" +
     "export const IMC_TABLE: Record<string, number[][]> = {\n" +
     body +
     "\n};\n";

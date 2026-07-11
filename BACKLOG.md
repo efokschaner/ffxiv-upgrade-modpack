@@ -35,26 +35,23 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   picked up. `src/meta/serialize.ts` always writes version `2` on output regardless of input
   version (`ItemMetadata.Serialize`, `ItemMetadata.cs:509`), so this is purely a read-side gap.
 
-- **General (all-base-items) IMC reference table.** `src/meta/reference/imc-table.ts` (Task 8a,
-  `scripts/extract-meta-reference.ts`) is **corpus-derived, not exhaustive** — only the 28
-  equipment/accessory items referenced by a `.meta` gamePath in the current
-  `test/corpus/{real,synthetic}` corpus are extracted (same precedent as
-  `src/upgrade/reference/index-path-overrides.ts`, Task T4). A future mod referencing an item
-  outside this set will have `IMC_TABLE` return `undefined` for its `(itemType, primaryId, slot)`
-  key. As of the round-5 final review, `reconstructMeta`'s IMC step (`src/meta/reconstruct.ts`,
-  Task 8b) **fails loud** (throws) on a missing key for `equipment`/`accessory` roots — it cannot
-  faithfully reproduce the base IMC seed of an unlisted Set item — and only passes `mod.imc`
-  through for weapon/monster (NonSet) roots, which the table never carries by design (documented,
-  ratchet-guarded — every corpus weapon/monster `.meta` matches via pass-through). So a general
-  tool that meets an equipment/accessory item outside the corpus set will THROW until the table is
-  widened (that's the intended fail-loud signal, not a silent wrong output). If the shipped
-  tool needs items beyond the corpus, widen the extractor to walk the game's full
-  equipment/accessory id range (or a canonical item list) instead of scanning `.meta` gamePaths.
-  Also out of scope: `IMC_TABLE` is Set-only — NonSet (weapon/monster/demihuman) `.imc` files
-  (different on-disk shape, `Imc.cs` `ImcType.NonSet`) are never extracted, so weapon/monster
-  `.meta`s always take the same pass-through branch. `parseMetaRoot` recognizes weapon/monster
-  roots (Task 8b) purely to produce a lookup key that reliably misses `IMC_TABLE`; a general tool
-  wanting NonSet IMC growth needs a separate NonSet table and apply path.
+- **NonSet (weapon/monster/demihuman) IMC reference table.** `src/meta/reference/imc-table.ts`
+  (`scripts/extract-meta-reference.ts`) is now **exhaustive over base-game equipment/accessory** —
+  it extracts every `(item, slot)` root in the framework's `item_sets.db` `roots` table (~1555
+  items / ~7775 keys), so `reconstructMeta`'s IMC step (`src/meta/reconstruct.ts`) covers every
+  base-game equipment/accessory item, not just corpus-referenced ones. What remains: `IMC_TABLE`
+  is **Set-only**. NonSet items — weapon/monster/demihuman — use a different on-disk `.imc` shape
+  (`Imc.cs` `ImcType.NonSet`, a 1-entry default + 1-entry subsets vs Set's 5-slot subsets), so they
+  are never extracted, and weapon/monster `.meta`s take the pass-through branch (verified byte-exact
+  on the corpus, ratchet-guarded). `parseMetaRoot` recognizes weapon/monster roots (Task 8b) only to
+  produce a lookup key that misses `IMC_TABLE`. A general tool wanting NonSet IMC growth needs: (1) a
+  NonSet `.imc` parser (the current `parseImcFile` handles only `ImcType.Set`), (2) its own NonSet
+  extraction pass over the `weapon`/`monster`/`demihuman` `item_sets.db` roots, and (3) the NonSet
+  column selection in `reconstructMeta`. Until then a NonSet meta that *would* grow its IMC silently
+  passes through — no corpus pack exercises this, so the ratchet would flag it if a real one did.
+  (Note: an equipment/accessory item genuinely absent from the exhaustive table — e.g. added to the
+  game after the last `imc-table.ts` regen — now **fails loud** in `reconstructMeta`, signalling
+  "regenerate the table", not a silent wrong output.)
 
 - **EQDP reconstruction drops mod rows for non-playable races (latent).** `reconstructMeta`'s EQDP
   step (`src/meta/reconstruct.ts`, round 5) emits exactly the 18 `Eqp.PlayableRaces` in canonical
