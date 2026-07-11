@@ -16,6 +16,24 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
 
 ## Unprioritized
 
+- **Expected-failure golden capability for the upgrade harness.** The golden harness models only
+  two ConsoleTools `/upgrade` outcomes: a produced **pack** or a **noop** marker
+  (`GoldenResult = { kind: "pack" } | { kind: "noop" }`, `test/helpers/upgrade-golden.ts:29-31`).
+  It has **no way to represent (or cache) an input on which `/upgrade` is *expected to error***. When
+  ConsoleTools returns `-1`, `run()`'s `execFileSync` throws (`test/helpers/oracle.ts:125-128`), the
+  exception propagates out of `upgradeGoldenCached` uncaught, the test hard-fails, and nothing is
+  cached — so every subsequent run re-spawns ConsoleTools and throws again. There is no "bless this as
+  an expected failure" path (the ratchet baseline only covers known byte-diffs on a *produced* pack).
+  If we ever want a corpus pack to assert "TexTools errors here and our port should error the same
+  way," add: (1) a third `GoldenResult` kind (e.g. `{ kind: "error", … }`) capturing the failure, (2)
+  a cached error-marker analogous to `<sha>.noop` so the outcome is content-addressed and not re-run,
+  and (3) a bless path to record it. **Not needed today:** the only expected-failure case in flight is
+  the `Mdl.cs:2822` vertex-buffer hard cap, which is covered by a synthetic unit test that drives the
+  serializer directly (see `docs/superpowers/specs/2026-07-11-mdl-half-precision-fallback-design.md`
+  §4.2-4.3) — the right vehicle regardless, since a ConsoleTools error can't be cached/blessed under
+  the current harness anyway. Recorded so the capability is picked up deliberately if a real
+  expected-failure corpus pack ever appears.
+
 - **v1 metadata support.** `src/meta/deserialize.ts` now throws on any `.meta` with
   `version !== 2` rather than silently mis-upgrading it. An empirical probe
   (`local-notes/probe-v1-meta.ts`: downgrade a real pack's v2 equipment meta to v1 --
