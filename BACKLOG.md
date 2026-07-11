@@ -22,9 +22,13 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `test/corpus/{real,synthetic}` corpus are extracted (same precedent as
   `src/upgrade/reference/index-path-overrides.ts`, Task T4). A future mod referencing an item
   outside this set will have `IMC_TABLE` return `undefined` for its `(itemType, primaryId, slot)`
-  key; `reconstructMeta`'s IMC step (`src/meta/reconstruct.ts`, Task 8b) treats a missing key as
-  "pass `mod.imc` through unchanged" (documented, ratchet-guarded — correct for every item in the
-  current corpus, since none of them grow past what the mod already supplies). If the shipped
+  key. As of the round-5 final review, `reconstructMeta`'s IMC step (`src/meta/reconstruct.ts`,
+  Task 8b) **fails loud** (throws) on a missing key for `equipment`/`accessory` roots — it cannot
+  faithfully reproduce the base IMC seed of an unlisted Set item — and only passes `mod.imc`
+  through for weapon/monster (NonSet) roots, which the table never carries by design (documented,
+  ratchet-guarded — every corpus weapon/monster `.meta` matches via pass-through). So a general
+  tool that meets an equipment/accessory item outside the corpus set will THROW until the table is
+  widened (that's the intended fail-loud signal, not a silent wrong output). If the shipped
   tool needs items beyond the corpus, widen the extractor to walk the game's full
   equipment/accessory id range (or a canonical item list) instead of scanning `.meta` gamePaths.
   Also out of scope: `IMC_TABLE` is Set-only — NonSet (weapon/monster/demihuman) `.imc` files
@@ -32,6 +36,17 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `.meta`s always take the same pass-through branch. `parseMetaRoot` recognizes weapon/monster
   roots (Task 8b) purely to produce a lookup key that reliably misses `IMC_TABLE`; a general tool
   wanting NonSet IMC growth needs a separate NonSet table and apply path.
+
+- **EQDP reconstruction drops mod rows for non-playable races (latent).** `reconstructMeta`'s EQDP
+  step (`src/meta/reconstruct.ts`, round 5) emits exactly the 18 `Eqp.PlayableRaces` in canonical
+  order (mod value or 0). C#'s `DeserializeEqdpData` (`ItemMetadata.cs:773-788`) instead keeps
+  *every* race the mod file carries and then backfills the missing playable races — so a mod EQDP
+  row for a **non-playable** race would be preserved by C# but is silently dropped by our port.
+  Unreachable today: game EQDP files are playable-race-scoped, so no real `.meta` carries a
+  non-playable EQDP row (flagged in the round-5 final review as a latent fail-loud/fidelity
+  asymmetry, unlike the EST/IMC out-of-range cases which were made to throw). Revisit only if a real
+  pack ever exercises it; the honest fix is to keep the mod's extra rows (matching C#) rather than
+  drop or throw.
 
 - **M1/M2 — empty-sampler placeholder serialization (audit Theme D).** Reproduce, byte-for-byte,
   C#'s quirk where `XivMtrlToUncompressedMtrl` lowercases texture paths (`Mtrl.cs:560`) before its
