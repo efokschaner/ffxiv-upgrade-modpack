@@ -49,6 +49,7 @@ function oneVertModel(over: Partial<TtVertex> = {}): TTModel {
             attributes: new Set<string>(),
             triangleIndices: [],
             vertices: [v],
+            shapeParts: new Map(),
           },
         ],
       },
@@ -124,5 +125,35 @@ describe("buildDeclarations", () => {
     // Half strides: stream0 Half4(8)+Ubyte4n(4)+Ubyte4(4)=16; stream1 Half4(8)+Binormal Ubyte4n(4)
     // +Color Ubyte4n(4)+Texcoord Half4(8)=24 (Flow omitted, no vColor2).
     expect(streamEntrySizes(decl)).toEqual([16, 24, 0]);
+  });
+
+  it("counts shape-part vertices (excluding 'original') toward the 8MB gate", () => {
+    // Mdl.cs:2536-2538: totalVertexCount = shapeVertCount + VertexCount, where shapeVertCount
+    // sums every shapePart EXCEPT the "original" key. perVertex here (maxUv=2, no flow) = 56B.
+    const under = oneVertModel(); // base 100k verts -> 5.6MB, below the 8MB gate
+    const v = under.meshGroups[0]!.parts[0]!.vertices[0]!;
+    const part = under.meshGroups[0]!.parts[0]!;
+    part.vertices = new Array(100_000).fill(v);
+
+    // (a) An "original" shapePart of 100k must NOT count: total stays 5.6MB -> Float.
+    part.shapeParts = new Map([
+      [
+        "original",
+        {
+          name: "original",
+          vertices: new Array(100_000).fill(v),
+          vertexReplacements: new Map(),
+        },
+      ],
+    ]);
+    expect(buildDeclarations(under)[0]![0]!.type).toBe(T.Float3); // Position stays Float
+
+    // (b) A non-"original" shapePart of 100k DOES count: total 200k*56B = 11.2MB -> Half.
+    part.shapeParts.set("shp_a", {
+      name: "shp_a",
+      vertices: new Array(100_000).fill(v),
+      vertexReplacements: new Map(),
+    });
+    expect(buildDeclarations(under)[0]![0]!.type).toBe(T.Half4); // Position flips to Half
   });
 });

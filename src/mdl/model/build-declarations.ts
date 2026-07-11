@@ -54,10 +54,15 @@ export function buildDeclarations(m: TTModel): VertexElement[][] {
     usesVColor2,
     flow,
   );
+  // Mdl.cs:2536-2538: totalVertexCount = shapeVertCount + VertexCount. shapeVertCount sums
+  // every shapePart's vertices EXCEPT the "original" key (the base geometry, already counted).
   let totalVertexCount = 0;
   for (const group of m.meshGroups) {
     for (const part of group.parts) {
       totalVertexCount += part.vertices.length;
+      for (const [key, shape] of part.shapeParts) {
+        if (key !== "original") totalVertexCount += shape.vertices.length;
+      }
     }
   }
   const upgradePrecision =
