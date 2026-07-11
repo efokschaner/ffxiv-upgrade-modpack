@@ -71,3 +71,16 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `#0:added`) and the two e0208 `.mtrl` mismatch. The index generation itself is byte-exact once pointed
   at the right path (triage-confirmed). Fix mechanically by re-running `scripts/extract-index-overrides.ts`
   against a game install to widen the table; the ratchet baselines the gap until then.
+
+- **MDL — Half-precision large-vertex-buffer fallback (model round `FixOldModel`).** The model
+  normalizer throws `mdl: vertex buffer would overflow 8MB; Half-precision path unsupported`
+  (`src/mdl/model/build-declarations.ts:62-66`) when a model's estimated vertex buffer reaches the
+  8 MB `_MaxVertexBufferSize`. TexTools handles this by *not* doing the Half→Float precision upgrade
+  for that model — it falls back to a Half-precision vertex declaration (`Mdl.cs:2513-2542`, consumed
+  by the element-set construction `Mdl.cs:2614-2711`). We deliberately fail loud rather than emit a
+  byte-incompatible declaration (the guard's own comment notes the corpus "never approaches" this).
+  **Surfaced 2026-07-10:** `[V] [AM] Spring Florals.ttmp2` (Vermillion, 12 MB, in `XIVModOriginals`)
+  is a real pack that trips it, so the "no corpus hits this" assumption no longer holds. Porting the
+  Half-precision declaration path is its own scope; add Spring Florals (or a smaller repro) to the
+  corpus once it lands so the ratchet locks it. Unrelated to the metadata round — found incidentally
+  during the round-5 corpus scan.
