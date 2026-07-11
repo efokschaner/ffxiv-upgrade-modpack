@@ -84,3 +84,18 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   Half-precision declaration path is its own scope; add Spring Florals (or a smaller repro) to the
   corpus once it lands so the ratchet locks it. Unrelated to the metadata round — found incidentally
   during the round-5 corpus scan.
+
+- **Audit temp-dir usage for leaks (`mkdtemp` cleanup).** Several helpers create OS temp working
+  directories via `mkdtempSync(join(tmpdir(), …))` but never remove the *directory* (only inner
+  files), so they accumulate across runs. The worst offenders run on **every `npm test`**:
+  `test/helpers/oracle.ts:169` (`oracle-*`, a per-worker module singleton `ORACLE_TMP`, never rm'd)
+  and `test/helpers/upgrade-golden.ts:49` (`upgrade-*`, `UPGRADE_TMP`, never rm'd) — these left the
+  stale `oracle-*`/`upgrade-*` dirs found on 2026-07-10. Occasional offenders: `scripts/extract-index-overrides.ts:87`
+  (`idxover-*`) and `scripts/extract-shader-params.ts:26` (`shparam-*`) (manual runs), and the test
+  files `test/oracle-cache.test.ts` (`oc-*`) / `test/upgrade-harness.test.ts` (`ug-*`/`ub-*`).
+  **Good examples to follow:** `test/sqpack/fixtures/regen.ts:64` and `test/tex/fixtures/bcn/regen.ts:431`
+  both `rmSync(tmp, { recursive: true, force: true })` when done. Fix: give each `mkdtemp` site a
+  guaranteed cleanup (try/finally, `afterAll`, or a `process.on("exit")` unlink for the singleton
+  harness dirs), and consider a lint/grep guard so new `mkdtemp` calls without a paired removal are
+  caught. Note `oracle.ts` already sweeps stale `.tmp` files in its *cache* dir (`:48-65`) — extend
+  that discipline to the mkdtemp working dirs. Housekeeping; no correctness impact.
