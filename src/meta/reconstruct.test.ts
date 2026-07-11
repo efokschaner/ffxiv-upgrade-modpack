@@ -129,14 +129,14 @@ describe("reconstructMeta EST reconstruction", () => {
     });
   });
 
-  it("hair EST is left byte-identical, even though the mod covers only one race (corpus-observed: Hair/Face never get the base-seed reconstruction)", () => {
-    // Corpus evidence (Misty_Hairstyle_Female.ttmp2, chara/human/c0201/obj/hair/h0170/
-    // c0201h0170_hir.meta): the mod's EST supplies only race 201, and EST_TABLE.Hair[1601][170]
-    // etc. DO have real base data for this setId (unlike Head's e5035 case), yet the /upgrade
-    // golden is byte-identical to the mod's own single-entry EST — no base-fill happens for Hair.
-    // See the comment above reconstruct.ts's `root.itemType === "equipment"` gate.
+  it("hair EST seeds a single entry for the root's own race, then the mod's matching-race entry overrides skelId (Est.cs:259-291 Hair/Face trim)", () => {
+    // Corpus case (Misty_Hairstyle_Female.ttmp2, chara/human/c0201/obj/hair/h0170/
+    // c0201h0170_hir.meta): the mod's EST supplies only race 201 (matching the root's own c0201
+    // character race), so the faithful single-race base-seed + override still lands on exactly
+    // the mod's entry — byte-identical to the prior pass-through, but now via the real mechanism
+    // (Est.cs:268-288) rather than an itemType heuristic.
     const hairId = 170;
-    expect(EST_TABLE.Hair[1601]?.[hairId]).toBe(171); // base data exists but must NOT be pulled in
+    expect(EST_TABLE.Hair[1601]?.[hairId]).toBe(171); // sibling races' base data must NOT leak in
     const est: EstEntry[] = [{ race: 201, setId: hairId, skelId: 113 }];
     const mod: ItemMeta = {
       version: 2,
@@ -148,6 +148,42 @@ describe("reconstructMeta EST reconstruction", () => {
       gmp: null,
     };
     expect(reconstructMeta(mod, mod.path).est).toEqual(est);
+  });
+
+  it("hair EST base-seeds from EST_TABLE for the root's race when the mod supplies no EST segment at all is not applicable — but a mod entry for the root's race still overrides the base skelId", () => {
+    // Root race 1601 (c1601), hair id 170: base table has skelId 171 for this race/setId. The
+    // mod's own entry for the same race (1601) must win over that base value.
+    const hairId = 170;
+    expect(EST_TABLE.Hair[1601]?.[hairId]).toBe(171);
+    const est: EstEntry[] = [{ race: 1601, setId: hairId, skelId: 999 }];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/human/c1601/obj/hair/h0170/c1601h0170_hir.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.est).toEqual([{ race: 1601, setId: hairId, skelId: 999 }]);
+  });
+
+  it("hair EST for a root race absent from the mod's entries fails loud (KeyNotFoundException equivalent, PmpManipulation.cs:275)", () => {
+    // Root is race 201 (c0201), but the .meta's EST entry is for a different race (301) — mirrors
+    // applying a manipulation to a dict keyed only on the seeded root race.
+    const hairId = 170;
+    const est: EstEntry[] = [{ race: 301, setId: hairId, skelId: 113 }];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/human/c0201/obj/hair/h0170/c0201h0170_hir.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    expect(() => reconstructMeta(mod, mod.path)).toThrow();
   });
 
   it("leaves a meta with no EST segment untouched in EST", () => {

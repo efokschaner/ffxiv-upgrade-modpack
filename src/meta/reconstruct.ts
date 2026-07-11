@@ -31,30 +31,23 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       if (root.estType === null) {
         throw new Error(`meta: ${gamePath} has an EST segment but no est type`);
       }
-      // Empirically (see corpus evidence below), ConsoleTools /upgrade only rebuilds EST from the
-      // base seed for EQUIPMENT roots (met/top, EstType Head/Body); Hair/Face .meta pass their EST
-      // segment through byte-identical even when the mod supplies only some races. Verified via the
-      // golden harness on two ttmp2 (non-PMP) packs, ruling out a PMP-manipulation-vs-raw-.meta
-      // explanation: "Purrfection Ears & Bow.ttmp2" (chara/equipment/e5035/e5035_met.meta, EstType
-      // Head) — mod supplies 16/18 races, golden adds race 1601 (skelId 5035, base identity entry)
-      // AND 1701 (skelId 0, base has no entry for this setId) — full base-seed reconstruction.
-      // "Misty_Hairstyle_Female.ttmp2" (chara/human/c0201/obj/hair/h0170/c0201h0170_hir.meta,
-      // EstType Hair) — mod supplies only race 201; golden is byte-identical to the mod's own
-      // single-entry EST, with NO base-fill despite EST_TABLE.Hair having sections (and, for this
-      // setId, real skelId data) for every other PLAYABLE_RACES race. We could not find the specific
-      // C# branch point that draws this line (ModpackUpgrader.cs/WizardData.cs touch models/textures
-      // and PMP-manipulation import, but not raw .meta segments directly), so this gate reproduces
-      // the observed golden split rather than citing a single symbol; see Task 7 report.
-      if (root.itemType === "equipment") {
-        // Port of Est.GetExtraSkeletonEntries(EstType, ushort setId) (Est.cs:300-334): base seed
-        // is built by walking PLAYABLE_RACES (Eqp.PlayableRaces), skipping races the est file
-        // doesn't carry at all, and defaulting to skelId 0 for a race the file carries but has no
-        // entry for this setId. ManipulationsToMetadata's PMPEstManipulationJson.ApplyToMetadata
-        // (PmpManipulation.cs:265-280) then overwrites entry.SkelId for the mod's races in place
-        // (metadata.EstEntries[race].SkelId = ...), so the base's PLAYABLE_RACES order survives
-        // and only skelId (and, here, setId) get replaced per race.
-        const estType = root.estType;
-        const setId = root.primaryId;
+      // The ttmp2 /upgrade path re-materializes each .meta rather than passing it through: the raw
+      // .meta is converted to per-race Manipulations (WizardData.cs:685-691
+      // MetadataToManipulations), which are then re-applied via PMP.ManipulationsToMetadata
+      // (WizardData.cs:463-467). That base-seeds EstEntries from the game
+      // (PMP.cs:1271 -> ItemMetadata.cs:253 `EstEntries = Est.GetExtraSkeletonEntries(root, ...)`)
+      // and then overwrites each manipulation's race in place (PmpManipulation.cs:275-279,
+      // `metadata.EstEntries[race].SkelId = Entry`). The base seed itself
+      // (Est.GetExtraSkeletonEntries(XivDependencyRootInfo), Est.cs:259-291) branches by EstType:
+      const estType = root.estType;
+      const setId = root.primaryId;
+      if (estType === "Head" || estType === "Body") {
+        // Equipment est (Est.cs:267 `id = root.PrimaryId`, no Face/Hair trim): the full-race base
+        // seed via the (type, setId) overload (Est.cs:300-334) — walk PLAYABLE_RACES (Eqp.
+        // PlayableRaces), skipping races the est file doesn't carry at all, defaulting to skelId 0
+        // for a race the file carries but has no entry for this setId. Then each manipulation
+        // overwrites entry.SkelId in place, so the base's PLAYABLE_RACES order survives and only
+        // skelId (and, here, setId) get replaced per race.
         const byRace = new Map(est.map((e) => [e.race, e]));
         const baseByRace = EST_TABLE[estType];
         const seed: EstEntry[] = [];
@@ -71,8 +64,38 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
           }
         }
         est = seed;
+      } else {
+        // Hair/Face est (Est.cs:267-270 `id = root.SecondaryId`, then the 268-288 trim): the base
+        // seed is a SINGLE entry for the root's own character race (Est.cs:278
+        // `race = XivRaces.GetXivRace(root.PrimaryId)`, our `root.race` — the `c####` prefix), not
+        // the full PLAYABLE_RACES set. Default skelId 0 if the base table has no entry for this
+        // race/setId (Est.cs:285 `new ExtraSkeletonEntry(race, id)` / ExtraSkeletonEntry.cs:15-20).
+        if (root.race === null) {
+          throw new Error(
+            `meta: ${gamePath} is a Hair/Face EST root with no character race`,
+          );
+        }
+        const race = root.race;
+        const baseSkelId = EST_TABLE[estType][race]?.[setId] ?? 0;
+        let entry: EstEntry = { race, setId, skelId: baseSkelId };
+        for (const modEntry of est) {
+          // PmpManipulation.cs:275 `metadata.EstEntries[race]` is a dict keyed on the single seeded
+          // race above; applying a manipulation for any other race is a C# KeyNotFoundException.
+          // Fail loud instead of silently emitting a race the game seed never had.
+          if (modEntry.race !== race) {
+            throw new Error(
+              `meta: ${gamePath} has a Hair/Face EST entry for race ${modEntry.race}, ` +
+                `but the root's seeded race is ${race} (KeyNotFoundException equivalent)`,
+            );
+          }
+          // PmpManipulation.cs:279 only assigns SkelId in place; SetId/race are carried from the
+          // seed. Here the mod's setId is always root.primaryId (the same h####/f#### id the path
+          // was parsed from), so taking it from modEntry is equivalent and keeps the entry a single
+          // faithful copy of the winning manipulation.
+          entry = { race, setId: modEntry.setId, skelId: modEntry.skelId };
+        }
+        est = [entry];
       }
-      // Hair/Face (root.itemType "other"): leave `est` as the mod's own value, byte-identical.
     }
   }
   return { ...mod, eqdp, est };

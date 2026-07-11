@@ -15,6 +15,15 @@ export interface MetaRoot {
   slot: string;
   itemType: "equipment" | "accessory" | "other";
   estType: EstType;
+  // The character race parsed from the `c####` path prefix, for Hair/Face roots only; null for
+  // equipment/accessory (whose EST is race-iterated over all PLAYABLE_RACES, not keyed on one race).
+  // Port of Est.GetExtraSkeletonEntries's `race = XivRaces.GetXivRace(root.PrimaryId)` (Est.cs:278),
+  // where PrimaryId is the human root's race id (our `c####` prefix) — see
+  // XivDependencyGraph's PrimaryExtractionRegex (this file's header comment): for a
+  // `chara/human/c####/obj/{hair,face}/...` path, PrimaryId is the `c####` race and SecondaryId is
+  // the h####/f#### id (captured below as `primaryId`, per the Est.cs:267-270 `id = SecondaryId` swap
+  // for Face/Hair).
+  race: number | null;
 }
 
 // Est.GetEstType(XivDependencyRootInfo) (Est.cs:63-95):
@@ -40,6 +49,7 @@ export function parseMetaRoot(gamePath: string): MetaRoot {
       slot,
       itemType: "equipment",
       estType: EQUIPMENT_SLOT_EST[slot] ?? null,
+      race: null,
     };
   }
   const acc = gamePath.match(/^chara\/accessory\/a(\d+)\/a\d+_(\w+)\.meta$/);
@@ -50,24 +60,27 @@ export function parseMetaRoot(gamePath: string): MetaRoot {
       itemType: "accessory",
       // Est.GetEstType: PrimaryType == accessory falls into the final `else` -> Invalid, always.
       estType: null,
+      race: null,
     };
   }
-  const hair = gamePath.match(/\/hair\/h(\d+)\/c\d+h\d+_(\w+)\.meta$/);
+  const hair = gamePath.match(/\/hair\/h(\d+)\/c(\d+)h\d+_(\w+)\.meta$/);
   if (hair) {
     return {
       primaryId: Number.parseInt(hair[1]!, 10),
-      slot: hair[2]!,
+      slot: hair[3]!,
       itemType: "other",
       estType: "Hair",
+      race: Number.parseInt(hair[2]!, 10),
     };
   }
-  const face = gamePath.match(/\/face\/f(\d+)\/c\d+f\d+_(\w+)\.meta$/);
+  const face = gamePath.match(/\/face\/f(\d+)\/c(\d+)f\d+_(\w+)\.meta$/);
   if (face) {
     return {
       primaryId: Number.parseInt(face[1]!, 10),
-      slot: face[2]!,
+      slot: face[3]!,
       itemType: "other",
       estType: "Face",
+      race: Number.parseInt(face[2]!, 10),
     };
   }
   throw new Error(`meta: unrecognized root path ${gamePath}`);
