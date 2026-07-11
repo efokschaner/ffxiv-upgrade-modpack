@@ -13,22 +13,17 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
   Needs the bundled reference assets (eye textures, iris `(race,face)→path`, canonical
   hair/ear/tail sampler tables) — no corpus coverage exercises it yet.
-- **Metadata round** (roadmap round 5) — **EQDP slice landed** (`src/meta/reconstruct.ts`,
-  `metadataRound` in `src/upgrade/upgrade.ts`): pure-EQDP `.meta` diffs (e.g. accessories) now
-  byte-match the golden. **EST/EQP/GMP/IMC reconstruction still pass through unchanged**
-  (`reconstructMeta` only touches `eqdp`) — remaining baselined `.meta` diffs are all
-  equipment `met`/`top` slots (which carry EST) per
-  `docs/superpowers/specs/2026-07-10-metadata-round-design.md` §5.
-- **`parseMetaRoot` (`src/meta/root.ts`) doesn't recognize weapon/monster paths**
-  (`chara/weapon/wNNNN/.../wNNNNbNNNN.meta`, `chara/monster/mNNNN/.../mNNNNbNNNN.meta`) —
-  only equipment/accessory/hair/face are ported (Task 4, round 5). Discovered 2026-07-10 via
-  two real corpus packs (`Persona 3 Evoker.ttmp2` w2021, `[Atelier Jaque] Balloon of Stars.ttmp2`
-  m8045); both metas carry only an IMC segment (no EQDP), so `reconstructMeta` currently gates
-  its `parseMetaRoot` validation on `eqdp` being present specifically to let these no-op rather
-  than fail-loud. Once a later task ports IMC (needs the base-game variant table anyway, see the
-  metadata-round design doc §3.3), `parseMetaRoot` will need a weapon/monster root shape too —
-  widen it then, and drop the `if (eqdp)` gate in `reconstruct.ts` once every segment type is
-  covered so an unrecognized root always fails loud again.
+- **Metadata round** (roadmap round 5) — **shipped, `.meta` ratchet at byte-zero** (Task 8b,
+  2026-07-10): `reconstructMeta` (`src/meta/reconstruct.ts`) now reconstructs EQDP, EST, and IMC,
+  and passes EQP/GMP through unchanged (proven never-consulted base seed, Task 7 brief). Every
+  `.meta` in the corpus (`test/corpus/{real,synthetic}`) byte-matches the ConsoleTools `/upgrade`
+  golden; confirmed via
+  `Get-ChildItem test\corpus\.upgrade-baseline\*.json | ForEach-Object { ... } | Where-Object
+  { $_.gamePath -like '*.meta' }` returning 0 entries. `parseMetaRoot`
+  (`src/meta/root.ts`) now also recognizes weapon/monster roots (resolves the note this bullet
+  used to track), and `reconstructMeta` parses the root unconditionally again (the Task-5
+  `if (mod.eqdp || mod.est)` scaffold is gone) — a genuinely-unrecognized root (e.g. human
+  body/tail/ear, not in the corpus) fails loud.
 
 ## Unprioritized
 
@@ -38,10 +33,16 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `test/corpus/{real,synthetic}` corpus are extracted (same precedent as
   `src/upgrade/reference/index-path-overrides.ts`, Task T4). A future mod referencing an item
   outside this set will have `IMC_TABLE` return `undefined` for its `(itemType, primaryId, slot)`
-  key. If the shipped tool needs items beyond the corpus, widen the extractor to walk the game's
-  full equipment/accessory id range (or a canonical item list) instead of scanning `.meta`
-  gamePaths. Also out of scope: NonSet (weapon/monster/demihuman) `.imc` files — blocked on
-  `parseMetaRoot` (`src/meta/root.ts`) not yet recognizing those roots (see the entry above).
+  key; `reconstructMeta`'s IMC step (`src/meta/reconstruct.ts`, Task 8b) treats a missing key as
+  "pass `mod.imc` through unchanged" (documented, ratchet-guarded — correct for every item in the
+  current corpus, since none of them grow past what the mod already supplies). If the shipped
+  tool needs items beyond the corpus, widen the extractor to walk the game's full
+  equipment/accessory id range (or a canonical item list) instead of scanning `.meta` gamePaths.
+  Also out of scope: `IMC_TABLE` is Set-only — NonSet (weapon/monster/demihuman) `.imc` files
+  (different on-disk shape, `Imc.cs` `ImcType.NonSet`) are never extracted, so weapon/monster
+  `.meta`s always take the same pass-through branch. `parseMetaRoot` recognizes weapon/monster
+  roots (Task 8b) purely to produce a lookup key that reliably misses `IMC_TABLE`; a general tool
+  wanting NonSet IMC growth needs a separate NonSet table and apply path.
 
 - **M1/M2 — empty-sampler placeholder serialization (audit Theme D).** Reproduce, byte-for-byte,
   C#'s quirk where `XivMtrlToUncompressedMtrl` lowercases texture paths (`Mtrl.cs:560`) before its

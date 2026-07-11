@@ -13,7 +13,7 @@ export type EstType = "Head" | "Body" | "Hair" | "Face" | null;
 export interface MetaRoot {
   primaryId: number;
   slot: string;
-  itemType: "equipment" | "accessory" | "other";
+  itemType: "equipment" | "accessory" | "other" | "weapon" | "monster";
   estType: EstType;
   // The character race parsed from the `c####` path prefix, for Hair/Face roots only; null for
   // equipment/accessory (whose EST is race-iterated over all PLAYABLE_RACES, not keyed on one race).
@@ -81,6 +81,44 @@ export function parseMetaRoot(gamePath: string): MetaRoot {
       itemType: "other",
       estType: "Face",
       race: Number.parseInt(face[2]!, 10),
+    };
+  }
+  // Weapon/monster roots (Task 8b, resolves the Task-5 BACKLOG note): PrimaryExtractionRegex
+  // (XivDependencyGraph.cs:250, this file's header) matches these paths with PrimaryType =
+  // weapon/monster, PrimaryId = the w####/m#### model number, SecondaryType = "body",
+  // SecondaryId = the b#### id. Verified shapes against the real corpus:
+  //   chara/weapon/w2021/obj/body/b0001/w2021b0001.meta   (Persona 3 Evoker.ttmp2)
+  //   chara/monster/m8045/obj/body/b0001/m8045b0001.meta  ([Atelier Jaque] Balloon of Stars.ttmp2)
+  // Unlike equipment/accessory filenames, these have no `_xxx` suffix before the extension, so
+  // _slotRegex (line 238 above) never matches them: the real XivDependencyRootInfo.Slot is left
+  // unset (weapon/monster have no XivItemTypes.GetAvailableSlots entries at all). We still need a
+  // `slot` string for the IMC_TABLE lookup key, so we use the SecondaryType ("body") in its place.
+  // This is a safe placeholder, not a faithfulness gap: IMC_TABLE (Task 8a) is Set-only
+  // (equipment/accessory) and never carries a weapon/monster key, so reconstructMeta's lookup for
+  // these roots always misses and falls through to its documented IMC pass-through branch
+  // regardless of the exact slot string used here.
+  const weapon = gamePath.match(
+    /^chara\/weapon\/w(\d+)\/obj\/(\w+)\/[a-z]\d+\/w\d+[a-z]\d+\.meta$/,
+  );
+  if (weapon) {
+    return {
+      primaryId: Number.parseInt(weapon[1]!, 10),
+      slot: weapon[2]!,
+      itemType: "weapon",
+      estType: null,
+      race: null,
+    };
+  }
+  const monster = gamePath.match(
+    /^chara\/monster\/m(\d+)\/obj\/(\w+)\/[a-z]\d+\/m\d+[a-z]\d+\.meta$/,
+  );
+  if (monster) {
+    return {
+      primaryId: Number.parseInt(monster[1]!, 10),
+      slot: monster[2]!,
+      itemType: "monster",
+      estType: null,
+      race: null,
     };
   }
   throw new Error(`meta: unrecognized root path ${gamePath}`);

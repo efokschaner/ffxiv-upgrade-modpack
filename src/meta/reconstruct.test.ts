@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PLAYABLE_RACES } from "./playable-races";
 import { reconstructMeta } from "./reconstruct";
 import { EST_TABLE } from "./reference/est-table";
+import { IMC_TABLE } from "./reference/imc-table";
 import type { EstEntry, ItemMeta } from "./types";
 
 describe("reconstructMeta EQDP expansion", () => {
@@ -241,5 +242,157 @@ describe("reconstructMeta EST reconstruction", () => {
       gmp: null,
     };
     expect(reconstructMeta(mod, mod.path).est).toBeNull();
+  });
+});
+
+describe("reconstructMeta IMC reconstruction", () => {
+  it("grows the mod's IMC to the base game's variant count, mod entries kept and base filling the extra (e6137_top: mod 2 + base variant 2 = 3)", () => {
+    const base = IMC_TABLE["equipment/6137/top"]!;
+    expect(base.length).toBe(3); // real reference-table fact asserted, not assumed
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e6137/e6137_top.meta",
+      imc: [
+        new Uint8Array([9, 0, 255, 3, 0, 0]),
+        new Uint8Array([9, 0, 255, 7, 0, 0]),
+      ],
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.imc).toHaveLength(3);
+    // The mod's own two variants are kept verbatim (not overwritten by the base seed).
+    expect(out.imc![0]).toEqual(mod.imc![0]);
+    expect(out.imc![1]).toEqual(mod.imc![1]);
+    // The base game's third variant fills the slot the mod didn't supply.
+    expect(out.imc![2]).toEqual(new Uint8Array(base[2]!));
+  });
+
+  it("grows the mod's IMC to the base game's variant count (e0724_top: mod 4 + base variants 4-6 = 7)", () => {
+    const base = IMC_TABLE["equipment/724/top"]!;
+    expect(base.length).toBe(7); // real reference-table fact asserted, not assumed
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e0724/e0724_top.meta",
+      imc: [
+        new Uint8Array([9, 0, 255, 3, 0, 0]),
+        new Uint8Array([9, 0, 255, 7, 0, 0]),
+        new Uint8Array([9, 0, 255, 7, 0, 0]),
+        new Uint8Array([9, 0, 255, 7, 0, 0]),
+      ],
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.imc).toHaveLength(7);
+    for (let i = 0; i < 4; i++) {
+      expect(out.imc![i]).toEqual(mod.imc![i]);
+    }
+    for (let i = 4; i < 7; i++) {
+      expect(out.imc![i]).toEqual(new Uint8Array(base[i]!));
+    }
+  });
+
+  it("a mod IMC variant at an index the base also carries overrides the base seed (mod wins)", () => {
+    const base = IMC_TABLE["equipment/6137/top"]!;
+    const overriding = new Uint8Array([42, 42, 42, 42, 42, 42]);
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e6137/e6137_top.meta",
+      imc: [
+        new Uint8Array([9, 0, 255, 3, 0, 0]),
+        new Uint8Array([9, 0, 255, 7, 0, 0]),
+        overriding, // covers the same index (2) the base seed would otherwise fill
+      ],
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.imc).toHaveLength(3);
+    expect(out.imc![2]).toEqual(overriding);
+    expect(out.imc![2]).not.toEqual(new Uint8Array(base[2]!));
+  });
+
+  it("passes an IMC segment through unchanged when IMC_TABLE has no entry for the key (out-of-corpus item)", () => {
+    expect(IMC_TABLE["equipment/999999/top"]).toBeUndefined();
+    const imc = [new Uint8Array([1, 2, 3, 4, 5, 6])];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e999999/e999999_top.meta",
+      imc,
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    expect(reconstructMeta(mod, mod.path).imc).toEqual(imc);
+  });
+
+  it("passes a weapon's IMC segment through unchanged (NonSet, not in the Set-only IMC_TABLE)", () => {
+    const imc = [new Uint8Array([1, 0, 0, 0, 0, 0])];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/weapon/w2021/obj/body/b0001/w2021b0001.meta",
+      imc,
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.imc).toEqual(imc);
+    expect(out.eqdp).toBeNull();
+    expect(out.est).toBeNull();
+  });
+
+  it("passes a monster's IMC segment through unchanged (NonSet, not in the Set-only IMC_TABLE)", () => {
+    const imc = [new Uint8Array([2, 0, 0, 0, 0, 0])];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/monster/m8045/obj/body/b0001/m8045b0001.meta",
+      imc,
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    expect(reconstructMeta(mod, mod.path).imc).toEqual(imc);
+  });
+
+  it("leaves a meta with no IMC segment untouched", () => {
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e6137/e6137_top.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    expect(reconstructMeta(mod, mod.path).imc).toBeNull();
+  });
+});
+
+describe("reconstructMeta unconditional root validation (Task 8b gate drop)", () => {
+  it("fails loud on a genuinely-unrecognized root even when no EQDP/EST/IMC segment is present", () => {
+    // Prior to Task 8b, parseMetaRoot only ran when mod.eqdp || mod.est was truthy, so a
+    // segment-free (or IMC-only) meta on an unhandled root type would silently no-op instead of
+    // throwing. Confirms that scaffold is gone.
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/human/c0201/obj/tail/t0001/c0201t0001_til.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    expect(() => reconstructMeta(mod, mod.path)).toThrow();
   });
 });

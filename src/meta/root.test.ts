@@ -56,7 +56,33 @@ describe("parseMetaRoot", () => {
     expect(r.primaryId).toBe(1);
     expect(r.race).toBe(301);
   });
+  it("parses a weapon meta (no est, no race), model number as primaryId", () => {
+    // Persona 3 Evoker.ttmp2's real gamePath shape.
+    expect(
+      parseMetaRoot("chara/weapon/w2021/obj/body/b0001/w2021b0001.meta"),
+    ).toEqual({
+      primaryId: 2021,
+      slot: "body",
+      itemType: "weapon",
+      estType: null,
+      race: null,
+    });
+  });
+  it("parses a monster meta (no est, no race), model number as primaryId", () => {
+    // [Atelier Jaque] Balloon of Stars.ttmp2's real gamePath shape.
+    expect(
+      parseMetaRoot("chara/monster/m8045/obj/body/b0001/m8045b0001.meta"),
+    ).toEqual({
+      primaryId: 8045,
+      slot: "body",
+      itemType: "monster",
+      estType: null,
+      race: null,
+    });
+  });
   it("throws on an unrecognized path", () => {
-    expect(() => parseMetaRoot("chara/weapon/w0001/w0001b0001.meta")).toThrow();
+    expect(() =>
+      parseMetaRoot("chara/human/c0201/obj/tail/t0001/c0201t0001_til.meta"),
+    ).toThrow();
   });
 });
