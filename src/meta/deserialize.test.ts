@@ -44,6 +44,14 @@ describe("deserializeMeta", () => {
     expect(m.imc).toBeNull();
   });
 
+  it("throws on a v1 metadata buffer (v1's EST/GMP default-injection needs base-game GMP data we don't have; see BACKLOG.md)", () => {
+    // Same layout as buildEqdpOnly, but with version=1 instead of 2 (ItemMetadata.cs:490 is the
+    // only current version we port; v1 predates EST/GMP, ItemMetadata.cs:490-494).
+    const bytes = buildEqdpOnly();
+    new DataView(bytes.buffer).setUint32(0, 1, true);
+    expect(() => deserializeMeta(bytes)).toThrow(/version/i);
+  });
+
   it("throws (rather than hangs) on a path with no NUL terminator", () => {
     // Valid version, then a handful of non-zero bytes with no terminating NUL: the C# reader
     // (ItemMetadata.cs:878, reader.ReadChar()) throws at end-of-stream, so our port must too

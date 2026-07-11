@@ -60,6 +60,23 @@ describe("reconstructMeta EQDP expansion", () => {
     };
     expect(reconstructMeta(mod, mod.path).eqdp).toBeNull();
   });
+
+  it("fails loud on an EQDP entry for a non-playable race (C# retains it, ItemMetadata.cs:773; unsupported here, BACKLOG.md)", () => {
+    const eqdp = [
+      { race: 101, value: 1 },
+      { race: 9999, value: 2 }, // not in PLAYABLE_RACES
+    ];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e0256/e0256_top.meta",
+      imc: null,
+      eqp: null,
+      eqdp,
+      est: null,
+      gmp: null,
+    };
+    expect(() => reconstructMeta(mod, mod.path)).toThrow(/non-playable race/);
+  });
 });
 
 describe("reconstructMeta EST reconstruction", () => {
@@ -258,6 +275,23 @@ describe("reconstructMeta EST reconstruction", () => {
     }
   });
 
+  it("fails loud on an equipment EST entry for a non-playable race (KeyNotFoundException equivalent, PmpManipulation.cs:275; unsupported here)", () => {
+    const est: EstEntry[] = [
+      ...preDawntrailEst(HEAD_SET_ID, (race) => race),
+      { race: 9999, setId: HEAD_SET_ID, skelId: 42 }, // not in PLAYABLE_RACES
+    ];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e5035/e5035_met.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    expect(() => reconstructMeta(mod, mod.path)).toThrow(/non-playable race/);
+  });
+
   it("leaves a meta with no EST segment untouched in EST", () => {
     const eqdp = [{ race: 101, value: 1 }];
     const mod: ItemMeta = {
@@ -419,6 +453,36 @@ describe("reconstructMeta IMC reconstruction", () => {
       gmp: null,
     };
     expect(reconstructMeta(mod, mod.path).imc).toBeNull();
+  });
+});
+
+describe("reconstructMeta equipment set-0 EQP exclusion (ItemMetadata.cs:522-528)", () => {
+  it("drops the EQP segment for an equipment set-0 (e0000) meta even though one is present", () => {
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e0000/e0000_top.meta",
+      imc: null,
+      eqp: new Uint8Array([1, 2, 3, 4]),
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.eqp).toBeNull();
+  });
+
+  it("leaves the EQP segment untouched for a non-zero equipment set", () => {
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e0256/e0256_top.meta",
+      imc: null,
+      eqp: new Uint8Array([1, 2, 3, 4]),
+      eqdp: null,
+      est: null,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.eqp).toEqual(new Uint8Array([1, 2, 3, 4]));
   });
 });
 

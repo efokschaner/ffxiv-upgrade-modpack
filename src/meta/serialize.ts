@@ -60,7 +60,10 @@ export function serializeMeta(m: ItemMeta): Uint8Array {
   }
 
   const b = new ByteBuilder();
-  b.u32(m.version);
+  // ItemMetadata.Serialize always writes the current _METADATA_VERSION (2), never the input's
+  // version field (ItemMetadata.cs:509). deserializeMeta now rejects anything but v2 on the way in
+  // (src/meta/deserialize.ts), so this is defense-in-depth as much as a citation of the C# symbol.
+  b.u32(2);
   b.bytes(enc);
   b.u8(0); // NUL terminator
   b.u32(segments.length);

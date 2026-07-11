@@ -23,6 +23,22 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
 
   let eqdp = mod.eqdp;
   if (eqdp) {
+    // C#'s DeserializeEqdpData keeps EVERY race the mod file carries, then backfills the missing
+    // PLAYABLE_RACES (ItemMetadata.cs:773-788) — a non-playable-race row survives in C#. We instead
+    // only emit the 18 canonical PLAYABLE_RACES (see the header comment above), so a mod row for a
+    // race outside that set would otherwise be silently dropped here. Game EQDP files are
+    // playable-race-scoped in practice (unreachable across the corpus, BACKLOG.md "EQDP
+    // reconstruction drops mod rows for non-playable races"), so fail loud instead of dropping it
+    // silently — matching the fail-loud posture of the hair/face EST branch below. The faithful fix
+    // (if ever needed) is to keep the mod's extra rows verbatim, per ItemMetadata.cs:773.
+    for (const e of eqdp) {
+      if (!PLAYABLE_RACES.includes(e.race)) {
+        throw new Error(
+          `meta: ${gamePath} has an EQDP entry for non-playable race ${e.race} ` +
+            "(C# retains it, ItemMetadata.cs:773; unsupported here, BACKLOG.md)",
+        );
+      }
+    }
     const byRace = new Map(eqdp.map((e) => [e.race, e.value]));
     eqdp = PLAYABLE_RACES.map((race) => ({
       race,
@@ -53,6 +69,21 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       // overwrites entry.SkelId in place ONLY (PmpManipulation.cs:275-279 `entry.SkelId = Entry`;
       // SetId is never touched), so the base's PLAYABLE_RACES order and seeded setId survive and
       // only skelId gets replaced per race.
+      //
+      // A mod entry for a race OUTSIDE PLAYABLE_RACES would never be visited by the PLAYABLE_RACES
+      // walk below and so would be silently dropped -- unlike C#, which retains non-playable EQDP
+      // races (ItemMetadata.cs:773) and would throw a KeyNotFoundException applying an EST
+      // manipulation for one (PmpManipulation.cs:275, same mechanism as the race-gap throw above).
+      // Unreachable across the corpus (game EST files are playable-race-scoped); fail loud rather
+      // than drop, matching the hair/face branch's posture below.
+      for (const e of est) {
+        if (!PLAYABLE_RACES.includes(e.race)) {
+          throw new Error(
+            `meta: ${gamePath} has an EST entry for non-playable race ${e.race} ` +
+              "(KeyNotFoundException equivalent, PmpManipulation.cs:275; unsupported here)",
+          );
+        }
+      }
       const byRace = new Map(est.map((e) => [e.race, e]));
       const baseByRace = EST_TABLE[estType];
       const seed: EstEntry[] = [];
@@ -155,5 +186,13 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
     }
   }
 
-  return { ...mod, eqdp, est, imc };
+  // ItemMetadata.Serialize omits the EQP segment entirely when PrimaryType == equipment &&
+  // PrimaryId == 0, even if EqpEntry is non-null -- "SE hard-coded set 0 to use set 1's EQP"
+  // (ItemMetadata.cs:522-528). Reproduce the quirk faithfully rather than "fixing" it.
+  let eqp = mod.eqp;
+  if (root.itemType === "equipment" && root.primaryId === 0) {
+    eqp = null;
+  }
+
+  return { ...mod, eqdp, est, imc, eqp };
 }
