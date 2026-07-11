@@ -1,3 +1,6 @@
+import { deserializeMeta } from "../meta/deserialize";
+import { reconstructMeta } from "../meta/reconstruct";
+import { serializeMeta } from "../meta/serialize";
 import {
   FileStorageType,
   type ModpackData,
@@ -138,6 +141,24 @@ function modelRound(option: ModpackOption, gate: boolean): void {
   });
 }
 
+const IS_META = /\.meta$/;
+
+/**
+ * Metadata round (round 5). Replaces the opaque .meta pass-through: reconstruct each .meta the
+ * way ConsoleTools /upgrade does (base-game seed + mod deltas). See
+ * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
+ */
+function metadataRound(option: ModpackOption): void {
+  option.files = option.files.map((f) => {
+    if (!IS_META.test(f.gamePath)) return f;
+    const { bytes, type } = uncompressedBytes(f);
+    const out = serializeMeta(
+      reconstructMeta(deserializeMeta(bytes), f.gamePath),
+    );
+    return restore(f, out, type ?? SqPackType.Standard);
+  });
+}
+
 /** Round 3: UpdateUnclaimedHairTextures / UpdateEyeMask / UpdateSkinPaths. */
 function partials(): void {
   // round N: ported later
@@ -175,6 +196,7 @@ export function upgradeModpack(data: ModpackData): ModpackData {
   for (const group of out.groups) {
     for (const option of group.options) {
       modelRound(option, gate);
+      metadataRound(option);
       for (const info of materialRound(option)) {
         const k = targetKey(info);
         if (!targets.has(k)) targets.set(k, info);
