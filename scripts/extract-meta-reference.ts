@@ -65,7 +65,11 @@ type RaceSetSkel = Record<number, Record<number, number>>;
 // Race codes are read as the raw uint16: XivRaces.GetXivRace round-trips the zero-padded decimal
 // string back to the identical numeric race code (e.g. raceId 101 == Hyur Midlander Male), the same
 // codes used by src/meta/playable-races.ts's PLAYABLE_RACES and src/meta/types.ts's EstEntry.race,
-// so no enum mapping table is needed here.
+// so no enum mapping table is needed here. Race codes are preserved raw as read from the est file:
+// C#'s GetXivRace would collapse an unrecognized code to All_Races(0), but this table is only ever
+// queried by Task 7 for known playable-race codes (src/meta/playable-races.ts), so an unknown race
+// id (none expected in the EST human/equipment/hair/face domain) is never looked up and is
+// harmless here -- no bucketing/collapsing needed.
 function parseEstFile(data: Uint8Array, label: string): RaceSetSkel {
   if (data.byteLength < 4) {
     throw new Error(
@@ -95,8 +99,18 @@ function parseEstFile(data: Uint8Array, label: string): RaceSetSkel {
       byRace[setId] = skelId;
       uniqueEntries++;
     } else {
-      // Est.GetEstFile: a duplicate (race, setId) is dropped, first entry wins (Est.cs:377-382).
-      // Known to occur exactly once in the base game (a Lalafell M face dupe) -- tolerate, don't fail.
+      // Est.GetEstFile: a duplicate (race, setId) is dropped, first entry wins, gated by a
+      // ContainsKey check (Est.cs:377-382). The C# notes exactly one known duplicate in the base
+      // game -- a Lalafell M face entry appearing twice with identical values -- which this
+      // tolerates by keeping the first. Any *conflicting* duplicate (same race+setId, different
+      // skelId) is not something Est.cs anticipates and would mean a real parse bug or an
+      // unexpected game-file change, so fail loud instead of silently keeping the first.
+      if (byRace[setId] !== skelId) {
+        throw new Error(
+          `${label}: conflicting duplicate (race=${raceId}, setId=${setId}): ` +
+            `first skelId=${byRace[setId]}, later skelId=${skelId}`,
+        );
+      }
       dupes++;
     }
   }
