@@ -129,6 +129,31 @@ describe("reconstructMeta EST reconstruction", () => {
     });
   });
 
+  it("a mod EST entry with a mismatched setId only overrides skelId; setId stays the seed's root.primaryId (PmpManipulation.cs:275-279 SkelId-only assignment)", () => {
+    // Deliberately mismatched setId (9999) on the mod's 1601 entry: only skelId should win, setId
+    // must stay HEAD_SET_ID (the seed's, i.e. root.primaryId parsed from e5035_met.meta) rather
+    // than being taken from the mod entry.
+    const est = [
+      ...preDawntrailEst(HEAD_SET_ID, (race) => race),
+      { race: 1601, setId: 9999, skelId: 42 },
+    ];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/equipment/e5035/e5035_met.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.est!.find((e) => e.race === 1601)).toEqual({
+      race: 1601,
+      setId: HEAD_SET_ID,
+      skelId: 42,
+    });
+  });
+
   it("hair EST seeds a single entry for the root's own race, then the mod's matching-race entry overrides skelId (Est.cs:259-291 Hair/Face trim)", () => {
     // Corpus case (Misty_Hairstyle_Female.ttmp2, chara/human/c0201/obj/hair/h0170/
     // c0201h0170_hir.meta): the mod's EST supplies only race 201 (matching the root's own c0201
@@ -156,6 +181,24 @@ describe("reconstructMeta EST reconstruction", () => {
     const hairId = 170;
     expect(EST_TABLE.Hair[1601]?.[hairId]).toBe(171);
     const est: EstEntry[] = [{ race: 1601, setId: hairId, skelId: 999 }];
+    const mod: ItemMeta = {
+      version: 2,
+      path: "chara/human/c1601/obj/hair/h0170/c1601h0170_hir.meta",
+      imc: null,
+      eqp: null,
+      eqdp: null,
+      est,
+      gmp: null,
+    };
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.est).toEqual([{ race: 1601, setId: hairId, skelId: 999 }]);
+  });
+
+  it("hair EST with a mismatched setId only overrides skelId; setId stays the seed's hairId (PmpManipulation.cs:275-279 SkelId-only assignment)", () => {
+    // Deliberately mismatched setId (777) on the mod's matching-race entry: only skelId should
+    // win, setId must stay hairId (the seed's, i.e. root.primaryId parsed from h0170).
+    const hairId = 170;
+    const est: EstEntry[] = [{ race: 1601, setId: 777, skelId: 999 }];
     const mod: ItemMeta = {
       version: 2,
       path: "chara/human/c1601/obj/hair/h0170/c1601h0170_hir.meta",

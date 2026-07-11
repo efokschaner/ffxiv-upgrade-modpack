@@ -46,8 +46,9 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
         // seed via the (type, setId) overload (Est.cs:300-334) — walk PLAYABLE_RACES (Eqp.
         // PlayableRaces), skipping races the est file doesn't carry at all, defaulting to skelId 0
         // for a race the file carries but has no entry for this setId. Then each manipulation
-        // overwrites entry.SkelId in place, so the base's PLAYABLE_RACES order survives and only
-        // skelId (and, here, setId) get replaced per race.
+        // overwrites entry.SkelId in place ONLY (PmpManipulation.cs:275-279 `entry.SkelId = Entry`;
+        // SetId is never touched), so the base's PLAYABLE_RACES order and seeded setId survive and
+        // only skelId gets replaced per race.
         const byRace = new Map(est.map((e) => [e.race, e]));
         const baseByRace = EST_TABLE[estType];
         const seed: EstEntry[] = [];
@@ -58,7 +59,7 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
           }
           const override = byRace.get(race);
           if (override) {
-            seed.push(override);
+            seed.push({ race, setId, skelId: override.skelId });
           } else {
             seed.push({ race, setId, skelId: raceTable[setId] ?? 0 });
           }
@@ -88,11 +89,9 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
                 `but the root's seeded race is ${race} (KeyNotFoundException equivalent)`,
             );
           }
-          // PmpManipulation.cs:279 only assigns SkelId in place; SetId/race are carried from the
-          // seed. Here the mod's setId is always root.primaryId (the same h####/f#### id the path
-          // was parsed from), so taking it from modEntry is equivalent and keeps the entry a single
-          // faithful copy of the winning manipulation.
-          entry = { race, setId: modEntry.setId, skelId: modEntry.skelId };
+          // PmpManipulation.cs:275-279 `entry.SkelId = Entry`: only SkelId is assigned in place;
+          // SetId/race are carried from the seed (setId here), never taken from the mod entry.
+          entry = { race, setId, skelId: modEntry.skelId };
         }
         est = [entry];
       }
