@@ -43,4 +43,14 @@ describe("deserializeMeta", () => {
     expect(m.est).toBeNull();
     expect(m.imc).toBeNull();
   });
+
+  it("throws (rather than hangs) on a path with no NUL terminator", () => {
+    // Valid version, then a handful of non-zero bytes with no terminating NUL: the C# reader
+    // (ItemMetadata.cs:878, reader.ReadChar()) throws at end-of-stream, so our port must too
+    // instead of looping forever indexing past the buffer.
+    const bad = new Uint8Array(8);
+    new DataView(bad.buffer).setUint32(0, 2, true);
+    bad.set([0x61, 0x62, 0x63, 0x64], 4); // "abcd", never NUL-terminated
+    expect(() => deserializeMeta(bad)).toThrow();
+  });
 });

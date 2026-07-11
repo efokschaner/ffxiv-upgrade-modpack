@@ -1,78 +1,88 @@
+import { BinaryReader } from "../util/binary";
 import type { EqdpEntry, EstEntry, ItemMeta } from "./types";
 
 // Port of ItemMetadata.Deserialize (ItemMetadata.cs:869-967). Reads the header table then each
-// present segment. EQP/GMP/IMC kept as opaque bytes; EQDP/EST structured (ItemMetadata.cs:715-847).
+// present segment. EQP/GMP/IMC kept as opaque bytes; EQDP/EST structured (ItemMetadata.cs:715-859).
+// Uses BinaryReader (src/util/binary.ts): fixed-width reads go through DataView, which throws
+// RangeError on overrun, and readNullTerminatedString() likewise throws instead of looping
+// forever over a path with no NUL terminator — matching C#'s `reader.ReadChar()` throwing at
+// end-of-stream (ItemMetadata.cs:878).
 const TYPE_IMC = 1;
 const TYPE_EQDP = 2;
 const TYPE_EQP = 3;
 const TYPE_EST = 4;
 const TYPE_GMP = 5;
 
+interface HeaderEntry {
+  type: number;
+  offset: number;
+  size: number;
+}
+
 export function deserializeMeta(data: Uint8Array): ItemMeta {
-  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const version = dv.getUint32(0, true);
-  let p = 4;
-  let path = "";
-  while (data[p] !== 0) {
-    path += String.fromCharCode(data[p]!);
-    p++;
-  }
-  p++; // skip NUL
-  const headerCount = dv.getUint32(p, true);
-  const perHeaderSize = dv.getUint32(p + 4, true);
-  const headerStart = dv.getUint32(p + 8, true);
+  const reader = new BinaryReader(data);
 
-  const seg = new Map<number, { offset: number; size: number }>();
+  const version = reader.readUint32();
+  const path = reader.readNullTerminatedString();
+
+  const headerCount = reader.readUint32();
+  const perHeaderSize = reader.readUint32();
+  const headerEntryStart = reader.readUint32();
+
+  // Per-segment header table: (type, offset, size) triples, each perHeaderSize apart
+  // (ItemMetadata.cs:891-910). First match wins on duplicate types (entries.FirstOrDefault),
+  // so scan front-to-back and only record the first entry seen per type.
+  const entries: HeaderEntry[] = [];
   for (let i = 0; i < headerCount; i++) {
-    const base = headerStart + i * perHeaderSize;
-    seg.set(dv.getUint32(base, true), {
-      offset: dv.getUint32(base + 4, true),
-      size: dv.getUint32(base + 8, true),
-    });
+    const entryStart = headerEntryStart + i * perHeaderSize;
+    reader.seek(entryStart);
+    const type = reader.readUint32();
+    const offset = reader.readUint32();
+    const size = reader.readUint32();
+    entries.push({ type, offset, size });
   }
+  const firstOfType = (type: number): HeaderEntry | undefined =>
+    entries.find((e) => e.type === type);
 
-  const imcSeg = seg.get(TYPE_IMC);
+  const imcSeg = firstOfType(TYPE_IMC);
   let imc: Uint8Array[] | null = null;
   if (imcSeg) {
     imc = [];
     for (let o = 0; o < imcSeg.size; o += 6) {
-      imc.push(data.slice(imcSeg.offset + o, imcSeg.offset + o + 6));
+      imc.push(reader.slice(imcSeg.offset + o, 6));
     }
   }
 
-  const eqpSeg = seg.get(TYPE_EQP);
-  const eqp = eqpSeg
-    ? data.slice(eqpSeg.offset, eqpSeg.offset + eqpSeg.size)
-    : null;
+  const eqpSeg = firstOfType(TYPE_EQP);
+  const eqp = eqpSeg ? reader.slice(eqpSeg.offset, eqpSeg.size) : null;
 
-  const eqdpSeg = seg.get(TYPE_EQDP);
+  const eqdpSeg = firstOfType(TYPE_EQDP);
   let eqdp: EqdpEntry[] | null = null;
   if (eqdpSeg) {
     eqdp = [];
     for (let o = 0; o < eqdpSeg.size; o += 5) {
-      const b = eqdpSeg.offset + o;
-      eqdp.push({ race: dv.getUint32(b, true), value: dv.getUint8(b + 4) });
+      reader.seek(eqdpSeg.offset + o);
+      const race = reader.readUint32();
+      const value = reader.readUint8();
+      eqdp.push({ race, value });
     }
   }
 
-  const estSeg = seg.get(TYPE_EST);
+  const estSeg = firstOfType(TYPE_EST);
   let est: EstEntry[] | null = null;
   if (estSeg) {
     est = [];
     for (let o = 0; o < estSeg.size; o += 6) {
-      const b = estSeg.offset + o;
-      est.push({
-        race: dv.getUint16(b, true),
-        setId: dv.getUint16(b + 2, true),
-        skelId: dv.getUint16(b + 4, true),
-      });
+      reader.seek(estSeg.offset + o);
+      const race = reader.readUint16();
+      const setId = reader.readUint16();
+      const skelId = reader.readUint16();
+      est.push({ race, setId, skelId });
     }
   }
 
-  const gmpSeg = seg.get(TYPE_GMP);
-  const gmp = gmpSeg
-    ? data.slice(gmpSeg.offset, gmpSeg.offset + gmpSeg.size)
-    : null;
+  const gmpSeg = firstOfType(TYPE_GMP);
+  const gmp = gmpSeg ? reader.slice(gmpSeg.offset, gmpSeg.size) : null;
 
   return { version, path, imc, eqp, eqdp, est, gmp };
 }
