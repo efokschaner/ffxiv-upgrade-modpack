@@ -99,4 +99,30 @@ describe("buildDeclarations", () => {
       [U.TextureCoordinate, T.Float2, 1],
     ]);
   });
+
+  it("falls back to a Half-precision declaration (Flow omitted) when the estimate reaches 8MB", () => {
+    // upgradePrecision=false path (Mdl.cs:2540-2543 / :2614-2711 / :2655). A shared vertex
+    // object filled across a large array reports a big part.vertices.length without allocating
+    // ~150k distinct vertices. maxUv=2 (uv2 set) + flow on -> perVertex ~60B; 200k verts
+    // (~12MB) trips the >=8MB gate, so Position/Normal become Half4, texcoord Half4, and the
+    // Flow element is dropped entirely even though anisotropicLighting is true.
+    const m = oneVertModel();
+    m.anisotropicLighting = true; // would add a Flow element on the Float path
+    const v = m.meshGroups[0]!.parts[0]!.vertices[0]!;
+    m.meshGroups[0]!.parts[0]!.vertices = new Array(200_000).fill(v);
+
+    const decl = buildDeclarations(m)[0]!;
+    expect(decl.map((e) => [e.usage, e.type, e.count])).toEqual([
+      [U.Position, T.Half4, 0],
+      [U.BoneWeight, T.Ubyte4n, 0],
+      [U.BoneIndex, T.Ubyte4, 0],
+      [U.Normal, T.Half4, 0],
+      [U.Binormal, T.Ubyte4n, 0],
+      [U.Color, T.Ubyte4n, 0],
+      [U.TextureCoordinate, T.Half4, 0],
+    ]);
+    // Half strides: stream0 Half4(8)+Ubyte4n(4)+Ubyte4(4)=16; stream1 Half4(8)+Binormal Ubyte4n(4)
+    // +Color Ubyte4n(4)+Texcoord Half4(8)=24 (Flow omitted, no vColor2).
+    expect(streamEntrySizes(decl)).toEqual([16, 24, 0]);
+  });
 });

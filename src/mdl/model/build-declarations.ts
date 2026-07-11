@@ -12,11 +12,12 @@ import {
 } from "../geometry/format";
 import { getUsageInfo, hasWeights, type TTModel } from "./tt-model";
 
-const MAX_VERTEX_BUFFER_SIZE = 8388608; // Mdl._MaxVertexBufferSize (8 MB)
+/** Mdl._MaxVertexBufferSize (Mdl.cs:2468, 8 MB). Exported so serialize.ts's port of the
+ *  post-assembly hard cap (Mdl.cs:2822) reuses the one source of truth. */
+export const MAX_VERTEX_BUFFER_SIZE = 8388608;
 
-/** Per-vertex byte estimate mirroring Mdl.cs:2513-2542's overflow check, used
- *  only to assert our Half->Float upgrade path is safe for the corpus (see
- *  buildDeclarations doc comment). */
+/** Per-vertex byte estimate mirroring Mdl.cs:2513-2535's precision-independent vertexSize
+ *  (always the Float layout), used to decide upgradePrecision in buildDeclarations. */
 function estimatePerVertexSize(
   needsEightWeights: boolean,
   maxUv: number,
@@ -30,16 +31,18 @@ function estimatePerVertexSize(
   return 48 + weightsExtra + uvExtra + vColor2Extra + flowExtra;
 }
 
-/** Port of the element-set construction in MakeUncompressedMdlFile
- *  (Mdl.cs:2614-2711), assuming upgradePrecision=true (Half->Float upgrade):
- *  our corpus never approaches the 8 MB _MaxVertexBufferSize that would force
- *  TexTools to fall back to Half-precision (Mdl.cs:2513-2542), so we assert
- *  that here and fail loud rather than silently emit a byte-incompatible
- *  Half-precision declaration.
+/** Port of the element-set construction in MakeUncompressedMdlFile (Mdl.cs:2614-2711),
+ *  including the precision gate (Mdl.cs:2513-2543). `upgradePrecision` starts true (the
+ *  /upgrade path's Half->Float upgrade) and is declined when the estimated Float vertex
+ *  buffer would reach the 8 MB _MaxVertexBufferSize; the declaration then stays Half-
+ *  precision (Position/Normal Half4, texcoord Half2/Half4) and the Flow element is dropped
+ *  entirely (Mdl.cs:2655 gates it on upgradePrecision). The estimate is precision-independent
+ *  (always the Float per-vertex size) and mirrors Mdl.cs:2513-2538, including shape-part
+ *  vertices (Mdl.cs:2536-2538).
  *
- *  The element set is model-wide (depends only on getUsageInfo(m),
- *  hasWeights(m) and m.anisotropicLighting), so every mesh group receives an
- *  identical declaration (distinct array references, identical contents). */
+ *  The element set is model-wide (depends only on getUsageInfo(m), hasWeights(m) and
+ *  m.anisotropicLighting), so every mesh group receives an identical declaration (distinct
+ *  array references, identical contents). */
 export function buildDeclarations(m: TTModel): VertexElement[][] {
   const { usesVColor2, maxUv, needsEightWeights } = getUsageInfo(m);
   const weights = hasWeights(m);
@@ -51,19 +54,14 @@ export function buildDeclarations(m: TTModel): VertexElement[][] {
     usesVColor2,
     flow,
   );
-  let total = 0;
+  let totalVertexCount = 0;
   for (const group of m.meshGroups) {
-    let vertexCount = 0;
     for (const part of group.parts) {
-      vertexCount += part.vertices.length;
+      totalVertexCount += part.vertices.length;
     }
-    total += vertexCount * perVertex;
   }
-  if (total >= MAX_VERTEX_BUFFER_SIZE) {
-    throw new Error(
-      "mdl: vertex buffer would overflow 8MB; Half-precision path unsupported",
-    );
-  }
+  const upgradePrecision =
+    perVertex * totalVertexCount < MAX_VERTEX_BUFFER_SIZE;
 
   const decl: VertexElement[] = [];
   const runningOffset = [0, 0, 0];
@@ -79,7 +77,11 @@ export function buildDeclarations(m: TTModel): VertexElement[][] {
     occ.set(usage, count + 1);
   }
 
-  add(0, VertexUsageType.Position, VertexDataType.Float3);
+  add(
+    0,
+    VertexUsageType.Position,
+    upgradePrecision ? VertexDataType.Float3 : VertexDataType.Half4,
+  );
   if (weights) {
     add(
       0,
@@ -92,9 +94,15 @@ export function buildDeclarations(m: TTModel): VertexElement[][] {
       needsEightWeights ? VertexDataType.UByte8 : VertexDataType.Ubyte4,
     );
   }
-  add(1, VertexUsageType.Normal, VertexDataType.Float3);
+  add(
+    1,
+    VertexUsageType.Normal,
+    upgradePrecision ? VertexDataType.Float3 : VertexDataType.Half4,
+  );
   add(1, VertexUsageType.Binormal, VertexDataType.Ubyte4n);
-  if (flow) {
+  // Mdl.cs:2655: the Flow element is emitted only when upgradePrecision is true -- the Half
+  // fallback drops it even if the model uses flow data.
+  if (upgradePrecision && flow) {
     add(1, VertexUsageType.Flow, VertexDataType.Ubyte4n);
   }
   add(1, VertexUsageType.Color, VertexDataType.Ubyte4n);
@@ -104,10 +112,20 @@ export function buildDeclarations(m: TTModel): VertexElement[][] {
   add(
     1,
     VertexUsageType.TextureCoordinate,
-    maxUv === 1 ? VertexDataType.Float2 : VertexDataType.Float4,
+    maxUv === 1
+      ? upgradePrecision
+        ? VertexDataType.Float2
+        : VertexDataType.Half2
+      : upgradePrecision
+        ? VertexDataType.Float4
+        : VertexDataType.Half4,
   );
   if (maxUv > 2) {
-    add(1, VertexUsageType.TextureCoordinate, VertexDataType.Float2);
+    add(
+      1,
+      VertexUsageType.TextureCoordinate,
+      upgradePrecision ? VertexDataType.Float2 : VertexDataType.Half2,
+    );
   }
 
   return m.meshGroups.map(() => decl);
