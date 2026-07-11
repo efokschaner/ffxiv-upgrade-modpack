@@ -13,17 +13,6 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
   Needs the bundled reference assets (eye textures, iris `(race,face)→path`, canonical
   hair/ear/tail sampler tables) — no corpus coverage exercises it yet.
-- **Metadata round** (roadmap round 5) — **shipped, `.meta` ratchet at byte-zero** (Task 8b,
-  2026-07-10): `reconstructMeta` (`src/meta/reconstruct.ts`) now reconstructs EQDP, EST, and IMC,
-  and passes EQP/GMP through unchanged (proven never-consulted base seed, Task 7 brief). Every
-  `.meta` in the corpus (`test/corpus/{real,synthetic}`) byte-matches the ConsoleTools `/upgrade`
-  golden; confirmed via
-  `Get-ChildItem test\corpus\.upgrade-baseline\*.json | ForEach-Object { ... } | Where-Object
-  { $_.gamePath -like '*.meta' }` returning 0 entries. `parseMetaRoot`
-  (`src/meta/root.ts`) now also recognizes weapon/monster roots (resolves the note this bullet
-  used to track), and `reconstructMeta` parses the root unconditionally again (the Task-5
-  `if (mod.eqdp || mod.est)` scaffold is gone) — a genuinely-unrecognized root (e.g. human
-  body/tail/ear, not in the corpus) fails loud.
 
 ## Unprioritized
 
