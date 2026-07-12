@@ -19,9 +19,12 @@ import type {
 
 const dec = new TextDecoder();
 
-// Emulates the subset of Win32 path normalization that TexTools' NTFS Path.Combine/File reads rely
-// on (PMP.cs:1080), which LoadPMP never guards (PMP.cs:124): lowercase (case-insensitive filesystem)
-// plus TrimEnd('.', ' ') on each path segment (Windows strips trailing dots/spaces from every name
+// Emulates the subset of Win32 path normalization that TexTools' NTFS filesystem applies on BOTH
+// sides of a PMP load. ResolvePMPBasePath unzips the whole archive to a temp folder
+// (PMP.cs:76 -> IOUtil.UnzipFiles), where NTFS strips each written ENTRY name; files are then read
+// back by Path.Combine(unzipPath, file.Value) (PMP.cs:1080), which LoadPMP never guards with an
+// existence check (PMP.cs:124). That normalization is lowercase (case-insensitive filesystem) plus
+// TrimEnd('.', ' ') on each path segment (Windows drops trailing dots/spaces from every name
 // component). readZip already normalizes '\' -> '/', so segments split on '/'. Penumbra lowercases
 // the Files value and can retain a trailing dot/space the archive/on-disk name drops; normalizing
 // both sides the same way resolves them (see the PMP Windows path-normalization design spec).
