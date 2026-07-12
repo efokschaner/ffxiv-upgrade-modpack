@@ -1,7 +1,13 @@
 const f32 = new Float32Array(1);
 const u32 = new Uint32Array(f32.buffer);
 
-/** float32 -> IEEE-754 binary16 raw uint16, round-to-nearest-even (matches .NET `(Half)`). */
+/** float32 -> IEEE-754 binary16 raw uint16, round-to-nearest-even (matches .NET's System.Half
+ *  `(Half)` cast). NOTE: this is NOT the universally-correct half packer for TexTools output --
+ *  its *model* vertex writers use SharpDX Half, which TRUNCATES, so the geometry encoder uses
+ *  floatToHalfTruncate instead. This RTNE function is kept for the colorset path
+ *  (mtrl/shader.ts, upgrade/colorset-upgrade.ts), which stays byte-correct only because its
+ *  injected constants are exactly-representable / tie-free halves where RTNE and truncation
+ *  agree (golden-verified). */
 export function floatToHalf(value: number): number {
   f32[0] = value;
   const x = u32[0]!;
@@ -45,7 +51,8 @@ export function floatToHalf(value: number): number {
 
 /** float32 -> IEEE-754 binary16 by TRUNCATION toward zero (drop low mantissa bits, no
  *  rounding). Matches TexTools' model vertex writer, which packs via SharpDX `new Half()`
- *  (Mdl.cs:4121-4154 WriteVectorData / :4239-4275 UV) -- SharpDX truncates, unlike .NET's
+ *  (Mdl.cs:4121-4154 WriteVectorData / :4251-4256 UV1-UV2, :4271-4272 UV3) -- SharpDX
+ *  truncates, unlike .NET's
  *  round-to-nearest `(Half)`. Distinct from floatToHalf (RTNE), which the colorset path
  *  keeps. Verified byte-exact against the ConsoleTools /upgrade golden for a Half-format
  *  model (Spring Florals c0201e6016_top.mdl). */

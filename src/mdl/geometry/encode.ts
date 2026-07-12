@@ -72,9 +72,9 @@ function pushUv(out: number[], type: VertexDataType, a: Vec2, b: Vec2): void {
       pushF32(out, b[1]);
     }
   } else if (type === VertexDataType.Half2 || type === VertexDataType.Half4) {
-    // UV components go through a `(Half)` cast in C# (~Mdl.cs:4234-4274), which routes through
-    // the same SharpDX HalfUtils.Pack truncation as WriteVectorData above, so floatToHalfTruncate
-    // is correct here too.
+    // UV components go through a `(Half)` cast in C# (Mdl.cs:4251-4256 UV1/UV2, :4271-4272 UV3),
+    // which routes through the same SharpDX HalfUtils.Pack truncation as WriteVectorData above, so
+    // floatToHalfTruncate is correct here too.
     pushU16(out, floatToHalfTruncate(a[0]));
     pushU16(out, floatToHalfTruncate(a[1]));
     if (type === VertexDataType.Half4) {
