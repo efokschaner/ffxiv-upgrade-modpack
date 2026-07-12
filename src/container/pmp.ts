@@ -19,19 +19,33 @@ import type {
 
 const dec = new TextDecoder();
 
+// Emulates the subset of Win32 path normalization that TexTools' NTFS Path.Combine/File reads rely
+// on (PMP.cs:1080), which LoadPMP never guards (PMP.cs:124): lowercase (case-insensitive filesystem)
+// plus TrimEnd('.', ' ') on each path segment (Windows strips trailing dots/spaces from every name
+// component). readZip already normalizes '\' -> '/', so segments split on '/'. Penumbra lowercases
+// the Files value and can retain a trailing dot/space the archive/on-disk name drops; normalizing
+// both sides the same way resolves them (see the PMP Windows path-normalization design spec).
+function windowsPathKey(path: string): string {
+  return path
+    .toLowerCase()
+    .split("/")
+    .map((seg) => seg.replace(/[. ]+$/, ""))
+    .join("/");
+}
+
 function optionFromJson(
   o: PmpOptionJson,
-  filesLower: Map<string, Uint8Array>,
+  filesByKey: Map<string, Uint8Array>,
 ): ModpackOption {
   const modFiles = Object.entries(o.Files ?? {}).map(
     ([gamePath, zipPathRaw]) => {
       const zipPath = zipPathRaw.replace(/\\/g, "/");
-      // Case-insensitive resolution. Penumbra lowercases the Files value while the archive
-      // preserves the option-folder display case; TexTools reads Path.Combine(unzipPath,
-      // file.Value) from the unzipped folder on case-insensitive NTFS (PMP.cs:1080), after a
-      // LoadPMP that never verifies existence at load (PMP.cs:124). Look up the lowercased key;
-      // pmpPath keeps the manifest value verbatim so the writer/golden are unaffected.
-      const data = filesLower.get(zipPath.toLowerCase());
+      // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
+      // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
+      // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
+      // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
+      // manifest value verbatim so the writer/golden are unaffected.
+      const data = filesByKey.get(windowsPathKey(zipPath));
       if (!data) throw new Error(`pmp: missing file entry ${zipPath}`);
       return {
         gamePath,
@@ -57,12 +71,13 @@ function optionFromJson(
 
 export function readPmp(bytes: Uint8Array): ModpackData {
   const entries = readZip(bytes);
-  // Lowercase-keyed index of archive entries, so option Files values (which Penumbra lowercases)
-  // resolve regardless of the entry's stored casing. On NTFS two entries can't differ only by
-  // case, so a lowercased-key collision cannot occur for a pack that unzips (matching the
-  // filesystem TexTools relies on).
-  const filesLower = new Map<string, Uint8Array>();
-  for (const [name, data] of entries) filesLower.set(name.toLowerCase(), data);
+  // windowsPathKey-keyed index of archive entries, so option Files values (which Penumbra lowercases
+  // and may keep trailing dots/spaces on) resolve the way TexTools' NTFS reads do. On NTFS two
+  // entries can't share a normalized name in one folder, so a key collision cannot occur for a pack
+  // that unzips (matching the filesystem TexTools relies on); last-write-wins otherwise.
+  const filesByKey = new Map<string, Uint8Array>();
+  for (const [name, data] of entries)
+    filesByKey.set(windowsPathKey(name), data);
 
   const metaBytes = entries.get("meta.json");
   if (!metaBytes) throw new Error("pmp: missing meta.json");
@@ -85,7 +100,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
-    options: [optionFromJson(defaultMod, filesLower)],
+    options: [optionFromJson(defaultMod, filesByKey)],
   });
 
   for (const name of groupNames) {
@@ -98,7 +113,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       priority: g.Priority ?? 0,
       selectionType: g.Type,
       defaultSettings: g.DefaultSettings ?? 0,
-      options: (g.Options ?? []).map((o) => optionFromJson(o, filesLower)),
+      options: (g.Options ?? []).map((o) => optionFromJson(o, filesByKey)),
       // Carry the full original group JSON so group-level extras (Imc Identifier/
       // DefaultEntry/AllVariants/OnlyAttributes, etc.) round-trip verbatim.
       raw: g,
