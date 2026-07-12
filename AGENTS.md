@@ -93,7 +93,7 @@ The **corpus** spans two **gitignored / local-only** sister roots, both driving 
 `test/corpus/synthetic/` (minimal packs we author to exercise paths real mods don't reach —
 e.g. the F1 filename repro). Because both are gitignored, a fresh clone starts empty and the
 `upgrade` check no-ops until you populate `real/` (supply the mods) and/or rebuild the
-synthetic packs (run their committed builder scripts — see *Synthetic tests*). Edge cases no
+synthetic packs (`npm run synthetics` — see *Synthetic tests*). Edge cases no
 pack reaches at all are pinned by synthetic unit tests instead (see *Synthetic tests*).
 
 - **Goldens are cached** content-addressed under `test/corpus/.upgrade-cache/`
@@ -137,10 +137,17 @@ the wild — so we also keep *authored* modpacks under `test/corpus/synthetic/` 
 through the same `/upgrade` golden harness, AB-testing TexTools on constructed inputs and
 locking the result instead of only asserting our own expectations in a unit test. Each pack
 is produced by a **committed builder script** under `scripts/generate-synthetics/` (e.g.
-`scripts/generate-synthetics/build-synthetic-f1.mjs`); the built `.pmp`/`.ttmp2` is gitignored like
-the real corpus, so a fresh clone regenerates it by running the builder — no third-party mod needed. (Whether to *also* check in the built packs
+`scripts/generate-synthetics/build-synthetic-f1.ts`); the built `.pmp`/`.ttmp2` is gitignored like
+the real corpus, so a fresh clone regenerates the whole set with `npm run synthetics` — no
+third-party mod needed. (Whether to *also* check in the built packs
 and their goldens is still open.) Cases too deep or edge-casey for a golden to reach still
 fall to synthetic unit tests.
+
+The builders share `scripts/generate-synthetics/pmp-builder.ts`, which types the emitted JSON with
+the reader's own `PmpMetaJson` / `PmpGroupJson` / `PmpOptionJson` and pins the zip mtime so a pack is
+**byte-reproducible** — rebuilding it keeps the cached golden, which is keyed by `sha256(input pack)`.
+The JSON key order and zip member order in that module are load-bearing (they decide the member
+bytes the harness compares); don't reorder them.
 
 ## Porting fidelity — split, don't blend
 

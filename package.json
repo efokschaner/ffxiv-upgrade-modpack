@@ -11,6 +11,7 @@
   "scripts": {
     "prepare": "lefthook install",
     "build": "vite build",
+    "synthetics": "tsx scripts/generate-synthetics/build-all.ts",
     "test": "tsx scripts/run-tests.ts",
     "test:watch": "vitest",
     "test:coverage": "tsx scripts/run-tests.ts --coverage",

@@ -115,8 +115,8 @@ local real-corpus AB-test that Romeo uniquely provides.
    the preserved fail-loud path (its `files/missing.mtrl` is absent under this normalization too) —
    keep it.
 
-2. **`scripts/generate-synthetics/build-synthetic-trailing-dot.mjs` — committed synthetic golden
-   builder.** Mirrors `build-synthetic-case-mismatch.mjs`: emits a gitignored
+2. **`scripts/generate-synthetics/build-synthetic-trailing-dot.ts` — committed synthetic golden
+   builder.** Mirrors `build-synthetic-case-mismatch.ts`: emits a gitignored
    `test/corpus/synthetic/trailing-dot.pmp` containing an option whose `Files` value has a
    trailing-dot folder segment and whose archived payload entry is the stripped name, plus a dummy
    gamePath so ConsoleTools `/upgrade` no-ops (→ compared against input). Flows through the existing

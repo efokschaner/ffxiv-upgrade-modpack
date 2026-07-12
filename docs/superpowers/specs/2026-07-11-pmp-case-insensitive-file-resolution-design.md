@@ -95,8 +95,8 @@ claim rather than resting on our reading of the C#.
    assert an entry absent under *every* casing still throws `pmp: missing file entry`, pinning the
    preserved fail-loud path.
 
-2. **`scripts/generate-synthetics/build-synthetic-case-mismatch.mjs` — committed synthetic golden
-   builder.** Mirrors `build-synthetic-f1.mjs`: emits a gitignored
+2. **`scripts/generate-synthetics/build-synthetic-case-mismatch.ts` — committed synthetic golden
+   builder.** Mirrors `build-synthetic-f1.ts`: emits a gitignored
    `test/corpus/synthetic/case-mismatch.pmp` containing an option whose `Files` value is lowercased
    and whose archived payload entry is display-case, plus a dummy gamePath so ConsoleTools
    `/upgrade` no-ops (→ compared against input). Flows through the existing `/upgrade` golden
