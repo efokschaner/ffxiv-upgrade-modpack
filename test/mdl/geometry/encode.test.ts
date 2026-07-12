@@ -76,6 +76,29 @@ describe("encodeVertexData", () => {
     expect(dv.getUint16(0, true)).not.toBe(floatToHalf(1.00146484375));
   });
 
+  it("truncates Half4 texcoord UV values instead of rounding (SharpDX Half parity)", () => {
+    // Same truncation-vs-RTNE divergence as the Position write site above, but for the UV write
+    // site (pushUv), which TextureCoordinate Half2/Half4 elements go through (Mdl.cs:4234-4274,
+    // the `(Half)` cast on texcoord components -- same SharpDX HalfUtils.Pack truncation).
+    const elements: VertexElement[] = [
+      {
+        stream: 1,
+        offset: 0,
+        type: VertexDataType.Half4,
+        usage: VertexUsageType.TextureCoordinate,
+        count: 0,
+      },
+    ];
+    const { stream1 } = encodeVertexData(
+      [vertex({ uv1: [1.00146484375, 0], uv2: [0, 0] })],
+      elements,
+    );
+    const dv = new DataView(stream1.buffer);
+    expect(dv.getUint16(0, true)).toBe(floatToHalfTruncate(1.00146484375));
+    expect(dv.getUint16(0, true)).toBe(0x3c01);
+    expect(dv.getUint16(0, true)).not.toBe(floatToHalf(1.00146484375));
+  });
+
   it("encodes the Ubyte4n binormal quantizer + handedness byte", () => {
     const elements: VertexElement[] = [
       {
