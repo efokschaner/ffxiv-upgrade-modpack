@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { floatToHalf, halfToFloat } from "../../src/util/float16";
+import {
+  floatToHalf,
+  floatToHalfTruncate,
+  halfToFloat,
+} from "../../src/util/float16";
 
 describe("floatToHalf", () => {
   it("encodes exact half values", () => {
@@ -32,6 +36,28 @@ describe("floatToHalf", () => {
     expect(floatToHalf(-70000)).toBe(0xfc00); // -Inf
     expect(floatToHalf(NaN)).toBe(0x7e00); // quiet NaN
     expect(floatToHalf(-0)).toBe(0x8000); // negative zero
+  });
+});
+
+describe("floatToHalfTruncate", () => {
+  it("truncates toward zero instead of rounding to nearest even", () => {
+    // 1.00146484375 = exact tie between 0x3c01 (odd) and 0x3c02 (even); floatToHalf (RTNE)
+    // rounds up to 0x3c02, but SharpDX's truncating Half() drops the bits -> 0x3c01. This is
+    // the decisive divergence the model-encoder golden regression turned up.
+    expect(floatToHalfTruncate(1.00146484375)).toBe(0x3c01);
+    expect(floatToHalf(1.00146484375)).toBe(0x3c02);
+  });
+
+  it("truncates a negative value from the real model (Spring Florals)", () => {
+    expect(floatToHalfTruncate(-0.0854247)).toBe(0xad77);
+    expect(floatToHalf(-0.0854247)).toBe(0xad78);
+  });
+
+  it("leaves exact-representable values unchanged", () => {
+    expect(floatToHalfTruncate(1)).toBe(0x3c00);
+    expect(floatToHalfTruncate(0.5)).toBe(0x3800);
+    expect(floatToHalfTruncate(0)).toBe(0x0000);
+    expect(floatToHalfTruncate(-2)).toBe(0xc000);
   });
 });
 

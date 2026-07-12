@@ -43,6 +43,30 @@ export function floatToHalf(value: number): number {
   return sign | result;
 }
 
+/** float32 -> IEEE-754 binary16 by TRUNCATION toward zero (drop low mantissa bits, no
+ *  rounding). Matches TexTools' model vertex writer, which packs via SharpDX `new Half()`
+ *  (Mdl.cs:4121-4154 WriteVectorData / :4239-4275 UV) -- SharpDX truncates, unlike .NET's
+ *  round-to-nearest `(Half)`. Distinct from floatToHalf (RTNE), which the colorset path
+ *  keeps. Verified byte-exact against the ConsoleTools /upgrade golden for a Half-format
+ *  model (Spring Florals c0201e6016_top.mdl). */
+export function floatToHalfTruncate(value: number): number {
+  f32[0] = value;
+  const x = u32[0]!;
+  const sign = (x >>> 16) & 0x8000;
+  const exp32 = (x >>> 23) & 0xff;
+  const mant32 = x & 0x007fffff;
+  if (exp32 === 0xff) return sign | 0x7c00 | (mant32 ? 0x0200 : 0); // Inf / quiet NaN
+  const exp = exp32 - 127 + 15; // rebias into half exponent range
+  if (exp >= 0x1f) return sign | 0x7c00; // overflow -> Inf
+  if (exp <= 0) {
+    if (exp < -10) return sign; // too small -> signed zero
+    const m = mant32 | 0x00800000; // restore implicit leading 1
+    const shift = 14 - exp;
+    return sign | (m >>> shift); // subnormal: truncate (no rounding)
+  }
+  return sign | (exp << 10) | (mant32 >>> 13); // normal: truncate low 13 mantissa bits
+}
+
 /** IEEE-754 binary16 raw uint16 -> number. Exact (every half is representable). */
 export function halfToFloat(raw: number): number {
   const sign = raw & 0x8000 ? -1 : 1;

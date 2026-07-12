@@ -9,7 +9,7 @@ import {
   VertexUsageType,
 } from "../../../src/mdl/geometry/format";
 import type { TtVertex } from "../../../src/mdl/geometry/vertex-data";
-import { floatToHalf } from "../../../src/util/float16";
+import { floatToHalf, floatToHalfTruncate } from "../../../src/util/float16";
 
 function vertex(over: Partial<TtVertex>): TtVertex {
   return {
@@ -50,6 +50,30 @@ describe("encodeVertexData", () => {
     expect(dv.getUint16(4, true)).toBe(floatToHalf(0));
     expect(dv.getUint16(6, true)).toBe(floatToHalf(1)); // W = wDefault(Position) = 1
     expect(stream1).toHaveLength(0);
+  });
+
+  it("truncates Half4 position values instead of rounding (SharpDX Half parity)", () => {
+    // TexTools packs Half4 vertex data via SharpDX new Half() (WriteVectorData
+    // Mdl.cs:4121-4154), which truncates toward zero -- not round-to-nearest. 1.00146484375
+    // is the decisive divergence value: RTNE (floatToHalf) rounds it up to 0x3c02, but
+    // truncation (floatToHalfTruncate, matching SharpDX) yields 0x3c01.
+    const elements: VertexElement[] = [
+      {
+        stream: 0,
+        offset: 0,
+        type: VertexDataType.Half4,
+        usage: VertexUsageType.Position,
+        count: 0,
+      },
+    ];
+    const { stream0 } = encodeVertexData(
+      [vertex({ position: [1.00146484375, 0, 0] })],
+      elements,
+    );
+    const dv = new DataView(stream0.buffer);
+    expect(dv.getUint16(0, true)).toBe(floatToHalfTruncate(1.00146484375));
+    expect(dv.getUint16(0, true)).toBe(0x3c01);
+    expect(dv.getUint16(0, true)).not.toBe(floatToHalf(1.00146484375));
   });
 
   it("encodes the Ubyte4n binormal quantizer + handedness byte", () => {
