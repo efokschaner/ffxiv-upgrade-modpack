@@ -163,7 +163,7 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(grp.DefaultSettings).toBe(0);
     expect(grp.Options).toHaveLength(1);
     // includeMeta=true for group options -> Name/Description/Image present.
-    const opt = grp.Options[0] as PmpOptionJson;
+    const opt = grp.Options?.[0] as PmpOptionJson;
     expect(opt.Name).toBe("Red");
     expect(opt.Description).toBe("the red one");
     expect(opt.Image).toBe("red.png");

@@ -11,10 +11,15 @@ import {
   type ModpackOption,
 } from "../model/modpack";
 import { readZip, writeZip } from "../zip/zip";
-import type {
-  PmpGroupJson,
-  PmpMetaJson,
-  PmpOptionJson,
+import {
+  type PmpGroupJson,
+  type PmpGroupJsonRaw,
+  type PmpMetaJson,
+  type PmpMetaJsonRaw,
+  type PmpOptionJsonRaw,
+  parsePmpGroup,
+  parsePmpMeta,
+  parsePmpOption,
 } from "./manifest-types";
 
 const dec = new TextDecoder();
@@ -37,38 +42,37 @@ function windowsPathKey(path: string): string {
 }
 
 function optionFromJson(
-  o: PmpOptionJson,
+  raw: PmpOptionJsonRaw,
   filesByKey: Map<string, Uint8Array>,
 ): ModpackOption {
-  const modFiles = Object.entries(o.Files ?? {}).map(
-    ([gamePath, zipPathRaw]) => {
-      const zipPath = zipPathRaw.replace(/\\/g, "/");
-      // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
-      // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
-      // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
-      // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
-      // manifest value verbatim so the writer/golden are unaffected.
-      const data = filesByKey.get(windowsPathKey(zipPath));
-      if (!data) throw new Error(`pmp: missing file entry ${zipPath}`);
-      return {
-        gamePath,
-        data,
-        storage: FileStorageType.RawUncompressed,
-        pmpPath: zipPath,
-      };
-    },
-  );
+  const o = parsePmpOption(raw);
+  const modFiles = Object.entries(o.Files).map(([gamePath, zipPathRaw]) => {
+    const zipPath = zipPathRaw.replace(/\\/g, "/");
+    // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
+    // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
+    // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
+    // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
+    // manifest value verbatim so the writer/golden are unaffected.
+    const data = filesByKey.get(windowsPathKey(zipPath));
+    if (!data) throw new Error(`pmp: missing file entry ${zipPath}`);
+    return {
+      gamePath,
+      data,
+      storage: FileStorageType.RawUncompressed,
+      pmpPath: zipPath,
+    };
+  });
   return {
-    name: o.Name ?? "",
-    description: o.Description ?? "",
-    image: o.Image ?? "",
-    priority: o.Priority ?? 0,
+    name: o.Name,
+    description: o.Description,
+    image: o.Image,
+    priority: o.Priority ?? 0, // multi-option-only field; absent on other subtypes
     files: modFiles,
-    fileSwaps: o.FileSwaps ?? {},
-    manipulations: o.Manipulations ?? [],
+    fileSwaps: o.FileSwaps,
+    manipulations: o.Manipulations,
     // Carry the full original option JSON so Imc/Combining extras (AttributeMask,
     // IsDisableSubMod, ...), Priority, and absent Files/Image round-trip verbatim.
-    raw: o,
+    raw,
   };
 }
 
@@ -86,8 +90,9 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   if (!metaBytes) throw new Error("pmp: missing meta.json");
   const defaultBytes = entries.get("default_mod.json");
   if (!defaultBytes) throw new Error("pmp: missing default_mod.json");
-  const meta = JSON.parse(dec.decode(metaBytes)) as PmpMetaJson;
-  const defaultMod = JSON.parse(dec.decode(defaultBytes)) as PmpOptionJson;
+  const metaRaw = JSON.parse(dec.decode(metaBytes)) as PmpMetaJsonRaw;
+  const meta = parsePmpMeta(metaRaw);
+  const defaultMod = JSON.parse(dec.decode(defaultBytes)) as PmpOptionJsonRaw;
 
   const groupNames = [...entries.keys()]
     .filter((k) => /^group_\d+.*\.json$/i.test(k))
@@ -107,19 +112,20 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   });
 
   for (const name of groupNames) {
-    const g = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJson;
+    const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
+    const g = parsePmpGroup(gRaw);
     groups.push({
       name: g.Name,
-      description: g.Description ?? "",
-      image: g.Image ?? "",
-      page: g.Page ?? 0,
-      priority: g.Priority ?? 0,
+      description: g.Description,
+      image: g.Image,
+      page: g.Page,
+      priority: g.Priority,
       selectionType: g.Type,
-      defaultSettings: g.DefaultSettings ?? 0,
-      options: (g.Options ?? []).map((o) => optionFromJson(o, filesByKey)),
+      defaultSettings: g.DefaultSettings,
+      options: g.Options.map((o) => optionFromJson(o, filesByKey)),
       // Carry the full original group JSON so group-level extras (Imc Identifier/
       // DefaultEntry/AllVariants/OnlyAttributes, etc.) round-trip verbatim.
-      raw: g,
+      raw: gRaw,
     });
   }
 
@@ -127,15 +133,15 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     sourceFormat: ModpackFormat.Pmp,
     isSimple: false,
     meta: {
-      name: meta.Name ?? "",
-      author: meta.Author ?? "",
-      version: meta.Version ?? "",
-      description: meta.Description ?? "",
-      url: meta.Website ?? "",
-      image: meta.Image ?? "",
-      tags: meta.ModTags ?? [],
+      name: meta.Name,
+      author: meta.Author,
+      version: meta.Version,
+      description: meta.Description,
+      url: meta.Website,
+      image: meta.Image,
+      tags: meta.ModTags ?? [], // C# leaves an absent ModTags null; the domain model wants []
       minimumFrameworkVersion: "1.0.0.0",
-      raw: meta, // carries FileVersion, DefaultPreferredItems, and any other meta fields
+      raw: metaRaw, // carries FileVersion, DefaultPreferredItems, and any other meta fields
     },
     groups,
   };
@@ -182,16 +188,21 @@ export function safeName(s: string): string {
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;
 
-/** Reconstruct a PMP option JSON. Prefers the carried-through original (`raw`) for
- * full fidelity; falls back to building from modeled fields (non-PMP sources). */
-function optionToJson(o: ModpackOption, includeMeta: boolean): PmpOptionJson {
-  if (isObj(o.raw)) return o.raw as PmpOptionJson;
+/** Reconstruct a PMP option JSON DOCUMENT. Prefers the carried-through original (`raw`) for
+ * full fidelity; falls back to building from modeled fields (non-PMP sources). Raw, not parsed:
+ * `includeMeta=false` deliberately omits Name/Description/Image, mirroring C#'s ShouldSerialize*
+ * on IsDataContainerOnly for default_mod.json (PMP.cs:1496-1501). */
+function optionToJson(
+  o: ModpackOption,
+  includeMeta: boolean,
+): PmpOptionJsonRaw {
+  if (isObj(o.raw)) return o.raw as PmpOptionJsonRaw;
   const Files: Record<string, string> = {};
   for (const f of o.files) {
     const zip = f.pmpPath ?? f.gamePath; // forward slashes (zip entry name)
     Files[f.gamePath] = zip.replace(/\//g, "\\"); // backslashes in JSON value
   }
-  const base: PmpOptionJson = {
+  const base: PmpOptionJsonRaw = {
     Files,
     FileSwaps: o.fileSwaps,
     Manipulations: o.manipulations,
@@ -208,9 +219,13 @@ export function writePmp(data: ModpackData): Uint8Array {
   const enc = new TextEncoder();
   const entries = new Map<string, Uint8Array>();
 
-  const meta: PmpMetaJson = isObj(data.meta.raw)
-    ? (data.meta.raw as unknown as PmpMetaJson)
-    : {
+  // Re-emit the source document verbatim when we have it (it may legitimately omit keys — Penumbra
+  // writes no `Image`), else author one from scratch. The authored branch is typed as the PARSED
+  // type: Newtonsoft serializes every initialized field, so a meta.json TexTools writes always
+  // carries the full set. Dropping a key there is thus a divergence — and now a type error.
+  const meta: PmpMetaJsonRaw = isObj(data.meta.raw)
+    ? (data.meta.raw as PmpMetaJsonRaw)
+    : ({
         FileVersion: 3,
         Name: data.meta.name,
         Author: data.meta.author,
@@ -219,12 +234,12 @@ export function writePmp(data: ModpackData): Uint8Array {
         Website: data.meta.url,
         Image: data.meta.image,
         ModTags: data.meta.tags,
-      };
+      } satisfies PmpMetaJson);
   entries.set("meta.json", enc.encode(JSON.stringify(meta, null, 2)));
 
   const [defaultGroup, ...rest] = data.groups;
   const defaultOption: ModpackOption | undefined = defaultGroup?.options[0];
-  const defaultMod: PmpOptionJson = defaultOption
+  const defaultMod: PmpOptionJsonRaw = defaultOption
     ? optionToJson(defaultOption, false)
     : { Version: 0, Files: {}, FileSwaps: {}, Manipulations: [] };
   entries.set(
@@ -233,14 +248,15 @@ export function writePmp(data: ModpackData): Uint8Array {
   );
 
   rest.forEach((g, i) => {
-    const groupJson: PmpGroupJson = isObj(g.raw)
+    const groupJson: PmpGroupJsonRaw = isObj(g.raw)
       ? // Re-emit the original group verbatim, but let the model's option list drive
         // count/order (each option re-emitted from its own carried-through raw).
         ({
           ...(g.raw as Record<string, unknown>),
           Options: g.options.map((o) => optionToJson(o, true)),
-        } as PmpGroupJson)
-      : {
+        } as PmpGroupJsonRaw)
+      : // Authored from scratch -> the full initialized set (see the meta branch above).
+        ({
           Version: 0,
           Name: g.name,
           Description: g.description,
@@ -250,7 +266,7 @@ export function writePmp(data: ModpackData): Uint8Array {
           Type: g.selectionType,
           DefaultSettings: g.defaultSettings,
           Options: g.options.map((o) => optionToJson(o, true)),
-        };
+        } satisfies PmpGroupJson);
     const fileName = `group_${String(i + 1).padStart(3, "0")}_${safeName(g.name)}.json`;
     entries.set(fileName, enc.encode(JSON.stringify(groupJson, null, 2)));
   });
