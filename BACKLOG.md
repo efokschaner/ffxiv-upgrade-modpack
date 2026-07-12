@@ -53,6 +53,25 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   picked up. `src/meta/serialize.ts` always writes version `2` on output regardless of input
   version (`ItemMetadata.Serialize`, `ItemMetadata.cs:509`), so this is purely a read-side gap.
 
+- **PMP load-tolerance for genuinely-absent `Files` entries.** `readPmp`'s case-insensitive
+  resolution (`src/container/pmp.ts`, design spec `docs/superpowers/specs/2026-07-11-pmp-case-insensitive-file-resolution-design.md`)
+  fixed 41 of 47 locally-failing packs, but **6 still fail loud** with `pmp: missing file entry`
+  because their `Files` value names a path absent from the archive under *any* casing — not a
+  case bug. TexTools tolerates these at **load**: `LoadPMP` (`PMP.cs:124`) does no existence check,
+  and only builds `FileStorageInformation.RealPath = Path.Combine(unzipPath, file.Value)`
+  (`PMP.cs:1080`) — a path that simply doesn't exist on disk — deferring any failure to
+  read/import time. Reproducing that means deferring our **eager** byte-read to first use and
+  representing an absent entry without inventing bytes (then letting `/upgrade` surface it only if
+  the file is actually needed). We keep failing loud for now. Re-derive the current list with
+  `local-notes/scan-failed-loads.ts` + `local-notes/classify-fails.ts`; as of 2026-07-11 the 6 are:
+  Skelomae Custom Skeleton v3.3.0 (`.pmp`, ×2 — Skeleton + Devkit; missing `.sklb`),
+  `[Jaque] Romeo & Juliet [feb 2023] - DT update.pmp` (missing optional-corsage `.mtrl`s),
+  `Hoodie Megapack 3 - 2.0.2.pmp` (missing `c0201e6033_top.mdl` + a `designs/default` `.tex`),
+  `[Nyameru]Cute Loop.pmp` (missing `chara/cuteloop2.pap`), and
+  `[Shy] Tactical Hoodie [DT].pmp` (`default_mod` references a bare `chara/equipment/e0834/...`
+  `.mtrl` present only under option-folder prefixes). Distinct from the case-sensitivity fix;
+  revisit if faithful load-tolerance is wanted (or a real pack needs one of these to upgrade).
+
 - **NonSet (weapon/monster/demihuman) IMC reference table.** `src/meta/reference/imc-table.ts`
   (`scripts/extract-meta-reference.ts`) is now **exhaustive over base-game equipment/accessory** —
   it extracts every `(item, slot)` root in the framework's `item_sets.db` `roots` table (~1555
