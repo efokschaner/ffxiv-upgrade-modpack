@@ -22,7 +22,11 @@ import {
   computeExtents,
   computeRadius,
 } from "./bounding-box";
-import { buildDeclarations, streamEntrySizes } from "./build-declarations";
+import {
+  buildDeclarations,
+  MAX_VERTEX_BUFFER_SIZE,
+  streamEntrySizes,
+} from "./build-declarations";
 import type { ReadMdl } from "./read-model";
 import {
   getAttributeBitmask,
@@ -193,6 +197,14 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     meshVertexOffsets.push([off0, off1, 0]);
   }
   const vertexDataBlock = concatBytes(vertexChunks);
+
+  // Mdl.cs:2822-2825: even after the Half-precision fallback, refuse a vertex buffer that
+  // exceeds _MaxVertexBufferSize -- a genuine failure, not something to clamp or truncate.
+  if (vertexDataBlock.length > MAX_VERTEX_BUFFER_SIZE) {
+    throw new Error(
+      `mdl: total Vertex buffer data size is too large (${vertexDataBlock.length} > ${MAX_VERTEX_BUFFER_SIZE}); reduce the model's vertex count`,
+    );
+  }
 
   // ---- Phase 2: vertexInfoBlock.
   const vertexInfoBlock = serializeVertexDeclarations(decl);

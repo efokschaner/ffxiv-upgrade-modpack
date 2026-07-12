@@ -3,7 +3,10 @@
 // Iterating the declaration in sorted-offset order reproduces WriteVertex byte-for-byte on a
 // canonical declaration, and is byte-exact by construction for any decodable source.
 
-import { floatToHalf } from "../../util/float16";
+// TexTools' vertex writer packs Half4/Half2 via SharpDX `new Half()`, which truncates
+// toward zero (Mdl.cs:4121-4154 WriteVectorData); use floatToHalfTruncate, not the RTNE
+// floatToHalf.
+import { floatToHalfTruncate } from "../../util/float16";
 import type { VertexElement } from "./declaration";
 import { VertexDataType, VertexUsageType } from "./format";
 import type { TtVertex, Vec2, Vec3 } from "./vertex-data";
@@ -44,10 +47,10 @@ function pushVectorData(
   wDefault: number,
 ): void {
   if (type === VertexDataType.Half4) {
-    pushU16(out, floatToHalf(data[0]));
-    pushU16(out, floatToHalf(data[1]));
-    pushU16(out, floatToHalf(data[2]));
-    pushU16(out, floatToHalf(wDefault));
+    pushU16(out, floatToHalfTruncate(data[0]));
+    pushU16(out, floatToHalfTruncate(data[1]));
+    pushU16(out, floatToHalfTruncate(data[2]));
+    pushU16(out, floatToHalfTruncate(wDefault));
   } else if (type === VertexDataType.Float3) {
     pushF32(out, data[0]);
     pushF32(out, data[1]);
@@ -69,11 +72,14 @@ function pushUv(out: number[], type: VertexDataType, a: Vec2, b: Vec2): void {
       pushF32(out, b[1]);
     }
   } else if (type === VertexDataType.Half2 || type === VertexDataType.Half4) {
-    pushU16(out, floatToHalf(a[0]));
-    pushU16(out, floatToHalf(a[1]));
+    // UV components go through a `(Half)` cast in C# (~Mdl.cs:4234-4274), which routes through
+    // the same SharpDX HalfUtils.Pack truncation as WriteVectorData above, so floatToHalfTruncate
+    // is correct here too.
+    pushU16(out, floatToHalfTruncate(a[0]));
+    pushU16(out, floatToHalfTruncate(a[1]));
     if (type === VertexDataType.Half4) {
-      pushU16(out, floatToHalf(b[0]));
-      pushU16(out, floatToHalf(b[1]));
+      pushU16(out, floatToHalfTruncate(b[0]));
+      pushU16(out, floatToHalfTruncate(b[1]));
     }
   }
 }

@@ -259,11 +259,16 @@ absolute parity is exercised only by B's golden byte-parity gate; see R3.
   `Half(wDefault)`. A1 byte-exactness is therefore conditional on SE source always
   storing W = wDefault. Expected to hold across the corpus; confirmed the moment A1 is
   green. Moot for B (golden positions/normals are Float3, no W).
-- **R3 — absolute Half↔Float parity (deferred to B).** `floatToHalf` (existing) claims
-  .NET `System.Half` round-to-nearest-even; the reference uses **`SharpDX.Half`**.
-  A does not depend on absolute parity (symmetry only). B's golden gate does — flag a
-  targeted `floatToHalf` vs SharpDX parity spike/unit test for B. `halfToFloat` is exact
-  and carries no such risk.
+- **R3 — absolute Half↔Float parity (resolved).** `floatToHalf` claims .NET `System.Half`
+  round-to-nearest-even; the reference model vertex writer uses **`SharpDX.Half`**
+  (`Mdl.cs:4121-4154` `WriteVectorData`), which **truncates** toward zero instead of
+  rounding. The corpus pack Spring Florals (`c0201e6016_top.mdl`, a Half4-fallback model)
+  surfaced the ±1 divergence against the golden. Resolution: `src/util/float16.ts` gained
+  a separate `floatToHalfTruncate`, and `src/mdl/geometry/encode.ts` now uses it for all
+  Half4/Half2 vertex writes; `floatToHalf` (RTNE) is unchanged and stays in use for the
+  colorset path, which its existing tests/goldens assert. Verified byte-exact against the
+  ConsoleTools `/upgrade` golden for `c0201e6016_top.mdl`. `halfToFloat` is exact and
+  carries no such risk.
 - **R4 — float32 rounding.** No radius/bbox math in A (that is B). A's per-element math
   matches the reference's single-precision expectations; use `Math.fround` only where
   the C# intermediate is a `float` and it would otherwise widen.

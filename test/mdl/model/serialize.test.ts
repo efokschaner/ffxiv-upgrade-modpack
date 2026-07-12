@@ -6,7 +6,7 @@ import { readEditableModel } from "../../../src/mdl/model/read-model";
 import { makeUncompressedMdl } from "../../../src/mdl/model/serialize";
 import type { TTModel } from "../../../src/mdl/model/tt-model";
 import { hasShapeData } from "../../../src/mdl/model/tt-model";
-import { corpusModels } from "../../helpers/corpus-models";
+import { corpusModels, firstCorpusModel } from "../../helpers/corpus-models";
 
 describe("makeUncompressedMdl", () => {
   it("fails loud on a model mixing Shadow and Fog meshes (EMeshType ordering not ported, audit 5-2)", () => {
@@ -106,4 +106,23 @@ describe("makeUncompressedMdl", () => {
     }
     expect(successes).toBeGreaterThan(0);
   }, 600_000);
+
+  it("fails loud when the assembled vertex buffer exceeds 8MB even after Half fallback (Mdl.cs:2822)", () => {
+    // No practical corpus pack reaches this: the estimate forces Half precision at ~150k verts,
+    // and Half is smaller than the Float estimate, so the actual buffer only exceeds 8MB well
+    // above that. Inflate a real (valid) corpus model's first part until the Half-encoded buffer
+    // crosses the cap. The Half stride is ~28-36B/vertex depending on the model's usage layout;
+    // 400k copies (>=~11MB even at the smallest 28B stride) crosses the 8MB cap for any layout,
+    // while the ~19MB Float estimate keeps upgradePrecision=false (so the buffer really is Half).
+    const cm = firstCorpusModel();
+    const rm = readEditableModel(cm.bytes, parseMdl(cm.bytes, cm.gamePath));
+    const m = fromRaw(rm);
+    m.mdlVersion = 6;
+    const part = m.meshGroups[0]!.parts[0]!;
+    const v = part.vertices[0]!;
+    part.vertices = part.vertices.concat(new Array(400_000).fill(v));
+    expect(() => makeUncompressedMdl(m, rm)).toThrow(
+      /Vertex buffer.*too large/i,
+    );
+  });
 });

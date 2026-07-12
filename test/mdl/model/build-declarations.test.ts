@@ -49,6 +49,7 @@ function oneVertModel(over: Partial<TtVertex> = {}): TTModel {
             attributes: new Set<string>(),
             triangleIndices: [],
             vertices: [v],
+            shapeParts: new Map(),
           },
         ],
       },
@@ -98,5 +99,90 @@ describe("buildDeclarations", () => {
       [U.TextureCoordinate, T.Float4, 0],
       [U.TextureCoordinate, T.Float2, 1],
     ]);
+  });
+
+  it("falls back to a Half-precision declaration (Flow omitted) when the estimate reaches 8MB", () => {
+    // upgradePrecision=false path (Mdl.cs:2540-2543 / :2614-2711 / :2655). A shared vertex
+    // object filled across a large array reports a big part.vertices.length without allocating
+    // ~150k distinct vertices. maxUv=2 (uv2 set) + flow on -> perVertex ~60B; 200k verts
+    // (~12MB) trips the >=8MB gate, so Position/Normal become Half4, texcoord Half4, and the
+    // Flow element is dropped entirely even though anisotropicLighting is true.
+    const m = oneVertModel();
+    m.anisotropicLighting = true; // would add a Flow element on the Float path
+    const v = m.meshGroups[0]!.parts[0]!.vertices[0]!;
+    m.meshGroups[0]!.parts[0]!.vertices = new Array(200_000).fill(v);
+
+    const decl = buildDeclarations(m)[0]!;
+    expect(decl.map((e) => [e.usage, e.type, e.count])).toEqual([
+      [U.Position, T.Half4, 0],
+      [U.BoneWeight, T.Ubyte4n, 0],
+      [U.BoneIndex, T.Ubyte4, 0],
+      [U.Normal, T.Half4, 0],
+      [U.Binormal, T.Ubyte4n, 0],
+      [U.Color, T.Ubyte4n, 0],
+      [U.TextureCoordinate, T.Half4, 0],
+    ]);
+    // Half strides: stream0 Half4(8)+Ubyte4n(4)+Ubyte4(4)=16; stream1 Half4(8)+Binormal Ubyte4n(4)
+    // +Color Ubyte4n(4)+Texcoord Half4(8)=24 (Flow omitted, no vColor2).
+    expect(streamEntrySizes(decl)).toEqual([16, 24, 0]);
+  });
+
+  it("emits a Half2 texcoord in the Half-precision fallback when maxUv==1", () => {
+    // Same 8MB gate as above (Mdl.cs:2513-2543), but with uv2/uv3 both zero so maxUv stays 1
+    // (TTModel.GetUsageInfo, TTModel.cs:1308-1367) and the primary texcoord element narrows to
+    // Half2 instead of Half4 (Mdl.cs:2614-2711 / build-declarations.ts maxUv===1 branch).
+    const m = oneVertModel({ uv2: [0, 0], uv3: [0, 0] });
+    const v = m.meshGroups[0]!.parts[0]!.vertices[0]!;
+    m.meshGroups[0]!.parts[0]!.vertices = new Array(200_000).fill(v);
+
+    const decl = buildDeclarations(m)[0]!;
+    const texcoords = decl.filter((e) => e.usage === U.TextureCoordinate);
+    expect(texcoords.map((e) => [e.type, e.count])).toEqual([[T.Half2, 0]]);
+  });
+
+  it("emits a Half4 primary + Half2 secondary texcoord in the Half-precision fallback when maxUv>2", () => {
+    // uv2 default [0.5,0] takes maxUv to 2, uv3 nonzero pushes it to 3, exercising the maxUv>2
+    // second-texcoord branch (Mdl.cs:2614-2711 / build-declarations.ts maxUv>2 branch) under the
+    // same 8MB Half-precision gate.
+    const m = oneVertModel({ uv3: [0, 0.2] });
+    const v = m.meshGroups[0]!.parts[0]!.vertices[0]!;
+    m.meshGroups[0]!.parts[0]!.vertices = new Array(200_000).fill(v);
+
+    const decl = buildDeclarations(m)[0]!;
+    const texcoords = decl.filter((e) => e.usage === U.TextureCoordinate);
+    expect(texcoords.map((e) => [e.type, e.count])).toEqual([
+      [T.Half4, 0],
+      [T.Half2, 1],
+    ]);
+  });
+
+  it("counts shape-part vertices (excluding 'original') toward the 8MB gate", () => {
+    // Mdl.cs:2536-2538: totalVertexCount = shapeVertCount + VertexCount, where shapeVertCount
+    // sums every shapePart EXCEPT the "original" key. perVertex here (maxUv=2, no flow) = 56B.
+    const under = oneVertModel(); // base 100k verts -> 5.6MB, below the 8MB gate
+    const v = under.meshGroups[0]!.parts[0]!.vertices[0]!;
+    const part = under.meshGroups[0]!.parts[0]!;
+    part.vertices = new Array(100_000).fill(v);
+
+    // (a) An "original" shapePart of 100k must NOT count: total stays 5.6MB -> Float.
+    part.shapeParts = new Map([
+      [
+        "original",
+        {
+          name: "original",
+          vertices: new Array(100_000).fill(v),
+          vertexReplacements: new Map(),
+        },
+      ],
+    ]);
+    expect(buildDeclarations(under)[0]![0]!.type).toBe(T.Float3); // Position stays Float
+
+    // (b) A non-"original" shapePart of 100k DOES count: total 200k*56B = 11.2MB -> Half.
+    part.shapeParts.set("shp_a", {
+      name: "shp_a",
+      vertices: new Array(100_000).fill(v),
+      vertexReplacements: new Map(),
+    });
+    expect(buildDeclarations(under)[0]![0]!.type).toBe(T.Half4); // Position flips to Half
   });
 });
