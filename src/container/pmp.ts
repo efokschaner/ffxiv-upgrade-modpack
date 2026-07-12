@@ -21,12 +21,17 @@ const dec = new TextDecoder();
 
 function optionFromJson(
   o: PmpOptionJson,
-  files: Map<string, Uint8Array>,
+  filesLower: Map<string, Uint8Array>,
 ): ModpackOption {
   const modFiles = Object.entries(o.Files ?? {}).map(
     ([gamePath, zipPathRaw]) => {
       const zipPath = zipPathRaw.replace(/\\/g, "/");
-      const data = files.get(zipPath);
+      // Case-insensitive resolution. Penumbra lowercases the Files value while the archive
+      // preserves the option-folder display case; TexTools reads Path.Combine(unzipPath,
+      // file.Value) from the unzipped folder on case-insensitive NTFS (PMP.cs:1080), after a
+      // LoadPMP that never verifies existence at load (PMP.cs:124). Look up the lowercased key;
+      // pmpPath keeps the manifest value verbatim so the writer/golden are unaffected.
+      const data = filesLower.get(zipPath.toLowerCase());
       if (!data) throw new Error(`pmp: missing file entry ${zipPath}`);
       return {
         gamePath,
@@ -52,6 +57,13 @@ function optionFromJson(
 
 export function readPmp(bytes: Uint8Array): ModpackData {
   const entries = readZip(bytes);
+  // Lowercase-keyed index of archive entries, so option Files values (which Penumbra lowercases)
+  // resolve regardless of the entry's stored casing. On NTFS two entries can't differ only by
+  // case, so a lowercased-key collision cannot occur for a pack that unzips (matching the
+  // filesystem TexTools relies on).
+  const filesLower = new Map<string, Uint8Array>();
+  for (const [name, data] of entries) filesLower.set(name.toLowerCase(), data);
+
   const metaBytes = entries.get("meta.json");
   if (!metaBytes) throw new Error("pmp: missing meta.json");
   const defaultBytes = entries.get("default_mod.json");
@@ -73,7 +85,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
-    options: [optionFromJson(defaultMod, entries)],
+    options: [optionFromJson(defaultMod, filesLower)],
   });
 
   for (const name of groupNames) {
@@ -86,7 +98,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       priority: g.Priority ?? 0,
       selectionType: g.Type,
       defaultSettings: g.DefaultSettings ?? 0,
-      options: (g.Options ?? []).map((o) => optionFromJson(o, entries)),
+      options: (g.Options ?? []).map((o) => optionFromJson(o, filesLower)),
       // Carry the full original group JSON so group-level extras (Imc Identifier/
       // DefaultEntry/AllVariants/OnlyAttributes, etc.) round-trip verbatim.
       raw: g,
