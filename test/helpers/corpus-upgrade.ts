@@ -38,8 +38,10 @@ export function registerUpgradeCheck(pack: string): void {
         golden.kind === "noop" ? loadModpack(name, bytes) : golden.data;
       const goldenBytes = golden.kind === "noop" ? bytes : golden.bytes;
 
-      // Exercise the real writer on the oracle path (audit blind spot #5), then compare archive
-      // STRUCTURE + MANIFEST alongside the unchanged payload diff. See the parity design spec.
+      // Exercise the real writer on the oracle path (audit blind spot #5): the archive it produces
+      // now feeds BOTH the structure/manifest diff below AND the payload diff (see next comment) —
+      // the payload diff used to run on the in-memory model and so was blind to the writer entirely.
+      // See the parity design spec.
       const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
       const oursArchive = writeModpack(oursModel, target);
       // Diff the ARTIFACT WE SHIP, not the in-memory model. Feeding `oursModel` here made every
