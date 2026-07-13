@@ -325,7 +325,7 @@ each its own spec→plan→implement cycle. Status as of 2026-07-10:
   (Purrfection, Paglth'an, Vixen, Cambria) to exercise EST/IMC growth paths. Spec:
   `2026-07-10-metadata-round-design.md`. Remaining follow-up: the IMC table is
   corpus-scoped (Set-only equipment/accessory items actually referenced), not a
-  general/exhaustive table — see `BACKLOG.md`.
+  general/exhaustive table — see `docs/BACKLOG.md`.
 
 - **Round 6 — Partials + reference bundling.** Port of the `includePartials`
   heuristics: unclaimed hair textures, eye mask→diffuse, skin repaths. Needs the

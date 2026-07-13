@@ -38,7 +38,8 @@ export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
   // that byte-for-byte also needs C#'s placeholder path — "_empty_sampler_" + the lowercased ESamplerId
   // *name* — whereas parse.ts builds it from the numeric raw id, so a synthetic modpack must pin the
   // exact bytes. No corpus material exercises this (0 unstable). Until pinned, fail loud rather than
-  // emit our (opposite) excluded output, which silently diverges from the golden. See BACKLOG.md.
+  // emit our (opposite) excluded output, which silently diverges from the golden. See
+  // docs/backlog/2026-07-08-mtrl-empty-sampler-placeholders.md.
   if (mtrl.textures.some(isEmptySampler)) {
     throw new Error(
       "mtrl: empty-sampler placeholder serialization not yet ported (C# writes them via a lowercase/StartsWith case-mismatch quirk; needs a synthetic modpack to pin the bytes)",

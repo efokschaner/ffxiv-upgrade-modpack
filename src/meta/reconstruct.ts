@@ -27,15 +27,16 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
     // PLAYABLE_RACES (ItemMetadata.cs:773-788) — a non-playable-race row survives in C#. We instead
     // only emit the 18 canonical PLAYABLE_RACES (see the header comment above), so a mod row for a
     // race outside that set would otherwise be silently dropped here. Game EQDP files are
-    // playable-race-scoped in practice (unreachable across the corpus, BACKLOG.md "EQDP
-    // reconstruction drops mod rows for non-playable races"), so fail loud instead of dropping it
+    // playable-race-scoped in practice (unreachable across the corpus, see
+    // docs/backlog/2026-07-10-eqdp-non-playable-races.md), so fail loud instead of dropping it
     // silently — matching the fail-loud posture of the hair/face EST branch below. The faithful fix
     // (if ever needed) is to keep the mod's extra rows verbatim, per ItemMetadata.cs:773.
     for (const e of eqdp) {
       if (!PLAYABLE_RACES.includes(e.race)) {
         throw new Error(
           `meta: ${gamePath} has an EQDP entry for non-playable race ${e.race} ` +
-            "(C# retains it, ItemMetadata.cs:773; unsupported here, BACKLOG.md)",
+            "(C# retains it, ItemMetadata.cs:773; unsupported here — see " +
+            "docs/backlog/2026-07-10-eqdp-non-playable-races.md)",
         );
       }
     }
@@ -152,7 +153,8 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
     // imc-table.ts's header for the exact extraction. IMC_TABLE is exhaustive over base-game
     // equipment/accessory (every item_sets.db root), but Set-only: it never carries a
     // weapon/monster (NonSet) key, so the lookup below misses for those and falls to the
-    // pass-through branch -- documented, ratchet-guarded (BACKLOG.md "NonSet IMC reference table").
+    // pass-through branch -- documented, ratchet-guarded
+    // (docs/backlog/2026-07-10-nonset-imc-reference-table.md).
     const key = `${root.itemType}/${root.primaryId}/${root.slot}`;
     const base = IMC_TABLE[key];
     if (base) {

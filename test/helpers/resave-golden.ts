@@ -45,7 +45,7 @@ function resaveTmpDir(): string {
  * ITSELF errors on this input (`error`) — e.g. ConsoleTools' write path throwing on a pack it
  * cannot resave. Mirrors `upgrade-golden.ts`'s `GoldenResult`, minus the `noop` kind: /resave has
  * no no-op case (Program.cs:191-221 always writes), but unlike /upgrade it CAN error on a pack
- * whose /upgrade is a no-op (see BACKLOG.md "Expected-failure golden capability" for the case that
+ * whose /upgrade is a no-op (see docs/backlog/2026-07-11-expected-failure-golden.md for the case that
  * forced this — Milktruck Bust Scaling Tweaks, a CMP-format oracle crash on write).
  */
 export type ResaveGoldenResult =

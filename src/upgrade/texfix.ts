@@ -9,7 +9,8 @@
 // This is the MINIMAL subset of FixOldTexData: a load-time validity check that drops
 // a `.tex` whose SqPack Type-4 entry fails to decode (a malformed placeholder
 // texture — see decodeType4's Dat.cs:908-909 throw). The rest of FixOldTexData
-// (NPOT-resize / mip-offset-fixup / recompress) is deferred — see BACKLOG.md.
+// (NPOT-resize / mip-offset-fixup / recompress) is deferred — see
+// docs/backlog/2026-07-10-fixoldtexdata-load-round.md.
 import {
   FileStorageType,
   type ModpackData,

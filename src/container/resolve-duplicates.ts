@@ -103,7 +103,7 @@ export function resolveDuplicates(
   // Files entry and reaches ResolveDuplicates, where it fails `File.Exists(null)` and burns an idx
   // on the zero-hash path (PmpExtensions.cs:509-514; docs/TEXTOOLS_BUGS.md #8), shifting every later
   // common/N number. We cannot reproduce that without a game index, so fail loud rather than
-  // silently diverge -- see BACKLOG.md.
+  // silently diverge -- see docs/backlog/2026-07-13-pmp-write-fileswaps.md.
   //
   // Checked over EVERY option in `data.groups`, NOT just `prefixes.keys()` -- i.e. independent of
   // whatever `buildPages` (option-prefix.ts) pruned. An option can be absent from `prefixes` (its
@@ -118,7 +118,8 @@ export function resolveDuplicates(
           "resolveDuplicates: option has a non-empty FileSwaps map, which this port cannot reproduce " +
             "faithfully -- deciding whether a swap yields an empty placeholder entry (PMP.cs:1104-1137) " +
             "requires querying the live game index (tx.Get8xDataOffset, PMP.cs:1117-1122), which this " +
-            "browser-targeted library does not have. See BACKLOG.md for the full analysis.",
+            "browser-targeted library does not have. See " +
+            "docs/backlog/2026-07-13-pmp-write-fileswaps.md for the full analysis.",
         );
       }
     }

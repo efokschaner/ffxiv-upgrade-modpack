@@ -32,7 +32,7 @@ Classifying all 47 (`classify-fails.ts`, also since retired):
   the archive under a case-insensitive lookup. These are the target of this change.
 - **6 packs** — have **genuinely-absent** entries (a referenced path not in the archive under
   *any* casing; e.g. Skelomae's `default_mod` references `files/files/common/arachne/c0101as.sklb`
-  which isn't packed). Out of scope here — deferred to `BACKLOG.md` (see §6).
+  which isn't packed). Out of scope here — deferred to `docs/BACKLOG.md` (see §6).
 
 ## 2. What TexTools does (the spec)
 
@@ -124,19 +124,19 @@ None introduced. This change *removes* a divergence (an erroneous load-time thro
 back to TexTools' behaviour. No `DIVERGENCE_RULES` entry is needed: the fixed packs are no-op
 upgrades that must match their input byte-for-byte per gamePath.
 
-## 6. Deferred — the 6 genuinely-absent packs (`BACKLOG.md`)
+## 6. Deferred — the 6 genuinely-absent packs (`docs/BACKLOG.md`)
 
 The 6 packs referencing a `Files` value absent under any casing are a distinct problem: TexTools
 tolerates them at **load** (`LoadPMP` does no existence check, `PMP.cs:124`) and would only
 surface the gap at **read/import** time (`Path.Combine(unzipPath, file.Value)` → a nonexistent
 path, `PMP.cs:1080`). Matching that would mean deferring our eager byte-read to first use and
 representing an absent entry without inventing bytes. We keep failing loud for now and record an
-unprioritized `BACKLOG.md` item — citing `PMP.cs:124`/`:1080` and listing the 6 packs — so it can
+unprioritized `docs/BACKLOG.md` item — citing `PMP.cs:124`/`:1080` and listing the 6 packs — so it can
 be picked up cold if we later decide to reproduce TexTools' load-tolerance.
 
 ## 7. Out of scope
 
-- Load-tolerance for genuinely-absent entries (§6, → `BACKLOG.md`).
+- Load-tolerance for genuinely-absent entries (§6, → `docs/BACKLOG.md`).
 - Any change to TTMP2 loading: the case-sensitivity bug is structurally PMP-only (TTMP2 resolves
   files by binary offset into the `.mpd` blob, not by zip-entry name), and no TTMP appears in the 47.
 - Rewriting `pmpPath` to display case / preserving original payload zip-entry casing on write

@@ -16,7 +16,7 @@
 // covers every base-game equipment/accessory item -- not just the ones a corpus .meta happens
 // to reference. NonSet (weapon/monster/demihuman) items use a different .imc shape (ImcType.
 // NonSet) and remain out of scope until parseMetaRoot (src/meta/root.ts) recognizes those
-// roots -- see BACKLOG.md.
+// roots -- see docs/backlog/2026-07-10-nonset-imc-reference-table.md.
 export const IMC_TABLE: Record<string, number[][]> = {
   "accessory/1/ear": [[1, 0, 255, 3, 0, 0], [1, 0, 255, 3, 0, 0], [2, 0, 255, 3, 0, 0], [3, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [1, 0, 255, 3, 0, 0], [5, 0, 255, 3, 0, 0], [6, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0]],
   "accessory/1/nek": [[1, 0, 255, 3, 0, 0], [1, 0, 255, 3, 0, 0], [2, 0, 255, 3, 0, 0], [2, 0, 255, 3, 0, 0], [2, 0, 255, 3, 0, 0], [3, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0]],

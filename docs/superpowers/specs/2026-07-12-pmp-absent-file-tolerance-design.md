@@ -13,7 +13,7 @@ bug: the file genuinely is not in the archive.
 
 ## 1. Problem
 
-Five real packs still fail loud with `pmp: missing file entry` (`BACKLOG.md`). Their `Files` values
+Five real packs still fail loud with `pmp: missing file entry` (`docs/BACKLOG.md`). Their `Files` values
 name zip paths absent from the archive under **any** Windows normalization — case-fold *and*
 trailing-dot/space strip — i.e. the payload was never packed:
 
@@ -91,7 +91,7 @@ fatal to the whole pack. Our `modelRound` does not reproduce that outcome: a `no
 propagates out of `upgradeModpack` unguarded, killing the whole pack. That is a real, **pre-existing**
 divergence (true before this change, and unrelated to it — an absent file still can never reach this
 round either way), kept deliberately fail-loud so an unported model structure surfaces loudly rather
-than silently shipping a pack missing a model. See `BACKLOG.md`.
+than silently shipping a pack missing a model. See `docs/BACKLOG.md`.
 
 Two consequences worth stating explicitly:
 
@@ -238,14 +238,14 @@ way:
   a PMP-shaped per-gamePath payload member at all): on a real ConsoleTools-written golden, TexTools
   regenerates every payload member's name (`<optionPrefix><gamePath>`, `PmpExtensions.cs:534`) where our
   writer reuses the source pack's own names — a real, separately tracked divergence
-  (`BACKLOG.md`) this comparison must not light up.
+  (`docs/BACKLOG.md`) this comparison must not light up.
 
   **What this does NOT cover:** an entry name TexTools' Ionic.Zip would decode differently than fflate
   does — a byte >= 0x80 with the zip's UTF-8 general-purpose-flag bit unset, where Ionic falls back to
   IBM437 and fflate falls back to latin1 — never reaches either comparison above. `readZip`
   (`src/zip/zip.ts`) scans the zip's Central Directory and **throws** on exactly that case before any
   entry is decoded, per AGENTS.md's "fail loud, never silently diverge": we do not implement IBM437
-  (`BACKLOG.md`), so silently picking fflate's latin1 name would resolve a *different* file than
+  (`docs/BACKLOG.md`), so silently picking fflate's latin1 name would resolve a *different* file than
   TexTools does, with the mis-decoded member re-emitted as an ExtraFile under its wrong name — a
   balanced member count on both sides, invisible to the multiset diff above.
 - **It is inert whenever TexTools actually wrote.** A real ConsoleTools golden has already dropped the
@@ -270,7 +270,7 @@ does not contain it).
    `test/mtrl/make-mtrl.ts`'s `buildMinimalMtrl` but with realistic texture paths.
    **Spike this first** (§4.3) — two things can sink it:
    - The pack's zip layout must already match TexTools' regenerated `<optionPrefix><gamePath>` scheme
-     (`PmpExtensions.cs:534`; see `BACKLOG.md`), or we collide with an unrelated, pre-existing
+     (`PmpExtensions.cs:534`; see `docs/BACKLOG.md`), or we collide with an unrelated, pre-existing
      divergence in `writePmp`. A single-option group named `absent` gives prefix `absent/`.
    - C# may abandon the material via its own NRE (`docs/TEXTOOLS_BUGS.md` §2) if the normal texture
      does not resolve, which returns the pack to a noop and defeats the purpose.
@@ -296,7 +296,7 @@ does not contain it).
    fixed. Blessing a baseline was forbidden (it would enshrine a known divergence on a pack authored
    to prove a different one). The builder now lives at
    `scripts/generate-synthetics/build-synthetic-absent-file-upgraded.ts` (not registered in
-   `build-all.ts` — see its header) and `BACKLOG.md` carries the item plus
+   `build-all.ts` — see its header) and `docs/BACKLOG.md` carries the item plus
    an instruction to land it once the writer regenerates manifests — it should go green immediately.
 
    So the write-side rule (§3.4) rests on: this spike's non-noop golden (strongest), the `/resave`
@@ -326,7 +326,7 @@ does not contain it).
 upgrade and no change check, so it drives the same `PopulatePmpStandardOption` writer. Ran it once on
 `[Shy] Tactical Hoodie [DT].pmp` and inspected the output's group JSON to confirm the absent `Files`
 key is gone — empirical corroboration of §3.4 without adopting `/resave` as a harness oracle (it
-cannot be one: it renames every payload entry and re-serializes every JSON — see `BACKLOG.md`).
+cannot be one: it renames every payload entry and re-serializes every JSON — see `docs/BACKLOG.md`).
 The one-off script that ran this (`probe-resave-absent.ts`) has since been deleted — its purpose was
 served and the result is recorded permanently below; it is not needed to re-derive the finding.
 
@@ -365,7 +365,7 @@ reached).
 - **Porting `ResolveDuplicates` / `MakeOptionPrefix`** — i.e. regenerating payload zip names as
   `<optionPrefix><gamePath>` with `common/N` dedup, as TexTools' writer does. Our writer reuses source
   zip names and matches the goldens only because Penumbra's layout coincides. Recorded in
-  `BACKLOG.md`; it is a pre-existing latent divergence, not one this change introduces (though §4.2's
+  `docs/BACKLOG.md`; it is a pre-existing latent divergence, not one this change introduces (though §4.2's
   non-noop synthetic must be authored to conform to the scheme so it does not trip over it).
 - **`/resave` as a harness oracle** (§4.3) — needs the above.
 - **TTMP write of an absent file** (§3.4) — unreachable; fail-loud guard instead.

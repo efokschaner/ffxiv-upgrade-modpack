@@ -212,7 +212,8 @@ const IS_MDL = /\.mdl$/;
  * `upgradeModpack`, killing the pack. That is a real, PRE-EXISTING divergence from TexTools
  * (unrelated to absent-file tolerance — it was true before this change too), kept
  * deliberately fail-loud so an unported model structure surfaces loudly during development
- * instead of silently shipping a pack missing a model. See BACKLOG.md.
+ * instead of silently shipping a pack missing a model. See
+ * docs/backlog/2026-07-12-model-round-throw-drops-pack.md.
  */
 function modelRound(option: ModpackOption, gate: boolean): void {
   if (!gate) return;
@@ -284,7 +285,7 @@ function targetKey(info: UpgradeInfo): string {
  * "PMP has no load-time fixes at all" — PMP has its own, separate load-time `.tex` fixup
  * (`EndwalkerUpgrade.FastValidateTexFile`, run from `ResolvePMPBasePath`/`UnpackPmpOption`,
  * PMP.cs:86/1084-1091) that this function does not run and that we have not ported (see
- * BACKLOG.md's "PMP load-time `.tex` fixup (`FastValidateTexFile`) is unported" and
+ * docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md and
  * docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md §4.3.1's correction).
  */
 export function applyLoadFixes(data: ModpackData): void {

@@ -3,7 +3,7 @@
 **Date:** 2026-07-11
 **Status:** Design — approved, pending implementation plan
 **Roadmap:** implements the `MDL — Half-precision large-vertex-buffer fallback` item in
-`BACKLOG.md`; sits under the model round (`docs/superpowers/specs/2026-07-06-model-round-design.md`,
+`docs/BACKLOG.md`; sits under the model round (`docs/superpowers/specs/2026-07-06-model-round-design.md`,
 `…-model-normalizer-design.md`) and the foundation roadmap
 (`docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md` §8).
 
@@ -142,9 +142,9 @@ estimate that tripped the gate), so a unit test is the only reachable coverage.
 
 ### 4.4 Housekeeping
 
-- Remove the `MDL — Half-precision large-vertex-buffer fallback` item from `BACKLOG.md`.
+- Remove the `MDL — Half-precision large-vertex-buffer fallback` item from `docs/BACKLOG.md`.
 - If the estimate fix or Half branch surfaces any *other* pre-existing model diff on Spring
-  Florals that is genuinely out of this scope, file it as a new `BACKLOG.md` item with the audit
+  Florals that is genuinely out of this scope, file it as a new `docs/BACKLOG.md` item with the audit
   finding rather than expanding this task.
 
 ## 5. Divergence policy

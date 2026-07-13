@@ -83,7 +83,7 @@ export function parseMetaRoot(gamePath: string): MetaRoot {
       race: Number.parseInt(face[2]!, 10),
     };
   }
-  // Weapon/monster roots (Task 8b, resolves the Task-5 BACKLOG note): PrimaryExtractionRegex
+  // Weapon/monster roots: PrimaryExtractionRegex
   // (XivDependencyGraph.cs:250, this file's header) matches these paths with PrimaryType =
   // weapon/monster, PrimaryId = the w####/m#### model number, SecondaryType = "body",
   // SecondaryId = the b#### id. Verified shapes against the real corpus:

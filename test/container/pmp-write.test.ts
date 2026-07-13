@@ -142,13 +142,15 @@ describe("writePmp model-building fallback (no raw)", () => {
               ],
               // FileSwaps must stay empty here: resolveDuplicates fails loud on a non-empty
               // FileSwaps map (this port cannot reproduce TexTools' game-index-dependent
-              // placeholder mechanics faithfully — see resolve-duplicates.ts / BACKLOG.md), and
+              // placeholder mechanics faithfully — see resolve-duplicates.ts /
+              // docs/backlog/2026-07-13-pmp-write-fileswaps.md), and
               // that guard applies to every option writePmp actually assembles a prefix for.
               fileSwaps: {},
               // Every field a real PMPImcManipulationJson declares must be present: a document
               // omitting one is NOT modeled as "absent from the output" (a bare `{ Type: "Imc" }`
               // used to be pinned here, silently inventing that shape — see
-              // pmp-manipulation.test.ts and BACKLOG.md's "normalizeManipulations" finding).
+              // pmp-manipulation.test.ts and
+              // docs/backlog/2026-07-13-pmp-manipulation-field-defaults.md).
               manipulations: [IMC_MANIPULATION],
             },
           ],
@@ -1000,7 +1002,8 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
             [optBAbsentFile]: toZipValue(optBAbsentFile),
           },
           // FileSwaps must stay empty: resolveDuplicates fails loud on a non-empty FileSwaps map
-          // for any option it assigns a prefix to (see resolve-duplicates.ts / BACKLOG.md).
+          // for any option it assigns a prefix to (see resolve-duplicates.ts /
+          // docs/backlog/2026-07-13-pmp-write-fileswaps.md).
           FileSwaps: {},
           // A COMPLETE Imc manipulation -- normalizeManipulations throws on one missing a required
           // field (pmp-manipulation.test.ts), so this fixture needs every field spelled to prove
@@ -1202,7 +1205,8 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
 describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
   // PopulatePmpStandardOption converts a .meta/.rgsp file to Manipulations instead of writing it as
   // a zip member (PMP.cs:891-900 -> PMPExtensions.MetadataToManipulations/RgspToManipulations) --
-  // unported (see pmp.ts's own comment on this guard / BACKLOG.md), so writePmp fails loud instead
+  // unported (see pmp.ts's own comment on this guard /
+  // docs/backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md), so writePmp fails loud instead
   // of silently emitting a member TexTools would never write.
   function modeledData(gamePath: string): ModpackData {
     return {

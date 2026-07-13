@@ -22,8 +22,8 @@ function processError(
   return Object.assign(new Error(message), { status, signal, stderr });
 }
 
-// Focused test for the "oracle itself errors" marker (BACKLOG.md, "Expected-failure golden
-// capability for the upgrade harness"): ConsoleTools /resave can throw on an input it CAN load
+// Focused test for the "oracle itself errors" marker
+// (docs/backlog/2026-07-11-expected-failure-golden.md): ConsoleTools /resave can throw on an input it CAN load
 // but cannot write back out (e.g. the Milktruck Bust Scaling Tweaks CMP crash). Uses the
 // opts.produce injection seam — never spawns real ConsoleTools in a unit test.
 describe("resaveGoldenCached — error marker", () => {

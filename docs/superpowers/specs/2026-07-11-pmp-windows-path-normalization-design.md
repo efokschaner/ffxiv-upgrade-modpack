@@ -16,7 +16,7 @@ the case-insensitive fix left throwing `pmp: missing file entry`. (The `local-no
 / `classify-fails.ts` scripts this section originally cited have since been retired — see
 `docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §1 for the current numbers and
 their successor, `scripts/scan-modpack-loads.ts`. Left otherwise unchanged as a historical record.) The backlog
-(`BACKLOG.md`) classified all six as **genuinely-absent** `Files` entries. Re-investigation shows
+(`docs/BACKLOG.md`) classified all six as **genuinely-absent** `Files` entries. Re-investigation shows
 that classification is **wrong for Romeo**: its ten "absent" entries are present in the archive
 under a **trailing-dot-normalized** folder name.
 
@@ -147,7 +147,7 @@ restores TexTools' behaviour. No `DIVERGENCE_RULES` entry is needed for the reso
 Romeo's baseline carries pre-existing latent diffs, each is governed by its own existing rule/backlog
 item, not by this change.
 
-## 6. Deferred — the five genuinely-absent packs (`BACKLOG.md`)
+## 6. Deferred — the five genuinely-absent packs (`docs/BACKLOG.md`)
 
 Distinct problem, unchanged by this work. Skelomae Custom Skeleton v3.3.0 (`.pmp`, ×2 — missing
 `files/files/common/arachne/*.sklb`), `[Nyameru]Cute Loop.pmp` (missing `chara/cuteloop2.pap`),
@@ -157,7 +157,7 @@ Distinct problem, unchanged by this work. Skelomae Custom Skeleton v3.3.0 (`.pmp
 archive under **any** Windows normalization — verified. All five `/upgrade` to a **noop** (the absent
 files are never read/needed). Matching that means TexTools' load-tolerance: load without throwing,
 represent the absent entry without inventing bytes, defer any failure to first byte-demand, and
-reproduce the noop. `BACKLOG.md` is rewritten to remove Romeo (fixed here) and narrow the item to
+reproduce the noop. `docs/BACKLOG.md` is rewritten to remove Romeo (fixed here) and narrow the item to
 these five, citing `PMP.cs:124`/`:1080`. (Historical note: this section's `scan-failed-loads.ts`
 / `classify-fails.ts` scripts have since been retired along with the rest of `local-notes/` — see
 `docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §1 for the outcome and
@@ -165,7 +165,7 @@ these five, citing `PMP.cs:124`/`:1080`. (Historical note: this section's `scan-
 
 ## 7. Out of scope
 
-- Load-tolerance for genuinely-absent entries (§6, → `BACKLOG.md`).
+- Load-tolerance for genuinely-absent entries (§6, → `docs/BACKLOG.md`).
 - Broader Win32 path normalization beyond case + trailing-dot/space (§3 — no corpus need).
 - Any change to TTMP2 loading: TTMP2 resolves files by binary offset into the `.mpd` blob, not by
   zip-entry name, so this class of bug is structurally PMP-only.

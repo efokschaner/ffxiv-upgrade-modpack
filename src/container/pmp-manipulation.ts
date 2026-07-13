@@ -31,7 +31,7 @@
 // re-serializes it verbatim, with no field-dropping or coercion. None of Rsp/Atch/GlobalEqp
 // (PmpManipulation.cs:678-842) carries a `[JsonIgnore]` field, so a raw passthrough matches their
 // typed round-trip UNLESS the source also spells one of their fields as a numeric string — no corpus
-// pack does, so this is left unported; see BACKLOG.md.
+// pack does, so this is left unported.
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;
@@ -71,7 +71,7 @@ function requireField(
       `pmp-manipulation: ${subtype} manipulation is missing required field "${key}" — ` +
         "TexTools' typed model would serialize its C# default (0/false/enum-default) here, which " +
         "this port does not reproduce (no corpus manipulation omits a field to pin the exact " +
-        "default against); see BACKLOG.md.",
+        "default against); see docs/backlog/2026-07-13-pmp-manipulation-field-defaults.md.",
     );
   }
   return m[key];
@@ -90,7 +90,8 @@ function requireEntry(
   const entry = requireField(m, "Entry", subtype);
   if (!isObj(entry)) {
     throw new Error(
-      `pmp-manipulation: ${subtype} manipulation's "Entry" is not an object — see BACKLOG.md.`,
+      `pmp-manipulation: ${subtype} manipulation's "Entry" is not an object — see ` +
+        "docs/backlog/2026-07-13-pmp-manipulation-field-defaults.md.",
     );
   }
   return entry;

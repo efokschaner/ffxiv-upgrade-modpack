@@ -29,12 +29,13 @@ export function deserializeMeta(data: Uint8Array): ItemMeta {
   // port cannot faithfully reproduce today: DeserializeEstData defaults a missing EST segment to
   // `Est.GetExtraSkeletonEntries(root)` (ItemMetadata.cs:823-826) and DeserializeGmpData defaults a
   // missing GMP segment to `GetGimmickParameter(root, true)` (ItemMetadata.cs:851-855) — the latter
-  // needs a per-item base-game GMP reference table this round never extracted (BACKLOG.md "v1
-  // metadata support"). Rather than silently emit a wrong (missing-injection) v2 meta, fail loud.
+  // needs a per-item base-game GMP reference table we have never extracted
+  // (docs/backlog/2026-07-11-v1-metadata-support.md). Rather than silently emit a wrong
+  // (missing-injection) v2 meta, fail loud.
   if (version !== 2) {
     throw new Error(
       `meta: unsupported version ${version} (only v2 is ported; v1's EST/GMP default-injection ` +
-        "needs base-game data this round doesn't have — see BACKLOG.md 'v1 metadata support')",
+        "needs base-game data we don't have — see docs/backlog/2026-07-11-v1-metadata-support.md)",
     );
   }
   const path = reader.readNullTerminatedString();

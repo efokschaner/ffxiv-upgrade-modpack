@@ -150,7 +150,8 @@ export function assertCorpusPresent(
  *  documented below is therefore inherent to break-on-staleness locking WITHOUT a heartbeat, not a
  *  shortcoming of hand-rolling it — proper-lockfile has the same window and merely names it.
  *  Getting a real heartbeat means making the oracle async (run/unwrapCached/upgradeGoldenCached and
- *  their sync corpus call sites). That is the right long-term shape and is filed in BACKLOG.md. */
+ *  their sync corpus call sites). That is the right long-term shape and is filed in
+ *  docs/backlog/2026-07-13-consoletools-oracle-async-lock.md. */
 const LOCK_PATH = join(tmpdir(), "ffxiv-upgrade-modpack-consoletools.lock");
 const LOCK_STALE_MS = 10 * 60 * 1000; // > the longest single ConsoleTools run we have seen
 const LOCK_TIMEOUT_MS = 20 * 60 * 1000;

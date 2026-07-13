@@ -99,7 +99,7 @@ C# **writes the placeholders into the output material**.
 
 **Us:** `src/mtrl/serialize.ts` throws rather than emitting placeholders — a deliberate parity hole,
 because pinning the exact bytes TexTools emits here needs a synthetic modpack that exercises it. See
-`BACKLOG.md`.
+`backlog/2026-07-08-mtrl-empty-sampler-placeholders.md`.
 
 **Upstream fix:** compare case-insensitively (or lowercase the constant). Note this would *change*
 TexTools' output bytes, so it is a behavioural fix, not a cosmetic one.
@@ -194,7 +194,8 @@ That write-time guard drops the absent files' own `Files` entries and payload by
 different function, already spent by the time the drop happens. So with two absent files, the very
 next **genuine** duplicate (two really-identical present files) is relocated into `common/2/…` instead
 of `common/1/…` — an observable member-name difference between our output and TexTools' that survives
-the write-time drop and would need reproducing if we ever port `ResolveDuplicates` (see `BACKLOG.md`).
+the write-time drop and would need reproducing if we ever port `ResolveDuplicates` (see
+`backlog/2026-07-13-pmp-write-fileswaps.md`).
 
 **Us:** `resolveDuplicates` inserts the same all-zero sentinel hash for a byte-less
 `ModpackFile` (`data === undefined`) and lets it dedupe against every other absent file, burning
@@ -246,7 +247,8 @@ finishes the job for one of its three members.
 **Us:** `resolveDuplicates` throws when an option carries a non-empty `FileSwaps` map, rather than
 attempting to reproduce (or silently drop) file swaps. We can't reproduce TexTools' *read-side*
 placeholder mechanism faithfully either (`UnpackPmpOption`, `PMP.cs:1104-1137`, needs a live game
-index we don't have — see the throw site and `BACKLOG.md` for the full analysis), so failing loud is
+index we don't have — see the throw site and `backlog/2026-07-13-pmp-write-fileswaps.md` for the
+full analysis), so failing loud is
 the only option that doesn't risk shipping a silently-wrong pack. No corpus PMP currently carries any
 FileSwaps (checked empirically, all 13 real corpus packs have `fileSwaps=0`), so this is latent.
 

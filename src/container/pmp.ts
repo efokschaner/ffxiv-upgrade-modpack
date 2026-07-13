@@ -417,7 +417,8 @@ function optionToJson(
     base.Description = o.description;
     // WizardHelpers.WriteImage (WizardData.cs:545/:953/:1497) re-encodes a REFERENCED image into a
     // fresh 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than
-    // passing the source value through — unported (no image encoder here; see BACKLOG.md). This
+    // passing the source value through — unported (no image encoder here; see
+    // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This
     // carries the SOURCE Image value/zip-path verbatim, which diverges from the golden whenever an
     // option actually carries an image (every corpus option that has NO image round-trips "" -> ""
     // either way, which is why the corpus alone doesn't expose this).
@@ -503,7 +504,7 @@ export function writePmp(data: ModpackData): Uint8Array {
   // through a format conversion that no upgrade flow performs (WriteModpack dispatches on the
   // destination extension and the GUI reuses the source's, WizardData.cs:1312-1326) — and which
   // writeModpack already rejects outright (src/index.ts). Fail loud instead of silently emitting a
-  // member TexTools would never write. See BACKLOG.md.
+  // member TexTools would never write. See docs/backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md.
   for (const f of zipPaths.keys()) {
     if (/\.(meta|rgsp)$/.test(f.gamePath)) {
       throw new Error(
@@ -548,7 +549,8 @@ export function writePmp(data: ModpackData): Uint8Array {
   //
   // Image: WizardHelpers.WriteImage (WizardData.cs:1497) re-encodes a REFERENCED image into a fresh
   // 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than passing the
-  // source value through — unported (no image encoder here; see BACKLOG.md). This carries the
+  // source value through — unported (no image encoder here; see
+  // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This carries the
   // source value verbatim, which diverges from the golden whenever meta actually carries an image
   // (no corpus pack does, so the corpus alone doesn't expose this).
   const meta: PmpMetaJson = {
@@ -710,7 +712,8 @@ export function writePmp(data: ModpackData): Uint8Array {
       // above) DefaultEntry.
       //
       // Image: same WizardHelpers.WriteImage caveat as meta.json's Image and an option's Image
-      // above (WizardData.cs:953) — carried through verbatim, unported; see BACKLOG.md.
+      // above (WizardData.cs:953) — carried through verbatim, unported; see
+      // docs/backlog/2026-07-13-pmp-writer-image-reencode.md.
       const groupJson: PmpGroupJsonRaw = {
         ...filteredRaw,
         ...defaultEntryOverride,

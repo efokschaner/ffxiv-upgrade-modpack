@@ -49,8 +49,8 @@ export function registerResaveCheck(pack: string): void {
         // this pack, rather than letting the suite go quietly green as if it had matched.
         const message =
           `ConsoleTools /resave CANNOT round-trip ${name} — the oracle itself errors, so our ` +
-          `writer is UNVERIFIED (not matched, not passing) for this pack. See BACKLOG.md, ` +
-          `"Expected-failure golden capability for the upgrade harness". Oracle error:\n` +
+          `writer is UNVERIFIED (not matched, not passing) for this pack. See ` +
+          `docs/backlog/2026-07-11-expected-failure-golden.md. Oracle error:\n` +
           result.message;
         console.error(`[resave] UNVERIFIED: ${message}`);
         ctx.skip(message);

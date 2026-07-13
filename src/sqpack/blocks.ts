@@ -57,7 +57,8 @@ export function readBlock(r: BinaryReader): Uint8Array {
   // which file is last in the archive, which block is last in the file — that this single-file
   // block reader does not carry. Reproducing it partially would risk over-throwing on padding C#
   // legitimately tolerates (a NEW divergence, the opposite failure). It is malformed-input-only and
-  // latent, so we leave it as a documented gap rather than a possibly-wrong throw. See BACKLOG.md.
+  // latent, so we leave it as a documented gap rather than a possibly-wrong throw. See
+  // docs/backlog/2026-07-08-sqpack-block-padding-throw.md.
   return data;
 }
 

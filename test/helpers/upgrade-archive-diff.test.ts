@@ -126,7 +126,7 @@ describe("diffArchives payload-member comparison (replaces the orphan-payload-me
     ]);
   });
 
-  it("is inert on a non-noop (real-golden) comparison, per BACKLOG's writer-regenerates-names divergence", () => {
+  it("does not compare payload member names when checkPayloadMembers is off (the TTMP branch)", () => {
     // Same silent loss, but with checkPayloadMembers left off (the non-noop branch) — deliberately
     // not compared there; see diffArchives' doc comment.
     const golden = pmp({

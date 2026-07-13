@@ -181,7 +181,7 @@ against unknown-unknowns, as requested.
 expansion boundary, and **hair no-op** (small hair packs either no-op entirely or are 126 MB).
 
 **Bonus finding to log:** `Spring Florals` (`[V] [AM]`) *throws in our current pipeline* — a
-pre-existing, non-meta bug surfaced during this scan. Add a `BACKLOG.md` entry (and it's a
+pre-existing, non-meta bug surfaced during this scan. Add a `docs/BACKLOG.md` entry (and it's a
 corpus candidate once fixed); out of scope for this round.
 
 ---

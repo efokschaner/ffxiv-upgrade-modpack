@@ -3,7 +3,7 @@
 // segments v1 predates, ItemMetadata.cs version history), writeModpack it, run ConsoleTools
 // /upgrade, and inspect what the golden does (v1->v2? EST/GMP default injection? or reject?).
 //
-// Backs the still-open BACKLOG.md item "v1 metadata support" — its whole purpose is to re-verify
+// Backs the still-open docs/backlog/2026-07-11-v1-metadata-support.md — its whole purpose is to re-verify
 // this probe's finding against a fresh ConsoleTools build if that work is ever picked up.
 //
 // Run: npx tsx scripts/probes/probe-v1-meta.ts

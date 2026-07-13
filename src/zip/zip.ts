@@ -40,9 +40,10 @@ function findEndOfCentralDirectory(bytes: Uint8Array): number {
  * member (or none), marks the file absent, and the writer drops it — a real file the pack ships
  * with is never referenced by the rewritten manifest.
  *
- * We do not implement IBM437 (see BACKLOG.md), so — per AGENTS.md ("fail loud, never silently
- * diverge") — we throw rather than guess. Returns the offending entries' raw name bytes (hex),
- * for the thrown error's message; empty when nothing is affected.
+ * We do not implement IBM437 (see docs/backlog/2026-07-12-cp437-zip-entry-names.md), so — per
+ * AGENTS.md ("fail loud, never silently diverge") — we throw rather than guess. Returns the
+ * offending entries' raw name bytes (hex), for the thrown error's message; empty when nothing is
+ * affected.
  */
 function findNonUtf8HighByteEntryNames(bytes: Uint8Array): string[] {
   const eocd = findEndOfCentralDirectory(bytes);

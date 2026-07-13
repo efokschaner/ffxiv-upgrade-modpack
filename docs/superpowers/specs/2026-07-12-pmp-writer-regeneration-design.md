@@ -1,6 +1,6 @@
 # PMP writer: regenerate from the model (and the write-side oracle that proves it)
 
-Status: implemented (2026-07-13). Supersedes the round-trip half of `writePmp`, closes the top `BACKLOG.md`
+Status: implemented (2026-07-13). Supersedes the round-trip half of `writePmp`, closes the top `docs/BACKLOG.md`
 item (the generated texture with no `Files` key) and the "`writePmp` round-trips the source
 pack where TexTools *regenerates* it" item, and adds the write-side AB test the harness has
 never had.
@@ -189,7 +189,7 @@ to, and NOT covered by, `texFixRound`'s `FixOldTexData`. Confirmed by the `/resa
 (§4.2) is a payload **length** mismatch on `common/24/…id.tex` — this fixup's signature (a length
 diff), not `FixOldTexData`'s (same-length, differing header bytes). **Consequence: `applyLoadFixes`
 is missing a PMP branch.** The PMP half of B is therefore NOT a clean writer oracle — it has an
-unported load-time seam of its own, tracked in `BACKLOG.md` ("PMP load-time `.tex` fixup
+unported load-time seam of its own, tracked in `docs/BACKLOG.md` ("PMP load-time `.tex` fixup
 (`FastValidateTexFile`) is unported"). Not fixed as part of this spec/plan; recorded here so the
 claim this paragraph used to make doesn't stand uncorrected.
 
@@ -245,7 +245,7 @@ Harness first, so each new check is *seen failing on the bug it exists to catch*
   `PmpExtensions.cs:417`): fail loud, backlog. Unreachable without a TTMP→PMP conversion, and no
   upgrade flow performs one (§3). `/resave x.ttmp2 → y.pmp` is the golden if we ever want it.
 - The `mergeManipulations = true` import path (`PMP.cs:1141-1205`).
-- The remaining `BACKLOG.md` texture-round gaps (T2/T3/T4), the partials round, and everything
+- The remaining `docs/BACKLOG.md` texture-round gaps (T2/T3/T4), the partials round, and everything
   else that is about the *transform* rather than the writer.
 
 ## 7. What actually happened
@@ -279,8 +279,8 @@ survives.
   to be Newtonsoft's numeric-string coercion: a source `"SetId": "295"` (JSON string) on an
   Eqp/Eqdp manipulation deserializes fine into the typed `uint SetId` and re-serializes as the
   JSON *number* `295`. Both are ported in `src/container/pmp-manipulation.ts`
-  (`normalizeManipulations`) — see BACKLOG.md's (now-struck-through, fixed) entry for the
-  discovery detail.
+  (`normalizeManipulations`) — see that module's doc comment for the reasoning and the residual
+  risk.
 - **The `metadataRound` seam question (§5) was answered: no, it does not move.** The spec
   explicitly deferred this to the first `/resave` golden rather than guessing. The answer: our
   `/resave` path leaves a source `.meta` byte-for-byte untouched (182 bytes on the
@@ -290,7 +290,7 @@ survives.
   `modelRound`. It was deliberately **not** moved: our `/upgrade` output is already
   byte-identical to the `/upgrade` golden for `.meta` (`reconstructMeta` itself is correct; only
   its seam differs from TexTools'), so moving it risks the `/upgrade` goldens for no `/upgrade`-side
-  benefit, purely to make `/resave` prettier. Left as a filed, open finding — see BACKLOG.md's
+  benefit, purely to make `/resave` prettier. Left as a filed, open finding — see docs/BACKLOG.md's
   "`.meta` reconstruction is a LOAD/WRITE behaviour in TexTools, but lives in our UPGRADE
   transform" entry under the `/resave` findings section — rather than a code change.
 - **§4.3.1's original claim that "PMP has no load-time fixes at all (both are TTMP-gated)" was
@@ -317,7 +317,7 @@ survives.
   defect had been passing the ratchet for who knows how long, and only became *legible* — greppable,
   nameable, countable — once the reporting granularity was fine enough to say what, specifically,
   was different. Filed as the (still-open, deliberately not fixed here) top item in
-  `BACKLOG.md`'s Prioritized section.
+  `docs/BACKLOG.md`'s Prioritized section.
 - **Turning on `checkPayloadMembers` for every PMP (harness fix C, done in Task 9) surfaced no new
   bug.** Every new diff it produced on the three real packs it touched
   (`Westlaketea's Constellation Crown`, `[Jaque] Marcellus`, `[Jaque] Romeo & Juliet`) traced

@@ -6,8 +6,7 @@
 // This is the empirical check behind src/zip/zip.ts's findNonUtf8HighByteEntryNames throw: we read
 // (never edit) Ionic.Zip's documented behaviour as "falls back to IBM437 when the UTF-8 flag is
 // unset" (IOUtil.cs:625/654/669), which disagrees with fflate's latin1 fallback for any byte >= 0x80
-// — a silent divergence we refuse to guess at. See BACKLOG.md's "Port IBM437 (CP437) zip entry-name
-// decoding" item.
+// — a silent divergence we refuse to guess at. See docs/backlog/2026-07-12-cp437-zip-entry-names.md.
 //
 // We pick 'ü' (U+00FC): CP437 encodes it as the single byte 0x81; UTF-8 encodes it as 0xC3 0xBC. So a
 // zip entry named "xüx" using RAW BYTES [0x78, 0x81, 0x78] (CP437), with the UTF-8 flag cleared, is a

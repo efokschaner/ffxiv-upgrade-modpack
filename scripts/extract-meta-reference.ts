@@ -259,7 +259,8 @@ if (!IMC_ONLY) {
 // support ImcType.Set (31) here -- equipment/accessory, whose SecondaryType is always null
 // (Imc.cs:265-270 SaveEntries) -- because that is the only shape parseMetaRoot (src/meta/root.ts)
 // currently recognizes; ImcType.NonSet (weapon/monster/demihuman) is out of scope until root.ts
-// widens (see BACKLOG.md). Each ImcType.Set subset is 5 slot entries of 6 bytes each
+// widens (see docs/backlog/2026-07-10-nonset-imc-reference-table.md). Each ImcType.Set subset is
+// 5 slot entries of 6 bytes each
 // (MaterialSet u8, Decal u8, Mask u16 LE, Vfx u8, Animation u8 -- SerializeEntry/DeserializeEntry,
 // Imc.cs:310-342).
 //
@@ -305,7 +306,8 @@ function parseImcFile(data: Uint8Array, label: string): ParsedImc {
   if (typeIdentifier !== IMC_TYPE_SET) {
     throw new Error(
       `${label}: unsupported ImcType ${typeIdentifier} (only ImcType.Set=31 is ported; ` +
-        `NonSet weapon/monster/demihuman items are out of scope, see BACKLOG.md)`,
+        "NonSet weapon/monster/demihuman items are out of scope, see " +
+        "docs/backlog/2026-07-10-nonset-imc-reference-table.md)",
     );
   }
   const subsetTotal = 1 + subsetCount; // default + variants, Imc.cs:365-366,425
@@ -348,10 +350,10 @@ function imcSlotColumn(parsed: ParsedImc, slot: string): number[][] {
 }
 
 // Enumerate every equipment/accessory item referenced by a .meta gamePath across the corpus.
-// parseMetaRoot doesn't yet recognize weapon/monster/demihuman roots (Task 8b widening,
-// BACKLOG.md) -- skip (log) those rather than fail loud, per the task-8a brief. itemType "other"
-// (hair/face, human roots) never carries IMC (Imc.UsesImc excludes human, Imc.cs:76-85) and is
-// skipped too.
+// NonSet (weapon/monster/demihuman) items use a different .imc shape and are out of scope for this
+// table (docs/backlog/2026-07-10-nonset-imc-reference-table.md) -- skip (log) those rather than
+// fail loud. itemType "other" (hair/face, human roots) never carries IMC (Imc.UsesImc excludes
+// human, Imc.cs:76-85) and is skipped too.
 interface ImcItemRef {
   itemType: ImcItemType;
   primaryId: number;
@@ -361,7 +363,7 @@ const imcItems = new Map<string, ImcItemRef>();
 // Exhaustive enumeration from the framework's item_sets.db `roots` table (the authoritative
 // dependency-root list) -- every equipment/accessory (item, slot), NOT just the items a corpus
 // .meta happens to reference. This makes the IMC table cover every base-game equipment/accessory
-// item (see BACKLOG.md; supersedes the earlier corpus-scoped enumeration). reference/ is gitignored
+// item. reference/ is gitignored
 // (the maintainer re-clones the framework); node:sqlite needs --experimental-sqlite (set via
 // NODE_OPTIONS -- see the regen command in this file's header).
 const ITEM_SETS_DB = join(
@@ -644,7 +646,7 @@ if (!imcParseFailed && !validationFailed) {
     "// covers every base-game equipment/accessory item -- not just the ones a corpus .meta happens\n" +
     "// to reference. NonSet (weapon/monster/demihuman) items use a different .imc shape (ImcType.\n" +
     "// NonSet) and remain out of scope until parseMetaRoot (src/meta/root.ts) recognizes those\n" +
-    "// roots -- see BACKLOG.md.\n" +
+    "// roots -- see docs/backlog/2026-07-10-nonset-imc-reference-table.md.\n" +
     "export const IMC_TABLE: Record<string, number[][]> = {\n" +
     body +
     "\n};\n";

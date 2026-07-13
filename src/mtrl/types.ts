@@ -2,7 +2,8 @@
 // per orphan sampler at Mtrl.cs:396). Lowercase so isEmptySampler still matches after serialize's
 // path-lowercasing. NOTE (audit M1): C#'s prefix const "_EMPTY_SAMPLER_" (Mtrl.cs:70) is UPPERCASE,
 // so its own exclusion checks miss the lowercased path and C# actually WRITES these placeholders to
-// output — a quirk serialize.ts does not yet reproduce (it throws instead; see there + BACKLOG.md).
+// output — a quirk serialize.ts does not yet reproduce (it throws instead; see there +
+// docs/backlog/2026-07-08-mtrl-empty-sampler-placeholders.md).
 export const EMPTY_SAMPLER_PREFIX = "_empty_sampler_";
 
 // ESamplerId raw values needed for the sampler double-write decision (ShaderHelpers.cs:480).

@@ -61,7 +61,7 @@ describe("reconstructMeta EQDP expansion", () => {
     expect(reconstructMeta(mod, mod.path).eqdp).toBeNull();
   });
 
-  it("fails loud on an EQDP entry for a non-playable race (C# retains it, ItemMetadata.cs:773; unsupported here, BACKLOG.md)", () => {
+  it("fails loud on an EQDP entry for a non-playable race (C# retains it, ItemMetadata.cs:773; unsupported here)", () => {
     const eqdp = [
       { race: 101, value: 1 },
       { race: 9999, value: 2 }, // not in PLAYABLE_RACES

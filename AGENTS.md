@@ -192,12 +192,10 @@ The C# source is the map we navigate by, so keep the port traceable back to it.
     when written (so it lives in history), then **delete it once the work is merged**.
     The shipped code, tests, and git history are the record of what was done; a
     completed plan past its lifetime is just bloat.
-- **Deferred work lives in `BACKLOG.md`.** Follow-up we're deliberately not doing now —
+- **Deferred work is recorded in the backlog.** When we decide to defer something —
   a feature known to be unported, hardening parked behind a decision, cleanup that
-  outlives the current change — goes in the top-level `BACKLOG.md` (a **prioritized**
-  list of the ordered work and an **unprioritized** bucket), each item citing the audit
-  finding / C# source so it can be picked up cold. Use it instead of leaving a silent
-  TODO: a plan executes one spec, `BACKLOG.md` is the durable list of what's postponed.
+  outlives the current change — record it in `docs/BACKLOG.md` rather than leaving a
+  silent TODO. That file explains how to file an item and how to cite one from code.
 
 ## Blame hygiene
 
