@@ -26,7 +26,7 @@ what an upstream fix would look like.
 
 ## 1. `UpgradeRemainingTextures` dereferences a null texture in the `GearMaskNew` branch
 
-**Status:** reproduced (planned — PMP absent-file work) · **Where:** `EndwalkerUpgrade.cs:1865-1889`
+**Status:** reproduced · **Where:** `EndwalkerUpgrade.cs:1865-1889` (see `src/upgrade/texture.ts`, the GearMaskNew branch)
 
 The `GearMaskNew` branch resolves the old mask and passes it straight into `UpgradeMaskTex`
 *before* checking it for null:
