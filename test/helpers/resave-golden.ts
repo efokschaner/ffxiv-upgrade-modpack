@@ -75,6 +75,28 @@ function describeProduceError(err: unknown): string {
   return String(err);
 }
 
+/**
+ * True only for a throw shaped like `execFileSync`'s non-zero-exit / signal-kill error (see
+ * oracle.ts's `run()`): Node sets BOTH `status` (the exit code, or `null` if killed by signal)
+ * and `signal` (the signal name, or `null` if exited normally) on that error object. A throw
+ * that reaches here without either field did NOT come from the ConsoleTools child process — it
+ * is a bug in our own harness code (a path typo, a permissions error, a missing temp dir) and
+ * must never be classified as "the oracle errors on this pack" (see Finding 1: caching an
+ * arbitrary throw here masqueraded a harness bug as a permanent TexTools limitation, forever,
+ * with no retry).
+ */
+function isConsoleToolsProcessError(
+  err: unknown,
+): err is { status: number | null; signal: string | null } {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { status?: unknown; signal?: unknown };
+  const statusShapeOk = typeof e.status === "number" || e.status === null;
+  const signalShapeOk = typeof e.signal === "string" || e.signal === null;
+  if (!statusShapeOk || !signalShapeOk) return false;
+  // Both fields present-but-null would mean neither actually carries process-exit info.
+  return typeof e.status === "number" || typeof e.signal === "string";
+}
+
 /** Source extension drives BOTH sides: WriteModpack dispatches on the DESTINATION extension
  *  (WizardData.cs:1312-1326), so resaving to the same extension is what exercises the writer we are
  *  testing. A legacy `.ttmp` resaves to `.ttmp2` — TexTools has no legacy writer, and our
@@ -142,6 +164,13 @@ export function resaveGoldenCached(
     oracleCachePut(key, out, dir);
     return { kind: "pack", bytes: out };
   } catch (err) {
+    // Only a genuine ConsoleTools PROCESS failure (execFileSync's non-zero-exit / signal-kill
+    // error, carrying `status`/`signal`) may be cached as "the oracle errors on this pack" — see
+    // isConsoleToolsProcessError's doc comment. Anything else (our own writeFileSync/rmSync/
+    // readFileSync in resaveViaConsoleTools throwing, a bad path, a permissions error) is a bug
+    // in THIS harness, not TexTools, and must propagate and fail the test loudly rather than be
+    // cached forever as a false "oracle errors" verdict that is never retried.
+    if (!isConsoleToolsProcessError(err)) throw err;
     const message = describeProduceError(err);
     mkdirSync(dir, { recursive: true });
     writeFileSync(errPath, message);
