@@ -127,30 +127,6 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   picked up. `src/meta/serialize.ts` always writes version `2` on output regardless of input
   version (`ItemMetadata.Serialize`, `ItemMetadata.cs:509`), so this is purely a read-side gap.
 
-- **PMP load-tolerance for genuinely-absent `Files` entries.** After the case-insensitive
-  (`docs/superpowers/specs/2026-07-11-pmp-case-insensitive-file-resolution-design.md`) and Windows
-  path-normalization (`docs/superpowers/specs/2026-07-11-pmp-windows-path-normalization-design.md`)
-  resolution fixes, **5 packs still fail loud** with `pmp: missing file entry` because their `Files`
-  value names a path absent from the archive under *any* Windows normalization (case-fold + trailing
-  dot/space strip) — genuinely not packed, not a resolution bug. TexTools tolerates these at **load**:
-  `LoadPMP` (`PMP.cs:124`) does no existence check, and only builds
-  `FileStorageInformation.RealPath = Path.Combine(unzipPath, file.Value)` (`PMP.cs:1080`) — a path
-  that simply doesn't exist on disk — deferring any failure to read/import time. All 5 `/upgrade` to a
-  **noop** (the absent files are never read/needed), verified against ConsoleTools. Reproducing that
-  means deferring our **eager** byte-read to first use and representing an absent entry without
-  inventing bytes (then letting `/upgrade` surface it only if the file is actually needed), and
-  reproducing the noop through the write/harness path. We keep failing loud for now. Re-derive the
-  list with `local-notes/scan-failed-loads.ts` + `local-notes/classify-fails.ts` (the classifier now
-  applies the same case-fold + trailing-dot/space normalization, so it no longer mislabels
-  normalization cases — the earlier list wrongly included `[Jaque] Romeo & Juliet`, since fixed); as of
-  2026-07-11 the 5 are: Skelomae Custom Skeleton v3.3.0 (`.pmp`, ×2 — Skeleton + Devkit; missing
-  `files/files/common/arachne/*.sklb`), `Hoodie Megapack 3 - 2.0.2.pmp` (missing
-  `chara/equipment/e6033/model/c0201e6033_top.mdl` + a `designs/default` `.tex`),
-  `[Nyameru]Cute Loop.pmp` (missing `chara/cuteloop2.pap`), and `[Shy] Tactical Hoodie [DT].pmp`
-  (missing `chara/equipment/e0834/material/v0001/mt_c0201e0834_top_a.mtrl`). Distinct from the
-  resolution fixes; revisit if faithful load-tolerance is wanted (or a real pack needs one of these to
-  upgrade).
-
 - **NonSet (weapon/monster/demihuman) IMC reference table.** `src/meta/reference/imc-table.ts`
   (`scripts/extract-meta-reference.ts`) is now **exhaustive over base-game equipment/accessory** —
   it extracts every `(item, slot)` root in the framework's `item_sets.db` `roots` table (~1555

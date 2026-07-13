@@ -1,7 +1,7 @@
 # PMP load-tolerance for genuinely-absent `Files` entries
 
 **Date:** 2026-07-12
-**Status:** Design — approved, pending implementation plan
+**Status:** Implemented
 **Roadmap:** hardens the PMP container reader/writer (`src/container/pmp.ts`, ported from
 `Mods/FileTypes/PMP.cs`) and the upgrade rounds' read seam under the foundation roadmap
 (`docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md` §8). Closes the last of
@@ -238,6 +238,25 @@ upgrade and no change check, so it drives the same `PopulatePmpStandardOption` w
 key is gone — empirical corroboration of §3.4 without adopting `/resave` as a harness oracle (it
 cannot be one: it renames every payload entry and re-serializes every JSON — see `BACKLOG.md`).
 A `local-notes/` script, like `probe-v1-meta.ts`; not wired into the suite.
+
+**Empirical result (2026-07-12).** Ran `local-notes/probe-resave-absent.ts` against
+`[Shy] Tactical Hoodie [DT].pmp`. The pack's gamePath
+`chara/equipment/e0834/material/v0001/mt_c0201e0834_top_a.mtrl` appears **twice**: once in
+`default_mod.json`'s top-level `Files` (the genuinely-absent entry — its `pmpPath` names no zip
+member) and again inside `group_001`'s `"Enable"` option (a present, real zip member). A first pass
+of the probe that flattened `Files` by gamePath alone reported nothing dropped, because the present
+copy in `group_001` papered over the absent one in `default_mod.json` under the same key — a probe
+bug, not a writer bug. Fixed the probe to scope each key by `(json member, option name, gamePath)`
+so the two same-gamePath entries can't collide, and re-ran:
+
+```
+Files keys: 23 in -> 22 out
+DROPPED BY TEXTOOLS: [
+  'default_mod.json::(top)#chara/equipment/e0834/material/v0001/mt_c0201e0834_top_a.mtrl'
+]
+```
+
+Exactly the absent entry is dropped, nothing else — confirms `PMP.cs:883-888` and Task 1's writer.
 
 ## 5. Divergences
 
