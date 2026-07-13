@@ -407,6 +407,16 @@ describe("upgradeModpack texture round (e2e)", () => {
   });
 });
 
+describe("requireBytes", () => {
+  it("throws when the file has no bytes (direct read, no ResolveFile-style skip)", () => {
+    const f = {
+      gamePath: "chara/x.mdl",
+      storage: FileStorageType.RawUncompressed,
+    };
+    expect(() => requireBytes(f)).toThrow(/file has no bytes/);
+  });
+});
+
 describe("restore threads the source SqPack type", () => {
   it("round-trips a Standard entry (mechanism, arbitrary bytes)", () => {
     const raw = new Uint8Array([1, 2, 3, 4, 5]);

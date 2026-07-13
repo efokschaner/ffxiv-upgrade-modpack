@@ -83,12 +83,92 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
   return new Set([...members.keys()].map((n) => looseKey(n)));
 }
 
+function safeParseJson(bytes: Uint8Array | undefined): unknown {
+  if (!bytes) return undefined;
+  try {
+    return JSON.parse(dec.decode(bytes));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Every zip path a golden archive's OWN manifests point at: each option's `Files` values
+ *  (gamePath -> zip path) and every `Image` field (meta/group/option each carry one, mirroring the
+ *  fields `GetHeaderImage` walks — PMP.cs:1341-1364). Normalized under `looseKey` so it can be
+ *  compared against payload member names the same way the drop confirmation below does. */
+function referencedZipPaths(members: Map<string, Uint8Array>): Set<string> {
+  const refs = new Set<string>();
+  const addImage = (v: unknown): void => {
+    if (typeof v === "string" && v.length > 0)
+      refs.add(looseKey(v.replace(/\\/g, "/")));
+  };
+  const addFiles = (v: unknown): void => {
+    if (!isObj(v)) return;
+    for (const value of Object.values(v))
+      if (typeof value === "string")
+        refs.add(looseKey(value.replace(/\\/g, "/")));
+  };
+  const scanOption = (o: unknown): void => {
+    if (!isObj(o)) return;
+    addFiles(o.Files);
+    addImage(o.Image);
+  };
+  const meta = safeParseJson(members.get("meta.json"));
+  if (isObj(meta)) addImage(meta.Image);
+  scanOption(safeParseJson(members.get("default_mod.json")));
+  for (const [name, bytes] of members) {
+    if (!/^group_\d+.*\.json$/i.test(name.toLowerCase())) continue;
+    const g = safeParseJson(bytes);
+    if (!isObj(g)) continue;
+    addImage(g.Image);
+    if (Array.isArray(g.Options)) for (const o of g.Options) scanOption(o);
+  }
+  return refs;
+}
+
+/** True when the golden archive contains a payload member (a zip entry that is not a manifest —
+ *  meta.json / default_mod.json / group_*.json / *.mpl) that no manifest in the SAME archive
+ *  references, under `looseKey`, by a `Files` value or an `Image` field. Mirrors `LoadPMP`'s own
+ *  `ExtraFiles` computation (PMP.cs:213-215): TexTools itself treats an unreferenced-but-present
+ *  member as legitimate on its own (a readme, a preview image, ...) — its mere existence is not a
+ *  bug. But it IS the fingerprint the drop confirmation below needs: it means name resolution over
+ *  this archive's members failed to connect at least one reference to a member that genuinely
+ *  exists — for whatever reason, which could be a stray asset OR a decode bug (e.g. fflate falling
+ *  back to latin1 for a zip entry whose UTF-8 general-purpose-flag bit is unset, so a non-ASCII
+ *  member's decoded name differs from the correctly-UTF8-decoded manifest value that names it). We
+ *  cannot tell those two causes apart from here, so an archive with ANY orphan disables the
+ *  confirmation entirely rather than risk confirming a drop that is actually a silently-lost
+ *  payload. See IMPORTANT 1 in the PR review this responds to. */
+// `dropConfirmedAbsentKeys` runs once per manifest member in an archive (diffArchives calls it
+// unconditionally per member; corpus-pmp.ts calls it once per fixed/group file too), and every call
+// for the SAME archive would otherwise re-parse every group JSON to recompute the same answer.
+// Cached per member-map identity (the same `Map` instance is passed on every call within one
+// diff/round-trip check), not per archive content — irrelevant here since each check constructs its
+// map fresh from one `readZip` call.
+const orphanCache = new WeakMap<Map<string, Uint8Array>, boolean>();
+function hasOrphanPayloadMember(members: Map<string, Uint8Array>): boolean {
+  const cached = orphanCache.get(members);
+  if (cached !== undefined) return cached;
+  const refs = referencedZipPaths(members);
+  let result = false;
+  for (const name of members.keys()) {
+    if (isManifest(name)) continue;
+    if (!refs.has(looseKey(name))) {
+      result = true;
+      break;
+    }
+  }
+  orphanCache.set(members, result);
+  return result;
+}
+
 /** CONFIRMATION (not a tolerance) of the ONE manifest difference we intend: TexTools' writer drops
  *  a file whose payload does not exist from both the zip and the option's `Files` map
  *  (PopulatePmpStandardOption, PMP.cs:883-888), and our writer now does too. On a NO-OP upgrade
  *  ConsoleTools writes nothing, so the harness's reference is the INPUT pack — which still carries
  *  the dangling key. So: a `Files` key missing from OURS is allowed iff the golden's value for it
- *  names a zip path that does not resolve as a member of the GOLDEN's own archive.
+ *  names a zip path that does not resolve as a member of the GOLDEN's own archive, AND the golden
+ *  archive has no orphan payload member (`hasOrphanPayloadMember` above).
  *
  *  Deliberately tight, in the spirit of DivergenceRule.confirm (upgrade-compare.ts):
  *   - resolution uses `looseKey`, NOT the reader's own `windowsPathKey` — see `looseKey`'s doc
@@ -96,7 +176,15 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *     `windowsPathKey`, so a merely case-mismatched or trailing-dotted key still RESOLVES and is
  *     NOT covered — the two normalization fixes stay under test, and independently so: a future
  *     regression in `windowsPathKey` cannot silently agree with this rule, because this rule never
- *     calls it;
+ *     calls it. **This is the actual guarantee** ("fails closed against a `windowsPathKey`
+ *     regression"), not a blanket one: `looseKey` still runs over the SAME `readZip` member names
+ *     the reader itself resolves against (`src/zip/zip.ts`), so a decode bug in that shared step
+ *     (not in `windowsPathKey`) is a residual this rule alone would not catch — which is exactly why
+ *     the orphan guard exists, to close the concrete instance of that residual this review found.
+ *     A narrower residual remains even with the orphan guard: a decode bug that corrupts a payload
+ *     member's name AND happens to leave every manifest reference still resolvable (no orphan
+ *     produced) would still evade detection. `readZip` itself is exercised directly elsewhere
+ *     (`pmp-read.test.ts`), which is the backstop for that narrower case;
  *   - only a key MISSING from ours is covered; a changed value is still a mismatch;
  *   - every other field is still deep-equal'd.
  *  It is inert whenever ConsoleTools actually wrote the golden: TexTools dropped the key there too,
@@ -105,13 +193,15 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *  `default_mod.json` (the document IS the single option) — both funnel through `option()` below.
  *
  *  Also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check: there
- *  `golden` is the original on-disk JSON and `ours` the re-emitted one, and `present` is the
- *  original archive's own members — same rule, same tightness, one definition. */
+ *  `golden` is the original on-disk JSON and `ours` the re-emitted one, and `goldenMembers` is the
+ *  original archive's own member map — same rule, same tightness, one definition. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,
-  present: Set<string>,
+  goldenMembers: Map<string, Uint8Array>,
 ): unknown {
+  const present = memberKeys(goldenMembers);
+  const hasOrphan = hasOrphanPayloadMember(goldenMembers);
   const confirmedFiles = (
     oursFiles: unknown,
     goldenFiles: Record<string, unknown>,
@@ -123,7 +213,7 @@ export function dropConfirmedAbsentKeys(
       const isStringValue = typeof value === "string";
       const zipPath = isStringValue ? value.replace(/\\/g, "/") : "";
       const absent = isStringValue && !present.has(looseKey(zipPath));
-      if (missingFromOurs && absent) continue; // the PMP.cs:883 drop — confirmed
+      if (missingFromOurs && absent && !hasOrphan) continue; // the PMP.cs:883 drop — confirmed
       out[gamePath] = value;
     }
     return out;
@@ -161,7 +251,6 @@ export function diffArchives(ours: Uint8Array, golden: Uint8Array): FileDiff[] {
   const oNames = new Set(manifestNames(om));
   const gNames = new Set(manifestNames(gm));
   const diffs: FileDiff[] = [];
-  const goldenMembers = memberKeys(gm);
 
   for (const name of [...new Set([...oNames, ...gNames])].sort()) {
     const inO = oNames.has(name);
@@ -187,7 +276,7 @@ export function diffArchives(ours: Uint8Array, golden: Uint8Array): FileDiff[] {
       const g = parse(name, gm.get(name)!);
       // The confirmation always runs; it is inert (returns `g` verbatim) whenever nothing in `g`
       // qualifies as a confirmed drop, so this reduces to a straight deep-equal in that case.
-      if (!deepEqual(o, dropConfirmedAbsentKeys(o, g, goldenMembers))) {
+      if (!deepEqual(o, dropConfirmedAbsentKeys(o, g, gm))) {
         diffs.push({
           kind: "manifest",
           gamePath: name,

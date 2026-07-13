@@ -196,15 +196,16 @@ export function upgradeRemainingTextures(
         // Both call ResolveFile (:1869 / :1882), so both use resolveFile here — an absent OR
         // undecodable mask_old resolves to null in either branch. But they disagree on what
         // happens next: GearMaskLegacy null-checks the result and skips cleanly (:1882-1887);
-        // GearMaskNew passes it STRAIGHT INTO UpgradeMaskTex (:1870), which NREs on null — its own
+        // GearMaskNew passes it STRAIGHT INTO UpgradeMaskTex (:1870), which throws an
+        // ArgumentNullException on null (XivTex.cs:96, `new MemoryStream(texData)`) — its own
         // null check (:1871) comes one line too late. So an absent/corrupt mask_old is a no-op for
         // Legacy and fails the pack for New. Reproduce, do not fix: skip for Legacy, throw explicitly
-        // for New (standing in for the C# NRE — same "kill the pack" outcome).
+        // for New (standing in for the C# ArgumentNullException — same "kill the pack" outcome).
         const src = resolveFile(old);
         if (!src) {
           if (legacy) continue;
           throw new Error(
-            `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 NREs on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${old.gamePath}`,
+            `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 throws ArgumentNullException on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${old.gamePath}`,
           );
         }
         const data = upgradeMaskTex(src.bytes, legacy);

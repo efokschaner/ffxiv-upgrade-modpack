@@ -165,8 +165,6 @@ const IS_MDL = /\.mdl$/;
 /**
  * Round 1 (model half of UpdateEndwalkerFiles): normalize every `.mdl` via FixOldModel
  * when the pack needs the fix (TTMP major < 2). Re-wrapped as a Model (Type-3) entry.
- * Throws from the normalizer are surfaced (not swallowed) so the golden ratchet exposes
- * any unported model structure rather than silently passing the source through.
  *
  * FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file via
  * `TransactionDataHandler.GetUncompressedFile(file)` with NO null/existence guard — unlike
@@ -174,8 +172,22 @@ const IS_MDL = /\.mdl$/;
  * returns on null. This round is TTMP-only (gated by `needsMdlFix`, mirroring
  * `DoesModpackNeedFix`, TTMP.cs:916), and absent files are a PMP-only phenomenon (a PMP
  * `Files` entry with no zip member; TTMP resolves payloads by offset into the .mpd, so it
- * has none). An absent file can therefore never reach this round — fail loud via
- * `requireBytes` rather than inventing a skip TexTools does not have here.
+ * has none). An absent file can therefore never reach this round via `requireBytes`'s
+ * no-bytes throw.
+ *
+ * That said, TexTools DOES have a skip on this path — just one level up the call stack,
+ * not inside FixOldModel itself. Every caller on the /upgrade path (WizardData.cs:716-727,
+ * the one ModpackUpgrader.cs:58 -> WizardData.FromModpack actually takes; also TTMP.cs:741-754
+ * and :1380-1393, same shape) wraps the FixOldModel call in
+ * `try { … } catch (Exception ex) { Trace.WriteLine(ex); continue; }` — the `continue` skips
+ * the `data.Files.Add`/`[...] =` a few lines below (WizardData.cs:729-737), so a model
+ * FixOldModel chokes on is DROPPED from the option, not fatal to the whole pack.
+ *
+ * We do NOT reproduce that: `normalizeModel` throws propagate all the way out of
+ * `upgradeModpack`, killing the pack. That is a real, PRE-EXISTING divergence from TexTools
+ * (unrelated to absent-file tolerance — it was true before this change too), kept
+ * deliberately fail-loud so an unported model structure surfaces loudly during development
+ * instead of silently shipping a pack missing a model. See BACKLOG.md.
  */
 function modelRound(option: ModpackOption, gate: boolean): void {
   if (!gate) return;

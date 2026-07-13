@@ -43,7 +43,8 @@ The sibling `GearMaskLegacy` branch immediately below (`:1882-1887`) checks null
 cleanly. The asymmetry is plainly unintended: `ResolveFile` returns null whenever the file's
 `RealPath` is missing on disk (`:1765`) — which happens for real, in the wild, whenever a PMP's
 `Files` map names a payload the archive never contained. `UpgradeMaskTex` then calls
-`XivTex.FromUncompressedTex(null)` (`:2084`) and throws an NRE, which `ModpackUpgrader` catches and
+`XivTex.FromUncompressedTex(null)` (`:2084`), which throws an `ArgumentNullException` — not an
+NRE — from `new MemoryStream(texData)` (`XivTex.cs:96`), which `ModpackUpgrader` catches and
 rethrows as a wrapped failure (`ModpackUpgrader.cs:137-141`), killing the whole `/upgrade`.
 
 **Us:** an absent file must therefore make our `GearMaskNew` path throw, while `GearMaskLegacy`

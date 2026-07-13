@@ -151,6 +151,18 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
     );
   });
 
+  it("metadataRound THROWS on an absent .meta (no C# analogue — fail-loud guard, not a ported behaviour)", () => {
+    // PMP .meta files are materialized from manipulations (PMP.cs:1141-1164), never read from a
+    // zip member, so a `.meta` `Files` entry with no bytes is structurally unreachable from a real
+    // PMP. requireBytes's no-bytes throw is what pins that guard.
+    const data = packOf(
+      optionOf([
+        absent("chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.meta"),
+      ]),
+    );
+    expect(() => upgradeModpack(data)).toThrow(/file has no bytes/);
+  });
+
   it("HairMaps THROWS when a key-present normal has no bytes (:1187)", () => {
     const normal =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";

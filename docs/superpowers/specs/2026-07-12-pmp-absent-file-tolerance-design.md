@@ -59,19 +59,33 @@ Each call site then decides for itself — and they do **not** agree. The table 
 | Round | C# | Absent behaviour |
 |---|---|---|
 | material scan (`UpdateEndwalkerMaterials`) | `:495` `if (file == null) continue;` | **skip**, file untouched |
-| model (`FixOldModel` — the one we port) | `:192` `GetUncompressedFile` — **unguarded** | **throw** (unreachable — see below) |
+| model (`FixOldModel` — the one we port) | `:192` `GetUncompressedFile` — **unguarded**, but every `/upgrade` caller wraps the call itself in `try/catch { continue }` (see below) | **throw** (unreachable — see below) |
 | `IndexMaps` (`UpgradeRemainingTextures`) | `:1840` `ContainsKey` → `CreateIndexFromNormal` returns null data (`:1087`) → `:1843` `continue` | **skip** |
 | `GearMaskLegacy` | `:1879` `ContainsKey` → `:1883` null-checked | **skip** |
-| `GearMaskNew` | `:1867` `ContainsKey` → `:1870` passes null into `UpgradeMaskTex` → NRE | **throw** |
+| `GearMaskNew` | `:1867` `ContainsKey` → `:1870` passes null into `UpgradeMaskTex` → `ArgumentNullException` (`XivTex.cs:96`, not an NRE) | **throw** |
 | `HairMaps` | `:1852` both keys `ContainsKey` → `UpdateEndwalkerHairTextures` `:1187` `throw new FileNotFoundException` | **throw** |
 
 **On the model row.** `UpdateEndwalkerModel` (`:250`, the `FastMdlv6Upgrade` path) *does* null-guard via
 `ResolveFile` (`:252-256`) — but that is **not the function we port**. Our `modelRound` calls
 `normalizeModel`, which ports **`FixOldModel`** (`:190`), whose read at `:192` is unguarded; and
 `modelRound` is gated by `needsMdlFix`, which mirrors `DoesModpackNeedFix` (`TTMP.cs:916-930`) and is
-**false for PMP**. Since absent files are PMP-only, an absent file can never reach that round. It
-therefore fails loud (`requireBytes`) rather than being given a skip TexTools does not have at that
-seam. (That we do not port `UpdateEndwalkerModel` at all is a separate, pre-existing gap.)
+**false for PMP**. Since absent files are PMP-only, an absent file can never reach that round —
+`requireBytes`'s no-bytes throw is dead code on the absent-file path specifically, which is the
+only claim this spec needs. (That we do not port `UpdateEndwalkerModel` at all is a separate,
+pre-existing gap.)
+
+**Correction (this is not "TexTools has no skip here"):** TexTools *does* skip on this path — just
+one level up the call stack from `FixOldModel`'s own unguarded read, not inside it. Every caller of
+`FixOldModel` on the `/upgrade` path wraps the call in
+`try { … } catch (Exception ex) { Trace.WriteLine(ex); continue; }`: `WizardData.cs:716-727` (the
+one `ModpackUpgrader.cs:58 -> WizardData.FromModpack` actually takes), and the same shape at
+`TTMP.cs:741-754` / `:1380-1393`. The `continue` skips the `data.Files.Add` a few lines below
+(`WizardData.cs:729-737`), so a model `FixOldModel` cannot parse is **dropped from the option**, not
+fatal to the whole pack. Our `modelRound` does not reproduce that outcome: a `normalizeModel` throw
+propagates out of `upgradeModpack` unguarded, killing the whole pack. That is a real, **pre-existing**
+divergence (true before this change, and unrelated to it — an absent file still can never reach this
+round either way), kept deliberately fail-loud so an unported model structure surfaces loudly rather
+than silently shipping a pack missing a model. See `BACKLOG.md`.
 
 Two consequences worth stating explicitly:
 
@@ -119,8 +133,10 @@ inside a codec instead of skipping cleanly, which is the opposite of what C# doe
 
 `optionFromJson` (`src/container/pmp.ts:44-77`) stops throwing `pmp: missing file entry` when the
 `windowsPathKey` lookup misses; it emits the `ModpackFile` with no `data`. The entry stays in
-`option.files` — required by the `ContainsKey` semantics in §2. `windowsPathKey` is **exported** so
-the harness can reuse the one definition (§4.1).
+`option.files` — required by the `ContainsKey` semantics in §2. `windowsPathKey` is **not** exported:
+§4.1 deliberately gives the harness its own, independent key function (`looseKey`) rather than
+reusing this one — sharing it would let a regression in `windowsPathKey` agree with itself (see
+§4.1's safety argument), so nothing outside this module should call it.
 
 ### 3.3 Read seam — port `ResolveFile`
 
@@ -180,19 +196,49 @@ the golden's own archive**, under `looseKey` — a normalization defined in the 
 difference — a key we dropped whose payload *is* present, a key whose value we changed, any other
 field — still fails.
 
-Two properties make it safe:
+Two properties make it safe — and one gap in an earlier revision, closed by an orphan-payload-member
+guard:
 
-- **It cannot mask a regression in the reader.** A shared key function would make the carve-out agree
-  with any bug introduced into `windowsPathKey` itself: a lost case-fold or trailing-dot strip would
-  make the reader wrongly mark a resolvable file absent, the writer would drop it, and a confirmation
-  built on the *same* broken function would recompute "absent" the same broken way and bless the drop —
-  the corpus would go green while silently losing a file, with only the `pmp-read.test.ts` unit tests
-  left to notice. `looseKey` is independent code, and deliberately **looser** than any plausible
-  resolution rule (it strips every `.`/` `, not just a trailing run per path segment), so it can only
-  ever confirm *fewer* drops than the reader made: it fails closed. A merely case-mismatched or
-  trailing-dotted key still resolves under it (so the two normalization fixes stay under test), and a
-  genuinely never-packed payload matches nothing under any spelling (so the intended confirmations are
+- **It fails closed against a regression in `windowsPathKey` specifically** — not against every failure
+  upstream of it. A shared key function would make the carve-out agree with any bug introduced into
+  `windowsPathKey` itself: a lost case-fold or trailing-dot strip would make the reader wrongly mark a
+  resolvable file absent, the writer would drop it, and a confirmation built on the *same* broken
+  function would recompute "absent" the same broken way and bless the drop. `looseKey` is independent
+  code, and deliberately **looser** than any plausible resolution rule (it strips every `.`/` `, not
+  just a trailing run per path segment), so it can only ever confirm *fewer* drops than the reader made
+  under a `windowsPathKey` regression specifically: a merely case-mismatched or trailing-dotted key
+  still resolves under it (so the two normalization fixes stay under test), and a genuinely
+  never-packed payload matches nothing under any spelling (so the intended confirmations are
   unaffected).
+
+  **This does not mean the rule is safe against everything upstream of `looseKey`.** Both the reader
+  and this harness still resolve names against the **same** `readZip` (`src/zip/zip.ts`, fflate) — a
+  decode bug in that shared step is a residual `looseKey`'s independence does not touch. Concretely:
+  fflate decodes a zip entry name as **latin1 when the UTF-8 general-purpose-flag bit is unset** — not
+  uncommon in repacked archives. A non-ASCII option folder then yields a mojibake member name, while
+  the JSON `Files` value for it decodes correctly as UTF-8; the reader misses, marks the file absent,
+  the writer drops it — and, pre-orphan-guard, this confirmation looked the value up in the *same*
+  mojibake member set, also missed, and blessed the drop. `diffUpgrade`'s payload-multiset diff does
+  not catch it either (the file is absent from the multiset on both sides, by construction), so the
+  corpus would go green while a real payload was silently lost.
+
+  **The guard:** `hasOrphanPayloadMember` (`upgrade-archive-diff.ts`) refuses the confirmation for the
+  whole archive when the golden contains an **orphan payload member** — a non-manifest zip entry that
+  no manifest in that same archive's `Files`/`Image` fields references under `looseKey`. An orphan is
+  exactly the fingerprint of "name resolution over this archive failed to connect a value to a member
+  that IS there": the mojibake scenario above always leaves one (the mis-decoded member matches
+  nothing), while a genuinely-never-packed payload leaves none. This mirrors `LoadPMP`'s own
+  `ExtraFiles` computation (`PMP.cs:213-215`), which TexTools uses for the same purpose (flagging
+  archive members no `Files`/`Image` value claims) — so an orphan being merely a legitimate extra
+  asset (a readme, a preview image) is exactly the case TexTools itself already has a name for, not a
+  new concept invented for the harness.
+
+  **Narrower residual, even with the guard:** a decode bug that corrupts a payload member's name AND
+  happens to leave every manifest reference still resolvable under `looseKey` (no orphan produced —
+  e.g. by coincidence, or because it corrupts the referencing value identically) would still evade
+  both the reader and this confirmation. `readZip` itself is exercised directly by
+  `test/container/pmp-read.test.ts`, which is the backstop for that narrower case; it is not covered
+  by this rule.
 - **It is inert whenever TexTools actually wrote.** A real ConsoleTools golden has already dropped the
   key (`PMP.cs:883`), so both sides agree and the confirmation never runs. It can only fire when the
   reference is the input pack.

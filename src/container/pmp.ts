@@ -33,7 +33,7 @@ const dec = new TextDecoder();
 // component). readZip already normalizes '\' -> '/', so segments split on '/'. Penumbra lowercases
 // the Files value and can retain a trailing dot/space the archive/on-disk name drops; normalizing
 // both sides the same way resolves them (see the PMP Windows path-normalization design spec).
-export function windowsPathKey(path: string): string {
+function windowsPathKey(path: string): string {
   return path
     .toLowerCase()
     .split("/")

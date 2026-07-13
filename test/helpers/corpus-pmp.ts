@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { readPmp, writePmp } from "../../src/container/pmp";
 import { readZip } from "../../src/zip/zip";
 import { structurallyEqual } from "./compare";
-import { dropConfirmedAbsentKeys, memberKeys } from "./upgrade-archive-diff";
+import { dropConfirmedAbsentKeys } from "./upgrade-archive-diff";
 
 const dec = new TextDecoder();
 const manifestNames = (z: Map<string, Uint8Array>) =>
@@ -24,12 +24,11 @@ export function registerPmpManifestChecks(pack: string): void {
     it("re-emits every manifest JSON structurally unchanged", () => {
       const inZ = readZip(readFileSync(pack));
       const outZ = readZip(writePmp(readPmp(readFileSync(pack))));
-      const present = memberKeys(inZ);
       for (const fixed of ["meta.json", "default_mod.json"]) {
         const a = JSON.parse(dec.decode(inZ.get(fixed)!));
         const b = JSON.parse(dec.decode(outZ.get(fixed)!));
         expect(
-          structurallyEqual(dropConfirmedAbsentKeys(b, a, present), b),
+          structurallyEqual(dropConfirmedAbsentKeys(b, a, inZ), b),
           `${fixed} differs`,
         ).toBe(true);
       }
@@ -40,7 +39,7 @@ export function registerPmpManifestChecks(pack: string): void {
         const a = JSON.parse(dec.decode(inZ.get(inG[i]!)!));
         const b = JSON.parse(dec.decode(outZ.get(outG[i]!)!));
         expect(
-          structurallyEqual(dropConfirmedAbsentKeys(b, a, present), b),
+          structurallyEqual(dropConfirmedAbsentKeys(b, a, inZ), b),
           `${inG[i]} vs ${outG[i]} differ`,
         ).toBe(true);
       }
