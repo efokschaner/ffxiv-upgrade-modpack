@@ -269,24 +269,45 @@ function targetKey(info: UpgradeInfo): string {
 }
 
 /**
+ * TexTools' LOAD-time fixes, as a named seam.
+ *
+ * `WizardData.FromModpack` does not hand back the pack as it sits on disk: for an old pack
+ * (DoesModpackNeedFix, TTMP.cs:916-930) it runs every `.tex` through FixOldTexData
+ * (TTMP.cs:1367-1379) and every `.mdl` through FixOldModel (WizardData.cs:716-727) BEFORE any
+ * caller sees it. Both `/upgrade` (ModpackUpgrader.cs:58) and `/resave` (Program.cs:204) take that
+ * same load path, so these fixes are part of "load", not part of "upgrade".
+ *
+ * We used to run them inside upgradeModpack, which conflated the two. Naming the seam lets the
+ * /resave oracle compare like with like (test/helpers/corpus-resave.ts) and makes the port's shape
+ * match the C#'s. PMP never needs either fix (both gates are TTMP-only), so this is a no-op there.
+ */
+export function applyLoadFixes(data: ModpackData): void {
+  texFixRound(data);
+  const gate = needsMdlFix(data);
+  for (const group of data.groups) {
+    for (const option of group.options) {
+      modelRound(option, gate);
+    }
+  }
+}
+
+/**
  * Upgrade a pre-Dawntrail modpack to Dawntrail (ModpackUpgrader.cs:88-144).
- * Pass 1 runs the model + material rounds per option and collects the
- * texture-upgrade targets they record into a single first-wins-deduped map;
- * pass 2 applies those targets to every option's textures (round 2,
+ * Pass 1 runs the material round per option and collects the texture-upgrade
+ * targets it records into a single first-wins-deduped map; pass 2 applies
+ * those targets to every option's textures (round 2,
  * UpgradeRemainingTextures). The partial round remains a structural stub
  * pending a later task. Always returns a fresh ModpackData (never mutates
  * `data`).
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
-  texFixRound(out);
-  const gate = needsMdlFix(data);
-  // Pass 1 (ModpackUpgrader.cs:88-120): model + material per option; collect
+  applyLoadFixes(out);
+  // Pass 1 (ModpackUpgrader.cs:88-120): material + metadata per option; collect
   // texture-upgrade targets into a single first-wins-deduped map.
   const targets = new Map<string, UpgradeInfo>();
   for (const group of out.groups) {
     for (const option of group.options) {
-      modelRound(option, gate);
       metadataRound(option);
       for (const info of materialRound(option)) {
         const k = targetKey(info);
