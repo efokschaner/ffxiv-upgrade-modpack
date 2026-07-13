@@ -10,27 +10,11 @@ Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port �
 pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
 `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-- ~~**A generated texture is written into the PMP with no `Files` key naming it — our upgraded
-  packs are functionally broken whenever the texture round fires.**~~ **FIXED (2026-07-13,
-  `feat/pmp-writer-regeneration`).** `writePmp`/`optionToJson` (`src/container/pmp.ts`) now
-  regenerate `Files`/`FileSwaps`/`Manipulations` from the typed model — via `optionPrefixes`
-  (`src/container/option-prefix.ts`) + `resolveDuplicates` (`src/container/resolve-duplicates.ts`)
-  — instead of re-emitting `o.raw`'s map verbatim, matching `PopulatePmpStandardOption`
-  (PMP.cs:871-928). A file the pipeline adds or repoints now always gets a `Files` key naming its
-  real zip path, because the map is derived FROM the model's current file set, not carried through
-  from the source. Proven by two independent, previously-red checks going green on all three
-  affected packs (`Westlaketea's Constellation Crown`, `[Jaque] Marcellus`,
-  `[Jaque] Romeo & Juliet`): the `self:orphan:`/`self:dangling:` self-consistency invariant
-  (`test/helpers/pmp-self-consistency.ts`) and the artifact `added`-payload diff
-  (`test/helpers/upgrade-archive-diff.ts`) both now report zero for all three. Subsumed the
-  `writeTtmp2` round-trip item below (its manifest-regeneration half was the root cause of this
-  one too).
-
 - **`writeTtmp2` writes the LEGACY `SelectionType` spelling, and our READER only understands the
   legacy one — so a `Multi` group is silently downgraded to single-select. This makes our
-  *output* wrong for users**, the same class as the `Files`-key item above: a mod author's
-  multi-select group becomes single-select in the pack we emit, which is a functional
-  regression for whoever installs it, not merely a byte-parity nit. `src/container/ttmp2.ts`
+  *output* wrong for users**, the same class as the (now-fixed) generated-texture `Files`-key
+  defect: a mod author's multi-select group becomes single-select in the pack we emit, which is
+  a functional regression for whoever installs it, not merely a byte-parity nit. `src/container/ttmp2.ts`
   reader: `g.SelectionType === "Multi Selection" ? "Multi" : "Single"`; writer:
   `g.selectionType === "Multi" ? "Multi Selection" : "Single Selection"`. Modern TexTools writes
   the bare enum name (`"Single"` / `"Multi"`), not the legacy `"… Selection"` string.
@@ -63,6 +47,20 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   hair/ear/tail sampler tables) — no corpus coverage exercises it yet.
 
 ## Unprioritized
+
+- **Port `.meta`/`.rgsp` → `Manipulations` conversion on the PMP write path (currently: fail
+  loud).** `writePmp` (`src/container/pmp.ts:455-471`) throws when an option's resolved zip paths
+  include a `.meta` or `.rgsp` file, rather than converting it to a `Manipulations` entry the way
+  `PopulatePmpStandardOption` does (`PMP.cs:891-900` → `PMPExtensions.MetadataToManipulations` /
+  `RgspToManipulations`, `PmpExtensions.cs:417`). **Unreachable today:** a PMP-sourced model never
+  holds a `.meta`/`.rgsp` (the upgrade load path passes `mergeManipulations=false`,
+  `WizardData.cs:818`, so manipulations stay opaque and are never turned back into files), and a
+  TTMP-sourced model can only reach the PMP writer through a TTMP→PMP format conversion — which no
+  upgrade flow performs (`WriteModpack` dispatches on the destination extension and the GUI reuses
+  the source's, `WizardData.cs:1312-1326`) and which `writeModpack` (`src/index.ts`) already rejects
+  outright as a cross-format write. If TTMP→PMP conversion ever becomes a product feature,
+  `/resave x.ttmp2 → y.pmp` is the ready-made golden to pin the conversion against — no new harness
+  plumbing needed, just a corpus pack run through it.
 
 - **Port FileSwap handling in the PMP write path (currently: fail loud).**
   `resolveDuplicates` (`src/container/resolve-duplicates.ts`) throws when an option carries a
@@ -126,7 +124,10 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 The `/resave` harness (`test/helpers/corpus-resave.ts`) is the first thing in the suite to AB-test our
 **writers** against TexTools (`/resave` = `WizardData.FromModpack` → `WriteModpack`, `Program.cs:191-221`
 — the same load path `/upgrade` takes, minus the transform). It immediately surfaced the items below.
-All are recorded in the per-pack ratchet baselines under `test/corpus/.resave-baseline/`; none are fixed.
+All are recorded in the per-pack ratchet baselines under `test/corpus/.resave-baseline/`. Most are
+still open; the manipulation-reserialization finding below is now fixed (`feat/pmp-writer-regeneration`
+Task 8) — kept here, struck through, since the surrounding findings are the durable record of what
+`/resave` surfaced and when.
 
 **Read this first — what these findings do NOT mean.** A `/resave` divergence is *not* automatically a
 bug in our shipped `/upgrade` output. In the two biggest classes below (`.mdl`, `.meta`) our `/upgrade`
@@ -319,49 +320,6 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   header describes — a faithfully transcribed SE oddity is a quirk and stays a code comment; only a
   genuine defect gets an entry. Useful both as a correctness audit (a reproduced bug we *think* we
   reproduce may not actually match) and as the shortlist of patches we could offer upstream.
-
-- ~~**`writePmp` round-trips the source pack where TexTools *regenerates* it.**~~ **FIXED (2026-07-13,
-  `feat/pmp-writer-regeneration`).** Ported: `optionPrefixes`/`resolveDuplicates` regenerate every
-  zip member name (`<optionPrefix><gamePath>`, content-deduped into `common/{idx}/`); `writePmp`
-  regenerates `Files`/`FileSwaps`/`Manipulations`/`Name`/`Description`/`Image` on every option and
-  `Version`/`Name`/`Description`/`Image`/`Page`/`Priority`/`Type`/`DefaultSettings` on every group
-  from the model rather than spreading `raw`; `meta.json` is built fresh from the 8 `PMPMetaJson`
-  fields every time. Two mechanisms neither this item nor the original design spec anticipated,
-  found only by iterating against the `/resave` oracle pack by pack, were needed to reach a clean
-  diff on the real corpus:
-  - **`CanImport`** (`PMP.cs:752-770`, called from `UnpackPmpOption`, PMP.cs:1075-1078): a `Files`
-    entry whose gamePath doesn't start with a recognized `XivDataFile` folder key is dropped
-    *entirely* on load, not merely treated as absent — confirmed necessary, not cosmetic:
-    `Groove 001.pmp`'s `default_mod.json` carries garbage gamePath keys
-    (`"Ear Physics/Off/chara/…"`) that still resolve to real archive bytes and were feeding
-    `resolveDuplicates`' shared `idx` counter ahead of the real "Ear Physics" group, swapping which
-    of its "On"/"Off" options landed on `common/1` vs `common/2`. Ported in `optionFromJson`
-    (`src/container/pmp.ts`).
-  - **The `PopulatePmpStandardOption`/default-mod absorption** (`WizardData.cs:1548-1600`): a REAL
-    Standard-type group named literally `"Default"`/`"Default Group"` with exactly one option named
-    `"Default"`/`"Default Option"` has its regenerated Files/FileSwaps/Manipulations moved into
-    `default_mod.json` instead of being written as its own `group_NNN.json` — confirmed via
-    `Flower Child - by Solona.pmp`'s `group_001_default.json`. Ported in `writePmp`. **Not fully
-    ported**: the C#'s page-renumbering side effect of this absorption (`WizardData.cs:1583-1600`
-    increments a *local* page counter only when a page still contributes ≥1 non-absorbed group, so
-    an absorbed group that was the only occupant of its page shifts every later page's written
-    `Page` number down) is unexercised by every corpus pack that hits absorption (`Flower Child` has
-    only one page total) and was NOT ported — `writePmp` still writes each surviving group's source
-    `g.page` verbatim. Latent; would show as a `Page`/`pN/` mismatch if a multi-page pack ever hits
-    both conditions at once.
-
-  Proven by the `/resave` write-side oracle (Task 5) across all 9 real + 4 synthetic PMP corpus
-  packs — every pack's baseline shrank (several to **zero** diffs: `Groove 001`,
-  `[Nyameru]Cute Loop`, `[DVNO] DMBX Shoes 1`, all 4 synthetics) — and by the artifact `added`-diff
-  and `self:orphan:`/`self:dangling:` self-consistency checks going to zero on the three
-  shipping-defect packs (see the item above). One real corpus pack's `/resave` baseline still
-  carries a single remaining diff after this fix, and it is NOT this item: `[Jaque] Romeo & Juliet`'s
-  `common/24/…id.tex` payload byte-length mismatch. **Correction (2026-07-13, Task 8 review):** an
-  earlier pass of this note misattributed that residual to the T2 `FixOldTexData` mip-offset gap —
-  wrong, T2's own recorded evidence is *same length, differing header bytes*, whereas this residual
-  is a **length** difference (~80/160 bytes, a multiple of the 80-byte null-padding chunk). The real
-  cause is a *different*, unported PMP **load-time** fix — see "PMP load-time `.tex` fixup
-  (`FastValidateTexFile`) is unported" below.
 
 - **PMP writer: `WizardHelpers.WriteImage` re-encode is unported — `Image` fields and image zip
   members are carried through verbatim, not regenerated.** `WizardHelpers.WriteImage` is called for
@@ -587,7 +545,8 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   textures" (`EndwalkerUpgrade.cs:2149-2165`) — which T2 does NOT cover (T2's own recorded evidence
   is *same-length, differing header bytes*; a null-padding truncation is a *length* difference).
   **Evidence:** `[Jaque] Romeo & Juliet [feb 2023] - DT update.pmp`'s sole remaining `/resave`
-  residual after the writer-regeneration fix (see the item above) is `common/24/…id.tex`, a payload
+  residual after the writer-regeneration fix (Task 8, `feat/pmp-writer-regeneration`) is
+  `common/24/…id.tex`, a payload
   **byte-length** mismatch (~80/160 bytes, a multiple of the 80-byte padding chunk) — exactly this
   fixup's signature, not T2's. Neither half is ported: our `applyLoadFixes`
   (`src/upgrade/upgrade.ts` / the `/resave` harness's load-fix seam, `docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md`
@@ -599,6 +558,18 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   currently forces that side). Not ported here — deliberately deferred, same shape as T2: port the
   mip-offset half together with T2's (shared `FixUpBrokenMipOffsets`/`ValidateTexFileData` logic) and
   the null-padding truncation as a small addition, gated on PMP rather than on `DoesModpackNeedFix`.
+
+  **Update (2026-07-13, Task 9): confirmed on the `/upgrade` side too, not just `/resave`.**
+  Turning on `checkPayloadMembers` (payload zip-member NAME comparison) for every PMP golden, not
+  just no-ops, surfaced new member-name diffs on the same three real packs the writer-regeneration
+  fix touched (`Westlaketea's Constellation Crown`, `[Jaque] Marcellus`,
+  `[Jaque] Romeo & Juliet`). Every one traced back to a payload byte mismatch already sitting in
+  that pack's `/upgrade` baseline under `diffUpgrade`'s bare-`gamePath` key — mostly `.tex` length
+  differences that are multiples of 80 bytes, this fixup's exact signature. No new bug; re-blessed
+  as the same, already-known divergence surfacing under a second key
+  (`<optionPrefix><gamePath>` instead of bare `gamePath`) now that the member-name check runs on
+  every PMP. See `docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md` §7 for the
+  full account.
 
 - **T3 — ImageSharp Bicubic/NearestNeighbor resampler (texture-round resize skips + T2).** The
   texture round throws `TextureResizeUnsupported` (caught → skipped, baselined) whenever a

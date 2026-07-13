@@ -24,8 +24,8 @@ interface ModpackFileBase {
   // ExtraFiles referenced-set (PMP.cs:213-215) needs the source path a Files value named, whether
   // or not it resolved to a real member. writePmp does NOT read this at write time — every zip path
   // is REGENERATED from the model (optionPrefixes + resolveDuplicates, src/container/pmp.ts), the
-  // way TexTools' own writer does; carrying pmpPath through as an output was the shipping defect
-  // this port used to have (BACKLOG.md, "writePmp round-trips the source pack...").
+  // way TexTools' own writer does; carrying pmpPath through as an output was a shipping defect this
+  // port used to have, fixed in feat/pmp-writer-regeneration (see git history / BACKLOG.md).
   pmpPath?: string;
 }
 

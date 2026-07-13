@@ -59,15 +59,14 @@ export function registerUpgradeCheck(pack: string): void {
         reference,
         confirmDivergence,
       );
-      // checkPayloadMembers's counts-only comparison assumes PMP's payload-member shape (every
-      // non-manifest zip entry). A TTMP noop's "TTMPD.mpd" is a single opaque blob, not a set of
-      // per-gamePath payload members like PMP's, so scope this to PMP noops only (see
-      // diffPayloadMembers' doc comment).
-      const archive = diffArchives(
-        oursArchive,
-        goldenBytes,
-        target === "pmp" && golden.kind === "noop",
-      );
+      // Payload member NAMES are now comparable on the real-golden branch too: our writer
+      // regenerates them the TexTools way (optionPrefix + gamePath, content-deduped into
+      // common/N). This is strictly stronger than the payload diff: a member name IS
+      // `<optionPrefix><gamePath>`, so it catches a file landing in the WRONG OPTION -- which
+      // diffUpgrade's whole-pack, gamePath-keyed multiset flattens away entirely. Scoped to PMP
+      // only: a TTMP's single opaque "TTMPD.mpd" blob is not a PMP-shaped payload member (see
+      // diffArchives' doc comment).
+      const archive = diffArchives(oursArchive, goldenBytes, target === "pmp");
       // Oracle-free invariant on OUR OWN artifact: no dangling `Files` key, no orphan member.
       // Independent of the golden, so it still guards a pack ConsoleTools cannot upgrade or that
       // has no golden at all. PMP-only: a TTMP has no per-file zip members to orphan.

@@ -6,14 +6,13 @@
 // 2026-07-12-pmp-absent-file-tolerance.md Task 6): ConsoleTools writes group_001_absent.json with
 // the absent gamePath's Files key gone and the surviving mtrl's key intact.
 //
-// NOT REGISTERED in build-all.ts. BACKLOG.md ("writePmp round-trips the source pack where TexTools
-// regenerates it") explains why: this pack's repro target (group_001_absent.json) already matches
-// ConsoleTools byte-for-byte, but meta.json/default_mod.json do not — writePmp re-emits the source
+// Registered in build-all.ts (2026-07-13, feat/pmp-writer-regeneration Task 9). It was blocked
+// until then: this pack's repro target (group_001_absent.json) already matched ConsoleTools
+// byte-for-byte, but meta.json/default_mod.json did not — writePmp used to re-emit the source
 // manifest documents verbatim, where TexTools' writer always regenerates them from its typed model
-// (adds "Image": ""; drops Name/Description; adds "Version": 0). Until that gap is fixed, this pack
-// cannot reach 0 diffs against the golden harness, and registering it here would break `npm test`.
-// Land it by adding `import "./build-synthetic-absent-file-upgraded";` to build-all.ts once that
-// BACKLOG item is fixed — it should go green immediately (verified in the spike above).
+// (adds "Image": ""; drops Name/Description; adds "Version": 0). Task 8's writer-regeneration port
+// closed that gap (see BACKLOG.md's now-fixed "writePmp round-trips the source pack..." entry), and
+// this pack reaches a clean 0-diff (verified in the spike referenced above).
 //
 // Two things this pack must get right or it tests the wrong thing entirely:
 //

@@ -1,6 +1,6 @@
 # PMP writer: regenerate from the model (and the write-side oracle that proves it)
 
-Status: proposed. Supersedes the round-trip half of `writePmp`, closes the top `BACKLOG.md`
+Status: implemented (2026-07-13). Supersedes the round-trip half of `writePmp`, closes the top `BACKLOG.md`
 item (the generated texture with no `Files` key) and the "`writePmp` round-trips the source
 pack where TexTools *regenerates* it" item, and adds the write-side AB test the harness has
 never had.
@@ -247,3 +247,84 @@ Harness first, so each new check is *seen failing on the bug it exists to catch*
 - The `mergeManipulations = true` import path (`PMP.cs:1141-1205`).
 - The remaining `BACKLOG.md` texture-round gaps (T2/T3/T4), the partials round, and everything
   else that is about the *transform* rather than the writer.
+
+## 7. What actually happened
+
+The plan (`docs/superpowers/plans/2026-07-12-pmp-writer-regeneration.md`, now deleted per
+AGENTS.md) executed close to this spec's shape, but the oracle contradicted several things this
+document asserted or left open. Recorded here because the plan is gone and this spec is what
+survives.
+
+- **The page-prefix question (§5, "which of our rounds are load-time") was answered wrong at
+  first, then corrected.** The plan's Fact 7 (and an early pass of this spec) claimed
+  `FromPMP`'s page-index bug (`WizardData.cs:1152-1157`: a group meant for page 0 lands on the
+  synthesized Default page instead of its own, now-empty page) leaves that empty page *alive* in
+  `DataPages`, so `pN/` prefixing switches on pack-wide whenever a real page and a `Default` page
+  coexist. **False.** `ClearNulls` also prunes any page with no groups carrying data
+  (`WizardData.cs:1240-1244`), unconditionally — not gated on the GUI import wizard the plan
+  assumed — and it runs on the headless `/upgrade`/`/resave` path too. So in the common
+  single-real-page case the empty page never survives to influence `DataPages.Count`, and there
+  is no `pN/` prefix at all. The bug's only surviving, observable effect is that the misrouted
+  page-0 group's content merges onto the Default page's own folder instead of getting a page
+  folder of its own. Ported faithfully in `src/container/option-prefix.ts` (see its header
+  comment and `docs/TEXTOOLS_BUGS.md` #1/#6) — the fix was catching our own misreading, not a
+  divergence in TexTools.
+- **`Manipulations` re-serialization was not predicted by this spec at all.** §4.2 only mentions
+  `Files`/`FileSwaps` regeneration; it says nothing about manipulations needing their own pass.
+  The `/resave` oracle found otherwise: TexTools re-serializes manipulations from its typed
+  model too, so a source document's `Entry.AttributeAndSound` (IMC) and `ShiftedEntry` (EQDP) —
+  both `[JsonIgnore]` on the C# types (`PmpManipulation.cs:318`, `:435-473`) and therefore
+  dropped by any real typed round-trip — survived in our re-emitted-from-source output and had to
+  be stripped. A second, unrelated mismatch (a `SetId` value, not a field's presence) turned out
+  to be Newtonsoft's numeric-string coercion: a source `"SetId": "295"` (JSON string) on an
+  Eqp/Eqdp manipulation deserializes fine into the typed `uint SetId` and re-serializes as the
+  JSON *number* `295`. Both are ported in `src/container/pmp-manipulation.ts`
+  (`normalizeManipulations`) — see BACKLOG.md's (now-struck-through, fixed) entry for the
+  discovery detail.
+- **The `metadataRound` seam question (§5) was answered: no, it does not move.** The spec
+  explicitly deferred this to the first `/resave` golden rather than guessing. The answer: our
+  `/resave` path leaves a source `.meta` byte-for-byte untouched (182 bytes on the
+  `Tight&Firm-YorhaCollection-2B.ttmp2` evidence pack), while ConsoleTools' `/resave` grows it to
+  192 bytes — i.e. TexTools' TTMP load/write pair *does* reconstruct `.meta` on a pure resave,
+  which would argue for `metadataRound` living in `applyLoadFixes` alongside `texFixRound`/
+  `modelRound`. It was deliberately **not** moved: our `/upgrade` output is already
+  byte-identical to the `/upgrade` golden for `.meta` (`reconstructMeta` itself is correct; only
+  its seam differs from TexTools'), so moving it risks the `/upgrade` goldens for no `/upgrade`-side
+  benefit, purely to make `/resave` prettier. Left as a filed, open finding — see BACKLOG.md's
+  "`.meta` reconstruction is a LOAD/WRITE behaviour in TexTools, but lives in our UPGRADE
+  transform" entry under the `/resave` findings section — rather than a code change.
+- **§4.3.1's original claim that "PMP has no load-time fixes at all (both are TTMP-gated)" was
+  false**, caught in Task 8 review, not by the harness catching a red test: `ResolvePMPBasePath`
+  runs every unzipped `.tex` through `EndwalkerUpgrade.FastValidateTexFile` on the PMP load path
+  itself (`PMP.cs:78-90/1084-1091`), independent of `DoesModpackNeedFix`/`FixOldTexData`'s
+  TTMP-only gate. The lesson wasn't just "fix the sentence" — it's that a design doc's confidence
+  ("no load-time fixes *at all*") is only as good as the C# it actually walked, and this was
+  asserted without walking the PMP load path specifically. `applyLoadFixes` still has no PMP
+  branch for it; tracked as its own BACKLOG item ("PMP load-time `.tex` fixup
+  (`FastValidateTexFile`) is unported"), confirmed by `[Jaque] Romeo & Juliet`'s one remaining
+  `/resave` residual (a payload length mismatch, a multiple of the 80-byte null-padding chunk —
+  this fixup's signature, not `FixOldTexData`'s).
+- **The write-side oracle's biggest catch wasn't in this spec's scope at all.** Building the
+  `/resave` oracle (§4.3, item B) to prove the writer port surfaced `writeTtmp2` writing the
+  legacy `"Multi Selection"`/`"Single Selection"` `SelectionType` spelling — which our *reader*
+  never matched (`"Multi Selection"` != the modern bare `"Multi"`/`"Single"` TexTools actually
+  writes), so every `Multi`-select group we ever emitted was silently downgraded to single-select.
+  Worse: 643 `SelectionType` JSON-pointer diffs were **already sitting blessed** in the
+  `/upgrade` ratchet baselines (`test/corpus/.upgrade-baseline/`) across 36 packs, invisible
+  because the harness used to report one opaque manifest-mismatch token per document (Task 2's
+  whole reason for existing) rather than per pointer. This is the sharpest evidence in the whole
+  branch for why the harness-first sequencing (§4.4) mattered: a real, user-facing shipping
+  defect had been passing the ratchet for who knows how long, and only became *legible* — greppable,
+  nameable, countable — once the reporting granularity was fine enough to say what, specifically,
+  was different. Filed as the (still-open, deliberately not fixed here) top item in
+  `BACKLOG.md`'s Prioritized section.
+- **Turning on `checkPayloadMembers` for every PMP (harness fix C, done in Task 9) surfaced no new
+  bug.** Every new diff it produced on the three real packs it touched
+  (`Westlaketea's Constellation Crown`, `[Jaque] Marcellus`, `[Jaque] Romeo & Juliet`) traced
+  one-for-one to a payload byte mismatch already sitting in that pack's baseline under
+  `diffUpgrade`'s bare-gamePath key — mostly the `.tex` length differences the
+  `FastValidateTexFile` null-padding gap above already explains, plus a few same-length `.mdl`/
+  `.tex` content mismatches from other already-tracked, deferred gaps (texture-round T2/T3/T4).
+  The member-name check reports the identical divergence again under a *second*, differently-shaped
+  key (`<optionPrefix><gamePath>` instead of bare `gamePath`), so it needed its own baseline
+  re-bless — mechanical, like Task 2's, not a new finding.

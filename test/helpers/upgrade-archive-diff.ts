@@ -245,18 +245,15 @@ function diffPayloadMembers(
  * See docs/superpowers/specs/2026-07-08-modpack-serialization-parity-design.md §3.
  *
  * `checkPayloadMembers` additionally compares the *names* of non-manifest members (see
- * `diffPayloadMembers`). Callers should only pass `true` for a PMP no-op upgrade — two separate
- * reasons, both about what "payload member" means:
- *  - PMP only: `isManifest` counts `.mpl` but not `.mpd`, so a TTMP's single opaque `TTMPD.mpd`
- *    blob is not a PMP-shaped "payload member" (a per-gamePath zip entry) at all — turning this on
- *    for TTMP would compare the wrong thing (and any OTHER member in a source `.ttmp2`/`.ttmp`
- *    archive, which `writeTtmp2` has no analogue for, would produce a spurious diff).
- *  - No-op only: when ConsoleTools actually wrote the golden it regenerates every payload member's
- *    name as `<optionPrefix><gamePath>` (and lowercases extras) where our writer reuses the source
- *    pack's own names — a real, pre-existing, and separately tracked divergence (BACKLOG.md:
- *    "`writePmp` round-trips the source pack where TexTools *regenerates* it"). Turning this
- *    comparison on for a real golden would light up that unrelated, already-known gap instead of
- *    anything this change is about, so it stays off there. */
+ * `diffPayloadMembers`). Callers should only pass `true` for PMP — `isManifest` counts `.mpl` but
+ * not `.mpd`, so a TTMP's single opaque `TTMPD.mpd` blob is not a PMP-shaped "payload member" (a
+ * per-gamePath zip entry) at all — turning this on for TTMP would compare the wrong thing (and any
+ * OTHER member in a source `.ttmp2`/`.ttmp` archive, which `writeTtmp2` has no analogue for, would
+ * produce a spurious diff). It used to be further scoped to the no-op branch only, because our
+ * writer reused the source pack's own zip member names where a real golden regenerates every name
+ * as `<optionPrefix><gamePath>`; now that `writePmp` regenerates names the same way (see
+ * `src/container/option-prefix.ts` / `resolve-duplicates.ts`), that restriction is gone and this
+ * runs on every PMP golden, no-op or not. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
