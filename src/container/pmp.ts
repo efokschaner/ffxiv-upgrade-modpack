@@ -42,6 +42,23 @@ function windowsPathKey(path: string): string {
     .join("/");
 }
 
+/** Port of IsPmpJsonFile (PMP.cs:228-241): matches on the lowercased BASENAME only (a manifest
+ *  json nested in a subfolder would still count — we don't reproduce that beyond mirroring the
+ *  basename-only check, since PMP manifests are never actually written into subfolders). Used by
+ *  LoadPMP's extras scan (PMP.cs:214) to exclude meta.json/default_mod.json/group_* from
+ *  ExtraFiles; deliberately looser than the `groupNames` group-parsing regex above (that one
+ *  requires a numeric suffix to actually parse a group — this one only decides what counts as
+ *  "manifest" for extras purposes, matching the C# exactly). */
+function isPmpJsonFile(zipPath: string): boolean {
+  const base = zipPath.split("/").pop()!.toLowerCase();
+  if (!base.endsWith(".json")) return false;
+  return (
+    base === "meta.json" ||
+    base === "default_mod.json" ||
+    base.startsWith("group_")
+  );
+}
+
 function optionFromJson(
   raw: PmpOptionJsonRaw,
   filesByKey: Map<string, Uint8Array>,
@@ -136,6 +153,29 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     });
   }
 
+  // Port of the ExtraFiles scan (PMP.cs:213-215): every archive member that is neither a manifest
+  // json nor referenced by an option's `Files` value is preserved verbatim so writePmp can re-emit
+  // it (WizardData.WritePmp, WizardData.cs:1477-1488). "Referenced" is decided the same way the
+  // reader itself resolves a Files value — windowsPathKey — so a member referenced only under
+  // case-folding (or a trailing dot/space the archive's real name lacks) is NOT an extra; every
+  // option's `pmpPath` already carries the forward-slashed zip path a Files value named, whether or
+  // not that name resolved to a real member (an absent one references nothing further).
+  const referencedKeys = new Set<string>();
+  for (const g of groups) {
+    for (const o of g.options) {
+      for (const f of o.files) {
+        if (f.pmpPath) referencedKeys.add(windowsPathKey(f.pmpPath));
+      }
+    }
+  }
+  const extraFiles = new Map<string, Uint8Array>();
+  for (const [name, data] of entries) {
+    if (isPmpJsonFile(name)) continue;
+    const key = windowsPathKey(name);
+    if (referencedKeys.has(key)) continue;
+    extraFiles.set(key, data);
+  }
+
   return {
     sourceFormat: ModpackFormat.Pmp,
     isSimple: false,
@@ -151,6 +191,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       raw: metaRaw, // carries FileVersion, DefaultPreferredItems, and any other meta fields
     },
     groups,
+    extraFiles: extraFiles.size > 0 ? extraFiles : undefined,
   };
 }
 
@@ -308,6 +349,14 @@ export function writePmp(data: ModpackData): Uint8Array {
     if (!f.data) continue; // absent: no member AND no Files key (PMP.cs:883-888) — see optionToJson
     const zipPath = (f.pmpPath ?? f.gamePath).replace(/\\/g, "/");
     if (!entries.has(zipPath)) entries.set(zipPath, f.data);
+  }
+
+  // Re-emit ExtraFiles verbatim (WizardData.WritePmp, WizardData.cs:1477-1488 — both /upgrade and
+  // /resave pass saveExtraFiles=true). A payload member of the same name always wins; readPmp's
+  // referencedKeys check means the two sets can't actually collide, but guard explicitly rather
+  // than rely on that.
+  for (const [zipPath, bytes] of data.extraFiles ?? []) {
+    if (!entries.has(zipPath)) entries.set(zipPath, bytes);
   }
 
   return writeZip(entries, { store: false });

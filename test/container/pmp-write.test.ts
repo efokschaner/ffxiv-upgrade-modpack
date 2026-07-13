@@ -208,6 +208,60 @@ describe("writePmp model-building fallback (no raw)", () => {
   });
 });
 
+// Port of WizardData.WritePmp's ExtraFiles copy-back (WizardData.cs:1477-1488), the write side of
+// the readPmp ExtraFiles scan (PMP.cs:213-215) tested in pmp-read.test.ts.
+describe("writePmp ExtraFiles (WizardData.cs:1477-1488)", () => {
+  const enc = new TextEncoder();
+  const gamePath = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const filePayload = new Uint8Array([1, 2, 3, 4]);
+  const extraPayload = new Uint8Array([9, 9, 9]);
+
+  function buildEntries(): Map<string, Uint8Array> {
+    const meta = {
+      FileVersion: 3,
+      Name: "Extras",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: { [gamePath]: gamePath.replace(/\//g, "\\") },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    return new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+      [gamePath, filePayload],
+      ["images/preview.png", extraPayload],
+    ]);
+  }
+
+  it("round-trips an unreferenced member as a written zip member", () => {
+    const out = writePmp(readPmp(writeZip(buildEntries())));
+    const members = readZip(out);
+    expect(members.get("images/preview.png")).toEqual(extraPayload);
+    expect(members.get(gamePath)).toEqual(filePayload);
+  });
+
+  it("does not duplicate/collide a payload member with an extra of the same name", () => {
+    // Construct a ModpackData directly: an extra whose key collides with a real payload member's
+    // zip path. readPmp can never actually produce this (a referenced member is never an extra —
+    // see pmp-read.test.ts), so this exercises writePmp's own defensive `!entries.has()` guard.
+    const data = readPmp(writeZip(buildEntries()));
+    data.extraFiles = new Map([[gamePath, extraPayload]]);
+
+    const out = writePmp(data);
+    const members = readZip(out);
+    // The payload write happens first, so it must win over the colliding extra.
+    expect(members.get(gamePath)).toEqual(filePayload);
+  });
+});
+
 describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
   // TexTools' writer skips a file whose RealPath does not exist, which bypasses BOTH the payload
   // write (:910) and opt.Files.Add (:914). The written pack therefore has neither.

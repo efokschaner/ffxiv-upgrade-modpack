@@ -99,6 +99,16 @@ export interface ModpackData {
   isSimple: boolean; // TTMP simple (flat SimpleModsList) vs wizard/grouped
   meta: ModpackMeta;
   groups: ModpackGroup[];
+  /** PMP-only: archive members that are neither a manifest json (meta.json / default_mod.json /
+   *  group_*.json) nor referenced by any option's `Files` value — preview images, readmes, etc.
+   *  Keyed by the archive path (forward slashes) after the same NTFS-equivalent normalization
+   *  readPmp applies to `Files` resolution (lowercase, trailing dot/space trimmed per segment):
+   *  LoadPMP builds this set from the actual unzipped-to-disk folder listing (PMP.cs:213-215,
+   *  after the PMP.cs:76 unzip), so a name Windows would have normalized on write is already
+   *  normalized by the time it's read back. TTMP has no equivalent (its payloads are byte offsets
+   *  into an .mpd, not zip members), so a TTMP-sourced pack simply carries none. Undefined (rather
+   *  than an empty Map) when there are none. */
+  extraFiles?: Map<string, Uint8Array>;
 }
 
 export function emptyMeta(): ModpackMeta {

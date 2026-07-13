@@ -203,3 +203,164 @@ describe("readPmp Windows path-normalization (trailing dots/spaces)", () => {
     expect(f!.data).toEqual(payload);
   });
 });
+
+// Port of LoadPMP's ExtraFiles scan (PMP.cs:213-215): a zip member neither referenced by any
+// option's Files value nor a manifest json (IsPmpJsonFile, PMP.cs:228-241) is preserved as an
+// "extra" (preview images, readmes, ...) rather than silently dropped.
+describe("readPmp ExtraFiles (PMP.cs:213-215)", () => {
+  const gamePath =
+    "chara/equipment/e0834/material/v0001/mt_c0201e0834_top_a.mtrl";
+  const filePayload = new Uint8Array([1, 2, 3, 4]);
+  const extraPayload = new Uint8Array([9, 9, 9]);
+
+  function buildBaseEntries(): Map<string, Uint8Array> {
+    const meta = {
+      FileVersion: 3,
+      Name: "Extras",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: { [gamePath]: gamePath.replace(/\//g, "\\") },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    return new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+      [gamePath, filePayload],
+    ]);
+  }
+
+  it("collects an archive member referenced by no option as an extra", () => {
+    const entries = buildBaseEntries();
+    entries.set("images/preview.png", extraPayload);
+
+    const data = readPmp(writeZip(entries));
+    expect(data.extraFiles?.get("images/preview.png")).toEqual(extraPayload);
+    // The payload file itself must NOT be treated as an extra.
+    expect(data.extraFiles?.has(gamePath)).toBe(false);
+  });
+
+  it("does not treat a Files-referenced member as an extra", () => {
+    const entries = buildBaseEntries();
+    const data = readPmp(writeZip(entries));
+    expect(data.extraFiles).toBeUndefined();
+  });
+
+  it("does not treat a member referenced only via case-folding as an extra", () => {
+    // Mirrors the "case-insensitive Files resolution" describe block above: the archive keeps the
+    // option-folder DISPLAY case, Files lowercases it. windowsPathKey resolves the reference, so
+    // the member must NOT show up as an extra even though its literal name never appears in Files.
+    const displayEntry = `Holographic Options/Dyeable Holo/${gamePath}`;
+    const filesValue = displayEntry.toLowerCase().replace(/\//g, "\\");
+    const meta = {
+      FileVersion: 3,
+      Name: "ExtrasCase",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: { [gamePath]: filesValue },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+      [displayEntry, extraPayload],
+    ]);
+
+    const data = readPmp(writeZip(entries));
+    expect(data.extraFiles).toBeUndefined();
+  });
+
+  it("does not treat a member referenced only via a trailing-dot Files value as an extra", () => {
+    const strippedEntry = `Optional/Rose acc/${gamePath}`;
+    const filesValue = `optional\\rose acc.\\${gamePath.replace(/\//g, "\\")}`;
+    const meta = {
+      FileVersion: 3,
+      Name: "ExtrasDot",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: { [gamePath]: filesValue },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+      [strippedEntry, extraPayload],
+    ]);
+
+    const data = readPmp(writeZip(entries));
+    expect(data.extraFiles).toBeUndefined();
+  });
+
+  it("never treats meta.json/default_mod.json/group_*.json as extras", () => {
+    const entries = buildBaseEntries();
+    entries.set(
+      "group_001_choice.json",
+      enc.encode(
+        JSON.stringify({
+          Version: 0,
+          Name: "Choice",
+          Description: "",
+          Type: "Single",
+          Priority: 0,
+          DefaultSettings: 0,
+          Options: [],
+        }),
+      ),
+    );
+
+    const data = readPmp(writeZip(entries));
+    expect(data.extraFiles).toBeUndefined();
+  });
+
+  it("an absent Files entry (member does not exist) does not turn a real extra member into referenced", () => {
+    // The Files value names a member the archive genuinely lacks (tolerated per the describe block
+    // above); this must not consume/hide an unrelated real extra member.
+    const meta = {
+      FileVersion: 3,
+      Name: "ExtrasAbsent",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: { [gamePath]: "files\\missing.mtrl" },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+      ["images/preview.png", extraPayload],
+    ]);
+
+    const data = readPmp(writeZip(entries));
+    expect(data.extraFiles?.get("images/preview.png")).toEqual(extraPayload);
+  });
+});
