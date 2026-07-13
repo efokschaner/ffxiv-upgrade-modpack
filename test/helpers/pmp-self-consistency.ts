@@ -79,13 +79,31 @@ export function pmpSelfConsistency(
   const refKeys = new Set(refs.map((r) => looseKey(r.zipPath)));
 
   const diffs: FileDiff[] = [];
-  for (const r of refs) {
-    if (r.gamePath === "") continue; // an Image that names nothing is not a payload failure
-    if (memberKeys.has(looseKey(r.zipPath))) continue;
+  // Several option `Files` keys can legitimately point at the SAME zip path — TexTools
+  // content-dedupes shared payloads into common/N/... — so more than one dangling reference can
+  // share a `gamePath` of `self:dangling:<zipPath>`. The ratchet's identity is
+  // (kind, gamePath, index, status); with a fixed index every such collision would report as ONE
+  // slot, and a regression on a second, currently-clean reference to an already-broken zip path
+  // would go unflagged. Assign each reference sharing a zip path a distinct, stable ordinal
+  // (0, 1, 2, ...) instead, so each gets its own id. Sort deterministically first — by the
+  // referencing `Files` key (`detail`) — so the same archive bytes always yield the same id set
+  // across runs/machines; an unstable index would make an already-blessed entry look like a
+  // regression.
+  const dangling = refs.filter(
+    (r) => r.gamePath !== "" && !memberKeys.has(looseKey(r.zipPath)),
+  );
+  dangling.sort((a, b) => {
+    if (a.zipPath !== b.zipPath) return a.zipPath < b.zipPath ? -1 : 1;
+    return a.gamePath < b.gamePath ? -1 : a.gamePath > b.gamePath ? 1 : 0;
+  });
+  const ordinal = new Map<string, number>();
+  for (const r of dangling) {
+    const index = ordinal.get(r.zipPath) ?? 0;
+    ordinal.set(r.zipPath, index + 1);
     diffs.push({
       kind: "structure",
       gamePath: `self:dangling:${r.zipPath}`,
-      index: 0,
+      index,
       status: "removed",
       detail: r.gamePath,
     });
