@@ -62,18 +62,30 @@ export function cloneModpack(data: ModpackData): ModpackData {
   };
 }
 
-/** Uncompresses a ModpackFile for a codec to read, carrying the source SqPack entry type. */
-export function uncompressedBytes(f: ModpackFile): Decoded {
-  if (!f.data) {
-    // TODO(Task 2): port ResolveFile (EndwalkerUpgrade.cs:1758) — return null and let each round
-    // skip or throw per its own C# call site. Throwing here is the interim fail-loud state.
-    throw new Error(`upgrade: file has no bytes: ${f.gamePath}`);
-  }
+/**
+ * Port of EndwalkerUpgrade.ResolveFile (EndwalkerUpgrade.cs:1758-1783). Returns the file's
+ * uncompressed bytes for a codec to read, carrying the source SqPack entry type — or NULL when the
+ * file has no bytes, mirroring C#'s `if (RealPath == null || !File.Exists(RealPath)) return null;`
+ * (:1765) for a PMP `Files` entry the archive never contained.
+ *
+ * Callers must NOT treat null uniformly: each C# call site decides for itself, and they disagree.
+ * See the per-seam table in docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md §2.
+ */
+export function uncompressedBytes(f: ModpackFile): Decoded | null {
+  if (!f.data) return null;
   if (f.storage === FileStorageType.SqPackCompressed) {
     const d = decodeSqPackFile(f.data);
     return { bytes: d.data, type: d.type };
   }
   return { bytes: f.data };
+}
+
+/** ResolveFile + the dereference C# performs unguarded at a given call site: throws when the file
+ *  has no bytes. Use ONLY where the C# call site does not null-check (see the §2 table). */
+export function requireBytes(f: ModpackFile): Decoded {
+  const d = uncompressedBytes(f);
+  if (!d) throw new Error(`upgrade: file has no bytes: ${f.gamePath}`);
+  return d;
 }
 
 /**
@@ -105,7 +117,11 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
   option.files = option.files.map((f) => {
     if (!IS_CHARA_MTRL.test(f.gamePath)) return f;
     try {
-      const { bytes, type } = uncompressedBytes(f);
+      const resolved = uncompressedBytes(f);
+      // ResolveFile returned null -> UpdateEndwalkerMaterials `continue`s past this material
+      // (EndwalkerUpgrade.cs:495-499), leaving the entry untouched.
+      if (!resolved) return f;
+      const { bytes, type } = resolved;
       const mtrl = parseMtrl(bytes, f.gamePath);
       const got = upgradeMaterial(mtrl);
       if (got.length === 0) return f; // no update needed
@@ -137,7 +153,10 @@ function modelRound(option: ModpackOption, gate: boolean): void {
   if (!gate) return;
   option.files = option.files.map((f) => {
     if (!IS_MDL.test(f.gamePath)) return f;
-    const { bytes, type } = uncompressedBytes(f);
+    const resolved = uncompressedBytes(f);
+    // ResolveFile null -> UpdateEndwalkerModel returns immediately (EndwalkerUpgrade.cs:252-256).
+    if (!resolved) return f;
+    const { bytes, type } = resolved;
     return restore(
       f,
       normalizeModel(bytes, f.gamePath),
@@ -156,7 +175,9 @@ const IS_META = /\.meta$/;
 function metadataRound(option: ModpackOption): void {
   option.files = option.files.map((f) => {
     if (!IS_META.test(f.gamePath)) return f;
-    const { bytes, type } = uncompressedBytes(f);
+    // No absent-file analogue: PMP .meta files are materialized from manipulations (PMP.cs:1160),
+    // never read from a zip member, so a .meta with no bytes is unreachable. Fail loud.
+    const { bytes, type } = requireBytes(f);
     const out = serializeMeta(
       reconstructMeta(deserializeMeta(bytes), f.gamePath),
     );

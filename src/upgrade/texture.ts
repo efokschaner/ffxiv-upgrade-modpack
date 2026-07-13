@@ -16,7 +16,7 @@ import {
   upgradeGearMask,
 } from "../tex/helpers";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
-import { uncompressedBytes } from "./upgrade";
+import { requireBytes, uncompressedBytes } from "./upgrade";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
 /** Thrown when a source texture would require an ImageSharp resize (NPOT normalize or
@@ -150,15 +150,23 @@ export function upgradeRemainingTextures(
       if (info.usage === EUpgradeTextureUsage.IndexMaps) {
         const normal = findFile(option, info.files.normal!);
         if (!normal) continue;
-        const idx = createIndexFromNormal(uncompressedBytes(normal).bytes);
+        // C# gates on files.ContainsKey (:1840) — true for an absent-on-disk file — then
+        // CreateIndexFromNormal's ResolveFile returns null (:1087) and the caller `continue`s
+        // (:1843). So a key-present, byte-absent normal is SKIPPED, not an error.
+        const src = uncompressedBytes(normal);
+        if (!src) continue;
+        const idx = createIndexFromNormal(src.bytes);
         writeGeneratedTex(option, info.files.index!, idx, normal);
       } else if (info.usage === EUpgradeTextureUsage.HairMaps) {
         const normal = findFile(option, info.files.normal!);
         const mask = findFile(option, info.files.mask!);
         if (normal && mask) {
+          // Both keys present (C#'s ContainsKey guard, :1852) — but if either resolves to null,
+          // UpdateEndwalkerHairTextures throws FileNotFoundException (:1184-1188). requireBytes
+          // reproduces that: an absent normal/mask fails the pack, exactly as in TexTools.
           const res = updateEndwalkerHairTextures(
-            uncompressedBytes(normal).bytes,
-            uncompressedBytes(mask).bytes,
+            requireBytes(normal).bytes,
+            requireBytes(mask).bytes,
           );
           writeGeneratedTex(option, info.files.normal!, res.normal, normal);
           writeGeneratedTex(option, info.files.mask!, res.mask, mask);
@@ -174,7 +182,14 @@ export function upgradeRemainingTextures(
         const old = findFile(option, info.files.mask_old!);
         if (!old) continue;
         const legacy = info.usage === EUpgradeTextureUsage.GearMaskLegacy;
-        const data = upgradeMaskTex(uncompressedBytes(old).bytes, legacy);
+        // QUIRK (upstream bug — docs/TEXTOOLS_BUGS.md §1): the two branches disagree on null.
+        // GearMaskLegacy null-checks ResolveFile's result and skips (:1882-1887); GearMaskNew
+        // passes it STRAIGHT INTO UpgradeMaskTex (:1870), which NREs on null — its own null check
+        // (:1871) comes one line too late. So an absent mask_old is a no-op for Legacy and fails
+        // the pack for New. Reproduce, do not fix.
+        const src = legacy ? uncompressedBytes(old) : requireBytes(old);
+        if (!src) continue;
+        const data = upgradeMaskTex(src.bytes, legacy);
         writeGeneratedTex(option, info.files.mask_new!, data, old);
       }
     } catch (e) {

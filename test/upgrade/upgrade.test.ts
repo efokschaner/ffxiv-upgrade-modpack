@@ -19,7 +19,7 @@ import {
   encodeUncompressedTex,
   parseTex,
 } from "../../src/tex/tex";
-import { restore, uncompressedBytes } from "../../src/upgrade/upgrade";
+import { requireBytes, restore } from "../../src/upgrade/upgrade";
 import { firstCorpusModel } from "../helpers/corpus-models";
 
 function sampleData(): ModpackData {
@@ -415,7 +415,7 @@ describe("restore threads the source SqPack type", () => {
       data: encodeSqPackFile(raw, SqPackType.Standard),
       storage: FileStorageType.SqPackCompressed,
     };
-    const { bytes, type } = uncompressedBytes(f);
+    const { bytes, type } = requireBytes(f);
     expect(type).toBe(SqPackType.Standard);
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
     // restore() always sets `data` on both its SqPackCompressed and RawUncompressed branches;
@@ -432,7 +432,7 @@ describe("restore threads the source SqPack type", () => {
       data: encodeSqPackFile(bytes, SqPackType.Model),
       storage: FileStorageType.SqPackCompressed,
     };
-    const dec = uncompressedBytes(f);
+    const dec = requireBytes(f);
     expect(dec.type).toBe(SqPackType.Model);
     const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data!);
     expect(re.type).toBe(SqPackType.Model);
