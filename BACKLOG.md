@@ -32,23 +32,49 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   genuine defect gets an entry. Useful both as a correctness audit (a reproduced bug we *think* we
   reproduce may not actually match) and as the shortlist of patches we could offer upstream.
 
-- **`writePmp` reuses source zip member names instead of regenerating them.** TexTools' PMP writer
-  does not round-trip a pack: `ResolveDuplicates` (`PmpExtensions.cs:534`) **renames every payload
-  entry** to `<optionPrefix><gamePath>` — `optionPrefix` being the lowercased, path-safe group name
-  (plus option name, when the group has more than one option; `WizardData.cs:1362-1458`) — and
-  content-dedups shared files into `common/{idx}/<filename>` (`:537-551`). The source zip names are
-  never retained: `UnpackPmpOption` (`PMP.cs:1071-1102`) uses the `Files` value only to locate the
-  unzipped temp file and keys its dict by *game path*. Our `writePmp` instead re-emits the source
-  manifest verbatim and reuses the source zip names (`pmpPath`). This matches the goldens today
-  **only because Penumbra already writes packs in the `<group>/<option>/<gamePath>` layout**, so
-  "regenerated" and "verbatim" coincide for the corpus — and because `diffArchives` compares
-  manifest members, not payload member names, the coincidence is only checked via the `Files`
-  *values*. A pack whose zip layout does not follow the convention **and** that actually upgrades
-  would diverge from its golden. Not observed yet; a synthetic pack with a non-conforming layout
-  plus an upgradeable payload would confirm it. Fixing it means porting `ResolveDuplicates` +
-  `MakeOptionPrefix` (and their dedup/`common/N` behaviour, incl. the zero-hash bug in
-  `docs/TEXTOOLS_BUGS.md` §7). Found while investigating whether ConsoleTools `/resave` could serve
-  as a write-side round-trip oracle — it cannot, for exactly this reason.
+- **`writePmp` round-trips the source pack where TexTools *regenerates* it.** TexTools' PMP writer
+  never round-trips: it rebuilds the whole pack from its fully-defaulted typed model. Ours re-emits
+  the source manifest verbatim (`data.meta.raw` / `o.raw`) and reuses the source zip names
+  (`pmpPath`). Two confirmed sub-symptoms of the one root cause:
+  1. **Manifest content** — *empirically confirmed* (2026-07-12, see below). TexTools serializes its
+     typed model, so every initialized field is written: a `meta.json` that Penumbra wrote without
+     `Image` comes back **with** `"Image": ""`, and `default_mod.json` comes back as
+     `{"Version": 0, "Files": …, "FileSwaps": …, "Manipulations": …}` — the source's `Name` /
+     `Description` **dropped**, a `Version` **added** (`PMP.cs:830-869`; `WizardData.cs:1496` even
+     forces `FileVersion`). Ours keeps the source document verbatim.
+  2. **Zip member names** — anticipated, still unconfirmed directly. `ResolveDuplicates`
+     (`PmpExtensions.cs:534`) **renames every payload entry** to `<optionPrefix><gamePath>` —
+     `optionPrefix` being the lowercased, path-safe group name (plus option name when the group has
+     more than one option; `WizardData.cs:1362-1458`) — and content-dedups shared files into
+     `common/{idx}/<filename>` (`:537-551`). The source names are never retained: `UnpackPmpOption`
+     (`PMP.cs:1071-1102`) uses the `Files` value only to locate the unzipped temp file and keys its
+     dict by *game path*.
+
+  **Why the corpus is green anyway.** Penumbra already lays packs out as `<group>/<option>/<gamePath>`,
+  so "regenerated" and "verbatim" coincide for (2); and every real pack that exhibits (1) predates
+  the ratchet, so its `meta.json` / `default_mod.json` mismatch is **already sitting in its baseline**
+  (e.g. `test/corpus/.upgrade-baseline/dec0279….json`, `bd7130d….json`). A **newly added** pack gets
+  no such grandfathering and must match fully — which is how this surfaced.
+
+  **How it surfaced, and the repro.** The absent-file work (spec
+  `docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §4.2) tried to add a
+  synthetic pack that both carries an absent `Files` entry and genuinely upgrades, so ConsoleTools
+  would actually *write* it. ConsoleTools did write it, and the repro target matched **byte-for-byte**
+  (`group_001_absent.json` — TexTools drops the absent key, we drop it identically). The pack still
+  could not land, blocked solely by (1): `default_mod.json#0:mismatch, meta.json#0:mismatch`. The
+  builder is parked at `local-notes/build-synthetic-absent-file-upgraded.ts.parked` (gitignored) —
+  it is a single-option group named `Absent` holding a hand-built EW 256-entry-colorset `.mtrl` at
+  `chara/equipment/e9999/…` plus an absent `Files` entry. **Land it as
+  `scripts/generate-synthetics/build-synthetic-absent-file-upgraded.ts` once this item is fixed** —
+  it was the only thing blocking a clean 0-diff, so it should go green immediately, and it is the
+  golden that pins both this fix and the absent-file drop on a real (non-noop) write.
+
+  **Fixing it** means porting TexTools' regenerate-from-typed-model write: the `PMPMetaJson` /
+  `PmpDefaultMod` Newtonsoft serialization shape for (1), and `ResolveDuplicates` + `MakeOptionPrefix`
+  (with their dedup/`common/N` behaviour, incl. the zero-hash bug in `docs/TEXTOOLS_BUGS.md` §7) for
+  (2). Nontrivial: it affects **every** genuinely-upgraded PMP, so expect ratchet baselines to move.
+  Originally found while investigating whether ConsoleTools `/resave` could serve as a write-side
+  round-trip oracle — it cannot, for exactly this reason.
 
 - **PMP group with an unrecognized `Type` yields an empty group instead of failing loud.**
   `parsePmpGroup` (`src/container/manifest-types.ts`) defaults `Options` to `[]`, so a group whose

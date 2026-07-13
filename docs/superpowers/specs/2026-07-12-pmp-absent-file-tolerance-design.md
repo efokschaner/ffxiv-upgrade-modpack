@@ -215,6 +215,28 @@ does not contain it).
    acceptable per `AGENTS.md` ("fall back to a synthetic unit test … only when the case is too deep or
    edge-casey for a golden to reach it"), with the `/resave` probe as the empirical backstop.
 
+   **Outcome (2026-07-12): the oracle question was answered — YES — but the pack could not land.**
+   Both anticipated hazards held: ConsoleTools genuinely *wrote* the pack (`Test-Path` → `True`; note
+   `/upgrade` exits 0 either way — `docs/TEXTOOLS_BUGS.md` §8), and the authored zip layout matched
+   TexTools' regenerated `absent/<gamePath>` names. **The golden's `group_001_absent.json` drops the
+   absent `Files` key and keeps the surviving `.mtrl`'s — and our pipeline reproduces that member
+   byte-for-byte.** That is a real, non-noop `/upgrade` confirmation of §3.4, strictly stronger than
+   the `/resave` probe below.
+
+   The pack is nonetheless **not committed**, blocked by a *third*, pre-existing divergence unrelated
+   to absent files: `writePmp` re-emits the source `meta.json` / `default_mod.json` verbatim, where
+   TexTools regenerates them from its typed model (adds `"Image": ""`; drops `Name`/`Description` and
+   adds `Version`). The only diffs were `meta.json#0:mismatch, default_mod.json#0:mismatch` — the
+   repro target itself matched. Every real corpus pack with that divergence already has it in its
+   ratchet baseline; a *new* pack gets no grandfathering, so it cannot reach 0 diffs until that gap is
+   fixed. Blessing a baseline was forbidden (it would enshrine a known divergence on a pack authored
+   to prove a different one). The builder is parked at
+   `local-notes/build-synthetic-absent-file-upgraded.ts.parked` and `BACKLOG.md` carries the item plus
+   an instruction to land it once the writer regenerates manifests — it should go green immediately.
+
+   So the write-side rule (§3.4) rests on: this spike's non-noop golden (strongest), the `/resave`
+   probe (§4.3), and the `writePmp` unit tests — just not, yet, on a *committed* golden.
+
 3. **Real corpus packs** — add `[Shy] Tactical Hoodie [DT].pmp` (1.8 MB, missing an `.mtrl`) and
    `[Nyameru]Cute Loop.pmp` (missing a `.pap`) to `test/corpus/real/` (gitignored). Real ConsoleTools
    goldens for the real phenomenon; both are noops, so they exercise §4.1 directly.
