@@ -75,19 +75,28 @@ function makeImcPmp(): Uint8Array {
 }
 
 describe("pmp manifest fidelity (Imc/Combining extras)", () => {
-  it("preserves Imc AttributeMask, option Priority, meta extras; adds no spurious keys", () => {
+  it("preserves Imc AttributeMask and option Priority; regenerates Name/Description/Image for every option; drops meta extras the typed model does not own", () => {
     const out = readZip(writePmp(readPmp(makeImcPmp())));
     // Group filenames are lowercased by safeName (PMP.MakePMPPathSafe port, PMP.cs:1316-1326;
     // see src/container/pmp.ts), so "Models"/"Ears" become "models"/"ears" on disk.
     const imcOpt = JSON.parse(dec.decode(out.get("group_002_ears.json")!))
       .Options[0];
     expect(imcOpt.AttributeMask).toBe(5);
-    expect("Files" in imcOpt).toBe(false); // Imc options have no Files
-    expect("Image" in imcOpt).toBe(false); // and no Image
+    expect("Files" in imcOpt).toBe(false); // Imc options have no Files (PmpImcOptionJson, PMP.cs:1544-1551)
+    // Every OTHER option (Standard or Imc alike) always regenerates Name/Description/Image, even
+    // when the source omitted Image (PMPOptionJson's base ShouldSerialize* default true; only
+    // default_mod.json's IsDataContainerOnly override turns them off, PMP.cs:1496-1501) --
+    // confirmed empirically against the /resave golden (`[DVNO] Desert Years.pmp`'s Imc group and
+    // `[DVNO] DMBX Shoes 1.pmp`'s group options both gain "Image": "").
+    expect(imcOpt.Image).toBe("");
     const multiOpt = JSON.parse(dec.decode(out.get("group_001_models.json")!))
       .Options[0];
     expect(multiOpt.Priority).toBe(7);
     const meta = JSON.parse(dec.decode(out.get("meta.json")!));
-    expect(meta.DefaultPreferredItems).toEqual(["item-42"]);
+    // meta.json is always regenerated from PMPMetaJson's flat, fully-typed field set (PMP.cs:1369-1381,
+    // no extension-data capture), so a foreign key like Penumbra's own `DefaultPreferredItems` is
+    // silently dropped by a real typed round-trip -- confirmed empirically (`[DVNO] DMBX Shoes
+    // 1.pmp` /resave golden drops it).
+    expect("DefaultPreferredItems" in meta).toBe(false);
   });
 });

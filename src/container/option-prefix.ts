@@ -61,7 +61,7 @@ import type {
   ModpackGroup,
   ModpackOption,
 } from "../model/modpack";
-import { safeName } from "./pmp";
+import { folderSafeName } from "./pmp";
 
 // Port of PMPOptionJson.IsEmptyOption (PMP.cs:1513-1517). Used ONLY to decide whether FromPmp
 // synthesizes a Default page at all (WizardData.cs:1118).
@@ -155,9 +155,10 @@ function makeGroupPrefix(
   const existing = groupFolderPaths.get(group);
   if (existing !== undefined) return existing;
 
-  // WizardData.cs:1390-1394 — safeName() first, THEN substitute the literal if the result is
-  // blank. "Blank Group" is NOT itself re-run through safeName: it is used verbatim, capitalized.
-  let gName = safeName(group.name);
+  // WizardData.cs:1390-1394 — IOUtil.MakePathSafe (folderSafeName) first, THEN substitute the
+  // literal if the result is blank. "Blank Group" is NOT itself re-run through folderSafeName: it
+  // is used verbatim, capitalized.
+  let gName = folderSafeName(group.name);
   if (gName.trim() === "") gName = "Blank Group";
 
   const pagePrefix = makePagePrefix(pages, page);
@@ -199,8 +200,8 @@ function makeOptionPrefix(
   const existing = optionFolderPaths.get(option);
   if (existing !== undefined) return existing;
 
-  // WizardData.cs:1432-1435 — same substitute-after-safeName rule as the group name.
-  let oName = safeName(option.name);
+  // WizardData.cs:1432-1435 — same substitute-after-folderSafeName rule as the group name.
+  let oName = folderSafeName(option.name);
   if (oName.trim() === "") oName = "Blank Option";
 
   let path: string;

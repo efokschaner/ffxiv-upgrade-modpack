@@ -2,7 +2,6 @@ import { registerGeometryChecks } from "./corpus-geometry";
 import { registerGoldenCheck } from "./corpus-golden";
 import { registerMdlChecks } from "./corpus-mdl";
 import { registerMtrlChecks } from "./corpus-mtrl";
-import { registerPmpManifestChecks } from "./corpus-pmp";
 import { registerResaveCheck } from "./corpus-resave";
 import { registerSqpackChecks } from "./corpus-sqpack";
 import { registerTexChecks } from "./corpus-tex";
@@ -16,7 +15,6 @@ const DISPATCH: Record<CheckKind, (pack: string) => void> = {
   sqpack: registerSqpackChecks,
   golden: registerGoldenCheck,
   mtrl: registerMtrlChecks,
-  pmp: registerPmpManifestChecks,
   tex: registerTexChecks,
   mdl: registerMdlChecks,
   geometry: registerGeometryChecks,

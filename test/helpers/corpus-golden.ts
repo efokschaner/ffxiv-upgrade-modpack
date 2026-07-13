@@ -14,7 +14,8 @@ import { compareInnerFilesByteIdentical } from "./compare";
 //
 // KNOWN BLIND SPOT: both sides flow through the SAME reader, so a reader that mis-slices real
 // SQPack ModOffset/ModSize would corrupt both sides identically and still pass. PMP manifest
-// fidelity IS independently validated against the original on-disk JSON in registerPmpManifestChecks.
+// fidelity IS independently validated against ConsoleTools' OWN /resave output in
+// registerResaveCheck (corpus-resave.ts) — real ground truth, not a same-reader self round-trip.
 //
 // DEFERRED: a ConsoleTools /resave (and /upgrade) DECOMPRESSED-content differential — needs the
 // codec to compare decompressed inner files (raw compressed bytes never match after /resave).

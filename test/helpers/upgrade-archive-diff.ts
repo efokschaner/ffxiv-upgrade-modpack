@@ -103,9 +103,10 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *  identically to both shapes below — a `group_NNN.json`'s `Options` array (paired by index) and a
  *  `default_mod.json` (the document IS the single option) — both funnel through `option()` below.
  *
- *  Also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check: there
- *  `golden` is the original on-disk JSON and `ours` the re-emitted one, and `goldenMembers` is the
- *  original archive's own member map — same rule, same tightness, one definition. */
+ *  Formerly also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check
+ *  (`golden` = the original on-disk JSON, `ours` = the re-emitted one). That check was retired
+ *  2026-07-13 when the PMP writer stopped round-tripping the source manifest — see corpus-units.ts's
+ *  doc comment for why; `registerResaveCheck` (corpus-resave.ts) is its proper replacement. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,

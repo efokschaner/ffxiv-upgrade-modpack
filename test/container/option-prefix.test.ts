@@ -156,14 +156,17 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(g.options[1]!)).toBe("everything/b/");
   });
 
-  it("7. names are lowercased and path-safed via safeName (invalid Windows filename chars)", () => {
+  it("7. names are lowercased and path-safed via folderSafeName (invalid Windows filename chars)", () => {
     const defaultGroup = group("Default", 0, [emptyOption()]);
     const g = group("A:B*C?", 0, [option("X<Y>Z")]);
     const d = data([defaultGroup, g]);
     const prefixes = optionPrefixes(d);
 
-    // safeName lowercases and replaces invalid chars with '_' (PMP.cs:1316-1326 -> IOUtil.cs).
-    expect(prefixes.get(g.options[0]!)).toBe("a_b_c_/");
+    // Folder prefixes use IOUtil.MakePathSafe's DEFAULT overload (folderSafeName, IOUtil.cs:733-736),
+    // NOT PMP.MakePMPPathSafe (safeName, used only for the group_NNN.json filename): it lowercases
+    // and replaces invalid chars with '-', not '_' — confirmed empirically (2026-07-13,
+    // `[Nyameru]Cute Loop.pmp`: group "Which Dance?" folder-prefixes to "which dance-/").
+    expect(prefixes.get(g.options[0]!)).toBe("a-b-c-/");
   });
 
   it("8. ClearNulls' group-level pruning: a content-free group must not occupy a collision slot ahead of a later, data-carrying group of the same name", () => {
@@ -204,18 +207,18 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(g1.options[0]!)).toBe("p2/beta/");
   });
 
-  it("10. safeName's invalid-character substitution on an OPTION name, exercised through the multi-option branch (which actually appends oName to the path)", () => {
-    // Case 7 above only exercises safeName() on a GROUP name; its group has a single option, so
-    // MakeOptionPrefix's `group.options.length > 1` branch -- the one that actually appends `oName`
-    // to the path -- never runs there (the single-option branch discards `oName` and returns
-    // `groupFolderPath` verbatim, WizardData.cs:1443-1446). Use a multi-option group so the
+  it("10. folderSafeName's invalid-character substitution on an OPTION name, exercised through the multi-option branch (which actually appends oName to the path)", () => {
+    // Case 7 above only exercises folderSafeName() on a GROUP name; its group has a single option,
+    // so MakeOptionPrefix's `group.options.length > 1` branch -- the one that actually appends
+    // `oName` to the path -- never runs there (the single-option branch discards `oName` and
+    // returns `groupFolderPath` verbatim, WizardData.cs:1443-1446). Use a multi-option group so the
     // sanitized option-name segment is actually visible in the result.
     const defaultGroup = group("Default", 0, [emptyOption()]);
     const g = group("Group", 0, [option("X<Y>Z"), option("Normal")]);
     const d = data([defaultGroup, g]);
     const prefixes = optionPrefixes(d);
 
-    expect(prefixes.get(g.options[0]!)).toBe("group/x_y_z/");
+    expect(prefixes.get(g.options[0]!)).toBe("group/x-y-z/");
     expect(prefixes.get(g.options[1]!)).toBe("group/normal/");
   });
 
