@@ -13,10 +13,9 @@ bug: the file genuinely is not in the archive.
 
 ## 1. Problem
 
-Five real packs still fail loud with `pmp: missing file entry` (`BACKLOG.md`; re-derive with
-`local-notes/scan-failed-loads.ts` + `local-notes/classify-fails.ts`). Their `Files` values name zip
-paths absent from the archive under **any** Windows normalization — case-fold *and* trailing-dot/space
-strip — i.e. the payload was never packed:
+Five real packs still fail loud with `pmp: missing file entry` (`BACKLOG.md`). Their `Files` values
+name zip paths absent from the archive under **any** Windows normalization — case-fold *and*
+trailing-dot/space strip — i.e. the payload was never packed:
 
 - Skelomae Custom Skeleton v3.3.0 (`.pmp`, ×2 — Skeleton + Devkit; `files/files/common/arachne/*.sklb`)
 - `Hoodie Megapack 3 - 2.0.2.pmp` (`chara/equipment/e6033/model/c0201e6033_top.mdl` + a `designs/default` `.tex`)
@@ -26,6 +25,13 @@ strip — i.e. the payload was never packed:
 TexTools loads all five without complaint and `/upgrade`s each to a **noop** (verified against
 ConsoleTools). We throw at load, so we cannot process them at all. Our loudness is wrong here: it is
 loud about input TexTools reads happily.
+
+**Outcome, recorded for anyone re-checking this later:** after the fix below landed, re-scanning the
+operator's full local library (1117 packs across three directories) with `scripts/scan-modpack-loads.ts`
+finds **0** failures — was 47 before this change and the two resolution fixes that preceded it (see
+`docs/superpowers/specs/2026-07-11-pmp-windows-path-normalization-design.md` §1). Re-check with:
+
+    npx tsx scripts/scan-modpack-loads.ts <dir> [dir...]
 
 ## 2. What TexTools does (the spec)
 
@@ -288,8 +294,9 @@ does not contain it).
    repro target itself matched. Every real corpus pack with that divergence already has it in its
    ratchet baseline; a *new* pack gets no grandfathering, so it cannot reach 0 diffs until that gap is
    fixed. Blessing a baseline was forbidden (it would enshrine a known divergence on a pack authored
-   to prove a different one). The builder is parked at
-   `local-notes/build-synthetic-absent-file-upgraded.ts.parked` and `BACKLOG.md` carries the item plus
+   to prove a different one). The builder now lives at
+   `scripts/generate-synthetics/build-synthetic-absent-file-upgraded.ts` (not registered in
+   `build-all.ts` — see its header) and `BACKLOG.md` carries the item plus
    an instruction to land it once the writer regenerates manifests — it should go green immediately.
 
    So the write-side rule (§3.4) rests on: this spike's non-noop golden (strongest), the `/resave`
@@ -313,16 +320,17 @@ does not contain it).
      off (the non-noop branch), tolerates a `looseKey`-equivalent spelling difference, and does not
      flag legitimate extras present on both sides.
 
-### 4.3 `/resave` probe (one-off, local)
+### 4.3 `/resave` probe (one-off, local; script since retired)
 
 `ConsoleTools /resave` (`Program.cs:191-221`) is `WizardData.FromModpack` → `WriteModpack` with no
-upgrade and no change check, so it drives the same `PopulatePmpStandardOption` writer. Run it once on
-`[Shy] Tactical Hoodie [DT].pmp` and inspect the output's group JSON to confirm the absent `Files`
+upgrade and no change check, so it drives the same `PopulatePmpStandardOption` writer. Ran it once on
+`[Shy] Tactical Hoodie [DT].pmp` and inspected the output's group JSON to confirm the absent `Files`
 key is gone — empirical corroboration of §3.4 without adopting `/resave` as a harness oracle (it
 cannot be one: it renames every payload entry and re-serializes every JSON — see `BACKLOG.md`).
-A `local-notes/` script, like `probe-v1-meta.ts`; not wired into the suite.
+The one-off script that ran this (`probe-resave-absent.ts`) has since been deleted — its purpose was
+served and the result is recorded permanently below; it is not needed to re-derive the finding.
 
-**Empirical result (2026-07-12).** Ran `local-notes/probe-resave-absent.ts` against
+**Empirical result (2026-07-12).** Ran the probe against
 `[Shy] Tactical Hoodie [DT].pmp`. The pack's gamePath
 `chara/equipment/e0834/material/v0001/mt_c0201e0834_top_a.mtrl` appears **twice**: once in
 `default_mod.json`'s top-level `Files` (the genuinely-absent entry — its `pmpPath` names no zip

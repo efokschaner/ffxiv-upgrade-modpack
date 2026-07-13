@@ -17,9 +17,6 @@ Thumbs.db
 # Subagent-driven-development scratch
 /.superpowers/
 
-# Local-only notes / scratch findings (not committed; e.g. per-machine modpack scans)
-/local-notes/
-
 # Modpack corpus (test/corpus/real/ real mods + test/corpus/synthetic/ authored packs) + goldens
 # and caches for converter tests — local-only, not committed.
 /test/corpus/

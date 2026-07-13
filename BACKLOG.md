@@ -70,7 +70,7 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   `feat/pmp-absent-file-tolerance`, 2026-07-12).
 
   **Empirically confirmed (2026-07-12), not just read from Ionic's docs.** Probe:
-  `local-notes/probe-cp437-zip.ts` (gitignored; regenerate from this description if lost) hand-assembles
+  `scripts/probes/probe-cp437-zip.ts` hand-assembles
   a PMP zip byte-for-byte (local file headers + central directory + EOCD, method 0/stored) with a
   payload entry named `[0x78, 0x81, 0x78]` (`'x'`, CP437 `0x81`, `'x'` -- CP437 decodes this to `"xüx"`;
   the same bytes under latin1, fflate's fallback, decode to a control char instead of `'ü'`) and the
@@ -86,8 +86,8 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
     directly), not empty or zeroed.
   - **VERDICT: ConsoleTools RESOLVED the CP437-named member.** Ionic decoded the raw `0x81` byte as
     CP437 `'u with diaeresis'`, matched it against the `Files` value, and round-tripped the real payload.
-  A control run (`local-notes/probe-cp437-zip-control.ts`, same hand-rolled zip format, plain-ASCII
-  entry name `"xyx"` instead of the CP437 byte) was necessary and used to validate the harness itself:
+  A control run (folded into the same script, `scripts/probes/probe-cp437-zip.ts`, same hand-rolled zip
+  format, plain-ASCII entry name `"xyx"` instead of the CP437 byte) was necessary and used to validate the harness itself:
   the FIRST attempt used a `Files`/game-path key (`"some/random/path.file"`) that doesn't start with a
   recognized `XivDataFile` folder key, so `PMP.cs:752-770` (`CanImport`) silently dropped the file in
   BOTH the CP437 and the ASCII-control run -- a false negative unrelated to zip name decoding. Switching
@@ -170,12 +170,13 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   would actually *write* it. ConsoleTools did write it, and the repro target matched **byte-for-byte**
   (`group_001_absent.json` — TexTools drops the absent key, we drop it identically). The pack still
   could not land, blocked solely by (1): `default_mod.json#0:mismatch, meta.json#0:mismatch`. The
-  builder is parked at `local-notes/build-synthetic-absent-file-upgraded.ts.parked` (gitignored) —
+  builder now lives at `scripts/generate-synthetics/build-synthetic-absent-file-upgraded.ts` —
   it is a single-option group named `Absent` holding a hand-built EW 256-entry-colorset `.mtrl` at
-  `chara/equipment/e9999/…` plus an absent `Files` entry. **Land it as
-  `scripts/generate-synthetics/build-synthetic-absent-file-upgraded.ts` once this item is fixed** —
-  it was the only thing blocking a clean 0-diff, so it should go green immediately, and it is the
-  golden that pins both this fix and the absent-file drop on a real (non-noop) write.
+  `chara/equipment/e9999/…` plus an absent `Files` entry — but it is **not** registered in
+  `build-all.ts` yet, since it cannot reach a clean 0-diff until this item is fixed. **Land it by
+  adding `import "./build-synthetic-absent-file-upgraded";` to `build-all.ts` once this item is
+  fixed** — it was the only thing blocking a clean 0-diff, so it should go green immediately, and it
+  is the golden that pins both this fix and the absent-file drop on a real (non-noop) write.
 
   **Fixing it** means porting TexTools' regenerate-from-typed-model write: the `PMPMetaJson` /
   `PmpDefaultMod` Newtonsoft serialization shape for (1), and `ResolveDuplicates` + `MakeOptionPrefix`
@@ -244,7 +245,7 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 
 - **v1 metadata support.** `src/meta/deserialize.ts` now throws on any `.meta` with
   `version !== 2` rather than silently mis-upgrading it. An empirical probe
-  (`local-notes/probe-v1-meta.ts`: downgrade a real pack's v2 equipment meta to v1 --
+  (`scripts/probes/probe-v1-meta.ts`: downgrade a real pack's v2 equipment meta to v1 --
   `version=1`, EST/GMP stripped -- run it through ConsoleTools `/upgrade`, inspect the golden)
   confirmed ConsoleTools cleanly upgrades v1 -> v2 by **injecting base-game data** the v1 meta
   lacks, per C#'s `dataVersion==1` default-injection branches:
