@@ -62,11 +62,21 @@ describe("diffArchives", () => {
     const golden = pmp({ "meta.json": META, "default_mod.json": DEF });
     expect(diffArchives(ours, golden)).toContainEqual({
       kind: "manifest",
-      gamePath: "meta.json",
+      gamePath: "meta.json#/Name",
       index: 0,
       status: "mismatch",
       detail: undefined,
     });
+  });
+
+  it("reports each differing manifest key separately, so one blessed diff cannot hide another", () => {
+    const ours = pmp({ "meta.json": { Name: "a", Version: "1" } });
+    const golden = pmp({ "meta.json": { Name: "b", Version: "2" } });
+    const diffs = diffArchives(ours, golden);
+    expect(diffs.map((d) => d.gamePath).sort()).toEqual([
+      "meta.json#/Name",
+      "meta.json#/Version",
+    ]);
   });
 
   it("normalizes ModOffset/ModSize out of the TTMPL.mpl before comparing", () => {

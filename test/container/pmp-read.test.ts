@@ -117,7 +117,6 @@ describe("readPmp case-insensitive Files resolution", () => {
     const f = allFiles(data).find((x) => x.gamePath === gamePath);
     expect(f).toBeDefined();
     expect(f!.data).toBeUndefined();
-    expect(f!.pmpPath).toBe("files/missing.mtrl");
     expect(f!.storage).toBe(FileStorageType.RawUncompressed);
   });
 });

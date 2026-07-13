@@ -1,5 +1,6 @@
 import { readZip } from "../../src/zip/zip";
 import { bytesEqual } from "./compare";
+import { jsonPointerDiff } from "./json-diff";
 import type { FileDiff } from "./upgrade-diff";
 
 const dec = new TextDecoder();
@@ -40,25 +41,6 @@ function normalize(name: string, json: unknown): unknown {
   return strip(json);
 }
 
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== typeof b || a === null || b === null) return false;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length)
-      return false;
-    return a.every((x, i) => deepEqual(x, b[i]));
-  }
-  if (typeof a === "object") {
-    const ao = a as Record<string, unknown>;
-    const bo = b as Record<string, unknown>;
-    const ak = Object.keys(ao).sort();
-    const bk = Object.keys(bo).sort();
-    if (ak.length !== bk.length || ak.some((k, i) => k !== bk[i])) return false;
-    return ak.every((k) => deepEqual(ao[k], bo[k]));
-  }
-  return false;
-}
-
 function parse(name: string, bytes: Uint8Array): unknown {
   return normalize(name, JSON.parse(dec.decode(bytes)));
 }
@@ -73,8 +55,12 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
  *  looser than any plausible resolution rule (it strips every '.'/' ', not just a trailing run per
  *  path segment), so it can only ever confirm FEWER drops than the reader made: it fails closed. A
  *  genuinely never-packed payload matches nothing under any spelling, so the intended confirmations
- *  are unaffected. */
-function looseKey(path: string): string {
+ *  are unaffected.
+ *
+ *  Exported for reuse by `pmp-self-consistency.ts`, which needs the exact same looseness for the
+ *  exact same reason (its own doc comment explains why sharing THIS function, as opposed to the
+ *  PMP reader's `windowsPathKey`, is safe). */
+export function looseKey(path: string): string {
   return path.toLowerCase().replace(/[. ]/g, "");
 }
 
@@ -117,9 +103,10 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *  identically to both shapes below — a `group_NNN.json`'s `Options` array (paired by index) and a
  *  `default_mod.json` (the document IS the single option) — both funnel through `option()` below.
  *
- *  Also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check: there
- *  `golden` is the original on-disk JSON and `ours` the re-emitted one, and `goldenMembers` is the
- *  original archive's own member map — same rule, same tightness, one definition. */
+ *  Formerly also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check
+ *  (`golden` = the original on-disk JSON, `ours` = the re-emitted one). That check was retired
+ *  2026-07-13 when the PMP writer stopped round-tripping the source manifest — see corpus-units.ts's
+ *  doc comment for why; `registerResaveCheck` (corpus-resave.ts) is its proper replacement. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,
@@ -251,24 +238,22 @@ function diffPayloadMembers(
   return diffs;
 }
 
-/** STRUCTURE (manifest member-name set) + MANIFEST (semantic deep-equal) diffs between two
- * un-archived modpacks. Payload content is diffed separately by diffUpgrade. Orientation matches
- * diffUpgrade: golden-only member => "added"; ours-only => "removed"; shared+unequal => "mismatch".
+/** STRUCTURE (manifest member-name set) + MANIFEST (one diff per differing JSON pointer, via
+ * `jsonPointerDiff`) diffs between two un-archived modpacks. Payload content is diffed separately
+ * by diffUpgrade. Orientation matches diffUpgrade: golden-only member => "added"; ours-only =>
+ * "removed"; shared+unequal => "mismatch".
  * See docs/superpowers/specs/2026-07-08-modpack-serialization-parity-design.md §3.
  *
  * `checkPayloadMembers` additionally compares the *names* of non-manifest members (see
- * `diffPayloadMembers`). Callers should only pass `true` for a PMP no-op upgrade — two separate
- * reasons, both about what "payload member" means:
- *  - PMP only: `isManifest` counts `.mpl` but not `.mpd`, so a TTMP's single opaque `TTMPD.mpd`
- *    blob is not a PMP-shaped "payload member" (a per-gamePath zip entry) at all — turning this on
- *    for TTMP would compare the wrong thing (and any OTHER member in a source `.ttmp2`/`.ttmp`
- *    archive, which `writeTtmp2` has no analogue for, would produce a spurious diff).
- *  - No-op only: when ConsoleTools actually wrote the golden it regenerates every payload member's
- *    name as `<optionPrefix><gamePath>` (and lowercases extras) where our writer reuses the source
- *    pack's own names — a real, pre-existing, and separately tracked divergence (BACKLOG.md:
- *    "`writePmp` round-trips the source pack where TexTools *regenerates* it"). Turning this
- *    comparison on for a real golden would light up that unrelated, already-known gap instead of
- *    anything this change is about, so it stays off there. */
+ * `diffPayloadMembers`). Callers should only pass `true` for PMP — `isManifest` counts `.mpl` but
+ * not `.mpd`, so a TTMP's single opaque `TTMPD.mpd` blob is not a PMP-shaped "payload member" (a
+ * per-gamePath zip entry) at all — turning this on for TTMP would compare the wrong thing (and any
+ * OTHER member in a source `.ttmp2`/`.ttmp` archive, which `writeTtmp2` has no analogue for, would
+ * produce a spurious diff). It used to be further scoped to the no-op branch only, because our
+ * writer reused the source pack's own zip member names where a real golden regenerates every name
+ * as `<optionPrefix><gamePath>`; now that `writePmp` regenerates names the same way (see
+ * `src/container/option-prefix.ts` / `resolve-duplicates.ts`), that restriction is gone and this
+ * runs on every PMP golden, no-op or not. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
@@ -303,13 +288,15 @@ export function diffArchives(
       const o = parse(name, om.get(name)!);
       const g = parse(name, gm.get(name)!);
       // The confirmation always runs; it is inert (returns `g` verbatim) whenever nothing in `g`
-      // qualifies as a confirmed drop, so this reduces to a straight deep-equal in that case.
-      if (!deepEqual(o, dropConfirmedAbsentKeys(o, g, gm))) {
+      // qualifies as a confirmed drop, so this reduces to a straight structural diff in that case.
+      // One FileDiff PER DIFFERING JSON POINTER, not one per document: see jsonPointerDiff's doc
+      // comment for why the old document-granular `mismatch` was a ratchet hazard.
+      for (const d of jsonPointerDiff(o, dropConfirmedAbsentKeys(o, g, gm))) {
         diffs.push({
           kind: "manifest",
-          gamePath: name,
+          gamePath: `${name}#${d.pointer}`,
           index: 0,
-          status: "mismatch",
+          status: d.status,
           detail: undefined,
         });
       }

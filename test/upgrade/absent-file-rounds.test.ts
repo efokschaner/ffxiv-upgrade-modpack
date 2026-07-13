@@ -18,7 +18,6 @@ function absent(gamePath: string): ModpackFile {
   return {
     gamePath,
     storage: FileStorageType.RawUncompressed,
-    pmpPath: gamePath,
   };
 }
 function present(gamePath: string, data: Uint8Array): ModpackFile {
@@ -26,7 +25,6 @@ function present(gamePath: string, data: Uint8Array): ModpackFile {
     gamePath,
     data,
     storage: FileStorageType.RawUncompressed,
-    pmpPath: gamePath,
   };
 }
 function optionOf(files: ModpackOption["files"]): ModpackOption {

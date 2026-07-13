@@ -118,7 +118,7 @@ if(!File.Exists(fi.Info.RealPath))
 The `continue` skips both `File.WriteAllBytes` (`:910`) and `opt.Files.Add` (`:914`) — so the written
 pack has **neither the payload member nor the `Files` key**. The writer reaches that point safely
 because `ResolveDuplicates` guards the missing file upstream (`PmpExtensions.cs:503-510`), assigning a
-zero SHA1 rather than reading it (a bug in its own right — `docs/TEXTOOLS_BUGS.md` §7).
+zero SHA1 rather than reading it (a bug in its own right — `docs/TEXTOOLS_BUGS.md` §8).
 
 None of the five packs reaches the write path (all noop), so this rule is ported from the C# and
 corroborated by a one-off `/resave` probe (§4), not observed in an `/upgrade` golden.
@@ -281,7 +281,7 @@ does not contain it).
 
    **Outcome (2026-07-12): the oracle question was answered — YES — but the pack could not land.**
    Both anticipated hazards held: ConsoleTools genuinely *wrote* the pack (`Test-Path` → `True`; note
-   `/upgrade` exits 0 either way — `docs/TEXTOOLS_BUGS.md` §8), and the authored zip layout matched
+   `/upgrade` exits 0 either way — `docs/TEXTOOLS_BUGS.md` §9), and the authored zip layout matched
    TexTools' regenerated `absent/<gamePath>` names. **The golden's `group_001_absent.json` drops the
    absent `Files` key and keeps the surviving `.mtrl`'s — and our pipeline reproduces that member
    byte-for-byte.** That is a real, non-noop `/upgrade` confirmation of §3.4, strictly stronger than

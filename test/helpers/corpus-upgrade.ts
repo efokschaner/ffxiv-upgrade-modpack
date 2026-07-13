@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadModpack, upgradeModpack, writeModpack } from "../../src/index";
 import { oracleKey } from "./oracle";
+import { pmpSelfConsistency } from "./pmp-self-consistency";
 import { diffArchives } from "./upgrade-archive-diff";
 import {
   compareToBaseline,
@@ -38,27 +39,49 @@ export function registerUpgradeCheck(pack: string): void {
         golden.kind === "noop" ? loadModpack(name, bytes) : golden.data;
       const goldenBytes = golden.kind === "noop" ? bytes : golden.bytes;
 
-      // Exercise the real writer on the oracle path (audit blind spot #5), then compare archive
-      // STRUCTURE + MANIFEST alongside the unchanged payload diff. See the parity design spec.
+      // Exercise the real writer on the oracle path (audit blind spot #5): the archive it produces
+      // now feeds BOTH the structure/manifest diff below AND the payload diff (see next comment) —
+      // the payload diff used to run on the in-memory model and so was blind to the writer entirely.
+      // See the parity design spec.
       const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
       const oursArchive = writeModpack(oursModel, target);
+      // Diff the ARTIFACT WE SHIP, not the in-memory model. Feeding `oursModel` here made every
+      // writer bug invisible by construction: a file the writer emits with no `Files` key naming it
+      // is a perfectly good file in the model and an unreachable orphan in the pack. Re-reading
+      // closes that gap — such a file comes back as an ExtraFile, drops out of `allFiles`, and its
+      // gamePath shows as `added` against the golden. (It also puts the whole write->read round-trip
+      // under the golden oracle for free.)
+      const oursReRead = loadModpack(name, oursArchive);
 
       const payload = diffUpgrade(
         name,
-        oursModel,
+        oursReRead,
         reference,
         confirmDivergence,
       );
-      // checkPayloadMembers's counts-only comparison assumes PMP's payload-member shape (every
-      // non-manifest zip entry). A TTMP noop's "TTMPD.mpd" is a single opaque blob, not a set of
-      // per-gamePath payload members like PMP's, so scope this to PMP noops only (see
-      // diffPayloadMembers' doc comment).
-      const archive = diffArchives(
-        oursArchive,
-        goldenBytes,
-        target === "pmp" && golden.kind === "noop",
-      );
-      const diff = { ...payload, files: [...payload.files, ...archive] };
+      // Payload member NAMES are now comparable on the real-golden branch too: our writer
+      // regenerates them the TexTools way (optionPrefix + gamePath, content-deduped into
+      // common/N). This is strictly stronger than the payload diff: a member name IS
+      // `<optionPrefix><gamePath>`, so it catches a file landing in the WRONG OPTION -- which
+      // diffUpgrade's whole-pack, gamePath-keyed multiset flattens away entirely. Scoped to PMP
+      // only: a TTMP's single opaque "TTMPD.mpd" blob is not a PMP-shaped payload member (see
+      // diffArchives' doc comment).
+      const archive = diffArchives(oursArchive, goldenBytes, target === "pmp");
+      // Oracle-free invariant on OUR OWN artifact: no dangling `Files` key, no orphan member.
+      // Independent of the golden, so it still guards a pack ConsoleTools cannot upgrade or that
+      // has no golden at all. PMP-only: a TTMP has no per-file zip members to orphan.
+      const selfDiffs =
+        target === "pmp"
+          ? pmpSelfConsistency(
+              oursArchive,
+              new Set(loadModpack(name, bytes).extraFiles?.keys() ?? []),
+            )
+          : [];
+
+      const diff = {
+        ...payload,
+        files: [...payload.files, ...archive, ...selfDiffs],
+      };
       const key = oracleKey(bytes);
 
       if (BLESS) {

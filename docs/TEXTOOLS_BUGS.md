@@ -122,20 +122,65 @@ by luck: it maps to 0 either way.)
 
 ## 6. Group-folder collision loop cannot terminate
 
-**Status:** **not reached** — we don't port prefix generation · **Where:** `WizardData.cs:1406-1409`
+**Status:** **gap** — we throw rather than hang · **Where:** `WizardData.cs:1406-1409` (see
+`src/container/option-prefix.ts`, `makeGroupPrefix`)
 
 The loop that de-collides duplicate group folder names never increments its counter `i`, so two
-groups whose names sanitize to the same folder would spin forever. Unreachable in our port: we
-re-emit the source manifest and reuse the source zip member names rather than regenerating
-`<optionPrefix><gamePath>` (see `BACKLOG.md` — that non-port is itself a latent divergence).
+groups whose names sanitize to the same folder AND whose first retry (`" (1)/"`) also collides
+would spin forever recomputing the same candidate. (The sibling loop in `MakeOptionPrefix`,
+`:1448-1453`, increments correctly — see below.)
+
+**Us:** ported the loop condition as written (a single retry at `" (1)/"` succeeds silently, matching
+the C#), but if resolving the collision would need a second retry we throw, citing this entry,
+instead of hanging. `optionPrefixes` is unit-tested (`test/container/option-prefix.test.ts`) and
+called by `writePmp` (`src/container/pmp.ts`) to regenerate every zip path from the model.
 
 **Upstream fix:** increment the counter.
 
 ---
 
-## 7. Missing files all share the zero hash, perturbing dedup paths
+## 7. `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page
 
-**Status:** **not reached** · **Where:** `PmpExtensions.cs:509-514` + `:537-551`
+**Status:** reproduced · **Where:** `WizardData.cs:1118-1158` construction + `:1234-1244`
+(`ClearNulls`' page-level pruning) — see `src/container/option-prefix.ts`, `buildPages`
+
+When `default_mod.json` is non-empty, `FromPmp` unshifts a synthesized "Default" page onto the
+FRONT of `DataPages` before appending one page per real page index `0..pageMax`. The group-assignment
+loop right after still indexes `DataPages[g.Page]` with each real group's *raw*, unadjusted page
+number — so a group meant for page 0 lands on `DataPages[0]`, which is now the Default page, not the
+page just created for it; the page created for page 0 is left with zero groups.
+
+That would inflate `DataPages.Count` and switch on the `pN/` prefix for the whole pack — except
+`ClearNulls` (WizardData.cs:1234-1244) runs immediately afterward (`:1159`, inside `FromPmp` itself,
+and again — redundantly — at `:1462` inside `WritePmp`) and drops any page with zero
+data-carrying groups. For the common case (a single real page, `pageMax === 0`), that prunes the
+now-empty created page right back out, so `DataPages.Count` ends up **unchanged** (still 1) and NO
+`pN/` prefix appears. The bug's only surviving, observable effect is that the misrouted group's
+files merge directly onto the Default page's folder (e.g. both `default/…` and `everything/a/…`
+sit at the top level with no page prefix) instead of the group getting a page — and, in the page
+sense — of its own. A naive reading of the C# (assuming `ClearNulls` merely nulls fields and never
+removes pages) would predict `DataPages.Count === 2` and a `p1/`/`p2/` split instead; that reading is
+wrong — `ClearNulls`' page-removal step (`if (!p.HasData) { DataPages.Remove(p); continue; }`,
+`WizardData.cs:1240-1244`) is unconditional, not GUI-only (that distinction belongs to
+`ClearEmpties`, which additionally preserves one empty *option* per single-select group for the
+import wizard UI — `ImportWizardWindow.xaml.cs:143` — and is not on the headless `/upgrade`/`/resave`
+path).
+
+**Us:** ported verbatim — page construction uses the same raw, unshifted index, and the same
+page-level `HasData` pruning runs afterward. The single-real-page merge-onto-Default case (no `pN/`
+prefix at all) is pinned by `test/container/option-prefix.test.ts` case 6; the multi-real-page case
+described above — where the shift instead strands the LAST created page empty, `pN/` DOES turn on,
+and the page-0 group's content still merges onto the Default page's folder while the page-1 group is
+bumped into the slot meant for page 0 — is pinned separately by case 9.
+
+**Upstream fix:** assign real groups to `DataPages[g.Page + (hasDefaultPage ? 1 : 0)]`.
+
+---
+
+## 8. Missing files all share the zero hash, perturbing dedup paths
+
+**Status:** reproduced · **Where:** `PmpExtensions.cs:509-514` + `:537-551` (see
+`src/container/resolve-duplicates.ts`)
 
 `ResolveDuplicates` guards a file whose `RealPath` doesn't exist by assigning it a **default
 (all-zero) `SHA1HashKey`** instead of hashing it. Two or more absent files therefore collide as
@@ -151,14 +196,19 @@ next **genuine** duplicate (two really-identical present files) is relocated int
 of `common/1/…` — an observable member-name difference between our output and TexTools' that survives
 the write-time drop and would need reproducing if we ever port `ResolveDuplicates` (see `BACKLOG.md`).
 
-**Us:** not reached — we don't port `ResolveDuplicates`.
+**Us:** `resolveDuplicates` inserts the same all-zero sentinel hash for a byte-less
+`ModpackFile` (`data === undefined`) and lets it dedupe against every other absent file, burning
+`idx` values exactly as the C# does; a later genuine duplicate's `common/N` numbering shifts to
+match. Pinned by `test/container/resolve-duplicates.test.ts` case 6. Absent files are still excluded
+from the function's returned map — that is `PopulatePmpStandardOption`'s separate `!File.Exists`
+guard (`PMP.cs:883-888`), which does not undo the `idx` this bug already spent.
 
 **Upstream fix:** exclude missing files from the dedup set instead of hashing them to a shared
 sentinel.
 
 ---
 
-## 8. `/upgrade` reports success and a destination path it never wrote
+## 9. `/upgrade` reports success and a destination path it never wrote
 
 **Status:** **worked around** · **Where:** `ConsoleTools/Program.cs:181,188` + `ModpackUpgrader.cs:216`
 
@@ -172,3 +222,35 @@ input.
 
 **Upstream fix:** only print the success line when a file was actually written, and/or report the
 no-op distinctly.
+
+---
+
+## 10. `PopulatePmpStandardOption` silently destroys a pack's FileSwaps on write
+
+**Status:** **gap** — we fail loud instead · **Where:** `PMP.cs:873-875` (see
+`src/container/resolve-duplicates.ts`)
+
+`PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:874`) alongside `opt.Files` and
+`opt.Manipulations`, but unlike those two, nothing ever adds to it afterward — the function's body
+(`:876-928`) only populates `opt.Files` (from `files`) and `opt.Manipulations` (from the metadata/
+rgsp conversion and `otherManipulations`). This is the **only** writer of `PmpStandardOptionJson`
+(`WizardData.WritePmp` → `PopulatePmpStandardOption` is the sole call site that builds an option's
+JSON for the zip), so any option that came in with file swaps — a Penumbra mod that swaps one game
+file for another instead of shipping a custom replacement — has that data unconditionally discarded
+by TexTools' own writer. A round-trip through TexTools (`/resave`, or `/upgrade` when it needs to
+rewrite the pack at all) silently drops a mod author's file swaps from the emitted pack, with no
+warning and no error. That is a data-loss defect, not a transcribed SE oddity: nothing about game
+data or a legacy format forces it, it's a writer that starts populating a field and then never
+finishes the job for one of its three members.
+
+**Us:** `resolveDuplicates` throws when an option carries a non-empty `FileSwaps` map, rather than
+attempting to reproduce (or silently drop) file swaps. We can't reproduce TexTools' *read-side*
+placeholder mechanism faithfully either (`UnpackPmpOption`, `PMP.cs:1104-1137`, needs a live game
+index we don't have — see the throw site and `BACKLOG.md` for the full analysis), so failing loud is
+the only option that doesn't risk shipping a silently-wrong pack. No corpus PMP currently carries any
+FileSwaps (checked empirically, all 13 real corpus packs have `fileSwaps=0`), so this is latent.
+
+**Upstream fix:** either serialize `files`' original FileSwaps back into `opt.FileSwaps` in
+`PopulatePmpStandardOption` (matching `opt.Files`/`opt.Manipulations`'s treatment), or — if dropping
+them is intentional (e.g. because a swap's target may no longer resolve against the current game
+version) — log or surface that loss to the user instead of doing it silently.

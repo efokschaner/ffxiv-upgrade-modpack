@@ -13,11 +13,36 @@ import {
 } from "../../src/model/modpack";
 import { readZip, writeZip } from "../../src/zip/zip";
 import { makePmpZip } from "../helpers/make-packs";
+import { pmpSelfConsistency } from "../helpers/pmp-self-consistency";
 
 const dec = new TextDecoder();
 function parseEntry<T>(entries: Map<string, Uint8Array>, name: string): T {
   return JSON.parse(dec.decode(entries.get(name)!)) as T;
 }
+
+// A COMPLETE Imc manipulation: every field PMPImcManipulationJson/PMPImcEntry declare (minus the
+// [JsonIgnore] AttributeAndSound — see pmp-manipulation.ts) present. normalizeManipulations THROWS
+// on a manipulation missing a required field (pmp-manipulation.test.ts pins that); these fixtures
+// only need a manipulation that round-trips unchanged, not to exercise normalization itself.
+const IMC_MANIPULATION = {
+  Type: "Imc",
+  Manipulation: {
+    Entry: {
+      MaterialId: 1,
+      DecalId: 0,
+      VfxId: 0,
+      MaterialAnimationId: 0,
+      AttributeMask: 0,
+      SoundId: 0,
+    },
+    ObjectType: "Equipment",
+    PrimaryId: 1,
+    SecondaryId: 0,
+    Variant: 1,
+    EquipSlot: "Body",
+    BodySlot: "Unknown",
+  },
+};
 
 describe("writePmp round-trip", () => {
   it("preserves inner files byte-for-byte and re-reads structurally", () => {
@@ -48,6 +73,11 @@ describe("writePmp model-building fallback (no raw)", () => {
   const fooBytes = new Uint8Array([1, 2, 3, 4]);
   const redBytes = new Uint8Array([9, 9]);
 
+  // Both groups sit on page 0: the Default group and "Color Options" are then merged onto the
+  // same (page-index-bug-affected) page, so option-prefix.ts assigns "default/" and
+  // "color options/" respectively (option-prefix.test.ts case 6) rather than pulling in a "pN/"
+  // segment — keeping this fixture's expected paths independent of the page-numbering quirks
+  // that module already pins on its own.
   function modeledData(): ModpackData {
     return {
       sourceFormat: ModpackFormat.Ttmp2, // non-PMP source -> nothing carries `raw`
@@ -93,7 +123,7 @@ describe("writePmp model-building fallback (no raw)", () => {
           name: "Color Options",
           description: "pick one",
           image: "grp.png",
-          page: 1,
+          page: 0,
           priority: 5,
           selectionType: "Single",
           defaultSettings: 0,
@@ -110,8 +140,16 @@ describe("writePmp model-building fallback (no raw)", () => {
                   storage: FileStorageType.RawUncompressed,
                 },
               ],
-              fileSwaps: { "chara/a.mdl": "chara/b.mdl" },
-              manipulations: [{ Type: "Imc" }],
+              // FileSwaps must stay empty here: resolveDuplicates fails loud on a non-empty
+              // FileSwaps map (this port cannot reproduce TexTools' game-index-dependent
+              // placeholder mechanics faithfully — see resolve-duplicates.ts / BACKLOG.md), and
+              // that guard applies to every option writePmp actually assembles a prefix for.
+              fileSwaps: {},
+              // Every field a real PMPImcManipulationJson declares must be present: a document
+              // omitting one is NOT modeled as "absent from the output" (a bare `{ Type: "Imc" }`
+              // used to be pinned here, silently inventing that shape — see
+              // pmp-manipulation.test.ts and BACKLOG.md's "normalizeManipulations" finding).
+              manipulations: [IMC_MANIPULATION],
             },
           ],
         },
@@ -139,9 +177,10 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(def.Name).toBeUndefined();
     expect(def.Description).toBeUndefined();
     expect(def.Image).toBeUndefined();
-    // Files value uses backslashes in the JSON (zip path is forward-slashed on disk).
+    // Files value uses backslashes in the JSON; the zip path is regenerated as
+    // optionPrefix + gamePath ("default/" for the lone Default-group option, option-prefix.ts).
     expect(def.Files).toEqual({
-      "chara/equipment/foo.tex": "chara\\equipment\\foo.tex",
+      "chara/equipment/foo.tex": "default\\chara\\equipment\\foo.tex",
     });
     expect(def.FileSwaps).toEqual({});
     expect(def.Manipulations).toEqual([]);
@@ -158,7 +197,7 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(grp.Type).toBe("Single");
     expect(grp.Description).toBe("pick one");
     expect(grp.Image).toBe("grp.png");
-    expect(grp.Page).toBe(1);
+    expect(grp.Page).toBe(0);
     expect(grp.Priority).toBe(5);
     expect(grp.DefaultSettings).toBe(0);
     expect(grp.Options).toHaveLength(1);
@@ -167,11 +206,16 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(opt.Name).toBe("Red");
     expect(opt.Description).toBe("the red one");
     expect(opt.Image).toBe("red.png");
+    // "Color Options" has one option -> group.options.length === 1 -> no extra option segment
+    // (makeOptionPrefix, option-prefix.ts); prefix is just the group's own "color options/".
     expect(opt.Files).toEqual({
-      "chara/equipment/red.tex": "chara\\equipment\\red.tex",
+      "chara/equipment/red.tex": "color options\\chara\\equipment\\red.tex",
     });
-    expect(opt.FileSwaps).toEqual({ "chara/a.mdl": "chara/b.mdl" });
-    expect(opt.Manipulations).toEqual([{ Type: "Imc" }]);
+    expect(opt.FileSwaps).toEqual({});
+    // Manipulations regenerated per pmp-manipulation.ts: a fully-spelled Imc manipulation
+    // round-trips unchanged (no [JsonIgnore] field present to drop, no numeric-string field to
+    // coerce) -- see pmp-manipulation.test.ts for those behaviours in isolation.
+    expect(opt.Manipulations).toEqual([IMC_MANIPULATION]);
   });
 
   it("round-trips the modeled file bytes back through readPmp", () => {
@@ -181,10 +225,10 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(byPath.get("chara/equipment/red.tex")).toEqual(redBytes);
   });
 
-  // Covers the model-building (non-`raw`) branch of optionToJson's own absent-file skip
-  // (`if (!f.data) continue;`, pmp.ts:231, PMP.cs:883-888) — every other absent-file test in this
-  // file goes through the `raw`-carry branch instead, because a PMP source (unlike this modeled,
-  // no-`raw` data) always has one.
+  // Covers the absent-file skip in optionToJson's Files-building loop (pmp.ts, PMP.cs:883-888) on
+  // the model-building (non-`raw`) branch — every other absent-file test in this file goes through
+  // the `raw`-carry branch instead, because a PMP source (unlike this modeled, no-`raw` data)
+  // always has one.
   it("drops an absent file from Files in the model-building branch, keeping present ones", () => {
     const data = modeledData();
     const redOption = data.groups[1]!.options[0]!;
@@ -202,7 +246,7 @@ describe("writePmp model-building fallback (no raw)", () => {
     const grp = parseEntry<PmpGroupJson>(entries, groupName as string);
     const opt = grp.Options?.[0] as PmpOptionJson;
     expect(opt.Files).toEqual({
-      "chara/equipment/red.tex": "chara\\equipment\\red.tex",
+      "chara/equipment/red.tex": "color options\\chara\\equipment\\red.tex",
     });
     expect(Object.keys(opt.Files)).not.toContain("chara/equipment/missing.tex");
   });
@@ -213,6 +257,8 @@ describe("writePmp model-building fallback (no raw)", () => {
 describe("writePmp ExtraFiles (WizardData.cs:1477-1488)", () => {
   const enc = new TextEncoder();
   const gamePath = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  // The lone Default-group option's regenerated zip path ("default/" + gamePath, option-prefix.ts).
+  const payloadZipPath = `default/${gamePath}`;
   const filePayload = new Uint8Array([1, 2, 3, 4]);
   const extraPayload = new Uint8Array([9, 9, 9]);
 
@@ -245,42 +291,133 @@ describe("writePmp ExtraFiles (WizardData.cs:1477-1488)", () => {
     const out = writePmp(readPmp(writeZip(buildEntries())));
     const members = readZip(out);
     expect(members.get("images/preview.png")).toEqual(extraPayload);
-    expect(members.get(gamePath)).toEqual(filePayload);
+    expect(members.get(payloadZipPath)).toEqual(filePayload);
   });
 
   it("does not duplicate/collide a payload member with an extra of the same name", () => {
-    // Construct a ModpackData directly: an extra whose key collides with a real payload member's
-    // zip path. readPmp can never actually produce this (a referenced member is never an extra —
-    // see pmp-read.test.ts), so this exercises writePmp's own defensive `!entries.has()` guard.
+    // Construct a ModpackData directly: an extra whose key collides with the real payload
+    // member's REGENERATED zip path. readPmp can never actually produce this (a referenced
+    // member is never an extra — see pmp-read.test.ts), so this exercises writePmp's own
+    // defensive `!entries.has()` guard.
     const data = readPmp(writeZip(buildEntries()));
-    data.extraFiles = new Map([[gamePath, extraPayload]]);
+    data.extraFiles = new Map([[payloadZipPath, extraPayload]]);
 
     const out = writePmp(data);
     const members = readZip(out);
     // The payload write happens first, so it must win over the colliding extra.
-    expect(members.get(gamePath)).toEqual(filePayload);
+    expect(members.get(payloadZipPath)).toEqual(filePayload);
   });
 });
 
-// Port of PopulatePmpStandardOption's payload write (PMP.cs:908-910) followed by WritePmp's
-// directory zip (PMP.cs:864-868). Groove 001.pmp's Files JSON names the same physical payload
-// under two different casings for two different gamePaths; TexTools' writer can never actually
-// produce two members for that, because it writes into a real Windows directory first and zips
-// it afterward — a directory can't hold two names differing only by case, so the second
-// WriteAllBytes resolves to the SAME entry the first one created (keeping the first name, last
-// bytes) before the single-entry directory gets zipped.
-describe("writePmp payload dedup by windowsPathKey (PMP.cs:908-910 / :864-868)", () => {
+describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", () => {
+  // Regenerated names should only ever collide (after windowsPathKey's NTFS-equivalent
+  // normalization) for IDENTICAL content — resolveDuplicates content-dedups identical bytes onto
+  // one shared path already, so two DIFFERENT zip-path strings colliding via windowsPathKey
+  // normalization (not by being the same string) can only happen for genuinely different
+  // content, which means the naming scheme itself produced a bad collision. Two group names
+  // "Choice" and "Choice." both safeName to distinct strings ("choice"/"choice.", safeName does
+  // not strip a non-"."/".." name's interior/trailing dots) — MakeGroupPrefix therefore does NOT
+  // treat them as colliding and assigns each its own folder — but windowsPathKey DOES trim a
+  // trailing dot per path segment (the NTFS-equivalent normalization the WRITER's own directory
+  // write applies, matching the reader), so "choice./..." and "choice/..." collapse to the same
+  // on-disk entry once actually written.
+  function buildData(secondBytes: Uint8Array): ModpackData {
+    const gamePath = "chara/x.mdl";
+    const group = (name: string, data: Uint8Array) => ({
+      name,
+      description: "",
+      image: "",
+      page: 0,
+      priority: 0,
+      selectionType: "Single",
+      defaultSettings: 0,
+      options: [
+        {
+          name: "Only",
+          description: "",
+          image: "",
+          priority: 0,
+          files: [
+            {
+              gamePath,
+              data,
+              storage: FileStorageType.RawUncompressed,
+            },
+          ],
+          fileSwaps: {},
+          manipulations: [],
+        },
+      ],
+    });
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Collision",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [],
+        },
+        group("Choice", new Uint8Array([1, 2, 3])),
+        group("Choice.", secondBytes),
+      ],
+    };
+  }
+
+  it("collapses to one member when the colliding names carry IDENTICAL bytes", () => {
+    // IDENTICAL bytes across "Choice" and "Choice." never actually reach the windowsPathKey
+    // collapse as two DIFFERENT strings: resolveDuplicates already content-dedups equal hashes
+    // onto one shared `common/{idx}/` path first, so both options resolve to the exact same zip
+    // path before writePmp's own collapse loop ever runs. This still exercises that loop (it sees
+    // the same key/path assigned twice) without tripping the throw.
+    const out = writePmp(buildData(new Uint8Array([1, 2, 3])));
+    const members = readZip(out);
+    expect(members.has("common/1/x.mdl")).toBe(true);
+    expect(members.has("choice/chara/x.mdl")).toBe(false);
+    expect(members.has("choice./chara/x.mdl")).toBe(false);
+    expect(members.get("common/1/x.mdl")).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("throws when the colliding names carry DIFFERENT bytes", () => {
+    expect(() => writePmp(buildData(new Uint8Array([9, 9, 9])))).toThrow(
+      /collapsed onto the same zip member/,
+    );
+  });
+});
+
+describe("writePmp default-mod absorption searches DataPages order, not just the real groups (WizardData.cs:1118-1138/:1553-1578)", () => {
+  // The absorption search must consider the SYNTHESIZED Default group (data.groups[0], built from
+  // default_mod.json) ahead of any REAL group, because FromPmp unshifts it onto the FRONT of
+  // DataPages whenever default_mod.json is non-empty and hardcodes its Name/Options[0].Name to the
+  // literal "Default" (WizardData.cs:1118-1138) -- so it ALWAYS wins the search whenever it
+  // survives. A pack with BOTH a non-empty default_mod.json AND a real "Default" group (one option,
+  // named "Default") used to search only the real groups, absorbing the REAL group's data into
+  // default_mod.json while the synthesized Default option's own (already-written) payload member
+  // was named by no `Files` key anywhere -- an orphan member, the exact defect class the writer
+  // regeneration exists to prevent.
   const enc = new TextEncoder();
-  const gamePathA = "chara/equipment/e0001/model/c0101e0001_top.mdl";
-  const gamePathB = "chara/equipment/e0002/model/c0101e0002_top.mdl";
-  const zipPathLower = "on/shared/payload.mdl";
-  const zipPathUpper = "on/SHARED/PAYLOAD.mdl";
-  const payload = new Uint8Array([1, 2, 3, 4]);
+  const defaultGamePath = "chara/default.tex";
+  const realGamePath = "chara/other.tex";
 
   function buildFixture(): Uint8Array {
     const meta = {
       FileVersion: 3,
-      Name: "Dedup",
+      Name: "Absorb",
       Author: "t",
       Description: "",
       Version: "1.0",
@@ -291,40 +428,456 @@ describe("writePmp payload dedup by windowsPathKey (PMP.cs:908-910 / :864-868)",
     const defaultMod = {
       Version: 0,
       Files: {
-        [gamePathA]: zipPathLower.replace(/\//g, "\\"),
-        [gamePathB]: zipPathUpper.replace(/\//g, "\\"),
+        [defaultGamePath]: `on\\${defaultGamePath.replace(/\//g, "\\")}`,
       },
       FileSwaps: {},
       Manipulations: [],
     };
+    const group = {
+      Version: 0,
+      Name: "Default",
+      Description: "",
+      Image: "",
+      Page: 0,
+      Priority: 0,
+      Type: "Single",
+      DefaultSettings: 0,
+      Options: [
+        {
+          Name: "Default",
+          Description: "",
+          Image: "",
+          Files: {
+            [realGamePath]: `grp\\${realGamePath.replace(/\//g, "\\")}`,
+          },
+          FileSwaps: {},
+          Manipulations: [],
+        },
+      ],
+    };
     const entries = new Map<string, Uint8Array>([
       ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
       ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
-      // Only ONE physical archive member — a zip (like the NTFS directory TexTools zips
-      // from) can't hold both casings of the same path.
-      [zipPathLower, payload],
+      ["group_001_Default.json", enc.encode(JSON.stringify(group, null, 2))],
+      [`on/${defaultGamePath}`, new Uint8Array([1, 2, 3])],
+      [`grp/${realGamePath}`, new Uint8Array([4, 5, 6])],
     ]);
     return writeZip(entries);
   }
 
-  it("emits the shared payload once, keeping the first Files value's casing, while both gamePaths still resolve", () => {
+  it("absorbs the SYNTHESIZED default group's own data, leaves the real 'Default' group its own group_NNN.json, and produces no orphan/dangling member", () => {
     const out = writePmp(readPmp(buildFixture()));
     const members = readZip(out);
 
-    // Exactly one payload member survives, under the FIRST-seen Files value's casing.
-    expect(members.has(zipPathLower)).toBe(true);
-    expect(members.has(zipPathUpper)).toBe(false);
-    expect(members.get(zipPathLower)).toEqual(payload);
-
-    // Both original Files keys survive in the manifest — they both still resolve, since the
-    // reader (and the filesystem TexTools writes to) is case-insensitive.
     const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
-    expect(Object.keys(dm.Files)).toEqual([gamePathA, gamePathB]);
+    // Regression pin: default_mod.json must carry the SOURCE default_mod's own file, not the real
+    // "Default" group's.
+    expect(Object.keys(dm.Files)).toEqual([defaultGamePath]);
+    expect(dm.Files[defaultGamePath]).toBe(
+      `default\\${defaultGamePath.replace(/\//g, "\\")}`,
+    );
 
-    const reread = readPmp(out);
-    const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
-    expect(byPath.get(gamePathA)).toEqual(payload);
-    expect(byPath.get(gamePathB)).toEqual(payload);
+    // The real "Default" group must still be written as its own group_NNN.json (NOT absorbed).
+    const groupNames = [...members.keys()].filter((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    expect(groupNames).toHaveLength(1);
+    const grp = parseEntry<PmpGroupJson>(members, groupNames[0]!);
+    const opt = grp.Options![0] as PmpOptionJson;
+    expect(Object.keys(opt.Files)).toEqual([realGamePath]);
+
+    // The property that actually matters: every payload member is named by some `Files`/`Image`
+    // key, and every `Files` value names a real member -- no orphans, no dangling references.
+    expect(pmpSelfConsistency(out, new Set())).toEqual([]);
+  });
+});
+
+describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () => {
+  // WritePmp trims THREE places: `g.Name = g.Name.Trim();` (:1510, mutating every group in place,
+  // in the SAME loop that builds `allFiles`/`identifiers` -- BEFORE the default-mod absorption
+  // search runs, :1553-1578), then `pg.Name = (Name ?? "").Trim();` (:946) and
+  // `option.Name = option.Name.Trim();` (:928), both inside ToPmpGroup. Because :1510 mutates the
+  // group's Name in place ACROSS ALL groups before the absorption search ever looks at it, the
+  // search's `g.Name == "Default"` comparison sees the TRIMMED name -- so a real group literally
+  // named "Default " (trailing space) IS absorbed into default_mod.json, a structural (not just
+  // cosmetic) consequence. `option.Name`'s trim, by contrast, only ever happens inside ToPmpGroup,
+  // which the absorption search calls AFTER its own name comparison already matched/failed -- so
+  // the search's OWN `Options[0].Name == "Default"` check compares the UNTRIMMED option name; only
+  // the emitted `Name` value downstream is affected.
+  function modeledGroup(name: string, optionName: string): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Trim",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [], // empty -> IsEmptyOption -> no synthesized Default page at all
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name,
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: optionName,
+              description: "",
+              image: "",
+              priority: 0,
+              files: [
+                {
+                  gamePath: "chara/x.tex",
+                  data: new Uint8Array([1, 2, 3]),
+                  storage: FileStorageType.RawUncompressed,
+                },
+              ],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("absorbs a group literally named 'Default ' (trailing space) into default_mod.json -- the trimmed name matches the absorption predicate", () => {
+    const out = readZip(writePmp(modeledGroup("Default ", "Default")));
+
+    const groupNames = [...out.keys()].filter((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    expect(groupNames).toHaveLength(0); // absorbed -- no group_NNN.json at all
+
+    const dm = parseEntry<PmpOptionJson>(out, "default_mod.json");
+    expect(dm.Files).toEqual({ "chara/x.tex": "default\\chara\\x.tex" });
+  });
+
+  it("trims leading/trailing whitespace off the emitted group Name and option Name (WizardData.cs:946/928)", () => {
+    // "  Hair  " does not match "Default"/"Default Group" even trimmed, so it is written as its own
+    // group_NNN.json rather than absorbed -- exercising the emitted-Name trim in isolation.
+    const out = readZip(writePmp(modeledGroup("  Hair  ", "  Red  ")));
+
+    const groupName = [...out.keys()].find((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    expect(groupName).toBeDefined();
+    const grp = parseEntry<PmpGroupJson>(out, groupName as string);
+    expect(grp.Name).toBe("Hair");
+    const opt = grp.Options?.[0] as PmpOptionJson;
+    expect(opt.Name).toBe("Red");
+  });
+});
+
+describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578-604/:805-813/:857-860)", () => {
+  // TexTools never carries a source DefaultSettings value through verbatim: ToPmpGroup writes
+  // `pg.DefaultSettings = Selection` (:949), and `Selection` is a GETTER recomputed from each
+  // option's `Selected` flag, which FromPMPGroup derives from the SOURCE value at read time
+  // (:805-813). Our domain model has no per-option Selected flag, only the group's raw
+  // `defaultSettings` -- so writePmp must reconstruct exactly what those two C# passes would have
+  // left before re-deriving Selection from it.
+  function modeledGroup(
+    selectionType: "Single" | "Multi",
+    optionCount: number,
+    defaultSettings: number,
+  ): ModpackData {
+    const options = Array.from({ length: optionCount }, (_, i) => ({
+      name: `Opt${i}`,
+      description: "",
+      image: "",
+      priority: 0,
+      files: [
+        {
+          gamePath: `chara/${i}.tex`,
+          data: new Uint8Array([i]),
+          storage: FileStorageType.RawUncompressed as const,
+        },
+      ],
+      fileSwaps: {},
+      manipulations: [],
+    }));
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Selection",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name: "Choice",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType,
+          defaultSettings,
+          options,
+        },
+      ],
+    };
+  }
+
+  function readGroupDefaultSettings(out: Uint8Array): number {
+    const entries = readZip(out);
+    const groupName = [...entries.keys()].find((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    if (!groupName) throw new Error("no group_NNN.json in output");
+    return parseEntry<PmpGroupJson>(entries, groupName).DefaultSettings;
+  }
+
+  it("Single, source index out of range (>= Options.Count) -> the read-time fixup forces Options[0].Selected, so Selection regenerates 0", () => {
+    // FromPMPGroup: Selected[i] = (DefaultSettings == idx) for idx in 0..Options.Count-1. A source
+    // value of 5 on a 2-option group matches nothing, so the fixup at :857-860 forces
+    // Options[0].Selected = true, and Selection's getter (:582-589) returns IndexOf(Options[0]) = 0.
+    const out = writePmp(modeledGroup("Single", 2, 5));
+    expect(readGroupDefaultSettings(out)).toBe(0);
+  });
+
+  it("Single, source index in range -> Selection round-trips the same index", () => {
+    const out = writePmp(modeledGroup("Single", 3, 2));
+    expect(readGroupDefaultSettings(out)).toBe(2);
+  });
+
+  it("Multi, legacy -1 source value -> every bit past the option count is masked off by Selection's own loop bound", () => {
+    // CustomUInt64Converter (PMP.cs:1558-1571) reinterprets a JSON `-1` token as ulong.MaxValue (the
+    // documented "TexTools was previously writing -1 instead of 2^64-1" bug-compat shim,
+    // PMP.cs:1564-1565) -- i.e. every one of its 64 bits is set. FromPMPGroup's bit-test Selected[i]
+    // = (DefaultSettings & (1UL << i)) != 0 therefore selects EVERY option, but Selection's own
+    // getter (:594-601) only ORs bits for i < Options.Count -- so a 3-option Multi group regenerates
+    // 0b111 = 7, not -1 and not ulong.MaxValue.
+    const out = writePmp(modeledGroup("Multi", 3, -1));
+    expect(readGroupDefaultSettings(out)).toBe(0b111);
+  });
+
+  it("Multi, a source bit beyond Options.Count is masked off even for an in-range positive value", () => {
+    // Source 0b1011 (bits 0,1,3) on a 3-option (bits 0..2) group: FromPMPGroup selects options 0,1
+    // (bit 3 has no corresponding option, so Selected[3] is simply never assigned/read), and
+    // Selection's own loop bound (i < Options.Count) can never OR bit 3 back in either way.
+    const out = writePmp(modeledGroup("Multi", 3, 0b1011));
+    expect(readGroupDefaultSettings(out)).toBe(0b011);
+  });
+});
+
+describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:1246-1263/:1583-1600)", () => {
+  // ClearNulls' group-level prune (WizardData.cs:1246-1263, `if (g == null || !g.HasData)`) reduces
+  // to a purely STRUCTURAL check on our load paths -- WizardOptionEntry.HasData's Read-mode
+  // short-circuit (WizardData.cs:257-266) means a group with content-FREE options still survives (see
+  // option-prefix.ts's module header comment and option-prefix.test.ts case 8); only a group with
+  // literally ZERO options is ever pruned. "Empty" (page 1) models that: an authored group with no
+  // options at all. Since it was the only occupant of page 1, the whole page is pruned too
+  // (WizardData.cs:1234-1244), leaving 2 surviving pages (0 and 2's content). WritePmp's own `Page`
+  // counter only increments per DataPages entry that contributed a WRITTEN group
+  // (WizardData.cs:1583-1600), so "Gamma" (source page 2) must be renumbered to Page 1, not 2, and
+  // "Empty" (zero options -> pruned) must never become a group_NNN.json.
+  function buildData(): ModpackData {
+    const group = (
+      name: string,
+      page: number,
+      files: { gamePath: string; data: Uint8Array }[],
+    ) => ({
+      name,
+      description: "",
+      image: "",
+      page,
+      priority: 0,
+      selectionType: "Single" as const,
+      defaultSettings: 0,
+      options: [
+        {
+          name: "Only",
+          description: "",
+          image: "",
+          priority: 0,
+          files: files.map((f) => ({
+            ...f,
+            storage: FileStorageType.RawUncompressed,
+          })),
+          fileSwaps: {},
+          manipulations: [],
+        },
+      ],
+    });
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Prune",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        group("Default", 0, []), // empty -> IsEmptyOption -> no synthesized Default page at all
+        group("Alpha", 0, [
+          { gamePath: "chara/a.tex", data: new Uint8Array([1]) },
+        ]),
+        {
+          name: "Empty",
+          description: "",
+          image: "",
+          page: 1,
+          priority: 0,
+          selectionType: "Single" as const,
+          defaultSettings: 0,
+          options: [], // zero options -> groupHasData false (option-prefix.ts) -> pruned entirely
+        },
+        group("Gamma", 2, [
+          { gamePath: "chara/g.tex", data: new Uint8Array([2]) },
+        ]),
+      ],
+    };
+  }
+
+  it("omits 'Empty's group_NNN.json and renumbers 'Gamma's Page across only the 2 surviving pages", () => {
+    const out = readZip(writePmp(buildData()));
+    const groupNames = [...out.keys()]
+      .filter((n) => /^group_\d+.*\.json$/i.test(n))
+      .sort();
+    expect(groupNames).toHaveLength(2); // NOT 3 -- "Empty" never becomes a group_NNN.json
+    const g1 = parseEntry<PmpGroupJson>(out, groupNames[0]!);
+    const g2 = parseEntry<PmpGroupJson>(out, groupNames[1]!);
+    expect(g1.Name).toBe("Alpha");
+    expect(g1.Page).toBe(0);
+    expect(g2.Name).toBe("Gamma");
+    expect(g2.Page).toBe(1); // NOT 2 (the source g.page) -- recomputed over surviving pages only
+  });
+});
+
+describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mode short-circuit, WizardData.cs:257-266)", () => {
+  // A group whose lone option carries no files/fileSwaps/manipulations at all (e.g. because EVERY
+  // one of its raw Files entries was canImport-rejected) is NOT pruned by TexTools: it is written as
+  // its own group_NNN.json with an empty "Files": {}. Pruning it would port WizardOptionEntry.
+  // HasData's content check — a branch that is dead code on every load path this port reaches, since
+  // ModOption is always set there (see option-prefix.ts's header comment).
+  function buildData(): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Keep",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name: "Empty",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "Only",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [], // content-free, but the group still has >0 OPTIONS -> kept
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("writes a group_NNN.json with empty Files for a content-free group", () => {
+    const out = readZip(writePmp(buildData()));
+    const groupName = [...out.keys()].find((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    expect(groupName).toBeDefined();
+    const grp = parseEntry<PmpGroupJson>(out, groupName as string);
+    expect(grp.Name).toBe("Empty");
+    expect(grp.Options).toHaveLength(1);
+    expect((grp.Options![0] as PmpOptionJson).Files).toEqual({});
   });
 });
 
@@ -334,12 +887,13 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
   const enc = new TextEncoder();
   const present = "chara/equipment/e0001/model/c0101e0001_top.mdl";
   const second = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+  // Both live in the lone Default-group option -> regenerated prefix "default/" (option-prefix.ts).
+  const presentZipPath = `default/${present}`;
 
   // `secondMemberPresent` toggles whether `second`'s zip member is written: false reproduces the
-  // absent-file case (PMP.cs:883-888), true is the all-present control used to prove the prune is
-  // a no-op. Both variants share the identical meta/default_mod.json source text (2-space-indented,
-  // matching writePmp's own `JSON.stringify(_, null, 2)` — see pmp.ts:268/277/301) so the two are
-  // comparable byte-for-byte.
+  // absent-file case (PMP.cs:883-888), true is the all-present control. The source Files values
+  // use an arbitrary "on/..." prefix to prove the WRITER no longer reads it (the regenerated
+  // output uses "default/...", not "on/...").
   function buildPmpFixture(secondMemberPresent: boolean): Uint8Array {
     const meta = {
       FileVersion: 3,
@@ -376,29 +930,29 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
     const out = writePmp(readPmp(buildPmpFixture(false)));
     const members = readZip(out);
 
-    expect([...members.keys()]).toContain(`on/${present}`);
-    expect([...members.keys()]).not.toContain(`on/${second}`);
+    expect([...members.keys()]).toContain(presentZipPath);
+    expect([...members.keys()]).not.toContain(`default/${second}`);
 
     const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
     expect(Object.keys(dm.Files)).toEqual([present]);
+    expect(dm.Files[present]).toBe(`default\\${present.replace(/\//g, "\\")}`);
   });
 
-  it("re-emits an all-present option's default_mod.json bytes verbatim (prune is inert)", () => {
-    // pruneAbsentFiles returns `raw` itself when nothing is absent (pmp.ts:207), so round-tripping
-    // an all-present option through readPmp/writePmp must reproduce the SOURCE manifest bytes
-    // exactly — not merely an equal `Files` object (which would miss key order/whitespace, and
-    // pmp.ts's own prune comment calls key order load-bearing for the golden byte diff).
+  it("regenerates an all-present default_mod.json with both Files keys, byte-for-byte-equal payload", () => {
     const src = buildPmpFixture(true);
-    const sourceBytes = readZip(src).get("default_mod.json")!;
     const out = writePmp(readPmp(src));
-    const writtenBytes = readZip(out).get("default_mod.json")!;
-    expect(writtenBytes).toEqual(sourceBytes);
+    const members = readZip(out);
+
+    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    expect(Object.keys(dm.Files)).toEqual([present, second]);
+    expect(members.get(presentZipPath)).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(members.get(`default/${second}`)).toEqual(new Uint8Array([9, 9]));
   });
 
   it("drops only the absent file's Files key inside a group option, leaving the sibling option and every other key untouched", () => {
     // Covers the prune firing on a group_*.json option (the tests above only exercise the
-    // default_mod.json/raw-carry path) — a multi-option group where only ONE option holds an
-    // absent file (PMP.cs:883-888).
+    // default_mod.json path) — a multi-option group where only ONE option holds an absent file
+    // (PMP.cs:883-888).
     const optAFile = "chara/equipment/e0003/model/c0101e0003_top.mdl";
     const optBPresentFile = "chara/equipment/e0004/model/c0101e0004_top.mdl";
     const optBAbsentFile = "chara/equipment/e0005/model/c0101e0005_top.mdl";
@@ -445,8 +999,13 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
             [optBPresentFile]: toZipValue(optBPresentFile),
             [optBAbsentFile]: toZipValue(optBAbsentFile),
           },
-          FileSwaps: { "chara/x.mdl": "chara/y.mdl" },
-          Manipulations: [{ Type: "Imc" }],
+          // FileSwaps must stay empty: resolveDuplicates fails loud on a non-empty FileSwaps map
+          // for any option it assigns a prefix to (see resolve-duplicates.ts / BACKLOG.md).
+          FileSwaps: {},
+          // A COMPLETE Imc manipulation -- normalizeManipulations throws on one missing a required
+          // field (pmp-manipulation.test.ts), so this fixture needs every field spelled to prove
+          // the OTHER thing this test is about (the absent-file drop) without tripping that.
+          Manipulations: [IMC_MANIPULATION],
         },
       ],
     };
@@ -470,26 +1029,255 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
 
     expect(grp.Options).toHaveLength(2);
     const [optA, optB] = grp.Options as PmpOptionJson[];
-    // Sibling option (no absent file): untouched.
-    expect(optA!.Files).toEqual({ [optAFile]: toZipValue(optAFile) });
+    // "Choice" has 2 options -> each gets its own option segment (makeOptionPrefix).
+    // Sibling option (no absent file): untouched content, regenerated path.
+    expect(optA!.Files).toEqual({
+      [optAFile]: `choice\\opta\\${optAFile.replace(/\//g, "\\")}`,
+    });
     // Affected option: only the absent key is dropped.
     expect(optB!.Files).toEqual({
-      [optBPresentFile]: toZipValue(optBPresentFile),
+      [optBPresentFile]: `choice\\optb\\${optBPresentFile.replace(/\//g, "\\")}`,
     });
     // Every other key on the affected option survives.
     expect(optB!.Name).toBe("OptB");
     expect(optB!.Description).toBe("b desc");
     expect(optB!.Image).toBe("b.png");
-    expect(optB!.FileSwaps).toEqual({ "chara/x.mdl": "chara/y.mdl" });
-    expect(optB!.Manipulations).toEqual([{ Type: "Imc" }]);
+    expect(optB!.FileSwaps).toEqual({});
+    expect(optB!.Manipulations).toEqual([IMC_MANIPULATION]);
     // Group-level keys survive too.
     expect(grp.Name).toBe("Choice");
     expect(grp.Description).toBe("group desc");
     expect(grp.Image).toBe("grp.png");
     expect(grp.Priority).toBe(3);
 
-    expect([...members.keys()]).toContain(`on/${optAFile}`);
-    expect([...members.keys()]).toContain(`on/${optBPresentFile}`);
-    expect([...members.keys()]).not.toContain(`on/${optBAbsentFile}`);
+    expect([...members.keys()]).toContain(`choice/opta/${optAFile}`);
+    expect([...members.keys()]).toContain(`choice/optb/${optBPresentFile}`);
+    expect([...members.keys()]).not.toContain(`choice/optb/${optBAbsentFile}`);
+  });
+});
+
+describe("writePmp IsMetaInternalFile drop (PMP.cs:901-905 -> IOUtil.cs:577-592)", () => {
+  // A raw .cmp/.eqp/.eqdp/.gmp/.est/.imc file gets neither a payload member nor a Files key --
+  // PopulatePmpStandardOption's third skip, after the absent-file and .meta/.rgsp branches. Unlike
+  // an absent file, this one DOES have real bytes and IS accepted by canImport (its game path starts
+  // with a recognized folder prefix), so it must still be hashed/claim a zip path in
+  // resolveDuplicates -- only the emission (Files key + payload member) is skipped.
+  const enc = new TextEncoder();
+  const normal = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const imcFile = "chara/equipment/e0001/e0001.imc"; // canImport-accepted (starts with "chara/")
+  const normalZipPath = `default/${normal}`;
+
+  function buildPmpFixture(): Uint8Array {
+    const meta = {
+      FileVersion: 3,
+      Name: "MetaInternal",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: {
+        [normal]: `on\\${normal.replace(/\//g, "\\")}`,
+        [imcFile]: `on\\${imcFile.replace(/\//g, "\\")}`,
+      },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
+      [`on/${normal}`, new Uint8Array([1, 2, 3, 4])],
+      [`on/${imcFile}`, new Uint8Array([5, 6, 7])],
+    ]);
+    return writeZip(entries);
+  }
+
+  it("emits neither the zip member nor the Files key for a raw .imc file, keeping the sibling file untouched", () => {
+    const out = writePmp(readPmp(buildPmpFixture()));
+    const members = readZip(out);
+
+    expect([...members.keys()]).toContain(normalZipPath);
+    expect([...members.keys()]).not.toContain(`default/${imcFile}`);
+    // Not deduped into common/ either -- the file was hashed/claimed a path, then dropped at
+    // emission, so no member anywhere carries its bytes.
+    expect(
+      [...members.values()].some(
+        (v) => v.length === 3 && v[0] === 5 && v[1] === 6 && v[2] === 7,
+      ),
+    ).toBe(false);
+
+    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    expect(Object.keys(dm.Files)).toEqual([normal]);
+    expect(dm.Files[normal]).toBe(`default\\${normal.replace(/\//g, "\\")}`);
+  });
+});
+
+describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
+  // WritePmp's own assembly loop throws BEFORE any prefix is put to use when a Standard-type
+  // option's name, or its owning group's name, is blank/whitespace-only -- but only for an option
+  // that SURVIVES pruning (has a data-carrying group; the synthesized Default group is exempt, see
+  // this guard's own comment in pmp.ts).
+  function modeledData(groupName: string, optionName: string): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Blank",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [], // empty -> IsEmptyOption -> no synthesized Default page at all
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name: groupName,
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: optionName,
+              description: "",
+              image: "",
+              priority: 0,
+              files: [
+                {
+                  gamePath: "chara/x.tex",
+                  data: new Uint8Array([1]),
+                  storage: FileStorageType.RawUncompressed,
+                },
+              ],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("throws when a Standard-type option's name is blank", () => {
+    expect(() => writePmp(modeledData("Choice", "  "))).toThrow(
+      /PMP Files must have valid group and option names \(WizardData\.cs:1520-1523\)/,
+    );
+  });
+
+  it("throws when a Standard-type group's name is blank", () => {
+    expect(() => writePmp(modeledData("  ", "Only"))).toThrow(
+      /PMP Files must have valid group and option names \(WizardData\.cs:1520-1523\)/,
+    );
+  });
+});
+
+describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
+  // PopulatePmpStandardOption converts a .meta/.rgsp file to Manipulations instead of writing it as
+  // a zip member (PMP.cs:891-900 -> PMPExtensions.MetadataToManipulations/RgspToManipulations) --
+  // unported (see pmp.ts's own comment on this guard / BACKLOG.md), so writePmp fails loud instead
+  // of silently emitting a member TexTools would never write.
+  function modeledData(gamePath: string): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "MetaRgsp",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [], // empty -> IsEmptyOption -> no synthesized Default page at all
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name: "Choice",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "Only",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [
+                {
+                  gamePath,
+                  data: new Uint8Array([1, 2]),
+                  storage: FileStorageType.RawUncompressed,
+                },
+              ],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("throws when writing a .meta file into a PMP", () => {
+    expect(() => writePmp(modeledData("chara/foo.meta"))).toThrow(
+      /unported \(PMP\.cs:891-900 converts it to Manipulations\): chara\/foo\.meta/,
+    );
+  });
+
+  it("throws when writing a .rgsp file into a PMP", () => {
+    expect(() => writePmp(modeledData("chara/foo.rgsp"))).toThrow(
+      /unported \(PMP\.cs:891-900 converts it to Manipulations\): chara\/foo\.rgsp/,
+    );
   });
 });

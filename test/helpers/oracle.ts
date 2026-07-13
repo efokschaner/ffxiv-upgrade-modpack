@@ -1,14 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -122,9 +125,154 @@ export function assertCorpusPresent(
   }
 }
 
+/** Cross-process mutex for ConsoleTools. The tool is not safe to run concurrently (shared
+ *  config/lock/temp state — observed 2026-07-12: several cold /upgrade spawns fail together with
+ *  exit -1, while the same inputs succeed one at a time). The corpus runner schedules units across
+ *  Vitest's `forks` pool, so an in-process lock cannot help: the lock must be a filesystem object.
+ *
+ *  O_EXCL create is the acquire; unlink is the release. A holder that crashes leaves the file
+ *  behind, so a lock older than `staleMs` is broken by force. Because breaking a stale lock is a
+ *  guess (not a proof the old holder is dead — `staleMs` is an empirical bound, not a guarantee),
+ *  each acquisition writes a random token into the lock file; release reads the file back and only
+ *  unlinks if it still holds that same token — see the `finally` block below for exactly what that
+ *  guarantees and the residual race it does NOT close (deliberately: closing it fully needs OS-level
+ *  locking this harness does not justify).
+ *  Sleeping is synchronous (Atomics.wait on a throwaway SharedArrayBuffer) because run() is
+ *  execFileSync — there is no event loop to yield to.
+ *
+ *  WHY NOT `proper-lockfile` (or another off-the-shelf lock)? It has a sync API (`lockSync`) and a
+ *  better acquire primitive (`mkdir`, atomic even on network filesystems), but its actual safety
+ *  rests on a HEARTBEAT: it rewrites the lock's mtime every `stale/2` ms so a live-but-slow holder
+ *  is never judged stale, and reports `onCompromised` when that fails. **A heartbeat cannot fire
+ *  here.** Our critical section IS `execFileSync`, which blocks the event loop for the whole
+ *  multi-minute ConsoleTools run, so no timer runs; we would have to set `stale` to ~20min, at which
+ *  point the heartbeat is inert and the library degrades to exactly this design. The residual race
+ *  documented below is therefore inherent to break-on-staleness locking WITHOUT a heartbeat, not a
+ *  shortcoming of hand-rolling it — proper-lockfile has the same window and merely names it.
+ *  Getting a real heartbeat means making the oracle async (run/unwrapCached/upgradeGoldenCached and
+ *  their sync corpus call sites). That is the right long-term shape and is filed in BACKLOG.md. */
+const LOCK_PATH = join(tmpdir(), "ffxiv-upgrade-modpack-consoletools.lock");
+const LOCK_STALE_MS = 10 * 60 * 1000; // > the longest single ConsoleTools run we have seen
+const LOCK_TIMEOUT_MS = 20 * 60 * 1000;
+const LOCK_POLL_MS = 50;
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+export function withConsoleToolsLock<T>(
+  body: () => T,
+  opts: { lockPath?: string; staleMs?: number; timeoutMs?: number } = {},
+): T {
+  const lockPath = opts.lockPath ?? LOCK_PATH;
+  const staleMs = opts.staleMs ?? LOCK_STALE_MS;
+  const timeoutMs = opts.timeoutMs ?? LOCK_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  const token = randomUUID();
+  let fd: number | null = null;
+
+  for (;;) {
+    try {
+      fd = openSync(lockPath, "wx"); // O_CREAT | O_EXCL — atomic acquire
+      writeFileSync(fd, token);
+      break;
+    } catch {
+      if (fd !== null) {
+        // openSync succeeded but writing our token failed (e.g. disk full) — don't leak the
+        // fd; fall through and retry as if the acquire itself had failed.
+        try {
+          closeSync(fd);
+        } catch {
+          // best effort
+        }
+        fd = null;
+        // The lock file we just created is empty (the token write never landed) with a
+        // brand-new mtime, so the staleness check below won't break it for a full `staleMs`
+        // — every process, including this one, would otherwise spin for up to `staleMs`
+        // before anyone reclaims it. We just created it and own it outright, so clean up our
+        // own mess immediately instead of waiting on the staleness path.
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // Best effort — if this fails, the normal staleness path still reclaims it, just
+          // after the full staleMs wait.
+        }
+      }
+      // Held by someone, or the file vanished mid-race (TOCTOU), or statSync failed for some
+      // other transient reason (e.g. an AV sharing violation). Every path below reaches the
+      // deadline check + sleepSync before looping back — a `continue` that skipped both would
+      // busy-spin the CPU without ever timing out.
+      try {
+        const age = Date.now() - statSync(lockPath).mtimeMs;
+        if (age > staleMs) {
+          try {
+            unlinkSync(lockPath);
+          } catch {
+            // Another waiter broke it first; either way the next acquire attempt decides.
+          }
+        }
+      } catch {
+        // statSync failed — vanished between open and stat, or some other transient error.
+        // Can't determine staleness this iteration; fall through to the deadline/backoff below.
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `Timed out after ${timeoutMs}ms waiting for the ConsoleTools lock (${lockPath}). ` +
+            `If no ConsoleTools is running, delete that file.`,
+        );
+      }
+      sleepSync(LOCK_POLL_MS);
+    }
+  }
+
+  try {
+    return body();
+  } finally {
+    // Close and unlink are independent: one failing must not skip the other, or the fd/lock
+    // file leaks until the next staleness break.
+    try {
+      closeSync(fd);
+    } catch {
+      // Already closed/broken — still attempt the unlink below.
+    }
+    try {
+      // Release is read-then-unlink, not one atomic syscall. What the token guarantees:
+      // release will not delete a lock that has already been broken and re-taken by another
+      // waiter — EXCEPT in the narrow window between the readFileSync below and the
+      // unlinkSync a few lines down. If a waiter breaks our lock as stale and re-creates it
+      // with its own token inside that window, we still delete their fresh lock: the same
+      // failure class the token was added to close, now needing a syscall-width race instead
+      // of any staleness break at all.
+      //
+      // Accepted as a bounded, documented risk rather than eliminated:
+      //  - Reaching the window at all requires OUR OWN ConsoleTools run to have already run
+      //    past `staleMs` — i.e. we are already in crash-recovery territory, not steady state.
+      //  - The worst case is two ConsoleTools processes running concurrently, whose observed
+      //    failure mode is a loud non-zero exit (see the class doc comment above) that fails
+      //    the test run — a spurious red a re-run clears, not silent corruption. The cache is
+      //    content-addressed, so nothing wrong gets persisted either way.
+      //  - Closing it for real needs OS-level locking (e.g. a Windows named mutex / flock),
+      //    which this test harness does not justify building — no inode checks, no
+      //    unique-per-holder filenames, no other machinery here.
+      let owned = false;
+      try {
+        owned = readFileSync(lockPath, "utf8") === token;
+      } catch {
+        // Vanished already (e.g. broken as stale by another waiter) — nothing to unlink.
+      }
+      if (owned) unlinkSync(lockPath);
+    } catch {
+      // Best effort — if this fails, the file is left for the next staleness break.
+    }
+  }
+}
+
 function run(args: string[]): void {
   // execFileSync throws on non-zero exit; ConsoleTools returns -1 on error (Program.cs:94-138).
-  execFileSync(CONSOLE_TOOLS, args, { stdio: "pipe" });
+  // Serialized across processes: ConsoleTools is not concurrency-safe (see withConsoleToolsLock).
+  withConsoleToolsLock(() => {
+    execFileSync(CONSOLE_TOOLS, args, { stdio: "pipe" });
+  });
 }
 
 export function resave(src: string, dest: string): void {

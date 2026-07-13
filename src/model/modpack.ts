@@ -20,7 +20,6 @@ export interface TtmpFileMeta {
 interface ModpackFileBase {
   gamePath: string; // internal game path, forward slashes
   ttmp?: TtmpFileMeta; // present iff sourced from a TTMP container
-  pmpPath?: string; // original PMP zip path (forward slashes) iff sourced from PMP
 }
 
 /** OPAQUE payload: an SQPack blob (ttmp) or a raw file (pmp).
