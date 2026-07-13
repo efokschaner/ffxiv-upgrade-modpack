@@ -16,6 +16,40 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
 
 ## Unprioritized
 
+- **Audit the port for TexTools bugs we already reproduce, and register them.**
+  `docs/TEXTOOLS_BUGS.md` is the register of upstream **bugs** (null derefs, dead guards,
+  non-terminating loops, lying exit codes) that we deliberately reproduce for byte-parity, or
+  deliberately don't reach, or fail loud on instead. It was seeded from the PMP absent-file
+  investigation plus a grep for existing `QUIRK` / `NRE` comments, so it is **not** exhaustive —
+  it captures what was in reach, not what is there. Sweep `src/` (and the `reference/` C# it cites)
+  for the rest and add an entry per finding. Candidates to adjudicate on the way through, all of
+  which are currently only noted in code comments: the EQP set-0 omission
+  (`src/meta/reconstruct.ts:190`, `ItemMetadata.cs:522-528`); the `PlayableRaces` vs
+  `PlayableRacesWithNPCs` race-order disagreement (`src/meta/playable-races.ts:1`, `Eqp.cs:48-92`);
+  `MakePMPPathSafe`'s platform-dependent `Path.GetInvalidFileNameChars()`
+  (`src/container/pmp.ts:151`, `PMP.cs:1316-1326`). Each needs the bug-vs-quirk call the register's
+  header describes — a faithfully transcribed SE oddity is a quirk and stays a code comment; only a
+  genuine defect gets an entry. Useful both as a correctness audit (a reproduced bug we *think* we
+  reproduce may not actually match) and as the shortlist of patches we could offer upstream.
+
+- **`writePmp` reuses source zip member names instead of regenerating them.** TexTools' PMP writer
+  does not round-trip a pack: `ResolveDuplicates` (`PmpExtensions.cs:534`) **renames every payload
+  entry** to `<optionPrefix><gamePath>` — `optionPrefix` being the lowercased, path-safe group name
+  (plus option name, when the group has more than one option; `WizardData.cs:1362-1458`) — and
+  content-dedups shared files into `common/{idx}/<filename>` (`:537-551`). The source zip names are
+  never retained: `UnpackPmpOption` (`PMP.cs:1071-1102`) uses the `Files` value only to locate the
+  unzipped temp file and keys its dict by *game path*. Our `writePmp` instead re-emits the source
+  manifest verbatim and reuses the source zip names (`pmpPath`). This matches the goldens today
+  **only because Penumbra already writes packs in the `<group>/<option>/<gamePath>` layout**, so
+  "regenerated" and "verbatim" coincide for the corpus — and because `diffArchives` compares
+  manifest members, not payload member names, the coincidence is only checked via the `Files`
+  *values*. A pack whose zip layout does not follow the convention **and** that actually upgrades
+  would diverge from its golden. Not observed yet; a synthetic pack with a non-conforming layout
+  plus an upgradeable payload would confirm it. Fixing it means porting `ResolveDuplicates` +
+  `MakeOptionPrefix` (and their dedup/`common/N` behaviour, incl. the zero-hash bug in
+  `docs/TEXTOOLS_BUGS.md` §7). Found while investigating whether ConsoleTools `/resave` could serve
+  as a write-side round-trip oracle — it cannot, for exactly this reason.
+
 - **PMP group with an unrecognized `Type` yields an empty group instead of failing loud.**
   `parsePmpGroup` (`src/container/manifest-types.ts`) defaults `Options` to `[]`, so a group whose
   `Type` is neither `Single`, `Multi` nor `Imc` (or is absent entirely) reads as a group with **no
