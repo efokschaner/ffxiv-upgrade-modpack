@@ -83,12 +83,19 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
     );
   });
 
-  it("model round skips it (:252 return)", () => {
+  it("model round never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:916)", () => {
+    // FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file unguarded, unlike the
+    // different, unrelated UpdateEndwalkerModel (:250-256). The model round only runs when
+    // needsMdlFix is true, which is never the case for PMP — and absent files are a PMP-only
+    // phenomenon — so an absent .mdl can only ever pass through upgradeModpack untouched
+    // because the round is gated off, not because of any null-skip inside it.
     const data = packOf(
       optionOf([absent("chara/equipment/e0001/model/c0101e0001_top.mdl")]),
     );
     const out = upgradeModpack(data);
-    expect(out.groups[0]!.options[0]!.files[0]!.data).toBeUndefined();
+    const f = out.groups[0]!.options[0]!.files[0]!;
+    expect(f.data).toBeUndefined();
+    expect(f.gamePath).toBe("chara/equipment/e0001/model/c0101e0001_top.mdl");
   });
 
   it("IndexMaps skips an absent normal (:1087 null -> :1843 continue)", () => {

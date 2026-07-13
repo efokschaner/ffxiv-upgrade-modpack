@@ -148,15 +148,21 @@ const IS_MDL = /\.mdl$/;
  * when the pack needs the fix (TTMP major < 2). Re-wrapped as a Model (Type-3) entry.
  * Throws from the normalizer are surfaced (not swallowed) so the golden ratchet exposes
  * any unported model structure rather than silently passing the source through.
+ *
+ * FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file via
+ * `TransactionDataHandler.GetUncompressedFile(file)` with NO null/existence guard — unlike
+ * the different, unrelated `UpdateEndwalkerModel` (:250-256), which calls `ResolveFile` and
+ * returns on null. This round is TTMP-only (gated by `needsMdlFix`, mirroring
+ * `DoesModpackNeedFix`, TTMP.cs:916), and absent files are a PMP-only phenomenon (a PMP
+ * `Files` entry with no zip member; TTMP resolves payloads by offset into the .mpd, so it
+ * has none). An absent file can therefore never reach this round — fail loud via
+ * `requireBytes` rather than inventing a skip TexTools does not have here.
  */
 function modelRound(option: ModpackOption, gate: boolean): void {
   if (!gate) return;
   option.files = option.files.map((f) => {
     if (!IS_MDL.test(f.gamePath)) return f;
-    const resolved = uncompressedBytes(f);
-    // ResolveFile null -> UpdateEndwalkerModel returns immediately (EndwalkerUpgrade.cs:252-256).
-    if (!resolved) return f;
-    const { bytes, type } = resolved;
+    const { bytes, type } = requireBytes(f);
     return restore(
       f,
       normalizeModel(bytes, f.gamePath),
