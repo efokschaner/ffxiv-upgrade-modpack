@@ -4,6 +4,7 @@ import {
   allFiles,
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
 } from "../../src/model/modpack";
 import { makeTtmp2Simple, makeTtmp2Wizard } from "../helpers/make-packs";
@@ -78,10 +79,13 @@ describe("writeTtmp2 round-trip", () => {
               fileSwaps: {},
               manipulations: [],
               files: [
+                // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
+                // writeTtmp2's defensive runtime guard; structurally unreachable through any real
+                // reader (design spec §3.4), hence the cast.
                 {
                   gamePath: "chara/x.mtrl",
                   storage: FileStorageType.SqPackCompressed,
-                },
+                } as ModpackFile,
               ],
             },
           ],

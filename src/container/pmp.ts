@@ -6,6 +6,7 @@ import {
   allFiles,
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
@@ -46,26 +47,28 @@ function optionFromJson(
   filesByKey: Map<string, Uint8Array>,
 ): ModpackOption {
   const o = parsePmpOption(raw);
-  const modFiles = Object.entries(o.Files).map(([gamePath, zipPathRaw]) => {
-    const zipPath = zipPathRaw.replace(/\\/g, "/");
-    // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
-    // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
-    // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
-    // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
-    // manifest value verbatim so the writer/golden are unaffected.
-    //
-    // A miss is NOT an error: the file is genuinely not packed. TexTools tolerates that at load —
-    // UnpackPmpOption still adds the entry, with a RealPath that does not exist (PMP.cs:1071-1102)
-    // — and defers the consequences to each read seam (ResolveFile, EndwalkerUpgrade.cs:1758) and
-    // to the writer, which drops it (PMP.cs:883-888). So we emit the file with NO bytes.
-    const data = filesByKey.get(windowsPathKey(zipPath));
-    return {
-      gamePath,
-      data,
-      storage: FileStorageType.RawUncompressed,
-      pmpPath: zipPath,
-    };
-  });
+  const modFiles: ModpackFile[] = Object.entries(o.Files).map(
+    ([gamePath, zipPathRaw]) => {
+      const zipPath = zipPathRaw.replace(/\\/g, "/");
+      // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
+      // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
+      // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
+      // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
+      // manifest value verbatim so the writer/golden are unaffected.
+      //
+      // A miss is NOT an error: the file is genuinely not packed. TexTools tolerates that at load —
+      // UnpackPmpOption still adds the entry, with a RealPath that does not exist (PMP.cs:1071-1102)
+      // — and defers the consequences to each read seam (ResolveFile, EndwalkerUpgrade.cs:1758) and
+      // to the writer, which drops it (PMP.cs:883-888). So we emit the file with NO bytes.
+      const data = filesByKey.get(windowsPathKey(zipPath));
+      return {
+        gamePath,
+        data,
+        storage: FileStorageType.RawUncompressed,
+        pmpPath: zipPath,
+      };
+    },
+  );
   return {
     name: o.Name,
     description: o.Description,

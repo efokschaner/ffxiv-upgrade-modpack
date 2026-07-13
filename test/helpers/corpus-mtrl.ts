@@ -12,10 +12,16 @@ import type { XivMtrl } from "../../src/mtrl/types";
 import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
 import { bytesEqual } from "./compare";
 
-function mtrlFiles(path: string): ModpackFile[] {
+/** A ModpackFile narrowed to the always-has-bytes SqPackCompressed variant. */
+type SqPackCompressedFile = Extract<
+  ModpackFile,
+  { storage: FileStorageType.SqPackCompressed }
+>;
+
+function mtrlFiles(path: string): SqPackCompressedFile[] {
   const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
   return allFiles(data).filter(
-    (f) =>
+    (f): f is SqPackCompressedFile =>
       f.storage === FileStorageType.SqPackCompressed &&
       f.gamePath.toLowerCase().endsWith(".mtrl"),
   );
@@ -59,7 +65,7 @@ export function registerMtrlChecks(pack: string): void {
       for (const f of files) {
         // SqPackCompressed (filtered by mtrlFiles above) always carries bytes; only a PMP
         // RawUncompressed entry can be absent (absent-file design spec §3.1).
-        const decoded = decodeSqPackFile(f.data!);
+        const decoded = decodeSqPackFile(f.data);
         if (decoded.type !== SqPackType.Standard) continue; // materials are Type 2
         const re = serializeMtrl(parseMtrl(decoded.data, f.gamePath));
         if (bytesEqual(re, decoded.data)) {

@@ -43,18 +43,25 @@ function isPrefixRelation(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-function compressedFiles(path: string): ModpackFile[] {
+/** A ModpackFile narrowed to the always-has-bytes SqPackCompressed variant. */
+type SqPackCompressedFile = Extract<
+  ModpackFile,
+  { storage: FileStorageType.SqPackCompressed }
+>;
+
+function compressedFiles(path: string): SqPackCompressedFile[] {
   const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
   return allFiles(data).filter(
-    (f) => f.storage === FileStorageType.SqPackCompressed,
+    (f): f is SqPackCompressedFile =>
+      f.storage === FileStorageType.SqPackCompressed,
   );
 }
 
 /** The SQPack entry type is the int32 at offset 4 — readable without decompressing. */
-function entryType(f: ModpackFile): number {
+function entryType(f: SqPackCompressedFile): number {
   // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
-  // RawUncompressed entry can be absent (absent-file design spec §3.1).
-  const data = f.data!;
+  // RawUncompressed entry can be absent (absent-file design spec §3.1) — the type guarantees it here.
+  const data = f.data;
   return new DataView(data.buffer, data.byteOffset, data.byteLength).getInt32(
     4,
     true,
@@ -68,13 +75,13 @@ function entryType(f: ModpackFile): number {
  * algorithm too. We log and tolerate them for Type 4, but any Type-2/3 decode failure is a hard error.
  */
 function decodeTolerant(
-  f: ModpackFile,
+  f: SqPackCompressedFile,
   legacyTex: string[],
 ): DecodedFile | null {
   try {
     // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
     // RawUncompressed entry can be absent (absent-file design spec §3.1).
-    return decodeSqPackFile(f.data!);
+    return decodeSqPackFile(f.data);
   } catch (err) {
     if (entryType(f) === SqPackType.Texture) {
       legacyTex.push(`${f.gamePath} (${(err as Error).message})`);
@@ -86,7 +93,7 @@ function decodeTolerant(
 
 /** One compressed inner file paired with its tolerant decode result — d is null iff a tolerated Type-4 failure. */
 interface PackEntry {
-  f: ModpackFile;
+  f: SqPackCompressedFile;
   d: DecodedFile | null;
 }
 
@@ -187,7 +194,7 @@ export function registerSqpackChecks(pack: string): void {
         // cached nor generable (TexTools absent), so we cannot cross-check and must fail loudly.
         // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
         // RawUncompressed entry can be absent (absent-file design spec §3.1).
-        const oracleOut = unwrapCached(f.data!);
+        const oracleOut = unwrapCached(f.data);
         if (oracleOut === null) {
           throw new Error(
             `cannot cross-check ${f.gamePath}: no cached /unwrap output and ConsoleTools unavailable`,

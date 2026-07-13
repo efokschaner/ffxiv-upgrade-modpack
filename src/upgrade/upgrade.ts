@@ -7,6 +7,8 @@ import {
   type ModpackFile,
   type ModpackGroup,
   type ModpackOption,
+  type RawUncompressedFile,
+  type SqPackCompressedFile,
 } from "../model/modpack";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
 import {
@@ -110,6 +112,24 @@ export function requireBytes(f: ModpackFile): Decoded {
  * .mtrl, Model for .mdl — so models stay valid Type-3 entries the game can load; for a
  * RawUncompressed (pmp) source, store raw. Keeps writeModpack's single-storage-form invariant.
  */
+export function restore(
+  f: SqPackCompressedFile,
+  bytes: Uint8Array,
+  type: SqPackType | undefined,
+): SqPackCompressedFile;
+export function restore(
+  f: RawUncompressedFile,
+  bytes: Uint8Array,
+  type: SqPackType | undefined,
+): RawUncompressedFile;
+// Fallback for a caller whose `f` is not yet narrowed to a specific ModpackFile variant (e.g.
+// a `.map()` over `option.files: ModpackFile[]`) — keeps the two narrower overloads above for
+// callers that DO have a narrowed input, without forcing every call site to narrow first.
+export function restore(
+  f: ModpackFile,
+  bytes: Uint8Array,
+  type: SqPackType | undefined,
+): ModpackFile;
 export function restore(
   f: ModpackFile,
   bytes: Uint8Array,

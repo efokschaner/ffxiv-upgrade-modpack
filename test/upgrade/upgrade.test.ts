@@ -3,7 +3,9 @@ import { upgradeModpack } from "../../src/index";
 import {
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
+  type SqPackCompressedFile,
 } from "../../src/model/modpack";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import { ESamplerId, SHPK_CHARACTER } from "../../src/mtrl/shader";
@@ -409,7 +411,7 @@ describe("upgradeModpack texture round (e2e)", () => {
 
 describe("requireBytes", () => {
   it("throws when the file has no bytes (direct read, no ResolveFile-style skip)", () => {
-    const f = {
+    const f: ModpackFile = {
       gamePath: "chara/x.mdl",
       storage: FileStorageType.RawUncompressed,
     };
@@ -420,7 +422,7 @@ describe("requireBytes", () => {
 describe("restore threads the source SqPack type", () => {
   it("round-trips a Standard entry (mechanism, arbitrary bytes)", () => {
     const raw = new Uint8Array([1, 2, 3, 4, 5]);
-    const f = {
+    const f: SqPackCompressedFile = {
       gamePath: "chara/x.mtrl",
       data: encodeSqPackFile(raw, SqPackType.Standard),
       storage: FileStorageType.SqPackCompressed,
@@ -428,23 +430,22 @@ describe("restore threads the source SqPack type", () => {
     const { bytes, type } = requireBytes(f);
     expect(type).toBe(SqPackType.Standard);
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
-    // restore() always sets `data` on both its SqPackCompressed and RawUncompressed branches;
-    // the interface type is optional only to represent a PMP absent-file entry (design spec §3.1).
-    expect(decodeSqPackFile(restore(f, bytes, type).data!).type).toBe(
+    // f is SqPackCompressed, so restore()'s SqPackCompressedFile overload guarantees `data` back.
+    expect(decodeSqPackFile(restore(f, bytes, type).data).type).toBe(
       SqPackType.Standard,
     );
   });
 
   it("re-encodes a real Model .mdl as SqPackType.Model (lossless re-wrap)", () => {
     const bytes = firstCorpusModel().bytes;
-    const f = {
+    const f: SqPackCompressedFile = {
       gamePath: "chara/x.mdl",
       data: encodeSqPackFile(bytes, SqPackType.Model),
       storage: FileStorageType.SqPackCompressed,
     };
     const dec = requireBytes(f);
     expect(dec.type).toBe(SqPackType.Model);
-    const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data!);
+    const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data);
     expect(re.type).toBe(SqPackType.Model);
     expect(Array.from(re.data)).toEqual(Array.from(bytes));
   });

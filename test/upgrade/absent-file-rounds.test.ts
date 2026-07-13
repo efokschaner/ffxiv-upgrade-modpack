@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
   type ModpackOption,
 } from "../../src/model/modpack";
@@ -13,14 +14,14 @@ import {
 } from "../../src/upgrade/upgrade-info";
 
 /** A file the archive did not contain: present in the option, no bytes (PMP.cs:1071-1102). */
-function absent(gamePath: string) {
+function absent(gamePath: string): ModpackFile {
   return {
     gamePath,
     storage: FileStorageType.RawUncompressed,
     pmpPath: gamePath,
   };
 }
-function present(gamePath: string, data: Uint8Array) {
+function present(gamePath: string, data: Uint8Array): ModpackFile {
   return {
     gamePath,
     data,

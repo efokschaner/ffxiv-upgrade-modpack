@@ -11,10 +11,16 @@ import {
 import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
 import { bytesEqual } from "./compare";
 
-function mdlFiles(path: string): ModpackFile[] {
+/** A ModpackFile narrowed to the always-has-bytes SqPackCompressed variant. */
+type SqPackCompressedFile = Extract<
+  ModpackFile,
+  { storage: FileStorageType.SqPackCompressed }
+>;
+
+function mdlFiles(path: string): SqPackCompressedFile[] {
   const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
   return allFiles(data).filter(
-    (f) =>
+    (f): f is SqPackCompressedFile =>
       f.storage === FileStorageType.SqPackCompressed &&
       f.gamePath.toLowerCase().endsWith(".mdl"),
   );
@@ -38,7 +44,7 @@ export function registerMdlChecks(pack: string): void {
         try {
           // SqPackCompressed (filtered by mdlFiles above) always carries bytes; only a PMP
           // RawUncompressed entry can be absent (absent-file design spec §3.1).
-          decoded = decodeSqPackFile(f.data!);
+          decoded = decodeSqPackFile(f.data);
         } catch {
           legacySkipped++; // tolerated undecodable legacy model (mirrors corpus-sqpack)
           continue;
