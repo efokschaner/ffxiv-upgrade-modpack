@@ -181,3 +181,124 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
     expect(diffArchives(writeZip(ours), golden)).toHaveLength(1);
   });
 });
+
+// group_NNN.json coverage: the option() helper is shared with default_mod.json but pairs options
+// by index inside an Options array. Regression coverage for the argument-inversion bug where the
+// group branch called option(golden, ours) instead of option(ours, golden) — the swap made the
+// group check compare `ours` against itself (always equal), silently disabling it entirely.
+describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:883-888)", () => {
+  const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const ABSENT = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+  const payload = new Uint8Array([1, 2, 3]);
+
+  const zipVal = (p: string) => `on\\${p.replace(/\//g, "\\")}`;
+  const bothKeys = { [PRESENT]: zipVal(PRESENT), [ABSENT]: zipVal(ABSENT) };
+  const oneKey = { [PRESENT]: zipVal(PRESENT) };
+
+  function option(
+    name: string,
+    priority: number,
+    files: Record<string, string>,
+  ) {
+    return {
+      Name: name,
+      Description: "",
+      Image: "",
+      Priority: priority,
+      Files: files,
+      FileSwaps: {},
+      Manipulations: [],
+    };
+  }
+
+  /** Two-option group_001_G.json plus meta.json; `members` are the payload entries in the zip. */
+  function groupArchive(
+    options: unknown[],
+    members: Record<string, Uint8Array>,
+  ): Uint8Array {
+    const meta = { FileVersion: 3, Name: "A", Author: "t", ModTags: [] };
+    const group = {
+      Name: "G",
+      Description: "",
+      Image: "",
+      Page: 0,
+      Priority: 0,
+      Type: "Single",
+      DefaultSettings: 0,
+      Options: options,
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["group_001_G.json", enc.encode(JSON.stringify(group))],
+    ]);
+    for (const [name, bytes] of Object.entries(members))
+      entries.set(name, bytes);
+    return writeZip(entries);
+  }
+
+  it("CONFIRM: a genuinely-absent Files key dropped from one option ⇒ no diff", () => {
+    const goldenOpts = [
+      option("Opt A", 0, bothKeys), // ABSENT never has a payload member on either side
+      option("Opt B", 1, oneKey),
+    ];
+    const oursOpts = [option("Opt A", 0, oneKey), option("Opt B", 1, oneKey)];
+    const golden = groupArchive(goldenOpts, { [`on/${PRESENT}`]: payload });
+    const ours = groupArchive(oursOpts, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toEqual([]);
+  });
+
+  it("REJECT: a dropped key whose payload IS present in the golden", () => {
+    const goldenOpts = [
+      option("Opt A", 0, bothKeys),
+      option("Opt B", 1, oneKey),
+    ];
+    const oursOpts = [option("Opt A", 0, oneKey), option("Opt B", 1, oneKey)];
+    const golden = groupArchive(goldenOpts, {
+      [`on/${PRESENT}`]: payload,
+      [`on/${ABSENT}`]: payload, // ABSENT's payload actually exists in the golden
+    });
+    const ours = groupArchive(oursOpts, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECT: a Files value we changed", () => {
+    const goldenOpts = [option("Opt A", 0, oneKey), option("Opt B", 1, oneKey)];
+    const oursOpts = [
+      option("Opt A", 0, { [PRESENT]: "somewhere\\else.mdl" }),
+      option("Opt B", 1, oneKey),
+    ];
+    const golden = groupArchive(goldenOpts, { [`on/${PRESENT}`]: payload });
+    const ours = groupArchive(oursOpts, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECT: a sibling option that differs (Name)", () => {
+    const goldenOpts = [option("Opt A", 0, oneKey), option("Opt B", 1, oneKey)];
+    const oursOpts = [
+      option("Opt A", 0, oneKey),
+      option("Opt B WRONG", 1, oneKey),
+    ];
+    const golden = groupArchive(goldenOpts, { [`on/${PRESENT}`]: payload });
+    const ours = groupArchive(oursOpts, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECT: a sibling option whose Files differs", () => {
+    const goldenOpts = [option("Opt A", 0, oneKey), option("Opt B", 1, oneKey)];
+    const oursOpts = [
+      option("Opt A", 0, oneKey),
+      option("Opt B", 1, { [PRESENT]: "somewhere\\else.mdl" }),
+    ];
+    const golden = groupArchive(goldenOpts, { [`on/${PRESENT}`]: payload });
+    const ours = groupArchive(oursOpts, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECT: a non-Files field differing (Priority)", () => {
+    const goldenOpts = [option("Opt A", 0, oneKey), option("Opt B", 1, oneKey)];
+    const oursOpts = [option("Opt A", 0, oneKey), option("Opt B", 2, oneKey)];
+    const golden = groupArchive(goldenOpts, { [`on/${PRESENT}`]: payload });
+    const ours = groupArchive(oursOpts, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+});

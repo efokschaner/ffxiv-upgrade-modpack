@@ -85,7 +85,9 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *   - only a key MISSING from ours is covered; a changed value is still a mismatch;
  *   - every other field is still deep-equal'd.
  *  It is inert whenever ConsoleTools actually wrote the golden: TexTools dropped the key there too,
- *  so both sides agree and this never runs. See the absent-file design spec §4.1.
+ *  so both sides agree and this never runs. See the absent-file design spec §4.1. This applies
+ *  identically to both shapes below — a `group_NNN.json`'s `Options` array (paired by index) and a
+ *  `default_mod.json` (the document IS the single option) — both funnel through `option()` below.
  *
  *  Also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check: there
  *  `golden` is the original on-disk JSON and `ours` the re-emitted one, and `present` is the
@@ -112,19 +114,22 @@ export function dropConfirmedAbsentKeys(
     return out;
   };
 
-  const option = (o: unknown, g: unknown): unknown => {
-    if (!isObj(g) || !isObj(o) || !isObj(g.Files)) return g;
-    return { ...g, Files: confirmedFiles(o.Files, g.Files) };
+  const option = (oursOpt: unknown, goldenOpt: unknown): unknown => {
+    if (!isObj(goldenOpt) || !isObj(oursOpt) || !isObj(goldenOpt.Files))
+      return goldenOpt;
+    return {
+      ...goldenOpt,
+      Files: confirmedFiles(oursOpt.Files, goldenOpt.Files),
+    };
   };
 
   if (!isObj(golden) || !isObj(ours)) return golden;
   // group_NNN.json: prune inside each option, pairing by index (order is part of the compare).
   if (Array.isArray(golden.Options) && Array.isArray(ours.Options)) {
+    const oursOptions = ours.Options as unknown[];
     return {
       ...golden,
-      Options: golden.Options.map((g, i) =>
-        option(g, (ours.Options as unknown[])[i]),
-      ),
+      Options: golden.Options.map((g, i) => option(oursOptions[i], g)),
     };
   }
   // default_mod.json: the document IS the option.
