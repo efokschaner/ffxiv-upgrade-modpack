@@ -1,4 +1,3 @@
-import { windowsPathKey } from "../../src/container/pmp";
 import { readZip } from "../../src/zip/zip";
 import type { FileDiff } from "./upgrade-diff";
 
@@ -66,10 +65,22 @@ function parse(name: string, bytes: Uint8Array): unknown {
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** The set of member names an archive actually contains, keyed the way the PMP reader resolves a
- *  `Files` value (case-fold + trailing dot/space strip per segment — src/container/pmp.ts). */
+/** Deliberately NOT the reader's `windowsPathKey` (src/container/pmp.ts). A shared key function
+ *  would make this confirmation agree with any regression IN the reader: a lost case-fold or
+ *  trailing-dot strip would make the reader mark a resolvable file absent, the writer drop it, and
+ *  this rule bless the drop — the corpus would go green while silently losing a file. This key is
+ *  looser than any plausible resolution rule (it strips every '.'/' ', not just a trailing run per
+ *  path segment), so it can only ever confirm FEWER drops than the reader made: it fails closed. A
+ *  genuinely never-packed payload matches nothing under any spelling, so the intended confirmations
+ *  are unaffected. */
+function looseKey(path: string): string {
+  return path.toLowerCase().replace(/[. ]/g, "");
+}
+
+/** The set of member names an archive actually contains, keyed by `looseKey` above — deliberately
+ *  NOT the way the PMP reader resolves a `Files` value. */
 export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
-  return new Set([...members.keys()].map((n) => windowsPathKey(n)));
+  return new Set([...members.keys()].map((n) => looseKey(n)));
 }
 
 /** CONFIRMATION (not a tolerance) of the ONE manifest difference we intend: TexTools' writer drops
@@ -80,8 +91,12 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *  names a zip path that does not resolve as a member of the GOLDEN's own archive.
  *
  *  Deliberately tight, in the spirit of DivergenceRule.confirm (upgrade-compare.ts):
- *   - resolution uses the reader's own windowsPathKey, so a merely case-mismatched or
- *     trailing-dotted key RESOLVES and is NOT covered — the two normalization fixes stay under test;
+ *   - resolution uses `looseKey`, NOT the reader's own `windowsPathKey` — see `looseKey`'s doc
+ *     comment for why sharing the reader's function would be unsafe. `looseKey` is looser than
+ *     `windowsPathKey`, so a merely case-mismatched or trailing-dotted key still RESOLVES and is
+ *     NOT covered — the two normalization fixes stay under test, and independently so: a future
+ *     regression in `windowsPathKey` cannot silently agree with this rule, because this rule never
+ *     calls it;
  *   - only a key MISSING from ours is covered; a changed value is still a mismatch;
  *   - every other field is still deep-equal'd.
  *  It is inert whenever ConsoleTools actually wrote the golden: TexTools dropped the key there too,
@@ -105,9 +120,9 @@ export function dropConfirmedAbsentKeys(
     const out: Record<string, unknown> = {};
     for (const [gamePath, value] of Object.entries(goldenFiles)) {
       const missingFromOurs = !Object.hasOwn(o, gamePath);
-      const zipPath =
-        typeof value === "string" ? value.replace(/\\/g, "/") : "";
-      const absent = zipPath !== "" && !present.has(windowsPathKey(zipPath));
+      const isStringValue = typeof value === "string";
+      const zipPath = isStringValue ? value.replace(/\\/g, "/") : "";
+      const absent = isStringValue && !present.has(looseKey(zipPath));
       if (missingFromOurs && absent) continue; // the PMP.cs:883 drop — confirmed
       out[gamePath] = value;
     }
@@ -170,7 +185,8 @@ export function diffArchives(ours: Uint8Array, golden: Uint8Array): FileDiff[] {
     } else {
       const o = parse(name, om.get(name)!);
       const g = parse(name, gm.get(name)!);
-      // Straight deep-equal first; only a failure is offered to the confirmation.
+      // The confirmation always runs; it is inert (returns `g` verbatim) whenever nothing in `g`
+      // qualifies as a confirmed drop, so this reduces to a straight deep-equal in that case.
       if (!deepEqual(o, dropConfirmedAbsentKeys(o, g, goldenMembers))) {
         diffs.push({
           kind: "manifest",

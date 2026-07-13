@@ -146,7 +146,9 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
         } as UpgradeInfo,
       ],
     ]);
-    expect(() => upgradeRemainingTextures(option, targets)).toThrow(/no bytes/);
+    expect(() => upgradeRemainingTextures(option, targets)).toThrow(
+      /did not resolve/,
+    );
   });
 
   it("HairMaps THROWS when a key-present normal has no bytes (:1187)", () => {
@@ -169,6 +171,8 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
         } as UpgradeInfo,
       ],
     ]);
-    expect(() => upgradeRemainingTextures(option, targets)).toThrow(/no bytes/);
+    expect(() => upgradeRemainingTextures(option, targets)).toThrow(
+      /did not resolve/,
+    );
   });
 });

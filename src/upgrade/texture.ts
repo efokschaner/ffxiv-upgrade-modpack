@@ -171,7 +171,7 @@ export function upgradeRemainingTextures(
           const maskBytes = resolveFile(mask);
           if (!normalBytes || !maskBytes) {
             throw new Error(
-              `hair: normal/mask has no bytes — unable to properly resolve existing Hair Normal/Mask texture (EndwalkerUpgrade.cs:1184-1188): ${info.files.normal} / ${info.files.mask}`,
+              `hair: normal/mask did not resolve (absent or undecodable) — unable to properly resolve existing Hair Normal/Mask texture (EndwalkerUpgrade.cs:1184-1188): ${info.files.normal} / ${info.files.mask}`,
             );
           }
           const res = updateEndwalkerHairTextures(
@@ -204,7 +204,7 @@ export function upgradeRemainingTextures(
         if (!src) {
           if (legacy) continue;
           throw new Error(
-            `gearmask: mask_old resolved to no bytes (EndwalkerUpgrade.cs:1870 NREs on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${old.gamePath}`,
+            `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 NREs on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${old.gamePath}`,
           );
         }
         const data = upgradeMaskTex(src.bytes, legacy);

@@ -16,8 +16,9 @@ const manifestNames = (z: Map<string, Uint8Array>) =>
  * A `Files` key our writer dropped is allowed through the SAME confirmation the golden harness
  * uses (`dropConfirmedAbsentKeys`, upgrade-archive-diff.ts) — not a second copy of the rule: it is
  * a real drop (PMP.cs:883-888, absent-file design spec §4.1) only when the ORIGINAL pack's own
- * archive never contained that key's payload under any windowsPathKey normalization. Anything else
- * (a changed value, a key whose payload IS present, any other field) still fails structurallyEqual. */
+ * archive never contained that key's payload under `looseKey` normalization (deliberately NOT the
+ * reader's `windowsPathKey` — see that function's doc comment). Anything else (a changed value, a
+ * key whose payload IS present, any other field) still fails structurallyEqual. */
 export function registerPmpManifestChecks(pack: string): void {
   describe(`pmp manifest round-trip: ${basename(pack)}`, () => {
     it("re-emits every manifest JSON structurally unchanged", () => {

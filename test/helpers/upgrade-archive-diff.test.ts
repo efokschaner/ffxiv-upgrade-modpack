@@ -143,15 +143,32 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
     expect(diffArchives(ours, golden)).toHaveLength(1);
   });
 
-  it("REJECTS a dropped key that only LOOKS absent (resolves under windowsPathKey)", () => {
-    // The member is stored with display case + a trailing dot stripped — the reader resolves it,
-    // so it is NOT absent and dropping it is a real bug, not the PMP.cs:883 drop.
+  it("REJECTS a dropped key that only LOOKS absent (resolves under the confirmation's own looseKey)", () => {
+    // The member is stored with display case + a trailing dot stripped — a correct reader would
+    // resolve it, so it is NOT absent and dropping it is a real bug, not the PMP.cs:883 drop. This
+    // scenario is exactly the one a SHARED reader/confirmation key function could never catch: the
+    // "ours" side here is constructed directly (standing in for whatever a reader — buggy or not —
+    // produced), so the confirmation's OWN resolution has to reject it independently. Because
+    // dropConfirmedAbsentKeys uses `looseKey`, not the reader's `windowsPathKey`, this holds even if
+    // a future regression breaks windowsPathKey's case-fold/trailing-dot handling in the reader.
     const value = `On.\\${ABSENT.replace(/\//g, "\\")}`;
     const golden = archive(
       { ...oneKey, [ABSENT]: value },
       { [`on/${PRESENT}`]: payload, [`On/${ABSENT}`]: payload },
     );
     const ours = archive(oneKey, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECTS an added key: ours has a Files key the golden lacks", () => {
+    // The inverse direction: ours carries an EXTRA Files key (and payload member) the golden never
+    // had at all. dropConfirmedAbsentKeys only prunes GOLDEN entries missing from ours, so this must
+    // still surface as a mismatch rather than being silently accepted.
+    const golden = archive(oneKey, { [`on/${PRESENT}`]: payload });
+    const ours = archive(bothKeys, {
+      [`on/${PRESENT}`]: payload,
+      [`on/${ABSENT}`]: payload,
+    });
     expect(diffArchives(ours, golden)).toHaveLength(1);
   });
 
