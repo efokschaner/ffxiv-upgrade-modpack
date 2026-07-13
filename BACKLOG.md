@@ -356,9 +356,45 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   and `self:orphan:`/`self:dangling:` self-consistency checks going to zero on the three
   shipping-defect packs (see the item above). One real corpus pack's `/resave` baseline still
   carries a single remaining diff after this fix, and it is NOT this item: `[Jaque] Romeo & Juliet`'s
-  `common/24/…id.tex` payload byte-length mismatch is the pre-existing, already-tracked T2
-  `FixOldTexData` mip-offset gap (see the T2 entry below), now visible under a correctly-numbered
-  `common/N` path instead of wherever it happened to round-trip to before.
+  `common/24/…id.tex` payload byte-length mismatch. **Correction (2026-07-13, Task 8 review):** an
+  earlier pass of this note misattributed that residual to the T2 `FixOldTexData` mip-offset gap —
+  wrong, T2's own recorded evidence is *same length, differing header bytes*, whereas this residual
+  is a **length** difference (~80/160 bytes, a multiple of the 80-byte null-padding chunk). The real
+  cause is a *different*, unported PMP **load-time** fix — see "PMP load-time `.tex` fixup
+  (`FastValidateTexFile`) is unported" below.
+
+- **PMP writer: `WizardHelpers.WriteImage` re-encode is unported — `Image` fields and image zip
+  members are carried through verbatim, not regenerated.** `WizardHelpers.WriteImage` is called for
+  every option (`WizardData.cs:545`), every group (`:953`), and meta (`:1497`): it returns `""` when
+  the referenced source file does not exist, else re-encodes the image to a 16-bit PNG under a NEW
+  name at `images/<newName>.png` and returns THAT path. `optionToJson`/the group-assembly loop/the
+  meta-assembly block (`src/container/pmp.ts`) all pass the SOURCE `Image` value (and, by extension,
+  the source image zip member under its original name) straight through instead. **Deliberately not
+  ported**: this repo has no image encoder, and porting a real one just to reproduce a PNG re-encode
+  is out of proportion to what it buys — several real corpus packs DO carry option/group images (the
+  golden's `Image` value AND the image member name/bytes both diverge for any option/group that has
+  one; meta images are extinct in the corpus so that particular emit site is empirically unexercised
+  today). Each of the three emit sites (`src/container/pmp.ts`) carries an accurate comment noting
+  the divergence and citing the C#. If this is ever picked up: it needs (1) a PNG encoder capable of
+  16-bit output matching ImageSharp's, and (2) the naming scheme `WriteImage` uses for the new
+  `images/<newName>.png` path (distinct per call site — option/group callers pass their own
+  `imgName`/`IOUtil.MakePathSafe(Name)`, `WizardData.cs:930-940/953`; meta uses a fixed
+  `"_MetaImage"`, `:1497`).
+
+- **PMP manipulation/DefaultEntry normalization fails loud on a missing field instead of emitting
+  the C# type's own default.** `normalizeManipulations`/`normalizeImcEntry`
+  (`src/container/pmp-manipulation.ts`) require every field of the five known subtypes
+  (Imc/Est/Eqp/Eqdp/Gmp) to be present in the source document and THROW otherwise, rather than
+  reproducing what Newtonsoft's typed round-trip would actually do — serialize the C# field's own
+  default (`0`/`false`/the enum member whose value is `0`) for an omitted key. The honest fix needs
+  each field's exact C# type (several are enums — `PMPObjectType`, `PMPEquipSlot`, a race/gender
+  enum, a slot enum — and their zero-value member NAME is what Newtonsoft would print, which isn't
+  necessarily "the first declared member" or anything guessable without reading each enum
+  definition). No real corpus manipulation omits a field (every one spells all of them), so there is
+  no golden to prove a default-value guess against; throwing surfaces a genuinely unported shape
+  loudly instead of risking a silent wrong value. Revisit if a real pack ever needs a field default:
+  read each enum's C# definition, encode the zero-value member name per field, and replace the throw
+  with the real default.
 
 - **PMP group with an unrecognized `Type` yields an empty group instead of failing loud.**
   `parsePmpGroup` (`src/container/manifest-types.ts`) defaults `Options` to `[]`, so a group whose
@@ -538,6 +574,31 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   byte at offset 72; `chained_collars_v1_1_0.ttmp2` `v01_c0101a0004_nek_d.tex`, at offset 20). The
   offset fixup needs no resampler, so it can be ported independently of the NPOT-resize half (and of T3).
   See the `/resave` findings section above.
+
+- **PMP load-time `.tex` fixup (`EndwalkerUpgrade.FastValidateTexFile`) is unported — a DIFFERENT
+  gap from T2, misattributed to it in an earlier pass of this file.** `ResolvePMPBasePath`
+  (`PMP.cs:78-90`) runs every unzipped `.tex` through `EndwalkerUpgrade.FastValidateTexFile`
+  immediately after unzip (`PMP.cs:86`, inside a `try { } catch { }`), and `UnpackPmpOption` runs it
+  again per-file when not already unzipped (`PMP.cs:1084-1091`) — i.e. this is a **PMP load-time**
+  fix, unlike T2's `FixOldTexData` (TTMP-load-gated only, `DoesModpackNeedFix`/`TTMP.cs:916`).
+  `FastValidateTexFile` (`EndwalkerUpgrade.cs:2132-2165`) does two things: (1) `FixUpBrokenMipOffsets`
+  — the SAME mip-offset-table repair T2 already tracks (shared with `ValidateTexFileData`); (2)
+  **truncates trailing null padding** — "Textools would repeatedly add 80 null bytes to the end of
+  textures" (`EndwalkerUpgrade.cs:2149-2165`) — which T2 does NOT cover (T2's own recorded evidence
+  is *same-length, differing header bytes*; a null-padding truncation is a *length* difference).
+  **Evidence:** `[Jaque] Romeo & Juliet [feb 2023] - DT update.pmp`'s sole remaining `/resave`
+  residual after the writer-regeneration fix (see the item above) is `common/24/…id.tex`, a payload
+  **byte-length** mismatch (~80/160 bytes, a multiple of the 80-byte padding chunk) — exactly this
+  fixup's signature, not T2's. Neither half is ported: our `applyLoadFixes`
+  (`src/upgrade/upgrade.ts` / the `/resave` harness's load-fix seam, `docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md`
+  §4.3.1) has no PMP branch at all today — that spec's §4.3.1 claimed "PMP has no load-time fixes at
+  all (both are TTMP-gated)", which this finding shows is false; the spec text has been corrected in
+  place, but `applyLoadFixes` itself has NOT been extended. **Consequence:** any PMP `.tex` carrying
+  either broken mip offsets or trailing null padding diverges from the `/resave` golden (and, by the
+  same load-time reasoning, potentially from the `/upgrade` golden too, though no corpus pack
+  currently forces that side). Not ported here — deliberately deferred, same shape as T2: port the
+  mip-offset half together with T2's (shared `FixUpBrokenMipOffsets`/`ValidateTexFileData` logic) and
+  the null-padding truncation as a small addition, gated on PMP rather than on `DoesModpackNeedFix`.
 
 - **T3 — ImageSharp Bicubic/NearestNeighbor resampler (texture-round resize skips + T2).** The
   texture round throws `TextureResizeUnsupported` (caught → skipped, baselined) whenever a

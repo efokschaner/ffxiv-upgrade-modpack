@@ -177,8 +177,21 @@ effectively is now — and by the resave check. Net behaviour of `upgradeModpack
 This is a **fidelity improvement in its own right**: our current structure blends TexTools'
 load-time fixes into the upgrade transform, and this un-blends them.
 
-PMP has no load-time fixes at all (both are TTMP-gated), so the PMP half of B is a clean writer
-oracle regardless.
+**Correction (2026-07-13, Task 8 review): this is false.** `texFixRound`/`modelRound` are
+TTMP-gated (`DoesModpackNeedFix`, `TTMP.cs:916`), but PMP has its OWN load-time `.tex` fixup:
+`ResolvePMPBasePath` runs every unzipped `.tex` through `EndwalkerUpgrade.FastValidateTexFile`
+right after unzip (`PMP.cs:86`), and `UnpackPmpOption` runs it again per-file when not already
+unzipped (`PMP.cs:1084-1091`). `FastValidateTexFile` (`EndwalkerUpgrade.cs:2132-2165`) both fixes
+broken mip offsets (`FixUpBrokenMipOffsets`) and truncates trailing null padding ("Textools would
+repeatedly add 80 null bytes to the end of textures", `EndwalkerUpgrade.cs:2149-2165`) — unrelated
+to, and NOT covered by, `texFixRound`'s `FixOldTexData`. Confirmed by the `/resave` oracle itself:
+`[Jaque] Romeo & Juliet [feb 2023] - DT update.pmp`'s one remaining residual after the writer port
+(§4.2) is a payload **length** mismatch on `common/24/…id.tex` — this fixup's signature (a length
+diff), not `FixOldTexData`'s (same-length, differing header bytes). **Consequence: `applyLoadFixes`
+is missing a PMP branch.** The PMP half of B is therefore NOT a clean writer oracle — it has an
+unported load-time seam of its own, tracked in `BACKLOG.md` ("PMP load-time `.tex` fixup
+(`FastValidateTexFile`) is unported"). Not fixed as part of this spec/plan; recorded here so the
+claim this paragraph used to make doesn't stand uncorrected.
 
 ### 4.4 Sequencing
 

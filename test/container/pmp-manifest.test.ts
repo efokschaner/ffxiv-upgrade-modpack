@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readPmp, writePmp } from "../../src/container/pmp";
+import { readPmp, reformatPmpVersion, writePmp } from "../../src/container/pmp";
 import { readZip, writeZip } from "../../src/zip/zip";
 
 const enc = new TextEncoder();
@@ -16,7 +16,9 @@ function makeImcPmp(): Uint8Array {
     Name: "T",
     Author: "a",
     Description: "",
-    Version: "1.0",
+    // A bare "3" fails .NET Version.TryParse (needs at least major.minor) -- WizardData.cs:1474-1475
+    // falls back to `new Version("1.0")`. See the "1.0" assertion below.
+    Version: "3",
     Website: "",
     Image: "",
     ModTags: [],
@@ -45,6 +47,20 @@ function makeImcPmp(): Uint8Array {
         Files: { [GAME]: ZIP },
         FileSwaps: {},
         Manipulations: [],
+        // A foreign key: PmpStandardOptionJson (PMP.cs:1504-1517) owns no such field, so a real
+        // typed round-trip drops it -- the same class of drop already proven for meta.json's
+        // DefaultPreferredItems, below.
+        FavoriteColor: "blue",
+      },
+      // No `Priority` key at all: PmpMultiOptionJson.Priority is ALWAYS serialized (PMP.cs:1540-1541,
+      // no ShouldSerialize gate), so an option that omits it must still get `"Priority": 0` in the
+      // golden -- `optionFromJson` (pmp.ts) already defaults `priority` to 0 for a source that omits it.
+      {
+        Name: "opt2",
+        Description: "",
+        Files: {},
+        FileSwaps: {},
+        Manipulations: [],
       },
     ],
   };
@@ -58,10 +74,33 @@ function makeImcPmp(): Uint8Array {
     Type: "Imc",
     DefaultSettings: 0,
     Identifier: { PrimaryId: 1 },
-    DefaultEntry: { MaterialId: 1 },
+    // A COMPLETE PMPImcEntry (PmpManipulation.cs:311-321) plus the [JsonIgnore] AttributeAndSound
+    // field (:318, dropped on write — see normalizeImcEntry, pmp-manipulation.ts): every OTHER
+    // field must be present, since a group-level DefaultEntry is normalized through the same
+    // required-field port as a manipulation's own Entry (pmp-manipulation.test.ts).
+    DefaultEntry: {
+      MaterialId: 1,
+      DecalId: 0,
+      VfxId: 0,
+      MaterialAnimationId: 0,
+      AttributeAndSound: 999,
+      AttributeMask: 5,
+      SoundId: 0,
+    },
     AllVariants: false,
     OnlyAttributes: false,
-    Options: [{ Name: "no tufts", Description: "", AttributeMask: 5 }],
+    Options: [
+      { Name: "no tufts", Description: "", AttributeMask: 5 },
+      // ShouldSerializeIsDisableSubMod/AttributeMask (PMP.cs:1549-1550): IsDisableSubMod only
+      // written when true; AttributeMask only written when !IsDisableSubMod -- so a disabled
+      // sub-mod option must DROP its (foreign, here) AttributeMask entirely.
+      {
+        Name: "disabled",
+        Description: "",
+        IsDisableSubMod: true,
+        AttributeMask: 9,
+      },
+    ],
   };
   return writeZip(
     new Map<string, Uint8Array>([
@@ -79,9 +118,25 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     const out = readZip(writePmp(readPmp(makeImcPmp())));
     // Group filenames are lowercased by safeName (PMP.MakePMPPathSafe port, PMP.cs:1316-1326;
     // see src/container/pmp.ts), so "Models"/"Ears" become "models"/"ears" on disk.
-    const imcOpt = JSON.parse(dec.decode(out.get("group_002_ears.json")!))
-      .Options[0];
+    const imcGroup = JSON.parse(dec.decode(out.get("group_002_ears.json")!));
+    const imcOpt = imcGroup.Options[0];
     expect(imcOpt.AttributeMask).toBe(5);
+    expect("IsDisableSubMod" in imcOpt).toBe(false); // ShouldSerializeIsDisableSubMod: false -> omitted
+    const disabledOpt = imcGroup.Options[1];
+    expect(disabledOpt.IsDisableSubMod).toBe(true);
+    expect("AttributeMask" in disabledOpt).toBe(false); // ShouldSerializeAttributeMask: !IsDisableSubMod
+    // PMPImcGroupJson.DefaultEntry is the SAME PMPImcEntry struct as a manipulation's own `Entry`
+    // (PmpManipulation.cs:311-321) -- its [JsonIgnore] AttributeAndSound field (:318) is dropped on
+    // write here too, not just inside Manipulations (normalizeImcEntry, pmp-manipulation.ts).
+    expect(imcGroup.DefaultEntry).toEqual({
+      MaterialId: 1,
+      DecalId: 0,
+      VfxId: 0,
+      MaterialAnimationId: 0,
+      AttributeMask: 5,
+      SoundId: 0,
+    });
+    expect("AttributeAndSound" in imcGroup.DefaultEntry).toBe(false);
     expect("Files" in imcOpt).toBe(false); // Imc options have no Files (PmpImcOptionJson, PMP.cs:1544-1551)
     // Every OTHER option (Standard or Imc alike) always regenerates Name/Description/Image, even
     // when the source omitted Image (PMPOptionJson's base ShouldSerialize* default true; only
@@ -89,14 +144,35 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     // confirmed empirically against the /resave golden (`[DVNO] Desert Years.pmp`'s Imc group and
     // `[DVNO] DMBX Shoes 1.pmp`'s group options both gain "Image": "").
     expect(imcOpt.Image).toBe("");
-    const multiOpt = JSON.parse(dec.decode(out.get("group_001_models.json")!))
-      .Options[0];
+    const multiGroup = JSON.parse(
+      dec.decode(out.get("group_001_models.json")!),
+    );
+    const multiOpt = multiGroup.Options[0];
     expect(multiOpt.Priority).toBe(7);
+    expect("FavoriteColor" in multiOpt).toBe(false); // foreign key, not owned by PmpStandardOptionJson
+    // "opt2" omitted Priority entirely; PmpMultiOptionJson.Priority is always serialized.
+    expect(multiGroup.Options[1].Priority).toBe(0);
+
     const meta = JSON.parse(dec.decode(out.get("meta.json")!));
     // meta.json is always regenerated from PMPMetaJson's flat, fully-typed field set (PMP.cs:1369-1381,
     // no extension-data capture), so a foreign key like Penumbra's own `DefaultPreferredItems` is
     // silently dropped by a real typed round-trip -- confirmed empirically (`[DVNO] DMBX Shoes
     // 1.pmp` /resave golden drops it).
     expect("DefaultPreferredItems" in meta).toBe(false);
+    // Version.TryParse("3") fails (needs at least major.minor) -> falls back to "1.0"
+    // (WizardData.cs:1474-1475/:1494).
+    expect(meta.Version).toBe("1.0");
+  });
+});
+
+describe("reformatPmpVersion (WizardData.cs:1474-1475/:1494)", () => {
+  it("re-renders exactly the components .NET's Version.TryParse would have parsed", () => {
+    expect(reformatPmpVersion("1.2")).toBe("1.2");
+    expect(reformatPmpVersion("1.2.3")).toBe("1.2.3");
+    expect(reformatPmpVersion("1.2.3.4")).toBe("1.2.3.4");
+    // Version.TryParse requires AT LEAST major.minor -- a bare "1" fails to parse.
+    expect(reformatPmpVersion("1")).toBe("1.0");
+    expect(reformatPmpVersion("")).toBe("1.0");
+    expect(reformatPmpVersion("not a version")).toBe("1.0");
   });
 });

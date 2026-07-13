@@ -111,6 +111,10 @@ export interface PmpOptionJson {
   Manipulations: unknown[];
   Priority?: number; // multi-option only
   Version?: number; // default_mod.json only
+  // PmpImcOptionJson-only (PMP.cs:1544-1551), ShouldSerialize-gated on write — see optionToJson
+  // (src/container/pmp.ts): IsDisableSubMod only when true; AttributeMask only when !IsDisableSubMod.
+  IsDisableSubMod?: boolean;
+  AttributeMask?: number;
 }
 export type PmpOptionJsonRaw = Partial<PmpOptionJson>;
 

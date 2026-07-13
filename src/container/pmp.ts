@@ -20,8 +20,8 @@ import {
   parsePmpMeta,
   parsePmpOption,
 } from "./manifest-types";
-import { optionPrefixes } from "./option-prefix";
-import { normalizeManipulations } from "./pmp-manipulation";
+import { buildPages, optionPrefixes } from "./option-prefix";
+import { normalizeImcEntry, normalizeManipulations } from "./pmp-manipulation";
 import { resolveDuplicates } from "./resolve-duplicates";
 
 const dec = new TextDecoder();
@@ -312,6 +312,20 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
+/** Port of WizardData.WritePmp's Version reformat (WizardData.cs:1474-1475 + :1494):
+ * `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0"); pmp.Meta.Version =
+ * ver.ToString();`. .NET's `Version.TryParse` requires AT LEAST `major.minor` — a bare `"1"` fails
+ * to parse — and accepts up to 4 dot-separated non-negative-integer components
+ * (`major.minor[.build[.revision]]`); anything else (blank, extra text, a negative/non-numeric
+ * component) fails too. A failed parse falls back to `new Version("1.0")`, i.e. `"1.0"`.
+ * `Version.ToString()` re-renders exactly the components that were present in the parsed value —
+ * `"1.2"` stays 2-field, `"1.2.3"` stays 3-field, etc. — it does not pad to 4 fields. */
+export function reformatPmpVersion(source: string): string {
+  const m = /^(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(source.trim());
+  if (!m) return "1.0";
+  return [m[1], m[2], m[3], m[4]].filter((p) => p !== undefined).join(".");
+}
+
 /** Reconstruct a PMP option JSON document, regenerating `Files`/`FileSwaps`/`Manipulations` from the
  * model. TexTools NEVER round-trips these: PopulatePmpStandardOption (PMP.cs:871-928) builds `Files`
  * fresh from the typed model (`opt.Files.Add(fi.Path, fi.PmpPath.Replace("/", "\\"))`, :914), and
@@ -333,12 +347,17 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
  * default to true) always (re)writes them, even when the source omitted `Image` — confirmed
  * empirically (`[DVNO] DMBX Shoes 1.pmp` /resave golden: every group option gains `"Image": ""`).
  *
- * Fields `o.raw` carries that our model does not type — Imc/Combining extras (Identifier/DefaultEntry/
- * AllVariants/OnlyAttributes/IsDisableSubMod/AttributeMask) — are still re-emitted from it untouched.
- * `Priority` only exists on `PmpMultiOptionJson` (PMP.cs:1538-1542): `isMultiOption=false` strips it
- * (a Single/Imc/default_mod option's raw carrying a stray `Priority` key must not survive the typed
- * round-trip — confirmed empirically, `Flower Child - by Solona.pmp`'s Single-type "Size" group);
- * `isMultiOption=true` leaves whatever raw carries untouched (not modeled here). */
+ * `o.raw` is consulted ONLY for the genuinely untyped Imc/Combining GROUP extras (Identifier/
+ * DefaultEntry/AllVariants/OnlyAttributes — handled at the group level, below) and, for an Imc
+ * OPTION, its two typed-but-`ShouldSerialize`-gated fields (`IsDisableSubMod`/`AttributeMask`,
+ * `PmpImcOptionJson`, PMP.cs:1544-1551). Every OTHER field of `o.raw` is a foreign key the typed
+ * model does not own and must NOT survive: for a Standard option, `PmpStandardOptionJson`
+ * (PMP.cs:1504-1517) owns exactly Name/Description/Image/Files/FileSwaps/Manipulations(/Priority on
+ * the Multi subtype) and nothing else, the same class of drop already proven for `meta.json`'s
+ * `DefaultPreferredItems`. `Priority` only exists on `PmpMultiOptionJson` (PMP.cs:1538-1542, always
+ * serialized — `o.priority` already defaults to 0 when the source omits it, `optionFromJson` above)
+ * — a Single/Imc/default_mod option gets no `Priority` key at all, confirmed empirically
+ * (`Flower Child - by Solona.pmp`'s Single-type "Size" group drops a stray source `Priority`). */
 function optionToJson(
   o: ModpackOption,
   includeMeta: boolean,
@@ -346,23 +365,23 @@ function optionToJson(
   isMultiOption: boolean,
   zipPaths: Map<ModpackFile, string>,
 ): PmpOptionJsonRaw {
-  const base: PmpOptionJsonRaw = isObj(o.raw)
-    ? { ...(o.raw as PmpOptionJsonRaw) }
-    : {};
+  // Build fresh — do NOT spread `o.raw` — so a foreign key on the source document cannot survive
+  // the typed round-trip (see this function's doc comment).
+  const base: PmpOptionJsonRaw = {};
 
   if (includeMeta) {
     base.Name = o.name;
     base.Description = o.description;
+    // WizardHelpers.WriteImage (WizardData.cs:545/:953/:1497) re-encodes a REFERENCED image into a
+    // fresh 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than
+    // passing the source value through — unported (no image encoder here; see BACKLOG.md). This
+    // carries the SOURCE Image value/zip-path verbatim, which diverges from the golden whenever an
+    // option actually carries an image (every corpus option that has NO image round-trips "" -> ""
+    // either way, which is why the corpus alone doesn't expose this).
     base.Image = o.image;
-  } else {
-    base.Name = undefined;
-    base.Description = undefined;
-    base.Image = undefined;
   }
-
-  if (!isMultiOption) {
-    base.Priority = undefined;
-  }
+  // else: IsDataContainerOnly (default_mod.json) — ShouldSerializeName/.../Image all false
+  // (PMP.cs:1499-1501), so Name/Description/Image stay absent.
 
   if (hasStandardFields) {
     const Files: Record<string, string> = {};
@@ -374,10 +393,22 @@ function optionToJson(
     base.Files = Files;
     base.FileSwaps = o.fileSwaps;
     base.Manipulations = normalizeManipulations(o.manipulations);
+    if (isMultiOption) {
+      base.Priority = o.priority; // PmpMultiOptionJson.Priority, always serialized (PMP.cs:1540-1541)
+    }
   } else {
-    base.Files = undefined;
-    base.FileSwaps = undefined;
-    base.Manipulations = undefined;
+    // Imc: PmpImcOptionJson (PMP.cs:1544-1551) — IsDisableSubMod/AttributeMask, both
+    // ShouldSerialize-gated (PMP.cs:1549-1550). Neither is modeled on ModpackOption, so read them
+    // off the source raw directly; a foreign/absent value defaults to the C# field's own default
+    // (`false`/`0`) exactly like a real typed deserialize of a document that omits the key.
+    const raw = isObj(o.raw) ? (o.raw as PmpOptionJsonRaw) : {};
+    const isDisableSubMod = raw.IsDisableSubMod === true;
+    if (isDisableSubMod) {
+      base.IsDisableSubMod = true;
+    } else {
+      base.AttributeMask =
+        typeof raw.AttributeMask === "number" ? raw.AttributeMask : 0;
+    }
   }
 
   return base;
@@ -443,47 +474,60 @@ export function writePmp(data: ModpackData): Uint8Array {
   // typed class with no extension-data capture, so ANY key the source carries outside its 8 fields
   // (e.g. Penumbra's own `DefaultPreferredItems`) is silently dropped by a real typed round-trip —
   // confirmed empirically (`[DVNO] DMBX Shoes 1.pmp` /resave golden drops it). FileVersion is
-  // hard-forced to PMP._WriteFileVersion regardless of source (WizardData.cs:1496); Image is always
-  // present even when the source omitted it (WizardData.cs:1497 — empirically always "" across the
-  // corpus, since no pack carries a real meta image, so WizardHelpers.WriteImage's possible rewrite
-  // is unexercised here). Version is carried through as-is: WizardData.cs:1494 reformats it via
-  // System.Version.ToString(), but no corpus pack's Version string differs under that reformat, so
-  // porting it is deferred pending oracle evidence otherwise.
+  // hard-forced to PMP._WriteFileVersion regardless of source (WizardData.cs:1496).
+  //
+  // Image: WizardHelpers.WriteImage (WizardData.cs:1497) re-encodes a REFERENCED image into a fresh
+  // 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than passing the
+  // source value through — unported (no image encoder here; see BACKLOG.md). This carries the
+  // source value verbatim, which diverges from the golden whenever meta actually carries an image
+  // (no corpus pack does, so the corpus alone doesn't expose this).
   const meta: PmpMetaJson = {
     FileVersion: 3, // PMP._WriteFileVersion (PMP.cs:45)
     Name: data.meta.name,
     Author: data.meta.author,
     Description: data.meta.description,
-    Version: data.meta.version,
+    Version: reformatPmpVersion(data.meta.version),
     Website: data.meta.url,
     Image: data.meta.image,
     ModTags: data.meta.tags,
   };
   entries.set("meta.json", enc.encode(JSON.stringify(meta, null, 2)));
 
-  const [defaultGroup, ...rest] = data.groups;
-  const defaultOption: ModpackOption | undefined = defaultGroup?.options[0];
+  const defaultGroup = data.groups[0];
 
   // Port of WizardData.WritePmp's "synthesize a PMP default mod from wizard data" absorption
-  // (WizardData.cs:1548-1600): a REAL Standard-type group (Single or Multi — i.e. not Imc) named
-  // literally "Default" or "Default Group", holding exactly ONE option named "Default" or
-  // "Default Option", has its regenerated Files/FileSwaps/Manipulations MOVED into
-  // default_mod.json instead of being written as its own group_NNN.json. Confirmed empirically
-  // (`Flower Child - by Solona.pmp`'s `group_001_default.json`: Name="Default", Type="Single", one
-  // option named "Default" — the /resave golden's default_mod.json carries that option's
-  // Files/Manipulations, and the pack's only other group is renumbered `group_001_size.json`, not
-  // `group_002_`). The FIRST such group wins (`break` in the C#, WizardData.cs:1571); its physical
-  // zip member locations are UNCHANGED — `zipPaths`/`prefixes` above already assigned them via the
-  // group's own optionPrefix, exactly like any other group — only which JSON DOCUMENT names them
-  // moves, and the group is excluded from the numbered group_NNN.json sequence below (renumbering
-  // every group after it, since the sequence is built from the FILTERED array's own index).
-  const defaultModGroup = rest.find(
-    (g) =>
-      g.selectionType !== "Imc" &&
-      (g.name === "Default" || g.name === "Default Group") &&
-      g.options.length === 1 &&
-      (g.options[0]!.name === "Default" ||
-        g.options[0]!.name === "Default Option"),
+  // (WizardData.cs:1548-1600): searches `DataPages` — page 0..N, each page's groups in order — for
+  // the FIRST Standard-type group (Single or Multi, not Imc) named literally "Default"/"Default
+  // Group" with exactly ONE option named "Default"/"Default Option", and MOVES its regenerated
+  // Files/FileSwaps/Manipulations into default_mod.json instead of writing it as its own
+  // group_NNN.json (`break` in the C#, WizardData.cs:1571).
+  //
+  // CRITICAL: `DataPages` is not "the real groups" — FromPmp UNSHIFTS a synthesized Default group
+  // onto the FRONT of `DataPages` whenever the source default_mod.json is non-empty
+  // (WizardData.cs:1118-1138), with Name/Options[0].Name hardcoded to the literal "Default"
+  // (:1122/:1128) regardless of what default_mod.json's own (near-always-absent, ShouldSerializeName
+  // false, PMP.cs:1499) Name field said. That synthesized group therefore ALWAYS satisfies the
+  // predicate structurally whenever it exists, and — being DataPages[0] — is always checked FIRST,
+  // so it ALWAYS wins the search whenever it survives ClearNulls (WizardData.cs:1234-1263, ported as
+  // `buildPages` in option-prefix.ts). A real "Default"/"Default Group" group elsewhere in the pack
+  // can only ever be selected when the synthesized group does NOT survive (default_mod.json was
+  // empty or carried no HasData). Searching only the real groups (as this used to) re-creates the
+  // orphan-member bug the writer regeneration fixed: the real group's data would win the JSON slot
+  // while the synthesized Default option's OWN payload member — already written via `zipPaths`,
+  // unconditionally, like any other option — is named by no `Files` key anywhere.
+  //
+  // `pages` is `buildPages`'s DataPages-equivalent, pruned/ordered list (option-prefix.ts) —
+  // reused below for the group_NNN emission + Page renumbering too (WizardData.cs:1583-1600).
+  const pages = buildPages(data);
+  const orderedGroups = pages.flatMap((p) => p.groups);
+  const defaultModGroup = orderedGroups.find((g) =>
+    g === defaultGroup
+      ? true // hardcoded Name="Default"/Options[0].Name="Default" (WizardData.cs:1122/1128)
+      : g.selectionType !== "Imc" &&
+        (g.name === "Default" || g.name === "Default Group") &&
+        g.options.length === 1 &&
+        (g.options[0]!.name === "Default" ||
+          g.options[0]!.name === "Default Option"),
   );
 
   const defaultMod: PmpOptionJsonRaw = defaultModGroup
@@ -495,25 +539,51 @@ export function writePmp(data: ModpackData): Uint8Array {
           false,
           zipPaths,
         ),
-        Version: 0,
+        Version: 0, // PmpDefaultMod.Version is a hardcoded 0 (PMP.cs:1530), not sourced from the model
       }
-    : defaultOption
-      ? {
-          ...optionToJson(defaultOption, false, true, false, zipPaths),
-          Version: 0, // PmpDefaultMod.Version is a hardcoded 0 (PMP.cs:1530), not sourced from the model
-        }
-      : { Version: 0, Files: {}, FileSwaps: {}, Manipulations: [] };
+    : // No candidate survived: `pmp.DefaultMod` is never touched beyond `new PmpDefaultMod()`'s own
+      // field initializers (empty Files/FileSwaps/Manipulations, PmpStandardOptionJson, PMP.cs:1507-1511).
+      { Version: 0, Files: {}, FileSwaps: {}, Manipulations: [] };
   entries.set(
     "default_mod.json",
     enc.encode(JSON.stringify(defaultMod, null, 2)),
   );
 
-  rest
-    .filter((g) => g !== defaultModGroup)
-    .forEach((g, i) => {
+  // Port of WizardData.WritePmp's group_NNN.json assembly (WizardData.cs:1583-1600), run over the
+  // SAME pruned `pages` the absorption search used above — i.e. `ClearNulls`' group-level pruning
+  // (a group with `!HasData` never becomes a group_NNN.json — see `buildPages`) is now applied here
+  // too, not just at the option-prefix level. `page` is a LOCAL counter, incremented once per
+  // DataPages entry that contributed at least one non-absorbed group — NOT the source `g.page` —
+  // so a page that contributed nothing (all its groups absorbed or pruned) does not consume a page
+  // number, exactly mirroring the C#'s `numGroupsThisPage > 0` gate. group_NNN's numeric prefix is a
+  // flat counter across the whole (pruned, absorption-excluded) sequence, matching `pmp.Groups`'
+  // own list-index numbering in `PMP.WritePmp` (PMP.cs:856-862).
+  let pageCounter = 0;
+  let groupNumber = 0;
+  for (const page of pages) {
+    let numGroupsThisPage = 0;
+    for (const g of page.groups) {
+      if (g === defaultModGroup) continue; // absorbed into default_mod.json above
+
       // PmpImcOptionJson has no Files/FileSwaps/Manipulations (PMP.cs:1544-1551) — see optionToJson.
       const hasStandardFields = g.selectionType !== "Imc";
       const isMultiOption = g.selectionType === "Multi"; // Priority only exists on PmpMultiOptionJson
+      const rawObj = isObj(g.raw) ? (g.raw as Record<string, unknown>) : {};
+      // PMPImcGroupJson.DefaultEntry (PMP.cs:1429) is a PMPImcEntry — the SAME struct as a per-
+      // manipulation Imc `Entry` (PmpManipulation.cs:311-321) — so its `AttributeAndSound` field is
+      // dropped by the SAME [JsonIgnore] (:318) on write. Override it (not spread verbatim) so it
+      // survives the typed round-trip the same way `Manipulations`' own Imc entries already do
+      // (pmp-manipulation.ts). Positioned via the object-literal spread order below, not appended,
+      // so it lands where `DefaultEntry` already sat in the source document.
+      const defaultEntryOverride: Record<string, unknown> =
+        g.selectionType === "Imc" && isObj(rawObj.DefaultEntry)
+          ? {
+              DefaultEntry: normalizeImcEntry(
+                rawObj.DefaultEntry as Record<string, unknown>,
+                "Imc group DefaultEntry",
+              ),
+            }
+          : {};
       // PMPGroupJson's 8 base fields (Version/Name/Description/Image/Page/Priority/Type/
       // DefaultSettings, PMP.cs:1387-1404) are ALWAYS regenerated from the model, never raw-spread —
       // confirmed empirically (`Flower Child - by Solona.pmp`'s source "Size" group spells
@@ -522,14 +592,19 @@ export function writePmp(data: ModpackData): Uint8Array {
       // at its own initializer default — exactly what `g.description` (parsePmpGroup's `?? ""`)
       // already models. Version has no source at all; it is hard-forced to 0 (PMP.cs:1389 field
       // initializer, never reassigned). `g.raw` is kept ONLY for genuinely untyped subtype extras —
-      // Imc's Identifier/DefaultEntry/AllVariants/OnlyAttributes (PMP.cs:1426-1436).
+      // Imc's Identifier/AllVariants/OnlyAttributes (PMP.cs:1426-1436) and (overridden above)
+      // DefaultEntry.
+      //
+      // Image: same WizardHelpers.WriteImage caveat as meta.json's Image and an option's Image
+      // above (WizardData.cs:953) — carried through verbatim, unported; see BACKLOG.md.
       const groupJson: PmpGroupJsonRaw = {
-        ...(isObj(g.raw) ? (g.raw as Record<string, unknown>) : {}),
+        ...rawObj,
+        ...defaultEntryOverride,
         Version: 0,
         Name: g.name,
         Description: g.description,
         Image: g.image,
-        Page: g.page,
+        Page: pageCounter,
         Priority: g.priority,
         Type: g.selectionType,
         DefaultSettings: g.defaultSettings,
@@ -537,9 +612,13 @@ export function writePmp(data: ModpackData): Uint8Array {
           optionToJson(o, true, hasStandardFields, isMultiOption, zipPaths),
         ),
       };
-      const fileName = `group_${String(i + 1).padStart(3, "0")}_${safeName(g.name)}.json`;
+      groupNumber++;
+      const fileName = `group_${String(groupNumber).padStart(3, "0")}_${safeName(g.name)}.json`;
       entries.set(fileName, enc.encode(JSON.stringify(groupJson, null, 2)));
-    });
+      numGroupsThisPage++;
+    }
+    if (numGroupsThisPage > 0) pageCounter++;
+  }
 
   // Port of PopulatePmpStandardOption's payload write (PMP.cs:908-910) followed by WritePmp's
   // directory zip (PMP.cs:864-868): TexTools writes every option's payload via

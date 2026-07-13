@@ -32,7 +32,12 @@
 // suffix TexTools would assign to a later, real, data-carrying group of the same sanitized name —
 // a member-name divergence. `ClearNulls`' innermost step, `if (o == null) g.Options.Remove(o)`
 // (:1259-1262), is NOT ported: our `ModpackOption` model has no null-option representation, so that
-// step can never apply to data built from it.
+// step can never apply to data built from it. `WizardOptionEntry.HasData`, the property this
+// pruning actually consults (WizardData.cs:257-278), dispatches to a Standard or Imc-specific
+// content check depending on the OWNING GROUP's type (`optionHasData`/`imcOptionHasData` below) —
+// an Imc option can NEVER carry Files/Manipulations at all (PmpImcOptionJson, PMP.cs:1544-1551), so
+// judging it by the Standard rule would treat every Imc group as content-free. See
+// `imcOptionHasData`'s doc comment for the residual "Read mode" nuance this still doesn't chase down.
 //
 // A NOTE FOR TASK 8 (writePmp) — two things this module's own shape depends on that the writer must
 // preserve:
@@ -73,27 +78,77 @@ function isEmptyDefaultOption(o: ModpackOption): boolean {
   );
 }
 
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null;
+
 // Port of WizardStandardOptionData.CheckHasData (WizardData.cs:77-80). Deliberately excludes
 // FileSwaps, unlike IsEmptyOption above — a real asymmetry in the C# between "is the PMP option
 // empty" (gates the Default page) and "does this Wizard option carry data" (gates page/group
 // survival in ClearNulls).
-function optionHasData(o: ModpackOption): boolean {
+function standardOptionHasData(o: ModpackOption): boolean {
   return o.files.length > 0 || o.manipulations.length > 0;
+}
+
+// Port of WizardImcOptionData.CheckHasData (WizardData.cs:189-196): an Imc-type option's own
+// AttributeMask/IsDisableSubMod, NOT Files/Manipulations — an Imc option can never carry either
+// (PmpImcOptionJson has no such fields at all, PMP.cs:1544-1551), so reusing the Standard check
+// here would judge EVERY Imc option content-free and prune the whole group. Confirmed as a REAL
+// regression, not a hypothetical: once `writePmp` started consulting this group-level pruning to
+// decide group_NNN.json emission (Task 8's finding 2), an Imc group like
+// `[DVNO] Desert Years.pmp`'s vanished from the write entirely. `o.raw` is consulted directly since
+// `ModpackOption` does not model these two Imc-only fields as first-class fields (see
+// `manifest-types.ts`'s `PmpOptionJson.IsDisableSubMod`/`AttributeMask`).
+function imcOptionHasData(o: ModpackOption): boolean {
+  const raw = isObj(o.raw) ? o.raw : {};
+  return (
+    (typeof raw.AttributeMask === "number" && raw.AttributeMask > 0) ||
+    raw.IsDisableSubMod === true
+  );
+}
+
+// Port of WizardOptionEntry.HasData's content-check branches (WizardData.cs:257-278): dispatches
+// to the Standard or Imc CheckHasData depending on the OWNING GROUP's type.
+//
+// NOT ported: the "Read mode" shortcut at the top of the SAME property (WizardData.cs:262-266,
+// `if (_Group.ModOption != null) return true;`) — for every WizardGroupEntry our port's actual
+// call paths ever construct (`FromPMPGroup`/`FromWizardGroup`, both invoked from `WizardData.
+// FromPmp`/`FromModpack` — i.e. every load ConsoleTools' `/resave` and `/upgrade` ever perform),
+// `ModOption` is UNCONDITIONALLY set to the source document, so real TexTools' `HasData` is
+// UNCONDITIONALLY true and the content-based checks below are NEVER actually consulted for a
+// loaded pack. A fully faithful port would make group/option-level ClearNulls pruning a near-total
+// no-op for any group that came from an existing document (only an entirely-EMPTY page — zero
+// groups, from the off-by-one bug — would still prune). We do not go that far: it would undo
+// already-corpus-exercised Standard-side pruning behaviour (`buildPages`'s existing folder-prefix
+// use, and the option-prefix.test.ts "case 8" scenario) with no oracle evidence either way. This is
+// therefore a residual, latent risk symmetric with the one we just fixed for Imc: a genuinely
+// zero-AttributeMask, non-disable Imc option (or, on the Standard side, a genuinely zero-file,
+// zero-manipulation option) inside an otherwise-real PMP group could in principle be pruned here
+// where real TexTools' Read-mode shortcut would keep it. Revisit if the `/resave` oracle ever shows it.
+function optionHasData(o: ModpackOption, isImc: boolean): boolean {
+  return isImc ? imcOptionHasData(o) : standardOptionHasData(o);
 }
 
 // Port of WizardGroupEntry.HasData (WizardData.cs:621-627).
 function groupHasData(g: ModpackGroup): boolean {
-  return g.options.some(optionHasData);
+  const isImc = g.selectionType === "Imc";
+  return g.options.some((o) => optionHasData(o, isImc));
 }
 
-interface Page {
+export interface Page {
   groups: ModpackGroup[];
   folderPath?: string;
 }
 
 // Port of WizardData.FromPmp's page construction (WizardData.cs:1118-1158) followed by
-// WizardData.ClearNulls' page-level pruning (WizardData.cs:1234-1244).
-function buildPages(data: ModpackData): Page[] {
+// WizardData.ClearNulls' page-level pruning (WizardData.cs:1234-1244). Exported so writePmp
+// (pmp.ts) can drive the SAME DataPages/ClearNulls-order, pruned group set for two things this
+// module doesn't itself need: (1) WritePmp's default-mod absorption search
+// (WizardData.cs:1553-1578), which iterates DataPages in this exact order and must see the
+// synthesized Default group (page 0, iff it survived) FIRST; (2) the group_NNN.json emission +
+// its recomputed `Page` counter (WizardData.cs:1583-1600), which only writes a group that
+// survived this same pruning and numbers pages by how many DataPages entries actually
+// contributed a written group.
+export function buildPages(data: ModpackData): Page[] {
   const [defaultGroup, ...realGroups] = data.groups;
   const pages: Page[] = [];
 
