@@ -20,13 +20,6 @@ export interface TtmpFileMeta {
 interface ModpackFileBase {
   gamePath: string; // internal game path, forward slashes
   ttmp?: TtmpFileMeta; // present iff sourced from a TTMP container
-  // Original PMP zip path (forward slashes) iff sourced from PMP. Read-side only: readPmp's
-  // ExtraFiles referenced-set (PMP.cs:213-215) needs the source path a Files value named, whether
-  // or not it resolved to a real member. writePmp does NOT read this at write time — every zip path
-  // is REGENERATED from the model (optionPrefixes + resolveDuplicates, src/container/pmp.ts), the
-  // way TexTools' own writer does; carrying pmpPath through as an output was a shipping defect this
-  // port used to have, fixed in feat/pmp-writer-regeneration (see git history / BACKLOG.md).
-  pmpPath?: string;
 }
 
 /** OPAQUE payload: an SQPack blob (ttmp) or a raw file (pmp).

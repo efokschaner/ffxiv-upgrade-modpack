@@ -224,6 +224,30 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(g.options[1]!)).toBe("group/normal/");
   });
 
+  it("11. an Imc group never gets a FolderPath in the Standard-only first pass (WizardData.cs:1513-1516): a same-named Standard group appearing LATER still claims the clean slot", () => {
+    // WritePmp's own loop (WizardData.cs:1506-1542) `continue`s past any option whose GroupType !=
+    // Standard BEFORE it ever reaches MakeOptionPrefix (:1526), whose 3-arg overload is what calls
+    // MakeGroupPrefix as a side effect (:1414-1418). So EVERY Standard-type group across the WHOLE
+    // pack claims its MakeGroupPrefix slot during that pass, before an Imc-type group ever gets one
+    // -- Imc groups are only resolved later, in the group_NNN.json emission loop (:1583-1600), which
+    // calls MakeGroupPrefix(p, g) unconditionally for every surviving group. A single page/group
+    // iteration order (assigning prefixes as groups are encountered) would let an Imc group occupy
+    // the clean slot if it happens to appear FIRST in `data.groups` -- wrong, since here the Imc
+    // group ("Same") is listed BEFORE the Standard group of the same name, yet the Standard group
+    // must still win "same/" and the Imc group must be bumped to "same (1)/".
+    const defaultGroup = group("Default", 0, [emptyOption()]);
+    const imcGroup: ModpackGroup = {
+      ...group("Same", 0, [option("Only")]),
+      selectionType: "Imc",
+    };
+    const standardGroup = group("Same", 0, [option("Only")]);
+    const d = data([defaultGroup, imcGroup, standardGroup]);
+    const prefixes = optionPrefixes(d);
+
+    expect(prefixes.get(standardGroup.options[0]!)).toBe("same/");
+    expect(prefixes.get(imcGroup.options[0]!)).toBe("same (1)/");
+  });
+
   it("MakeGroupPrefix's non-incrementing collision loop throws rather than hanging on a 3-way collision", () => {
     // Three groups that all sanitize to the same folder name: the first claims "same/", the second
     // claims "same (1)/" (one retry succeeds), and the third would ALSO need "same (1)/" since the

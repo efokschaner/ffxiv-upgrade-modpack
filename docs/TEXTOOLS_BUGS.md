@@ -132,8 +132,8 @@ would spin forever recomputing the same candidate. (The sibling loop in `MakeOpt
 
 **Us:** ported the loop condition as written (a single retry at `" (1)/"` succeeds silently, matching
 the C#), but if resolving the collision would need a second retry we throw, citing this entry,
-instead of hanging. `optionPrefixes` is unit-tested (`test/container/option-prefix.test.ts`) but not
-yet called by `writePmp` — Task 8 wires it into the writer.
+instead of hanging. `optionPrefixes` is unit-tested (`test/container/option-prefix.test.ts`) and
+called by `writePmp` (`src/container/pmp.ts`) to regenerate every zip path from the model.
 
 **Upstream fix:** increment the counter.
 

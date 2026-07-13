@@ -62,11 +62,18 @@ export interface OriginalModPackJson {
 //                    This is the ONLY place PMP defaults live; consumers of the parsed type never
 //                    need `?? ""`.
 //
-// Writing goes the other way and deals in Raw, deliberately: writePmp re-emits a source document
-// verbatim (an absent key must stay absent — our synthetic packs round-trip byte-exact because of
-// it), and C#'s ShouldSerialize* (:1499-1501) omits Name/Description/Image entirely for
-// default_mod.json. A document we AUTHOR from scratch instead carries the full set, since Newtonsoft
-// serializes every initialized field — writePmp expresses that by building a parsed-type object.
+// Writing goes the other way and deals in Raw, deliberately: writePmp REGENERATES every typed field
+// from the domain model (Files/FileSwaps/Manipulations from the option's own files, Name/Description/
+// Image trimmed and copied over, DefaultSettings recomputed, ...) rather than re-emitting the source
+// document verbatim — TexTools' own writer does the same (PopulatePmpStandardOption, PMP.cs:871-928;
+// WizardGroupEntry.ToPmpGroup, WizardData.cs:889-956), so a foreign key or a value the typed model
+// doesn't own cannot survive a round-trip (see optionToJson's doc comment, pmp.ts). `o.raw`/`g.raw`
+// are consulted ONLY for the genuinely untyped extras those typed classes still carry via
+// [JsonExtensionData]-equivalent fields (Imc's Identifier/DefaultEntry/AllVariants/OnlyAttributes,
+// an Imc option's IsDisableSubMod/AttributeMask) — never for a field the base classes already type.
+// C#'s ShouldSerialize* (:1499-1501) omits Name/Description/Image entirely for default_mod.json,
+// which `includeMeta=false` reproduces. A document built from the model with no `raw` at all (e.g. a
+// TTMP source) carries the full set the same way, since both paths build a parsed-type object.
 
 export interface PmpMetaJson {
   FileVersion: number; // C# `public int FileVersion;` — a bare int, so absent -> 0

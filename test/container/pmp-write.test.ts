@@ -492,6 +492,228 @@ describe("writePmp default-mod absorption searches DataPages order, not just the
   });
 });
 
+describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () => {
+  // WritePmp trims THREE places: `g.Name = g.Name.Trim();` (:1510, mutating every group in place,
+  // in the SAME loop that builds `allFiles`/`identifiers` -- BEFORE the default-mod absorption
+  // search runs, :1553-1578), then `pg.Name = (Name ?? "").Trim();` (:946) and
+  // `option.Name = option.Name.Trim();` (:928), both inside ToPmpGroup. Because :1510 mutates the
+  // group's Name in place ACROSS ALL groups before the absorption search ever looks at it, the
+  // search's `g.Name == "Default"` comparison sees the TRIMMED name -- so a real group literally
+  // named "Default " (trailing space) IS absorbed into default_mod.json, a structural (not just
+  // cosmetic) consequence. `option.Name`'s trim, by contrast, only ever happens inside ToPmpGroup,
+  // which the absorption search calls AFTER its own name comparison already matched/failed -- so
+  // the search's OWN `Options[0].Name == "Default"` check compares the UNTRIMMED option name; only
+  // the emitted `Name` value downstream is affected.
+  function modeledGroup(name: string, optionName: string): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Trim",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [], // empty -> IsEmptyOption -> no synthesized Default page at all
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name,
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: optionName,
+              description: "",
+              image: "",
+              priority: 0,
+              files: [
+                {
+                  gamePath: "chara/x.tex",
+                  data: new Uint8Array([1, 2, 3]),
+                  storage: FileStorageType.RawUncompressed,
+                },
+              ],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("absorbs a group literally named 'Default ' (trailing space) into default_mod.json -- the trimmed name matches the absorption predicate", () => {
+    const out = readZip(writePmp(modeledGroup("Default ", "Default")));
+
+    const groupNames = [...out.keys()].filter((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    expect(groupNames).toHaveLength(0); // absorbed -- no group_NNN.json at all
+
+    const dm = parseEntry<PmpOptionJson>(out, "default_mod.json");
+    expect(dm.Files).toEqual({ "chara/x.tex": "default\\chara\\x.tex" });
+  });
+
+  it("trims leading/trailing whitespace off the emitted group Name and option Name (WizardData.cs:946/928)", () => {
+    // "  Hair  " does not match "Default"/"Default Group" even trimmed, so it is written as its own
+    // group_NNN.json rather than absorbed -- exercising the emitted-Name trim in isolation.
+    const out = readZip(writePmp(modeledGroup("  Hair  ", "  Red  ")));
+
+    const groupName = [...out.keys()].find((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    expect(groupName).toBeDefined();
+    const grp = parseEntry<PmpGroupJson>(out, groupName as string);
+    expect(grp.Name).toBe("Hair");
+    const opt = grp.Options?.[0] as PmpOptionJson;
+    expect(opt.Name).toBe("Red");
+  });
+});
+
+describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578-604/:805-813/:857-860)", () => {
+  // TexTools never carries a source DefaultSettings value through verbatim: ToPmpGroup writes
+  // `pg.DefaultSettings = Selection` (:949), and `Selection` is a GETTER recomputed from each
+  // option's `Selected` flag, which FromPMPGroup derives from the SOURCE value at read time
+  // (:805-813). Our domain model has no per-option Selected flag, only the group's raw
+  // `defaultSettings` -- so writePmp must reconstruct exactly what those two C# passes would have
+  // left before re-deriving Selection from it.
+  function modeledGroup(
+    selectionType: "Single" | "Multi",
+    optionCount: number,
+    defaultSettings: number,
+  ): ModpackData {
+    const options = Array.from({ length: optionCount }, (_, i) => ({
+      name: `Opt${i}`,
+      description: "",
+      image: "",
+      priority: 0,
+      files: [
+        {
+          gamePath: `chara/${i}.tex`,
+          data: new Uint8Array([i]),
+          storage: FileStorageType.RawUncompressed as const,
+        },
+      ],
+      fileSwaps: {},
+      manipulations: [],
+    }));
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Selection",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name: "Choice",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType,
+          defaultSettings,
+          options,
+        },
+      ],
+    };
+  }
+
+  function readGroupDefaultSettings(out: Uint8Array): number {
+    const entries = readZip(out);
+    const groupName = [...entries.keys()].find((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    if (!groupName) throw new Error("no group_NNN.json in output");
+    return parseEntry<PmpGroupJson>(entries, groupName).DefaultSettings;
+  }
+
+  it("Single, source index out of range (>= Options.Count) -> the read-time fixup forces Options[0].Selected, so Selection regenerates 0", () => {
+    // FromPMPGroup: Selected[i] = (DefaultSettings == idx) for idx in 0..Options.Count-1. A source
+    // value of 5 on a 2-option group matches nothing, so the fixup at :857-860 forces
+    // Options[0].Selected = true, and Selection's getter (:582-589) returns IndexOf(Options[0]) = 0.
+    const out = writePmp(modeledGroup("Single", 2, 5));
+    expect(readGroupDefaultSettings(out)).toBe(0);
+  });
+
+  it("Single, source index in range -> Selection round-trips the same index", () => {
+    const out = writePmp(modeledGroup("Single", 3, 2));
+    expect(readGroupDefaultSettings(out)).toBe(2);
+  });
+
+  it("Multi, legacy -1 source value -> every bit past the option count is masked off by Selection's own loop bound", () => {
+    // CustomUInt64Converter (PMP.cs:1558-1571) reinterprets a JSON `-1` token as ulong.MaxValue (the
+    // documented "TexTools was previously writing -1 instead of 2^64-1" bug-compat shim,
+    // PMP.cs:1564-1565) -- i.e. every one of its 64 bits is set. FromPMPGroup's bit-test Selected[i]
+    // = (DefaultSettings & (1UL << i)) != 0 therefore selects EVERY option, but Selection's own
+    // getter (:594-601) only ORs bits for i < Options.Count -- so a 3-option Multi group regenerates
+    // 0b111 = 7, not -1 and not ulong.MaxValue.
+    const out = writePmp(modeledGroup("Multi", 3, -1));
+    expect(readGroupDefaultSettings(out)).toBe(0b111);
+  });
+
+  it("Multi, a source bit beyond Options.Count is masked off even for an in-range positive value", () => {
+    // Source 0b1011 (bits 0,1,3) on a 3-option (bits 0..2) group: FromPMPGroup selects options 0,1
+    // (bit 3 has no corresponding option, so Selected[3] is simply never assigned/read), and
+    // Selection's own loop bound (i < Options.Count) can never OR bit 3 back in either way.
+    const out = writePmp(modeledGroup("Multi", 3, 0b1011));
+    expect(readGroupDefaultSettings(out)).toBe(0b011);
+  });
+});
+
 describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:1246-1263/:1583-1600)", () => {
   // ClearNulls' group-level prune (WizardData.cs:1246-1263, `if (g == null || !g.HasData)`) reduces
   // to a purely STRUCTURAL check on our load paths -- WizardOptionEntry.HasData's Read-mode
@@ -891,5 +1113,171 @@ describe("writePmp IsMetaInternalFile drop (PMP.cs:901-905 -> IOUtil.cs:577-592)
     const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
     expect(Object.keys(dm.Files)).toEqual([normal]);
     expect(dm.Files[normal]).toBe(`default\\${normal.replace(/\//g, "\\")}`);
+  });
+});
+
+describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
+  // WritePmp's own assembly loop throws BEFORE any prefix is put to use when a Standard-type
+  // option's name, or its owning group's name, is blank/whitespace-only -- but only for an option
+  // that SURVIVES pruning (has a data-carrying group; the synthesized Default group is exempt, see
+  // this guard's own comment in pmp.ts).
+  function modeledData(groupName: string, optionName: string): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "Blank",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [], // empty -> IsEmptyOption -> no synthesized Default page at all
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name: groupName,
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: optionName,
+              description: "",
+              image: "",
+              priority: 0,
+              files: [
+                {
+                  gamePath: "chara/x.tex",
+                  data: new Uint8Array([1]),
+                  storage: FileStorageType.RawUncompressed,
+                },
+              ],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("throws when a Standard-type option's name is blank", () => {
+    expect(() => writePmp(modeledData("Choice", "  "))).toThrow(
+      /PMP Files must have valid group and option names \(WizardData\.cs:1520-1523\)/,
+    );
+  });
+
+  it("throws when a Standard-type group's name is blank", () => {
+    expect(() => writePmp(modeledData("  ", "Only"))).toThrow(
+      /PMP Files must have valid group and option names \(WizardData\.cs:1520-1523\)/,
+    );
+  });
+});
+
+describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
+  // PopulatePmpStandardOption converts a .meta/.rgsp file to Manipulations instead of writing it as
+  // a zip member (PMP.cs:891-900 -> PMPExtensions.MetadataToManipulations/RgspToManipulations) --
+  // unported (see pmp.ts's own comment on this guard / BACKLOG.md), so writePmp fails loud instead
+  // of silently emitting a member TexTools would never write.
+  function modeledData(gamePath: string): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "MetaRgsp",
+        author: "",
+        version: "",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [], // empty -> IsEmptyOption -> no synthesized Default page at all
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+        {
+          name: "Choice",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "Only",
+              description: "",
+              image: "",
+              priority: 0,
+              files: [
+                {
+                  gamePath,
+                  data: new Uint8Array([1, 2]),
+                  storage: FileStorageType.RawUncompressed,
+                },
+              ],
+              fileSwaps: {},
+              manipulations: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("throws when writing a .meta file into a PMP", () => {
+    expect(() => writePmp(modeledData("chara/foo.meta"))).toThrow(
+      /unported \(PMP\.cs:891-900 converts it to Manipulations\): chara\/foo\.meta/,
+    );
+  });
+
+  it("throws when writing a .rgsp file into a PMP", () => {
+    expect(() => writePmp(modeledData("chara/foo.rgsp"))).toThrow(
+      /unported \(PMP\.cs:891-900 converts it to Manipulations\): chara\/foo\.rgsp/,
+    );
   });
 });

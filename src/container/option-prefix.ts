@@ -269,7 +269,42 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   const groupFolderPaths = new Map<ModpackGroup, string>();
   const optionFolderPaths = new Map<ModpackOption, string>();
 
-  // WizardData.cs:1506-1542 — the same page/group/option nesting order WritePmp iterates in.
+  // TWO passes, mirroring WritePmp's own two separate loops over DataPages — reproduced as two
+  // loops here (not one page/group/option nesting pass) because they resolve MakeGroupPrefix
+  // collisions in a DIFFERENT ORDER than a single pass would:
+  //
+  //   PASS 1 (WizardData.cs:1506-1542, "compose file storage information"): the per-OPTION loop
+  //   `continue`s past any option whose GroupType != Standard BEFORE it ever reaches
+  //   MakeOptionPrefix (:1513-1516/:1526) — and MakeOptionPrefix's 3-arg overload calls
+  //   MakeGroupPrefix as a side effect (:1414-1418, `MakeGroupPrefix(page, group);`). So every
+  //   Standard-type group across the WHOLE pack claims its MakeGroupPrefix slot (and its options'
+  //   MakeOptionPrefix slots) here — an Imc-type group's FolderPath is untouched by this pass.
+  //
+  //   PASS 2 (WizardData.cs:1583-1600, the group_NNN.json emission loop): calls MakeGroupPrefix(p, g)
+  //   directly for EVERY surviving group, Standard or Imc alike, with no type check — a no-op for a
+  //   group PASS 1 already resolved (MakeGroupPrefix/MakePagePrefix both memoize via a
+  //   present/absent FolderPath), but the FIRST resolution for an Imc-type group.
+  //
+  // Net effect: every Standard-type group claims its folder slot before any Imc-type group does, so
+  // an Imc group that collides on name with a Standard group always loses the clean "<name>/" to it
+  // and gets bumped to " (1)/" — never the reverse, regardless of which one appears first in the
+  // page's group order. A single loop over page.groups (as this used to be) would let an Imc group
+  // steal the clean slot when it happens to come first, changing a Standard group's payload member
+  // names.
+  for (const page of pages) {
+    for (const group of page.groups) {
+      if (group.selectionType === "Imc") continue; // WizardData.cs:1513-1516
+      const groupFolderPath = makeGroupPrefix(
+        pages,
+        page,
+        group,
+        groupFolderPaths,
+      );
+      for (const option of group.options) {
+        makeOptionPrefix(group, groupFolderPath, option, optionFolderPaths);
+      }
+    }
+  }
   for (const page of pages) {
     for (const group of page.groups) {
       const groupFolderPath = makeGroupPrefix(

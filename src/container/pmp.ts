@@ -138,7 +138,6 @@ function optionFromJson(
       gamePath,
       data,
       storage: FileStorageType.RawUncompressed,
-      pmpPath: zipPath,
     });
   }
   return {
@@ -326,6 +325,50 @@ export function reformatPmpVersion(source: string): string {
   return [m[1], m[2], m[3], m[4]].filter((p) => p !== undefined).join(".");
 }
 
+/** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604), reconstructed from the read-time
+ * derivation `FromPMPGroup` performs per option (`Selected`, WizardData.cs:805-813) plus its
+ * Single-type "nothing selected" fixup (WizardData.cs:857-860). `ToPmpGroup` writes
+ * `pg.DefaultSettings = Selection` (:949) rather than the source value: our domain model has no
+ * per-option `Selected` flag -- only the group's raw `defaultSettings` source value -- so this
+ * recomputes exactly what those two C# passes would have left on `Options[i].Selected` before
+ * `Selection`'s getter reads it back.
+ *
+ * `defaultSettings` -> ulong: `CustomUInt64Converter` (PMP.cs:1558-1571) reinterprets a JSON token
+ * Newtonsoft parsed as a negative number as its 64-bit two's-complement UNSIGNED value (the
+ * documented "-1 meant 2^64-1" bug-compatibility shim, PMP.cs:1564-1565) -- reproduced here via
+ * `BigInt.asUintN(64, ...)` rather than JS's 32-bit `|`, since a real ulong can exceed 32 bits.
+ * `optionType` mirrors `group.OptionType = pGroup.Type == "Single" ? Single : Multi`
+ * (WizardData.cs:769) -- an Imc (or hypothetical "Combining") group's Type is never "Single", so it
+ * takes the Multi/bitmask branch exactly like a real Multi group.
+ *
+ * Caps at Number precision (2^53) for the Multi/bitmask accumulator: a real PMP group is never
+ * remotely close to 53 options, so `Number(total)` staying exact for any input this codebase's
+ * corpus/tests can produce is a safe simplification, not a silently-wrong answer for a case that
+ * actually occurs -- and the domain model types `defaultSettings`/`DefaultSettings` as `number`
+ * throughout, not `bigint`, so returning a `bigint` here would just push the same cap elsewhere. */
+function computeSelection(
+  defaultSettings: number,
+  optionType: string,
+  optionCount: number,
+): number {
+  const raw = BigInt.asUintN(64, BigInt(Math.trunc(defaultSettings)));
+  if (optionType === "Single") {
+    // FromPMPGroup: Selected[i] = (raw == i) for i in 0..optionCount-1 (WizardData.cs:807). The
+    // read-time fixup forces Options[0].Selected when NONE matched (WizardData.cs:857-860), so an
+    // out-of-range (or negative) source value always regenerates 0 here, matching Selection's
+    // `FirstOrDefault` "-> return 0" branch (WizardData.cs:585-588) applied to Options[0].
+    return raw < BigInt(optionCount) ? Number(raw) : 0;
+  }
+  // Multi (and Imc/Combining, which also get OptionType=Multi -- see this function's doc comment):
+  // Selection ORs bit i only for i < Options.Count (WizardData.cs:594-601) -- every bit at or past
+  // the option count is masked off, however wide the source value was.
+  let total = 0n;
+  for (let i = 0; i < optionCount; i++) {
+    if ((raw & (1n << BigInt(i))) !== 0n) total |= 1n << BigInt(i);
+  }
+  return Number(total);
+}
+
 /** Reconstruct a PMP option JSON document, regenerating `Files`/`FileSwaps`/`Manipulations` from the
  * model. TexTools NEVER round-trips these: PopulatePmpStandardOption (PMP.cs:871-928) builds `Files`
  * fresh from the typed model (`opt.Files.Add(fi.Path, fi.PmpPath.Replace("/", "\\"))`, :914), and
@@ -370,7 +413,7 @@ function optionToJson(
   const base: PmpOptionJsonRaw = {};
 
   if (includeMeta) {
-    base.Name = o.name;
+    base.Name = o.name.trim(); // WizardData.cs:928 -- `option.Name = option.Name.Trim();`
     base.Description = o.description;
     // WizardHelpers.WriteImage (WizardData.cs:545/:953/:1497) re-encodes a REFERENCED image into a
     // fresh 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than
@@ -420,8 +463,8 @@ export function writePmp(data: ModpackData): Uint8Array {
 
   // Regenerate every zip path from the typed model, the way TexTools does: optionPrefix + gamePath,
   // then content-dedup into common/{idx}/ (WizardData.cs:1526 -> PmpExtensions.cs:476-566). The
-  // source pack's own member names (`pmpPath`) are NOT reused — that round-trip is what made a
-  // generated file unnameable (see optionToJson's doc comment).
+  // source pack's own member names are NOT reused — that round-trip is what made a generated file
+  // unnameable (see optionToJson's doc comment).
   const prefixes = optionPrefixes(data);
 
   // Port of the blank-name guard in WritePmp's assembly loop (WizardData.cs:1520-1523): a
@@ -547,11 +590,22 @@ export function writePmp(data: ModpackData): Uint8Array {
   // reused below for the group_NNN emission + Page renumbering too (WizardData.cs:1583-1600).
   const pages = buildPages(data);
   const orderedGroups = pages.flatMap((p) => p.groups);
+  // `g.name` is compared TRIMMED: WizardData.cs:1510 (`g.Name = g.Name.Trim();`) mutates every
+  // group's Name in place, in the SAME loop that builds `allFiles`/`identifiers`, which runs to
+  // completion (across ALL pages) BEFORE this absorption search (:1553-1578) ever looks at it — so
+  // by the time the search runs, every group's Name is already trimmed, structurally: a real group
+  // literally named "Default " (trailing space) DOES match here in the real C#.
+  //
+  // `g.options[0]!.name`, by contrast, is compared UNTRIMMED: an option's Name is only ever trimmed
+  // inside ToPmpGroup (WizardData.cs:928), which this search calls AFTER its own name comparison has
+  // already succeeded or failed (:1562, `g.ToPmpGroup(...)`) — so the search itself never sees a
+  // trimmed option name. Trimming it here would falsely absorb a group whose sole option is named
+  // e.g. " Default" (leading space), which the real C# does NOT absorb.
   const defaultModGroup = orderedGroups.find((g) =>
     g === defaultGroup
       ? true // hardcoded Name="Default"/Options[0].Name="Default" (WizardData.cs:1122/1128)
       : g.selectionType !== "Imc" &&
-        (g.name === "Default" || g.name === "Default Group") &&
+        (g.name.trim() === "Default" || g.name.trim() === "Default Group") &&
         g.options.length === 1 &&
         (g.options[0]!.name === "Default" ||
           g.options[0]!.name === "Default Option"),
@@ -661,13 +715,22 @@ export function writePmp(data: ModpackData): Uint8Array {
         ...filteredRaw,
         ...defaultEntryOverride,
         Version: 0,
-        Name: g.name,
+        // WizardData.cs:946 (`pg.Name = (Name ?? "").Trim();`) -- redundant with :1510's earlier
+        // in-place mutation for a real PMP group's Name (both trims are idempotent), but this is
+        // the ONLY trim a model-built (no-`raw`) group's Name ever goes through.
+        Name: g.name.trim(),
         Description: g.description,
         Image: g.image,
         Page: pageCounter,
         Priority: g.priority,
         Type: g.selectionType,
-        DefaultSettings: g.defaultSettings,
+        // WizardData.cs:949 (`pg.DefaultSettings = Selection;`) -- regenerated, not carried through
+        // verbatim; see computeSelection's doc comment.
+        DefaultSettings: computeSelection(
+          g.defaultSettings,
+          g.selectionType,
+          g.options.length,
+        ),
         Options: g.options.map((o) =>
           optionToJson(o, true, hasStandardFields, isMultiOption, zipPaths),
         ),
