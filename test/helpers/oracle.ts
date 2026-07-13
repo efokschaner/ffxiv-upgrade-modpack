@@ -1,14 +1,17 @@
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -122,9 +125,82 @@ export function assertCorpusPresent(
   }
 }
 
+/** Cross-process mutex for ConsoleTools. The tool is not safe to run concurrently (shared
+ *  config/lock/temp state — observed 2026-07-12: several cold /upgrade spawns fail together with
+ *  exit -1, while the same inputs succeed one at a time). The corpus runner schedules units across
+ *  Vitest's `forks` pool, so an in-process lock cannot help: the lock must be a filesystem object.
+ *
+ *  O_EXCL create is the acquire; unlink is the release. A holder that crashes leaves the file
+ *  behind, so a lock older than `staleMs` is broken by force. Sleeping is synchronous (Atomics.wait
+ *  on a throwaway SharedArrayBuffer) because run() is execFileSync — there is no event loop to
+ *  yield to. */
+const LOCK_PATH = join(tmpdir(), "ffxiv-upgrade-modpack-consoletools.lock");
+const LOCK_STALE_MS = 10 * 60 * 1000; // > the longest single ConsoleTools run we have seen
+const LOCK_TIMEOUT_MS = 20 * 60 * 1000;
+const LOCK_POLL_MS = 50;
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+export function withConsoleToolsLock<T>(
+  body: () => T,
+  opts: { lockPath?: string; staleMs?: number; timeoutMs?: number } = {},
+): T {
+  const lockPath = opts.lockPath ?? LOCK_PATH;
+  const staleMs = opts.staleMs ?? LOCK_STALE_MS;
+  const timeoutMs = opts.timeoutMs ?? LOCK_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  let fd: number | null = null;
+
+  for (;;) {
+    try {
+      fd = openSync(lockPath, "wx"); // O_CREAT | O_EXCL — atomic acquire
+      break;
+    } catch {
+      // Held by someone. Break it if it is older than staleMs (its holder crashed).
+      let age = 0;
+      try {
+        age = Date.now() - statSync(lockPath).mtimeMs;
+      } catch {
+        continue; // vanished between open and stat — retry the acquire immediately
+      }
+      if (age > staleMs) {
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // Another waiter broke it first; either way the next acquire attempt decides.
+        }
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `Timed out after ${timeoutMs}ms waiting for the ConsoleTools lock (${lockPath}). ` +
+            `If no ConsoleTools is running, delete that file.`,
+        );
+      }
+      sleepSync(LOCK_POLL_MS);
+    }
+  }
+
+  try {
+    return body();
+  } finally {
+    try {
+      closeSync(fd);
+      unlinkSync(lockPath);
+    } catch {
+      // Already released/broken — nothing to do.
+    }
+  }
+}
+
 function run(args: string[]): void {
   // execFileSync throws on non-zero exit; ConsoleTools returns -1 on error (Program.cs:94-138).
-  execFileSync(CONSOLE_TOOLS, args, { stdio: "pipe" });
+  // Serialized across processes: ConsoleTools is not concurrency-safe (see withConsoleToolsLock).
+  withConsoleToolsLock(() => {
+    execFileSync(CONSOLE_TOOLS, args, { stdio: "pipe" });
+  });
 }
 
 export function resave(src: string, dest: string): void {
