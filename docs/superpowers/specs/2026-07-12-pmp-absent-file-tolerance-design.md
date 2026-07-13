@@ -59,11 +59,19 @@ Each call site then decides for itself — and they do **not** agree. The table 
 | Round | C# | Absent behaviour |
 |---|---|---|
 | material scan (`UpdateEndwalkerMaterials`) | `:495` `if (file == null) continue;` | **skip**, file untouched |
-| model (`UpdateEndwalkerModel`) | `:252` `if (uncomp == null) return;` | **skip** |
+| model (`FixOldModel` — the one we port) | `:192` `GetUncompressedFile` — **unguarded** | **throw** (unreachable — see below) |
 | `IndexMaps` (`UpgradeRemainingTextures`) | `:1840` `ContainsKey` → `CreateIndexFromNormal` returns null data (`:1087`) → `:1843` `continue` | **skip** |
 | `GearMaskLegacy` | `:1879` `ContainsKey` → `:1883` null-checked | **skip** |
 | `GearMaskNew` | `:1867` `ContainsKey` → `:1870` passes null into `UpgradeMaskTex` → NRE | **throw** |
 | `HairMaps` | `:1852` both keys `ContainsKey` → `UpdateEndwalkerHairTextures` `:1187` `throw new FileNotFoundException` | **throw** |
+
+**On the model row.** `UpdateEndwalkerModel` (`:250`, the `FastMdlv6Upgrade` path) *does* null-guard via
+`ResolveFile` (`:252-256`) — but that is **not the function we port**. Our `modelRound` calls
+`normalizeModel`, which ports **`FixOldModel`** (`:190`), whose read at `:192` is unguarded; and
+`modelRound` is gated by `needsMdlFix`, which mirrors `DoesModpackNeedFix` (`TTMP.cs:916-930`) and is
+**false for PMP**. Since absent files are PMP-only, an absent file can never reach that round. It
+therefore fails loud (`requireBytes`) rather than being given a skip TexTools does not have at that
+seam. (That we do not port `UpdateEndwalkerModel` at all is a separate, pre-existing gap.)
 
 Two consequences worth stating explicitly:
 
@@ -118,7 +126,8 @@ the harness can reuse the one definition (§4.1).
 
 `uncompressedBytes` (`src/upgrade/upgrade.ts:66-72`) becomes the port of `ResolveFile`: it returns
 `null` when the file has no bytes. Each round then mirrors its C# call site from the §2 table exactly
-— `materialRound` and `modelRound` skip; `upgradeRemainingTextures` skips for `IndexMaps` and
+— `materialRound` skips; `modelRound` fails loud (unreachable, per the note above);
+`upgradeRemainingTextures` skips for `IndexMaps` and
 `GearMaskLegacy` and **throws** for `GearMaskNew` and `HairMaps`, each with the citation and, for
 `GearMaskNew`, a comment naming the upstream bug.
 
