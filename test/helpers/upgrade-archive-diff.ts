@@ -233,9 +233,10 @@ function diffPayloadMembers(
   return diffs;
 }
 
-/** STRUCTURE (manifest member-name set) + MANIFEST (semantic deep-equal) diffs between two
- * un-archived modpacks. Payload content is diffed separately by diffUpgrade. Orientation matches
- * diffUpgrade: golden-only member => "added"; ours-only => "removed"; shared+unequal => "mismatch".
+/** STRUCTURE (manifest member-name set) + MANIFEST (one diff per differing JSON pointer, via
+ * `jsonPointerDiff`) diffs between two un-archived modpacks. Payload content is diffed separately
+ * by diffUpgrade. Orientation matches diffUpgrade: golden-only member => "added"; ours-only =>
+ * "removed"; shared+unequal => "mismatch".
  * See docs/superpowers/specs/2026-07-08-modpack-serialization-parity-design.md §3.
  *
  * `checkPayloadMembers` additionally compares the *names* of non-manifest members (see
