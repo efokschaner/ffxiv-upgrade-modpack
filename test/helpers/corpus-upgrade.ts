@@ -42,10 +42,17 @@ export function registerUpgradeCheck(pack: string): void {
       // STRUCTURE + MANIFEST alongside the unchanged payload diff. See the parity design spec.
       const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
       const oursArchive = writeModpack(oursModel, target);
+      // Diff the ARTIFACT WE SHIP, not the in-memory model. Feeding `oursModel` here made every
+      // writer bug invisible by construction: a file the writer emits with no `Files` key naming it
+      // is a perfectly good file in the model and an unreachable orphan in the pack. Re-reading
+      // closes that gap — such a file comes back as an ExtraFile, drops out of `allFiles`, and its
+      // gamePath shows as `added` against the golden. (It also puts the whole write->read round-trip
+      // under the golden oracle for free.)
+      const oursReRead = loadModpack(name, oursArchive);
 
       const payload = diffUpgrade(
         name,
-        oursModel,
+        oursReRead,
         reference,
         confirmDivergence,
       );
