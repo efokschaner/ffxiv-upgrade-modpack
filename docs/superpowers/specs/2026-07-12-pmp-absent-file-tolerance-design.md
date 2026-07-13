@@ -124,12 +124,26 @@ the harness can reuse the one definition (§4.1).
 
 ### 3.3 Read seam — port `ResolveFile`
 
-`uncompressedBytes` (`src/upgrade/upgrade.ts:66-72`) becomes the port of `ResolveFile`: it returns
-`null` when the file has no bytes. Each round then mirrors its C# call site from the §2 table exactly
-— `materialRound` skips; `modelRound` fails loud (unreachable, per the note above);
-`upgradeRemainingTextures` skips for `IndexMaps` and
-`GearMaskLegacy` and **throws** for `GearMaskNew` and `HairMaps`, each with the citation and, for
-`GearMaskNew`, a comment naming the upstream bug.
+The read seam splits in two, because not every round is a `ResolveFile` caller in C#:
+
+- **`resolveFile(f)`** (`src/upgrade/upgrade.ts`) is the faithful port of `ResolveFile`
+  (`EndwalkerUpgrade.cs:1761-1774`). It returns `null` in **both** of C#'s null cases: the file has no
+  bytes (`:1765`), *and* the read throws (`:1771-1774` `catch { return null; }` — so an undecodable
+  SqPack entry resolves to null, not an exception). The `tx` fallback (`:1777-1782`) has no analogue
+  in our model. Used by every true `ResolveFile` seam: the material scan, `IndexMaps`,
+  `GearMaskLegacy`, `GearMaskNew` and `HairMaps`.
+- **`requireBytes(f)`** is a *direct* read: it throws when the file has no bytes and lets a decode
+  error propagate unchanged. Used by the two rounds that are **not** `ResolveFile` callers —
+  `modelRound` (ports `FixOldModel`, whose read at `:192` is unguarded) and `metadataRound` (no C#
+  analogue). Keeping these off `resolveFile` is what stops us conflating *absent* with *undecodable*
+  at seams where C# would have surfaced the real error.
+
+Each round then mirrors its own C# call site from the §2 table: `materialRound` skips (and the skip
+sits **above** the per-material `try`, as `:496-499` precedes `:501`); `modelRound` fails loud
+(unreachable, per the note above); `upgradeRemainingTextures` skips for `IndexMaps` and
+`GearMaskLegacy`, and **throws** for `GearMaskNew` and `HairMaps` — both of which resolve first and
+then dereference the null in C#, so an undecodable entry throws there too. Each carries its citation
+and, for `GearMaskNew`, a comment naming the upstream bug (`docs/TEXTOOLS_BUGS.md` §1).
 
 `metadataRound` keeps throwing: PMP `.meta` files come from manipulations, never from a zip member,
 so an absent `.meta` is unreachable — a fail-loud guard, not a ported behaviour. `texFixRound` is
