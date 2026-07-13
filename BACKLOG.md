@@ -205,25 +205,13 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   that hit this would likely already show as missing files against its golden), but that scan has
   **not** been run — do it as step one rather than trusting this note.
 
-- **ConsoleTools is not safe to run concurrently — the oracle needs a mutex.** `run()`
-  (`test/helpers/oracle.ts:125-128`) shells out to `ConsoleTools.exe` with no cross-process
-  serialization, and the runner schedules corpus units across Vitest's `forks` pool, so a **cold
-  cache spawns several ConsoleTools at once**. Observed 2026-07-12: after rebuilding the three
-  synthetic packs (new content-hash → cold `/upgrade` cache), all 6 affected units failed together
-  with `Command failed: ConsoleTools.exe /upgrade …` (ConsoleTools returns `-1`, so `execFileSync`
-  throws). The same binary on the **same input bytes succeeds every time when run alone**, and
-  re-running the 6 units serially (`CORPUS_UNIT=<i> npm test`) passed all 6 and warmed the cache,
-  after which the full suite was green — i.e. the inputs were never at fault, the concurrency was.
-  Operator confirms he has hit ConsoleTools concurrency problems outside this project too, so treat
-  it as a property of the tool (it likely assumes a single instance — shared config/lock/temp state),
-  not of our harness. Today this is **masked**: the cache is content-addressed and warm, so a normal
-  run spawns nothing; it only bites when several goldens go cold at once (new corpus mods, rebuilt
-  synthetics, a cleared `.upgrade-cache/`) — precisely when a newcomer first populates the corpus, so
-  it reads as a spurious hard failure. Fix: serialize **all** ConsoleTools invocations behind a
-  cross-process mutex (the pool is multi-process, so an in-process lock is insufficient — needs e.g.
-  a lockfile / named mutex around `run()` in `oracle.ts`, covering `/upgrade`, `/resave`, `/unwrap`,
-  `/wrap`). Consider also a serial cache-warm entry point so a cold corpus can be populated in one
-  pass. Harness robustness; no correctness impact on the port itself.
+- **Serial cache-warm entry point for the corpus.** A cold corpus (new corpus mods, rebuilt
+  synthetics, a cleared `.upgrade-cache/`) still spawns ConsoleTools once per uncached entry across
+  Vitest's parallel `forks` pool; `withConsoleToolsLock` (`test/helpers/oracle.ts`) now serializes
+  those spawns so they succeed instead of failing together, but a full cold-corpus run still pays for
+  each spawn's wait-in-queue serially. A dedicated entry point that warms the cache in one pass
+  up front (outside the parallel test run) would let a newcomer populate a cold corpus faster.
+  Harness convenience; no correctness impact on the port itself.
 
 - **Expected-failure golden capability for the upgrade harness.** The golden harness models only
   two ConsoleTools `/upgrade` outcomes: a produced **pack** or a **noop** marker
