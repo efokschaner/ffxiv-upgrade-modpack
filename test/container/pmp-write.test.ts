@@ -381,10 +381,10 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
 
   it("collapses to one member when the colliding names carry IDENTICAL bytes", () => {
     // IDENTICAL bytes across "Choice" and "Choice." never actually reach the windowsPathKey
-    // collapse as two DIFFERENT strings: resolveDuplicates (Task 7) already content-dedups equal
-    // hashes onto one shared `common/{idx}/` path first, so both options resolve to the exact
-    // same zip path before writePmp's own collapse loop ever runs. This still exercises that
-    // loop (it sees the same key/path assigned twice) without tripping the throw.
+    // collapse as two DIFFERENT strings: resolveDuplicates already content-dedups equal hashes
+    // onto one shared `common/{idx}/` path first, so both options resolve to the exact same zip
+    // path before writePmp's own collapse loop ever runs. This still exercises that loop (it sees
+    // the same key/path assigned twice) without tripping the throw.
     const out = writePmp(buildData(new Uint8Array([1, 2, 3])));
     const members = readZip(out);
     expect(members.has("common/1/x.mdl")).toBe(true);
@@ -806,9 +806,9 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
 describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mode short-circuit, WizardData.cs:257-266)", () => {
   // A group whose lone option carries no files/fileSwaps/manipulations at all (e.g. because EVERY
   // one of its raw Files entries was canImport-rejected) is NOT pruned by TexTools: it is written as
-  // its own group_NNN.json with an empty "Files": {}. A prior review instructed pruning such groups;
-  // that ports a branch (WizardOptionEntry.HasData's content check) that is dead code on every load
-  // path this port reaches, since ModOption is always set (see option-prefix.ts's header comment).
+  // its own group_NNN.json with an empty "Files": {}. Pruning it would port WizardOptionEntry.
+  // HasData's content check — a branch that is dead code on every load path this port reaches, since
+  // ModOption is always set there (see option-prefix.ts's header comment).
   function buildData(): ModpackData {
     return {
       sourceFormat: ModpackFormat.Ttmp2,

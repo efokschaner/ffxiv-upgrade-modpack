@@ -1,7 +1,7 @@
 // Port of PMPExtensions.ResolveDuplicates (PmpExtensions.cs:476-566): assigns every PMP payload
 // file its final zip path -- `<optionPrefix><gamePath>` for a file used once, content-deduped into
 // `common/{idx}/{basename}` for a file whose bytes repeat anywhere in the pack (any option, any
-// group). `optionPrefix` per option comes from Task 6's `optionPrefixes` (src/container/option-prefix.ts,
+// group). `optionPrefix` per option comes from `optionPrefixes` (src/container/option-prefix.ts,
 // MakeOptionPrefix); this module is the second half of `WizardData.WritePmp`'s file-naming pipeline
 // (WizardData.cs:1502-1546 -> FileIdentifier.IdentifierListFromDictionaries, PmpExtensions.cs:594-626).
 //

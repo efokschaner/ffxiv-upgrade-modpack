@@ -1,31 +1,19 @@
 // Builds test/corpus/synthetic/absent-file-upgraded.pmp: like absent-file.pmp (an option whose
 // Files map names a payload the archive never contains), but paired with a payload that genuinely
-// upgrades, so ConsoleTools /upgrade actually WRITES a pack instead of no-opping — giving the
-// writer's Files-key drop (PMP.cs:883-888) a real /upgrade golden instead of only the `/resave`
-// probe + writePmp unit test. Verified empirically (spike, see docs/superpowers/plans/
-// 2026-07-12-pmp-absent-file-tolerance.md Task 6): ConsoleTools writes group_001_absent.json with
-// the absent gamePath's Files key gone and the surviving mtrl's key intact.
-//
-// Registered in build-all.ts (2026-07-13, feat/pmp-writer-regeneration Task 9). It was blocked
-// until then: this pack's repro target (group_001_absent.json) already matched ConsoleTools
-// byte-for-byte, but meta.json/default_mod.json did not — writePmp used to re-emit the source
-// manifest documents verbatim, where TexTools' writer always regenerates them from its typed model
-// (adds "Image": ""; drops Name/Description; adds "Version": 0). Task 8's writer-regeneration port
-// closed that gap (see BACKLOG.md's now-fixed "writePmp round-trips the source pack..." entry), and
-// this pack reaches a clean 0-diff (verified in the spike referenced above).
+// upgrades, so ConsoleTools /upgrade actually WRITES a pack instead of no-opping. That is what
+// gives the writer's Files-key drop (PMP.cs:883-888) a real /upgrade golden: ConsoleTools emits
+// group_001_absent.json with the absent gamePath's Files key gone and the surviving mtrl's key
+// intact, and we must match it byte-for-byte.
 //
 // Two things this pack must get right or it tests the wrong thing entirely:
 //
-// 1. Zip layout. TexTools' writer regenerates every payload entry name as
-//    `<optionPrefix><gamePath>` (PmpExtensions.cs:534) rather than reusing the source archive's
-//    member name — a pre-existing, otherwise-invisible divergence from our writer (which reuses
-//    the source name; see BACKLOG.md, "writePmp reuses source zip member names"). For a
-//    single-option group, MakeOptionPrefix (WizardData.cs:1419) collapses to the group's own
-//    folder (no per-option subfolder), and MakeGroupPrefix (:1383-1412) lowercases the group name
-//    via IOUtil.MakePathSafe and appends "/". A one-page, one-group, one-option pack named "Absent"
-//    therefore gets optionPrefix "absent/", so every payload here is zipped at "absent/<gamePath>" —
-//    matching what TexTools' writer would independently compute, so both writers agree and the
-//    diff isolates the Files-key drop instead of the naming divergence.
+// 1. Zip layout. Both writers regenerate every payload entry name as `<optionPrefix><gamePath>`
+//    (PmpExtensions.cs:534). For a single-option group, MakeOptionPrefix (WizardData.cs:1419)
+//    collapses to the group's own folder (no per-option subfolder), and MakeGroupPrefix
+//    (:1383-1412) lowercases the group name via IOUtil.MakePathSafe and appends "/". A one-page,
+//    one-group, one-option pack named "Absent" therefore gets optionPrefix "absent/", so every
+//    payload here is zipped at "absent/<gamePath>" — keeping the diff focused on the Files-key
+//    drop rather than on naming.
 // 2. The material must actually upgrade. DoesMtrlNeedDawntrailUpdate (EndwalkerUpgrade.cs:550)
 //    fires on any 256-entry (Endwalker-era) colorset, which buildMtrlWithNormalPath below encodes,
 //    with a NormalMap0 sampler bound so the colorset round's normalTex lookup

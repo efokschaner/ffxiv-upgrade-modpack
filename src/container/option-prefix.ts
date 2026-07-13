@@ -38,32 +38,24 @@
 // `group.options.length > 0`, not any per-option content predicate -- a content-free group (e.g.
 // every option's `Files` rejected by `canImport`, or an authored group with an empty `Files: {}`) is
 // KEPT, gets its own `group_NNN.json` with `"Files": {}`, and DOES occupy a `MakeGroupPrefix`
-// collision slot, exactly like TexTools does. Do NOT "re-fix" this into a content check -- a prior
-// review instructed exactly that, and it silently diverges from the golden. `ClearNulls`' innermost
-// step, `if (o == null) g.Options.Remove(o)` (:1259-1262), is still not ported: our `ModpackOption`
-// model has no null-option representation, so that step can never apply to data built from it.
+// collision slot, exactly like TexTools does. `groupHasData` must therefore NOT be turned into a
+// content check: that silently diverges from the golden. `ClearNulls`' innermost step,
+// `if (o == null) g.Options.Remove(o)` (:1259-1262), is not ported: our `ModpackOption` model has no
+// null-option representation, so that step can never apply to data built from it.
 //
-// A NOTE FOR TASK 8 (writePmp) — two things this module's own shape depends on that the writer must
-// preserve:
+// Two contracts this module's callers depend on:
 //   - `optionPrefixes` returns NO ENTRY for an option whose group never made it into a surviving
-//     page (e.g. the synthesized Default option when it's empty, or now also a content-free real
-//     group). A consumer must treat "absent from the map" as "this option contributes no files / no
-//     folder" — NOT as `""`, which is a real, valid prefix for a different case (a lone group on a
-//     lone page, MakePagePrefix's WizardData.cs:1375-1378 branch).
-//   - `WritePmp`'s own assembly loop throws BEFORE ever calling `MakeOptionPrefix` on a
-//     file-carrying group/option with a blank name (`InvalidDataException`, WizardData.cs:1520-1523:
-//     `if (string.IsNullOrWhiteSpace(o.Name) || string.IsNullOrWhiteSpace(g.Name))`). That means the
-//     "Blank Group" / "Blank Option" substitutions inside `makeGroupPrefix` / `makeOptionPrefix`
-//     below are UNREACHABLE on the real write path for any Standard-type group that carries files —
-//     TexTools fails the whole write first. They are ported faithfully anyway (tests pin them:
-//     `MakeGroupPrefix` / `MakeOptionPrefix` are correct ports of their own C# symbols regardless of
-//     what calls them) because the guard lives in `WritePmp`'s caller loop, not in the prefix
-//     builders themselves — WritePmp's loop only reaches line 1520 for `EGroupType.Standard` options
-//     (`o.GroupType != EGroupType.Standard` continues past it first, WizardData.cs:1513-1516), so a
-//     blank name on a non-Standard (Imc) group never hits this particular throw. `writePmp` MUST
-//     reproduce the :1520-1523 throw itself when it starts calling into this module, or a
-//     blank-named file-carrying Standard group would silently get a "Blank Group"/"Blank Option"
-//     folder instead of failing loud like TexTools does.
+//     page (e.g. the synthesized Default option when it is empty). "Absent from the map" means "this
+//     option contributes no files and no folder" — it is NOT `""`, which is a real, valid prefix for
+//     a different case (a lone group on a lone page, MakePagePrefix's WizardData.cs:1375-1378 branch).
+//   - The "Blank Group" / "Blank Option" substitutions inside `makeGroupPrefix` / `makeOptionPrefix`
+//     are UNREACHABLE on the real write path: `WritePmp`'s assembly loop throws first on a blank name
+//     (`InvalidDataException`, WizardData.cs:1520-1523), and `writePmp` reproduces that throw
+//     (src/container/pmp.ts). They are ported faithfully anyway, because the guard lives in the
+//     caller loop rather than in the prefix builders, and these functions are correct ports of their
+//     own C# symbols regardless of what calls them. Note the loop only reaches :1520 for
+//     `EGroupType.Standard` options (`:1513-1516` continues past the others first), so a blank name
+//     on an Imc group never trips that throw.
 
 import type {
   ModpackData,
