@@ -222,3 +222,35 @@ input.
 
 **Upstream fix:** only print the success line when a file was actually written, and/or report the
 no-op distinctly.
+
+---
+
+## 10. `PopulatePmpStandardOption` silently destroys a pack's FileSwaps on write
+
+**Status:** **gap** — we fail loud instead · **Where:** `PMP.cs:873-875` (see
+`src/container/resolve-duplicates.ts`)
+
+`PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:874`) alongside `opt.Files` and
+`opt.Manipulations`, but unlike those two, nothing ever adds to it afterward — the function's body
+(`:876-928`) only populates `opt.Files` (from `files`) and `opt.Manipulations` (from the metadata/
+rgsp conversion and `otherManipulations`). This is the **only** writer of `PmpStandardOptionJson`
+(`WizardData.WritePmp` → `PopulatePmpStandardOption` is the sole call site that builds an option's
+JSON for the zip), so any option that came in with file swaps — a Penumbra mod that swaps one game
+file for another instead of shipping a custom replacement — has that data unconditionally discarded
+by TexTools' own writer. A round-trip through TexTools (`/resave`, or `/upgrade` when it needs to
+rewrite the pack at all) silently drops a mod author's file swaps from the emitted pack, with no
+warning and no error. That is a data-loss defect, not a transcribed SE oddity: nothing about game
+data or a legacy format forces it, it's a writer that starts populating a field and then never
+finishes the job for one of its three members.
+
+**Us:** `resolveDuplicates` throws when an option carries a non-empty `FileSwaps` map, rather than
+attempting to reproduce (or silently drop) file swaps. We can't reproduce TexTools' *read-side*
+placeholder mechanism faithfully either (`UnpackPmpOption`, `PMP.cs:1104-1137`, needs a live game
+index we don't have — see the throw site and `BACKLOG.md` for the full analysis), so failing loud is
+the only option that doesn't risk shipping a silently-wrong pack. No corpus PMP currently carries any
+FileSwaps (checked empirically, all 13 real corpus packs have `fileSwaps=0`), so this is latent.
+
+**Upstream fix:** either serialize `files`' original FileSwaps back into `opt.FileSwaps` in
+`PopulatePmpStandardOption` (matching `opt.Files`/`opt.Manipulations`'s treatment), or — if dropping
+them is intentional (e.g. because a swap's target may no longer resolve against the current game
+version) — log or surface that loss to the user instead of doing it silently.

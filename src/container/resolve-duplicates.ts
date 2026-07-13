@@ -7,12 +7,18 @@
 //
 // Three things ported deliberately, not by omission:
 //
-// 1. `useCompressed` is always false for us. GetHashKey's caller (PmpExtensions.cs:488-499) picks
-//    compressed-vs-uncompressed hashing by majority `StorageType` across the file set; a PMP model
-//    is entirely `RawUncompressed` (FileStorageType.RawUncompressed), so `compCount` is always 0 and
-//    the uncompressed branch always wins. We don't port the majority-vote branch at all -- only the
-//    branch that can ever be taken. And since only EQUALITY CLASSES of the hash matter for dedup
-//    (never the digest value itself), `sha1Hex` (src/util/sha1.ts) stands in for
+// 1. `useCompressed` is always false FOR INPUTS WE ACCEPT. GetHashKey's caller
+//    (PmpExtensions.cs:488-499) picks compressed-vs-uncompressed hashing by majority `StorageType`
+//    across the file set, defaulting to the else/compCount++ branch (:493-496) for anything that
+//    isn't `UncompressedIndividual`/`UncompressedBlob` -- which includes a FileSwap placeholder's
+//    `FileStorageInformation` default (`StorageType` is a struct field defaulting to
+//    `EFileStorageType.ReadOnly`, TransactionDataHandler.cs:25-47), so a pack WITH FileSwaps could
+//    in principle push `compCount` above `uncompCount`. It never does here because we reject any
+//    option with a non-empty FileSwaps map before this point (see the throw above) -- every file we
+//    actually hash is a real, always-`RawUncompressed` PMP file, so `compCount` is always 0 and the
+//    uncompressed branch always wins. We don't port the majority-vote branch at all -- only the
+//    branch that can ever be taken given that rejection. And since only EQUALITY CLASSES of the hash
+//    matter for dedup (never the digest value itself), `sha1Hex` (src/util/sha1.ts) stands in for
 //    `TransactionDataHandler.GetUncompressedFile` + `SHA1.ComputeHash` in one step: our in-memory
 //    `ModpackFile.data` already IS the uncompressed bytes, so there is no separate "resolve from
 //    disk" step to model.
@@ -83,6 +89,27 @@ export function resolveDuplicates(
           "come from optionPrefixes(data) for this same data",
       );
     }
+    // FileSwaps cannot be reproduced faithfully. In TexTools, ResolveDuplicates runs over
+    // WizardStandardOptionData.Files, which UnpackPmpOption (PMP.cs:1104-1137) populates by
+    // merging custom Files AND FileSwaps into one dictionary. On the /upgrade load path
+    // (WizardData.cs:818: `UnpackPmpOption(o, null, unzipPath, false)`) `zipArchivePath` is null,
+    // so `includeData` is false (PMP.cs:1015) and each FileSwap whose source resolves in the
+    // live game index becomes an empty placeholder, `ret.Add(src, new FileStorageInformation())`
+    // (PMP.cs:1130) -- deciding this requires `tx.Get8xDataOffset` against the GAME INDEX
+    // (PMP.cs:1063-1067, :1117-1122), which this browser-targeted library does not have and
+    // cannot open. `WizardStandardOptionData` has no separate FileSwaps field (WizardData.cs:69-80),
+    // so that placeholder flows on as an ordinary Files entry and reaches ResolveDuplicates, where
+    // it fails `File.Exists(null)` and burns an idx on the zero-hash path (PmpExtensions.cs:509-514;
+    // docs/TEXTOOLS_BUGS.md #8), shifting every later common/N number. We cannot reproduce that
+    // without a game index, so fail loud rather than silently diverge -- see BACKLOG.md.
+    if (Object.keys(option.fileSwaps).length > 0) {
+      throw new Error(
+        "resolveDuplicates: option has a non-empty FileSwaps map, which this port cannot reproduce " +
+          "faithfully -- deciding whether a swap yields an empty placeholder entry (PMP.cs:1104-1137) " +
+          "requires querying the live game index (tx.Get8xDataOffset, PMP.cs:1117-1122), which this " +
+          "browser-targeted library does not have. See BACKLOG.md for the full analysis.",
+      );
+    }
   }
 
   interface Entry {
@@ -125,7 +152,18 @@ export function resolveDuplicates(
   const result = new Map<ModpackFile, string>();
   for (const e of entries) {
     if (e.file.data === undefined) continue;
-    result.set(e.file, seenFiles.get(e.hash)!);
+    // Invariant: every entry's hash was inserted into seenFiles by the loop above (each entry sets
+    // seenFiles.set(e.hash, ...) on its own first occurrence, if not already present). Absent here
+    // would mean the two loops iterated `entries` inconsistently -- an internal bug, not a bad input.
+    const finalPath = seenFiles.get(e.hash);
+    if (finalPath === undefined) {
+      throw new Error(
+        `resolveDuplicates: internal invariant violated -- no seenFiles entry for hash of ` +
+          `${e.pmpPath}; the dedup pass (PmpExtensions.cs:528-551) must populate every hash before ` +
+          `this re-loop (PmpExtensions.cs:556-565) reads it back`,
+      );
+    }
+    result.set(e.file, finalPath);
   }
   return result;
 }

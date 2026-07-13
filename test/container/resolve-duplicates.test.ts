@@ -19,14 +19,18 @@ function file(gamePath: string, data?: Uint8Array): ModpackFile {
   return { gamePath, data, storage: FileStorageType.RawUncompressed };
 }
 
-function option(name: string, files: ModpackFile[]): ModpackOption {
+function option(
+  name: string,
+  files: ModpackFile[],
+  fileSwaps: Record<string, string> = {},
+): ModpackOption {
   return {
     name,
     description: "",
     image: "",
     priority: 0,
     files,
-    fileSwaps: {},
+    fileSwaps,
     manipulations: [],
   };
 }
@@ -217,6 +221,20 @@ describe("resolveDuplicates", () => {
 
     expect(() => resolveDuplicates(d, prefixes)).toThrow(/prefixes/);
   });
+
+  it(
+    "throws on a non-empty FileSwaps map -- we cannot faithfully reproduce the PMP.cs:1104-1137 " +
+      "placeholder mechanism (no game index) and TexTools' own writer drops FileSwaps anyway (PMP.cs:873-875)",
+    () => {
+      const opt = option("Opt", [file("a.tex", bytes(1))], {
+        "chara/dest.tex": "chara/src.tex",
+      });
+      const prefixes = new Map([[opt, "g/"]]);
+      const d = pack([group("G", [opt])]);
+
+      expect(() => resolveDuplicates(d, prefixes)).toThrow(/FileSwaps/);
+    },
+  );
 
   it("8. composes with the real optionPrefixes(): a content duplicate across two DIFFERENT options dedupes globally, matching the observed corpus shape ([Jaque] Romeo & Juliet: one common/N/ shared by paths from two options)", () => {
     const emptyDefault = option("", []);
