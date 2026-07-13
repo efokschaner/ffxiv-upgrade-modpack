@@ -12,7 +12,8 @@ export type CheckKind =
   | "tex"
   | "mdl"
   | "geometry"
-  | "upgrade";
+  | "upgrade"
+  | "resave";
 export interface Unit {
   pack: string;
   check: CheckKind;
@@ -20,8 +21,9 @@ export interface Unit {
 
 /**
  * Every (pack × check-family) work unit, in a stable order: packs sorted ascending, then per pack
- * the fixed check order [sqpack, golden, mtrl, tex, mdl, geometry, upgrade, (pmp if .pmp)]. sqpack is ONE unit (its three
- * tests share one decode via beforeAll). The index into this array is the virtual module's identity.
+ * the fixed check order [sqpack, golden, mtrl, tex, mdl, geometry, upgrade, resave, (pmp if .pmp)].
+ * sqpack is ONE unit (its three tests share one decode via beforeAll). The index into this array is
+ * the virtual module's identity.
  */
 export function enumerateUnits(): Unit[] {
   const units: Unit[] = [];
@@ -33,6 +35,7 @@ export function enumerateUnits(): Unit[] {
     units.push({ pack, check: "mdl" });
     units.push({ pack, check: "geometry" });
     units.push({ pack, check: "upgrade" });
+    units.push({ pack, check: "resave" });
     if (pack.toLowerCase().endsWith(".pmp")) units.push({ pack, check: "pmp" });
   }
   return units;

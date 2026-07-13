@@ -3,6 +3,7 @@ import { registerGoldenCheck } from "./corpus-golden";
 import { registerMdlChecks } from "./corpus-mdl";
 import { registerMtrlChecks } from "./corpus-mtrl";
 import { registerPmpManifestChecks } from "./corpus-pmp";
+import { registerResaveCheck } from "./corpus-resave";
 import { registerSqpackChecks } from "./corpus-sqpack";
 import { registerTexChecks } from "./corpus-tex";
 import { type CheckKind, enumerateUnits } from "./corpus-units";
@@ -20,6 +21,7 @@ const DISPATCH: Record<CheckKind, (pack: string) => void> = {
   mdl: registerMdlChecks,
   geometry: registerGeometryChecks,
   upgrade: registerUpgradeCheck,
+  resave: registerResaveCheck,
 };
 
 /** Register the checks for the unit at `index` in enumerateUnits(). Called by the virtual module

@@ -56,6 +56,117 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 
 ## Unprioritized
 
+### Findings from the `/resave` write-side oracle (2026-07-13)
+
+The `/resave` harness (`test/helpers/corpus-resave.ts`) is the first thing in the suite to AB-test our
+**writers** against TexTools (`/resave` = `WizardData.FromModpack` → `WriteModpack`, `Program.cs:191-221`
+— the same load path `/upgrade` takes, minus the transform). It immediately surfaced the items below.
+All are recorded in the per-pack ratchet baselines under `test/corpus/.resave-baseline/`; none are fixed.
+
+**Read this first — what these findings do NOT mean.** A `/resave` divergence is *not* automatically a
+bug in our shipped `/upgrade` output. In the two biggest classes below (`.mdl`, `.meta`) our `/upgrade`
+output is **byte-identical to the `/upgrade` golden**; the divergence is that we apply a transform at a
+*different seam* than TexTools does, which only a load-then-write oracle can see. Fixing them is about
+**seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact.
+
+- **`writeTtmp2` re-emits a SIMPLE pack as simple; TexTools always writes a WIZARD pack.** Confirmed on
+  13 corpus packs. `Black Widow.ttmp2`: source `TTMPVersion` `"1.3s"` with a 21-entry `SimpleModsList`
+  and `ModPackPages: null`. Our writer emits `"2.1s"` + `SimpleModsList[21]` (`src/container/ttmp2.ts`,
+  `TTMPVersion: data.isSimple ? "2.1s" : "2.1w"`). ConsoleTools `/resave` emits `"2.1w"` with
+  `SimpleModsList: null` and `ModPackPages: [1]` — one page holding a single group
+  `{"GroupName":"Default Group","SelectionType":"Single","OptionList":[1 option]}`. So TexTools'
+  `WriteModpack` **has no simple-pack writer at all**: `WizardData` is page/group/option-shaped, and
+  everything it writes is a wizard pack. Shows in the baselines as
+  `TTMPL.mpl#/ModPackPages [added]` + `#/SimpleModsList [mismatch]` + `#/TTMPVersion [mismatch]`
+  (13 packs each). Decide deliberately whether to match this (our simple round-trip is arguably nicer,
+  but it is not what TexTools does).
+
+- **`writeTtmp2` writes the LEGACY `SelectionType` spelling, and our READER only understands the legacy
+  one — so a `Multi` group is silently downgraded to single-select.** This is the one finding here with
+  a **semantic** (not merely cosmetic) consequence, and it is a *read*-side bug as much as a write-side
+  one. `src/container/ttmp2.ts` reader: `g.SelectionType === "Multi Selection" ? "Multi" : "Single"`;
+  writer: `g.selectionType === "Multi" ? "Multi Selection" : "Single Selection"`. Modern TexTools writes
+  the bare enum name (`"Single"` / `"Multi"`), not the legacy `"… Selection"` string. **Evidence:**
+  `Fantasia.ttmp2`'s source `.mpl` declares its one group as `["Race","Multi"]`; our reader does not
+  match `"Multi Selection"`, so it falls through to `Single`, and our writer emits
+  `"SelectionType":"Single Selection"` — while the `/resave` golden emits `"Multi"`. **A multi-select
+  group becomes single-select in our output.** Shows as `#/ModGroups/N/SelectionType [mismatch]` +
+  `#/OptionList/N/SelectionType [mismatch]` on 36 packs. Fix both halves (accept both spellings on read;
+  write the bare enum name) — and note the reader fix changes `ModpackData`, so the `/upgrade` baselines
+  may move.
+
+- **`writeTtmp2` omits `.mpl` fields TexTools always writes.** All on 36 packs, all `[added]` (i.e.
+  present in the golden, absent from ours):
+  - `#/ModPackPages/N/ModGroups/N/OptionList/N/IsChecked` — TexTools writes the option's checked state
+    (`true` for the first option of a Single group, `false` otherwise, per the `Fantasia` / `Tight&Firm`
+    goldens).
+  - `#/ModPackPages/N/ModGroups/N/OptionList/N/ModsJsons/N/ModPackEntry` — TexTools writes
+    `"ModPackEntry": null` on **every** mod json (1443 instances).
+  - `#/SimpleModsList` — TexTools writes the key as an explicit `null` on a wizard pack; we omit it.
+  - Option `Description`: TexTools writes `null` where we write `""` (25 packs,
+    `#/OptionList/N/Description [mismatch]`).
+
+- **`writeTtmp2` round-trips `ModsJsons[].Name`/`Category` where TexTools RE-DERIVES them from the game
+  path.** `Fantasia.ttmp2`, `chara/bibo/midlander_d.tex`: ours keeps the source's
+  `{"Name":"Body - c0201b0001_top","Category":"Body"}`; the golden writes
+  `{"Name":"Unknown","Category":"Unknown"}` — TexTools recomputes both from the game path and yields
+  `Unknown` for a path it cannot classify (`chara/bibo/…` is not a real game path). 10 packs
+  (`ModsJsons/N/Name [mismatch]`), 5 packs (`…/Category [mismatch]`).
+
+- **`writeTtmp2` emits an option's files in a different ORDER than TexTools.** `#/ModsJsons/N/FullPath
+  [mismatch]` on 20 packs is (at least largely) an ordering difference, not a content one:
+  `Tight&Firm-YorhaCollection-2B.ttmp2` option "Large" — our `ModsJsons[0]` is
+  `chara/equipment/e0649/e0649_top.meta`, the golden's is
+  `chara/equipment/e0649/material/v0001/mt_c0101e0649_top_a.mtrl`. Both lists have 13 entries. Worth
+  confirming it is *only* order before fixing.
+
+- **Our load-fix seam bumps `.mdl` to v6; TexTools' load does not — the v6 bump belongs to the UPGRADE
+  caller.** 483 `.mdl` payload diffs across the TTMP corpus, and the single most interesting finding
+  here. `normalizeModel` (`src/upgrade/model.ts`) hard-sets `model.mdlVersion = 6` — with the comment
+  *"FixOldModel emits v6 (R1: caller-set, ShrinkRay.cs:108)"*, which already says the version is set by
+  the **caller**, not by `FixOldModel`. On `/upgrade` that is exactly right; on `/resave` TexTools leaves
+  the model at v5. **Evidence** (`Tight&Firm-YorhaCollection-2B.ttmp2`,
+  `chara/equipment/e0649/model/c0101e0649_dwn.mdl`): source is 84376 bytes; all three normalized outputs
+  are 56184 bytes; TexTools `/resave` = sha `4afb2e51a5bc`, TexTools `/upgrade` = sha `d1b66f709ede`,
+  **ours (both paths) = sha `d1b66f709ede`** — i.e. *our `/upgrade` output is byte-identical to the
+  `/upgrade` golden*. Diffing the two goldens against each other: 57 differing bytes out of 56184, and
+  **byte 0 is `0x05` in `/resave` vs `0x06` in `/upgrade`** (the MDL version), the remaining 56 being the
+  v5-vs-v6 bone-set encoding. So TexTools' *load* runs `FixOldModel` **without** the v6 bump, and
+  `/upgrade` applies it afterwards. Our `applyLoadFixes` therefore over-reaches. Fix = move the v6 bump
+  out of the load seam into the upgrade caller — and keep the `/upgrade` goldens byte-exact while doing it.
+
+- **`.meta` reconstruction is a LOAD/WRITE behaviour in TexTools, but lives in our UPGRADE transform.**
+  62 `.meta` payload diffs. TexTools' TTMP load turns a `.meta` file into typed metadata/manipulations
+  and its writer turns them back into `.meta` bytes, so a pure `/resave` **grows** the file. Our
+  `metadataRound` does the same reconstruction but sits inside `upgradeModpack`, so our `/resave` path
+  leaves the source `.meta` untouched. **Evidence** (`Tight&Firm-YorhaCollection-2B.ttmp2`,
+  `chara/equipment/e0649/e0649_dwn.meta`): source 182 bytes (sha `24db7b7fd262`); `/resave` golden 192
+  bytes (sha `33423dcdfb29`); ours on the resave path = 182 bytes, **unchanged**; ours on the upgrade
+  path = 192 bytes, sha `33423dcdfb29` — **byte-identical to the golden**. So `reconstructMeta` is
+  *correct*; only its seam is wrong. Same shape as the `.mdl` finding above: decide whether
+  `metadataRound` belongs in `applyLoadFixes`, and keep the `/upgrade` goldens byte-exact.
+
+- **`/resave` empirically confirms the unported `FixOldTexData` offset fixup (T2 below).** The remaining
+  `.tex` payload diffs are neither format nor dimension nor length changes: `Bloodlust - Bibo+.ttmp2`
+  `v01_c0201e0256_top_m.tex` — ours and golden are both `fmt=0x3420 2048x2048 mips=12`, both 2796296
+  bytes, and the **first differing byte is at offset 72**; `chained_collars_v1_1_0.ttmp2`
+  `v01_c0101a0004_nek_d.tex` — both `16x16 mips=1`, both 208 bytes, first differing byte at **offset 20**.
+  Both offsets fall inside the 80-byte `.tex` header, in the **LoD/mipmap offset tables**. That is
+  precisely the `ValidateTexFileData` "fix up broken mip offsets" half of `FixOldTexData` that the T2 item
+  records as unported. Cross-reference this evidence from T2.
+
+- **PMP: TexTools re-serializes MANIPULATIONS from its typed model too — a third sub-symptom of the
+  `writePmp` round-trip item.** Beyond the two predicted PMP classes (manifest regeneration and payload
+  member renaming — both already recorded under *"`writePmp` round-trips the source pack where TexTools
+  regenerates it"*), the oracle shows the option `Manipulations` arrays differ as well, because TexTools
+  serializes its **typed** `Manipulation` objects while we re-emit the source JSON verbatim. **Evidence**
+  (`Westlaketea's Constellation Crown (Dawntrail Edition).pmp`, `group_001_options.json`, first `Imc`
+  manipulation): ours carries `Entry.AttributeAndSound: 1023`, the golden does not (it writes only
+  `AttributeMask` + `SoundId`). Baseline pointer classes: `…/Manipulation/Entry/AttributeAndSound
+  [removed]` and `…/Manipulation/ShiftedEntry [removed]` (ours-only keys TexTools' typed model has no
+  field for), plus `…/Manipulation/SetId [mismatch]` (a **value** difference — not explained by field
+  presence alone and worth investigating on its own). Fold into the `writePmp` regeneration work.
+
 - **Make the ConsoleTools oracle async, so the cross-process lock can heartbeat.**
   `withConsoleToolsLock` (`test/helpers/oracle.ts`) is a hand-rolled filesystem mutex: atomic
   `O_EXCL` create, a random ownership token, and break-on-staleness after `LOCK_STALE_MS`. It has a
@@ -251,6 +362,29 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   the current harness anyway. Recorded so the capability is picked up deliberately if a real
   expected-failure corpus pack ever appears.
 
+  **Update (2026-07-13): it has appeared — and it is now a RED test, not a hypothetical.** The `/resave`
+  harness has exactly the same two-outcome limitation, and one corpus pack trips it:
+  **`Milktruck Bust Scaling Tweaks v1.0.0.ttmp2`** (the only pack of 63 with no `/resave` golden;
+  62/63 cached). ConsoleTools exits `-1` and `execFileSync` throws, so the unit hard-fails on every run
+  and nothing is cached. The pack is 12 `.rgsp` files (racial scaling) and nothing else. The failure is
+  in ConsoleTools' **write** path, and it is **environmental, not a defect in the pack or in our port**:
+
+      System.Exception: CMP Format Changed - Unable to read all CMP data.
+         at xivModdingFramework.General.DataContainers.CharaMakeParameterSet..ctor(Byte[] data)
+         at xivModdingFramework.General.CMP.GetScalingParameter(...)
+         at xivModdingFramework.Mods.FileTypes.PMP.PMP.ManipulationsToMetadata(...)
+         at xivModdingFramework.Mods.WizardOptionEntry.ToModOption(...)      [...]
+         at xivModdingFramework.Mods.WizardData.WriteModpack(...)
+         at ConsoleTools.ConsoleTools.HandleResaveModpack(...)
+
+  On write, TexTools converts each `.rgsp` into an RSP manipulation, which reads the **installed game's**
+  `human.cmp`; this TexTools build does not recognize the current game's CMP layout and throws. `/upgrade`
+  never hit it because `/upgrade` on this pack is a no-op — ConsoleTools writes nothing, so `WriteModpack`
+  is never reached. **Not swallowed deliberately** (per `AGENTS.md` fail-loud): a `try/catch` here would
+  hide a real oracle failure. Needs the decision this item describes — an `{ kind: "error" }` golden with a
+  cached marker and a bless path — or an explicit, documented per-pack exclusion. Until then the `/resave`
+  suite is red on this one pack.
+
 - **v1 metadata support.** `src/meta/deserialize.ts` now throws on any `.meta` with
   `version !== 2` rather than silently mis-upgrading it. An empirical probe
   (`scripts/probes/probe-v1-meta.ts`: downgrade a real pack's v2 equipment meta to v1 --
@@ -331,6 +465,14 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   corpus texture is NPOT-with-mips. This is a load-time round analogous to the model round's
   `FixOldModel`; scope it as its own spec→plan when the resampler lands or a corpus pack demands the
   resize. No corpus coverage forces it today (the ratchet will flag it if a real pack does).
+
+  **Update (2026-07-13): the `/resave` write-side oracle now forces the *mip-offset-fixup* half.** It is
+  no longer coverage-free: the `.tex` payload diffs in the `/resave` baselines are exactly this. Same
+  format, same dimensions, same mip count, same total length — only the LoD/mipmap **offset tables**
+  inside the 80-byte header differ (`Bloodlust - Bibo+.ttmp2` `v01_c0201e0256_top_m.tex`, first differing
+  byte at offset 72; `chained_collars_v1_1_0.ttmp2` `v01_c0101a0004_nek_d.tex`, at offset 20). The
+  offset fixup needs no resampler, so it can be ported independently of the NPOT-resize half (and of T3).
+  See the `/resave` findings section above.
 
 - **T3 — ImageSharp Bicubic/NearestNeighbor resampler (texture-round resize skips + T2).** The
   texture round throws `TextureResizeUnsupported` (caught → skipped, baselined) whenever a
