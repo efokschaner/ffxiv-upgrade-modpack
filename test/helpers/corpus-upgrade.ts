@@ -49,7 +49,11 @@ export function registerUpgradeCheck(pack: string): void {
         reference,
         confirmDivergence,
       );
-      const archive = diffArchives(oursArchive, goldenBytes);
+      const archive = diffArchives(
+        oursArchive,
+        goldenBytes,
+        golden.kind === "noop",
+      );
       const diff = { ...payload, files: [...payload.files, ...archive] };
       const key = oracleKey(bytes);
 

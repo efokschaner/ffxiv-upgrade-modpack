@@ -83,92 +83,12 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
   return new Set([...members.keys()].map((n) => looseKey(n)));
 }
 
-function safeParseJson(bytes: Uint8Array | undefined): unknown {
-  if (!bytes) return undefined;
-  try {
-    return JSON.parse(dec.decode(bytes));
-  } catch {
-    return undefined;
-  }
-}
-
-/** Every zip path a golden archive's OWN manifests point at: each option's `Files` values
- *  (gamePath -> zip path) and every `Image` field (meta/group/option each carry one, mirroring the
- *  fields `GetHeaderImage` walks — PMP.cs:1341-1364). Normalized under `looseKey` so it can be
- *  compared against payload member names the same way the drop confirmation below does. */
-function referencedZipPaths(members: Map<string, Uint8Array>): Set<string> {
-  const refs = new Set<string>();
-  const addImage = (v: unknown): void => {
-    if (typeof v === "string" && v.length > 0)
-      refs.add(looseKey(v.replace(/\\/g, "/")));
-  };
-  const addFiles = (v: unknown): void => {
-    if (!isObj(v)) return;
-    for (const value of Object.values(v))
-      if (typeof value === "string")
-        refs.add(looseKey(value.replace(/\\/g, "/")));
-  };
-  const scanOption = (o: unknown): void => {
-    if (!isObj(o)) return;
-    addFiles(o.Files);
-    addImage(o.Image);
-  };
-  const meta = safeParseJson(members.get("meta.json"));
-  if (isObj(meta)) addImage(meta.Image);
-  scanOption(safeParseJson(members.get("default_mod.json")));
-  for (const [name, bytes] of members) {
-    if (!/^group_\d+.*\.json$/i.test(name.toLowerCase())) continue;
-    const g = safeParseJson(bytes);
-    if (!isObj(g)) continue;
-    addImage(g.Image);
-    if (Array.isArray(g.Options)) for (const o of g.Options) scanOption(o);
-  }
-  return refs;
-}
-
-/** True when the golden archive contains a payload member (a zip entry that is not a manifest —
- *  meta.json / default_mod.json / group_*.json / *.mpl) that no manifest in the SAME archive
- *  references, under `looseKey`, by a `Files` value or an `Image` field. Mirrors `LoadPMP`'s own
- *  `ExtraFiles` computation (PMP.cs:213-215): TexTools itself treats an unreferenced-but-present
- *  member as legitimate on its own (a readme, a preview image, ...) — its mere existence is not a
- *  bug. But it IS the fingerprint the drop confirmation below needs: it means name resolution over
- *  this archive's members failed to connect at least one reference to a member that genuinely
- *  exists — for whatever reason, which could be a stray asset OR a decode bug (e.g. fflate falling
- *  back to latin1 for a zip entry whose UTF-8 general-purpose-flag bit is unset, so a non-ASCII
- *  member's decoded name differs from the correctly-UTF8-decoded manifest value that names it). We
- *  cannot tell those two causes apart from here, so an archive with ANY orphan disables the
- *  confirmation entirely rather than risk confirming a drop that is actually a silently-lost
- *  payload. See IMPORTANT 1 in the PR review this responds to. */
-// `dropConfirmedAbsentKeys` runs once per manifest member in an archive (diffArchives calls it
-// unconditionally per member; corpus-pmp.ts calls it once per fixed/group file too), and every call
-// for the SAME archive would otherwise re-parse every group JSON to recompute the same answer.
-// Cached per member-map identity (the same `Map` instance is passed on every call within one
-// diff/round-trip check), not per archive content — irrelevant here since each check constructs its
-// map fresh from one `readZip` call.
-const orphanCache = new WeakMap<Map<string, Uint8Array>, boolean>();
-function hasOrphanPayloadMember(members: Map<string, Uint8Array>): boolean {
-  const cached = orphanCache.get(members);
-  if (cached !== undefined) return cached;
-  const refs = referencedZipPaths(members);
-  let result = false;
-  for (const name of members.keys()) {
-    if (isManifest(name)) continue;
-    if (!refs.has(looseKey(name))) {
-      result = true;
-      break;
-    }
-  }
-  orphanCache.set(members, result);
-  return result;
-}
-
 /** CONFIRMATION (not a tolerance) of the ONE manifest difference we intend: TexTools' writer drops
  *  a file whose payload does not exist from both the zip and the option's `Files` map
  *  (PopulatePmpStandardOption, PMP.cs:883-888), and our writer now does too. On a NO-OP upgrade
  *  ConsoleTools writes nothing, so the harness's reference is the INPUT pack — which still carries
  *  the dangling key. So: a `Files` key missing from OURS is allowed iff the golden's value for it
- *  names a zip path that does not resolve as a member of the GOLDEN's own archive, AND the golden
- *  archive has no orphan payload member (`hasOrphanPayloadMember` above).
+ *  names a zip path that does not resolve as a member of the GOLDEN's own archive.
  *
  *  Deliberately tight, in the spirit of DivergenceRule.confirm (upgrade-compare.ts):
  *   - resolution uses `looseKey`, NOT the reader's own `windowsPathKey` — see `looseKey`'s doc
@@ -177,14 +97,11 @@ function hasOrphanPayloadMember(members: Map<string, Uint8Array>): boolean {
  *     NOT covered — the two normalization fixes stay under test, and independently so: a future
  *     regression in `windowsPathKey` cannot silently agree with this rule, because this rule never
  *     calls it. **This is the actual guarantee** ("fails closed against a `windowsPathKey`
- *     regression"), not a blanket one: `looseKey` still runs over the SAME `readZip` member names
- *     the reader itself resolves against (`src/zip/zip.ts`), so a decode bug in that shared step
- *     (not in `windowsPathKey`) is a residual this rule alone would not catch — which is exactly why
- *     the orphan guard exists, to close the concrete instance of that residual this review found.
- *     A narrower residual remains even with the orphan guard: a decode bug that corrupts a payload
- *     member's name AND happens to leave every manifest reference still resolvable (no orphan
- *     produced) would still evade detection. `readZip` itself is exercised directly elsewhere
- *     (`pmp-read.test.ts`), which is the backstop for that narrower case;
+ *     regression"), not a blanket one: if we ever silently lost a member we shouldn't have — a
+ *     decode bug in the shared `readZip` step, a bad `windowsPathKey`, a writer bug — that is no
+ *     longer this rule's problem to catch: `diffArchives`' payload-member comparison (below) catches
+ *     a lost member directly, by name, regardless of cause. That is what replaced the previous
+ *     orphan-payload-member guard here (see git history / the design spec §4.1 for that episode);
  *   - only a key MISSING from ours is covered; a changed value is still a mismatch;
  *   - every other field is still deep-equal'd.
  *  It is inert whenever ConsoleTools actually wrote the golden: TexTools dropped the key there too,
@@ -201,7 +118,6 @@ export function dropConfirmedAbsentKeys(
   goldenMembers: Map<string, Uint8Array>,
 ): unknown {
   const present = memberKeys(goldenMembers);
-  const hasOrphan = hasOrphanPayloadMember(goldenMembers);
   const confirmedFiles = (
     oursFiles: unknown,
     goldenFiles: Record<string, unknown>,
@@ -213,7 +129,7 @@ export function dropConfirmedAbsentKeys(
       const isStringValue = typeof value === "string";
       const zipPath = isStringValue ? value.replace(/\\/g, "/") : "";
       const absent = isStringValue && !present.has(looseKey(zipPath));
-      if (missingFromOurs && absent && !hasOrphan) continue; // the PMP.cs:883 drop — confirmed
+      if (missingFromOurs && absent) continue; // the PMP.cs:883 drop — confirmed
       out[gamePath] = value;
     }
     return out;
@@ -241,11 +157,86 @@ export function dropConfirmedAbsentKeys(
   return option(ours, golden);
 }
 
+/** Non-manifest ("payload") member names of an archive — the complement of `manifestNames`. */
+function payloadNames(members: Map<string, Uint8Array>): string[] {
+  return [...members.keys()].filter((n) => !isManifest(n));
+}
+
+/** Multiset-compare payload (non-manifest) member NAMES between our archive and the golden,
+ *  bucketed by `looseKey` so a legitimate spelling difference (case, a stripped trailing dot) is
+ *  not flagged — the same normalization `dropConfirmedAbsentKeys` uses to decide "does this zip path
+ *  resolve to a member of this archive". This is what makes the orphan-payload-member guard that
+ *  used to live here unnecessary: that guard existed because the drop confirmation above only ever
+ *  looks at `Files` keys, so a member lost for any OTHER reason (a decode bug mangling a name, a
+ *  writer bug dropping an `ExtraFile` no `Files`/`Image` field ever referenced — PMP.cs:213-215) was
+ *  invisible to it. Comparing the member-name sets directly catches exactly that, per member, and
+ *  regardless of cause — see the regression test in upgrade-archive-diff.test.ts pinning the
+ *  "silently lost an unreferenced member" hole this replaces.
+ *
+ *  Reported as `structure` diffs, same as a missing/extra manifest member above. */
+function diffPayloadMembers(
+  ours: Map<string, Uint8Array>,
+  golden: Map<string, Uint8Array>,
+): FileDiff[] {
+  const bucket = (names: string[]): Map<string, string[]> => {
+    const m = new Map<string, string[]>();
+    for (const n of names) {
+      const list = m.get(looseKey(n)) ?? [];
+      list.push(n);
+      m.set(looseKey(n), list);
+    }
+    return m;
+  };
+  const ob = bucket(payloadNames(ours));
+  const gb = bucket(payloadNames(golden));
+  const diffs: FileDiff[] = [];
+  for (const key of [...new Set([...ob.keys(), ...gb.keys()])].sort()) {
+    const os = (ob.get(key) ?? []).slice().sort();
+    const gs = (gb.get(key) ?? []).slice().sort();
+    const n = Math.min(os.length, gs.length);
+    // Extra golden members past the shared count are ones ours is missing; extra "ours" members
+    // past the shared count are ones ours has that the golden doesn't. Orientation matches the
+    // manifest-name diff above: golden-only => "added", ours-only => "removed".
+    for (let i = n; i < gs.length; i++) {
+      diffs.push({
+        kind: "structure",
+        gamePath: gs[i]!,
+        index: 0,
+        status: "added",
+        detail: undefined,
+      });
+    }
+    for (let i = n; i < os.length; i++) {
+      diffs.push({
+        kind: "structure",
+        gamePath: os[i]!,
+        index: 0,
+        status: "removed",
+        detail: undefined,
+      });
+    }
+  }
+  return diffs;
+}
+
 /** STRUCTURE (manifest member-name set) + MANIFEST (semantic deep-equal) diffs between two
  * un-archived modpacks. Payload content is diffed separately by diffUpgrade. Orientation matches
  * diffUpgrade: golden-only member => "added"; ours-only => "removed"; shared+unequal => "mismatch".
- * See docs/superpowers/specs/2026-07-08-modpack-serialization-parity-design.md §3. */
-export function diffArchives(ours: Uint8Array, golden: Uint8Array): FileDiff[] {
+ * See docs/superpowers/specs/2026-07-08-modpack-serialization-parity-design.md §3.
+ *
+ * `checkPayloadMembers` additionally compares the *names* of non-manifest members (see
+ * `diffPayloadMembers`). Callers should only pass `true` on a no-op upgrade: when ConsoleTools
+ * actually wrote the golden it regenerates every payload member's name as
+ * `<optionPrefix><gamePath>` (and lowercases extras) where our writer reuses the source pack's own
+ * names — a real, pre-existing, and separately tracked divergence (BACKLOG.md: "`writePmp`
+ * round-trips the source pack where TexTools *regenerates* it"). Turning this comparison on for a
+ * real golden would light up that unrelated, already-known gap instead of anything this change is
+ * about, so it stays off there. */
+export function diffArchives(
+  ours: Uint8Array,
+  golden: Uint8Array,
+  checkPayloadMembers = false,
+): FileDiff[] {
   const om = readZip(ours);
   const gm = readZip(golden);
   const oNames = new Set(manifestNames(om));
@@ -287,5 +278,6 @@ export function diffArchives(ours: Uint8Array, golden: Uint8Array): FileDiff[] {
       }
     }
   }
+  if (checkPayloadMembers) diffs.push(...diffPayloadMembers(om, gm));
   return diffs;
 }

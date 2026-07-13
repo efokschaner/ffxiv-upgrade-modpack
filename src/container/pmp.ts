@@ -345,18 +345,44 @@ export function writePmp(data: ModpackData): Uint8Array {
     entries.set(fileName, enc.encode(JSON.stringify(groupJson, null, 2)));
   });
 
+  // Port of PopulatePmpStandardOption's payload write (PMP.cs:908-910) followed by WritePmp's
+  // directory zip (PMP.cs:864-868): TexTools writes every option's payload via
+  // `File.WriteAllBytes(Path.Combine(workingPath, fi.PmpPath), data)` into a *working directory*,
+  // and only zips that directory afterward (`ZipFile.CreateFromDirectory`). A Windows directory
+  // cannot hold two names differing only by case (or a trailing dot/space): NTFS resolves the
+  // second WriteAllBytes call's name case-insensitively to the SAME directory entry the first
+  // call created, so that entry keeps its FIRST name but ends up holding the LAST call's bytes.
+  // A pack whose Files JSON spells the same physical zip member under two different casings
+  // (several gamePaths deduped onto one payload — e.g. Groove 001.pmp) must therefore collapse
+  // to exactly ONE member here too. Collapse by windowsPathKey — the same NTFS-equivalent key
+  // the reader resolves Files values with — first-name-wins, last-data-wins, instead of the
+  // exact-string `entries.has` check this used to be (which let two casings of the same path
+  // both survive as separate members).
+  const payloadByKey = new Map<string, { zipPath: string; data: Uint8Array }>();
   for (const f of allFiles(data)) {
     if (!f.data) continue; // absent: no member AND no Files key (PMP.cs:883-888) — see optionToJson
     const zipPath = (f.pmpPath ?? f.gamePath).replace(/\\/g, "/");
-    if (!entries.has(zipPath)) entries.set(zipPath, f.data);
+    const key = windowsPathKey(zipPath);
+    const existing = payloadByKey.get(key);
+    if (existing) {
+      existing.data = f.data; // NTFS: same directory entry as the first write, content overwritten
+    } else {
+      payloadByKey.set(key, { zipPath, data: f.data });
+    }
+  }
+  for (const { zipPath, data: payload } of payloadByKey.values()) {
+    entries.set(zipPath, payload);
   }
 
   // Re-emit ExtraFiles verbatim (WizardData.WritePmp, WizardData.cs:1477-1488 — both /upgrade and
   // /resave pass saveExtraFiles=true). A payload member of the same name always wins; readPmp's
   // referencedKeys check means the two sets can't actually collide, but guard explicitly rather
-  // than rely on that.
+  // than rely on that — via windowsPathKey (not an exact-string check), matching the same
+  // NTFS case-folding the payload collapse above applies, so a same-file collision differing
+  // only by case (or a trailing dot/space) is still caught.
   for (const [zipPath, bytes] of data.extraFiles ?? []) {
-    if (!entries.has(zipPath)) entries.set(zipPath, bytes);
+    if (payloadByKey.has(windowsPathKey(zipPath))) continue;
+    entries.set(zipPath, bytes);
   }
 
   return writeZip(entries, { store: false });

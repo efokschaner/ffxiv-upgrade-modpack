@@ -90,6 +90,75 @@ describe("diffArchives", () => {
   });
 });
 
+// Regression coverage for the hole the (now-removed) orphan-payload-member heuristic used to patch:
+// `dropConfirmedAbsentKeys` only ever inspects `Files` KEYS, so a payload member silently lost for
+// any other reason — e.g. an `ExtraFile` (PMP.cs:213-215, a preview image or readme no `Files`/`Image`
+// field ever names) that a reader/writer bug drops from the archive without touching any manifest —
+// was invisible to the manifest-only comparison. Before `checkPayloadMembers` existed, `diffArchives`
+// never looked at non-manifest member NAMES at all, so this scenario returned `[]`.
+describe("diffArchives payload-member comparison (replaces the orphan-payload-member guard)", () => {
+  it("catches a silently-lost unreferenced (ExtraFile) payload member on a no-op golden", () => {
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "preview.png": new Uint8Array([9, 9, 9]), // an ExtraFile: no Files/Image field names it
+    });
+    // Simulates a writer/reader bug silently dropping the extra — nothing about `Files` changed.
+    const ours = pmp({ "meta.json": META, "default_mod.json": DEF });
+    expect(diffArchives(ours, golden, /* checkPayloadMembers */ true)).toEqual([
+      {
+        kind: "structure",
+        gamePath: "preview.png",
+        index: 0,
+        status: "added",
+        detail: undefined,
+      },
+    ]);
+  });
+
+  it("is inert on a non-noop (real-golden) comparison, per BACKLOG's writer-regenerates-names divergence", () => {
+    // Same silent loss, but with checkPayloadMembers left off (the non-noop branch) — deliberately
+    // not compared there; see diffArchives' doc comment.
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "preview.png": new Uint8Array([9, 9, 9]),
+    });
+    const ours = pmp({ "meta.json": META, "default_mod.json": DEF });
+    expect(diffArchives(ours, golden)).toEqual([]);
+  });
+
+  it("does not flag legitimate ExtraFiles present on both sides (e.g. many preview images)", () => {
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "Images/1.png": new Uint8Array([1]),
+      "Images/2.png": new Uint8Array([2]),
+    });
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "Images/1.png": new Uint8Array([1]),
+      "Images/2.png": new Uint8Array([2]),
+    });
+    expect(diffArchives(ours, golden, true)).toEqual([]);
+  });
+
+  it("tolerates a spelling-only difference in a payload member name (looseKey), not a real loss", () => {
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "Read Me.txt": new Uint8Array([1]),
+    });
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "readme.txt": new Uint8Array([1]), // same file, case + space differ
+    });
+    expect(diffArchives(ours, golden, true)).toEqual([]);
+  });
+});
+
 describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
   const enc = new TextEncoder();
   const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";

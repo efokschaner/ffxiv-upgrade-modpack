@@ -262,6 +262,72 @@ describe("writePmp ExtraFiles (WizardData.cs:1477-1488)", () => {
   });
 });
 
+// Port of PopulatePmpStandardOption's payload write (PMP.cs:908-910) followed by WritePmp's
+// directory zip (PMP.cs:864-868). Groove 001.pmp's Files JSON names the same physical payload
+// under two different casings for two different gamePaths; TexTools' writer can never actually
+// produce two members for that, because it writes into a real Windows directory first and zips
+// it afterward — a directory can't hold two names differing only by case, so the second
+// WriteAllBytes resolves to the SAME entry the first one created (keeping the first name, last
+// bytes) before the single-entry directory gets zipped.
+describe("writePmp payload dedup by windowsPathKey (PMP.cs:908-910 / :864-868)", () => {
+  const enc = new TextEncoder();
+  const gamePathA = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const gamePathB = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+  const zipPathLower = "on/shared/payload.mdl";
+  const zipPathUpper = "on/SHARED/PAYLOAD.mdl";
+  const payload = new Uint8Array([1, 2, 3, 4]);
+
+  function buildFixture(): Uint8Array {
+    const meta = {
+      FileVersion: 3,
+      Name: "Dedup",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: {
+        [gamePathA]: zipPathLower.replace(/\//g, "\\"),
+        [gamePathB]: zipPathUpper.replace(/\//g, "\\"),
+      },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
+      // Only ONE physical archive member — a zip (like the NTFS directory TexTools zips
+      // from) can't hold both casings of the same path.
+      [zipPathLower, payload],
+    ]);
+    return writeZip(entries);
+  }
+
+  it("emits the shared payload once, keeping the first Files value's casing, while both gamePaths still resolve", () => {
+    const out = writePmp(readPmp(buildFixture()));
+    const members = readZip(out);
+
+    // Exactly one payload member survives, under the FIRST-seen Files value's casing.
+    expect(members.has(zipPathLower)).toBe(true);
+    expect(members.has(zipPathUpper)).toBe(false);
+    expect(members.get(zipPathLower)).toEqual(payload);
+
+    // Both original Files keys survive in the manifest — they both still resolve, since the
+    // reader (and the filesystem TexTools writes to) is case-insensitive.
+    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    expect(Object.keys(dm.Files)).toEqual([gamePathA, gamePathB]);
+
+    const reread = readPmp(out);
+    const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
+    expect(byPath.get(gamePathA)).toEqual(payload);
+    expect(byPath.get(gamePathB)).toEqual(payload);
+  });
+});
+
 describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
   // TexTools' writer skips a file whose RealPath does not exist, which bypasses BOTH the payload
   // write (:910) and opt.Files.Add (:914). The written pack therefore has neither.

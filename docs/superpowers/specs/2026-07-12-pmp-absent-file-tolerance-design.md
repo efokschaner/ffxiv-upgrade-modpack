@@ -196,8 +196,8 @@ the golden's own archive**, under `looseKey` — a normalization defined in the 
 difference — a key we dropped whose payload *is* present, a key whose value we changed, any other
 field — still fails.
 
-Two properties make it safe — and one gap in an earlier revision, closed by an orphan-payload-member
-guard:
+This is safe for one specific reason, and unsafe for a broader class the harness catches a different
+way:
 
 - **It fails closed against a regression in `windowsPathKey` specifically** — not against every failure
   upstream of it. A shared key function would make the carve-out agree with any bug introduced into
@@ -211,34 +211,31 @@ guard:
   never-packed payload matches nothing under any spelling (so the intended confirmations are
   unaffected).
 
-  **This does not mean the rule is safe against everything upstream of `looseKey`.** Both the reader
-  and this harness still resolve names against the **same** `readZip` (`src/zip/zip.ts`, fflate) — a
-  decode bug in that shared step is a residual `looseKey`'s independence does not touch. Concretely:
-  fflate decodes a zip entry name as **latin1 when the UTF-8 general-purpose-flag bit is unset** — not
-  uncommon in repacked archives. A non-ASCII option folder then yields a mojibake member name, while
-  the JSON `Files` value for it decodes correctly as UTF-8; the reader misses, marks the file absent,
-  the writer drops it — and, pre-orphan-guard, this confirmation looked the value up in the *same*
-  mojibake member set, also missed, and blessed the drop. `diffUpgrade`'s payload-multiset diff does
-  not catch it either (the file is absent from the multiset on both sides, by construction), so the
-  corpus would go green while a real payload was silently lost.
+- **It is NOT the thing that catches a silently-lost member, for any other reason.** This rule only
+  ever inspects `Files` map *keys*; it can't see a payload member vanish for a reason that never
+  touches a `Files` key at all — e.g. a decode bug in the shared `readZip` step (`src/zip/zip.ts`,
+  fflate decodes a zip entry name as **latin1 when the UTF-8 general-purpose-flag bit is unset**,
+  common in repacked archives, yielding a mojibake member name distinct from the correctly-UTF8-decoded
+  `Files` value that names it), or a writer/reader bug that drops an **`ExtraFile`** — a non-manifest
+  zip member no `Files`/`Image` field references at all (`PMP.cs:213-215`; a readme, a preview image).
+  An earlier revision of this rule tried to patch that blind spot with an archive-wide
+  "orphan-payload-member" guard (disable the confirmation entirely whenever the golden contains any
+  unreferenced payload member) — but that guard was both a hack (it inferred a name-resolution failure
+  indirectly, by absence of a reference, rather than checking the thing that actually matters) and
+  wrong at the archive granularity: a pack with a *legitimate* extra (e.g. `[DVNO] DMBX Shoes 1.pmp`'s
+  34 preview images) would disable the confirmation for the whole file even with zero actual drops.
 
-  **The guard:** `hasOrphanPayloadMember` (`upgrade-archive-diff.ts`) refuses the confirmation for the
-  whole archive when the golden contains an **orphan payload member** — a non-manifest zip entry that
-  no manifest in that same archive's `Files`/`Image` fields references under `looseKey`. An orphan is
-  exactly the fingerprint of "name resolution over this archive failed to connect a value to a member
-  that IS there": the mojibake scenario above always leaves one (the mis-decoded member matches
-  nothing), while a genuinely-never-packed payload leaves none. This mirrors `LoadPMP`'s own
-  `ExtraFiles` computation (`PMP.cs:213-215`), which TexTools uses for the same purpose (flagging
-  archive members no `Files`/`Image` value claims) — so an orphan being merely a legitimate extra
-  asset (a readme, a preview image) is exactly the case TexTools itself already has a name for, not a
-  new concept invented for the harness.
-
-  **Narrower residual, even with the guard:** a decode bug that corrupts a payload member's name AND
-  happens to leave every manifest reference still resolvable under `looseKey` (no orphan produced —
-  e.g. by coincidence, or because it corrupts the referencing value identically) would still evade
-  both the reader and this confirmation. `readZip` itself is exercised directly by
-  `test/container/pmp-read.test.ts`, which is the backstop for that narrower case; it is not covered
-  by this rule.
+  **What actually catches it:** `diffArchives` separately compares the *names* of non-manifest
+  ("payload") members between our archive and the golden — a plain multiset diff, bucketed by
+  `looseKey` so a legitimate spelling difference (case, a stripped trailing dot) isn't flagged. This
+  needs no theory about *why* a member might be missing: if a payload member the golden has is absent
+  from ours (or vice versa), under any name spelling, it is reported directly as a `structure` diff,
+  per member — whether the cause is the confirmation's own blind spot, a decode bug, or a plain writer
+  bug. This comparison only runs when the caller passes `checkPayloadMembers: true`
+  (`corpus-upgrade.ts` passes `golden.kind === "noop"`): on a real ConsoleTools-written golden, TexTools
+  regenerates every payload member's name (`<optionPrefix><gamePath>`, `PmpExtensions.cs:534`) where our
+  writer reuses the source pack's own names — a real, separately tracked divergence
+  (`BACKLOG.md`) this comparison must not light up.
 - **It is inert whenever TexTools actually wrote.** A real ConsoleTools golden has already dropped the
   key (`PMP.cs:883`), so both sides agree and the confirmation never runs. It can only fire when the
   reference is the input pack.
@@ -305,7 +302,10 @@ does not contain it).
      `GearMaskNew`/`HairMaps` throw.
    - `test/helpers/upgrade-archive-diff.test.ts`: the carve-out confirms a genuinely-absent dropped
      key, and **rejects** a dropped key whose payload is present, a changed value, and any other
-     field difference.
+     field difference; separately, the payload-member name comparison catches a silently-lost
+     unreferenced (`ExtraFile`) member on a no-op golden, stays inert when `checkPayloadMembers` is
+     off (the non-noop branch), tolerates a `looseKey`-equivalent spelling difference, and does not
+     flag legitimate extras present on both sides.
 
 ### 4.3 `/resave` probe (one-off, local)
 
