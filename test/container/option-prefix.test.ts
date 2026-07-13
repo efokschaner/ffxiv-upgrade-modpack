@@ -166,6 +166,59 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(g.options[0]!)).toBe("a_b_c_/");
   });
 
+  it("8. ClearNulls' group-level pruning: a content-free group must not occupy a collision slot ahead of a later, data-carrying group of the same name", () => {
+    // WizardData.cs:1246-1263: within a surviving page, ClearNulls also removes any group whose
+    // HasData is false (WizardGroupEntry.HasData, WizardData.cs:621-627 — Options.Any(x => x.HasData)).
+    // `emptyReal`'s only option carries no files/manipulations, so the group itself has no data and
+    // must be pruned BEFORE MakeGroupPrefix ever runs over the page's groups. If it were left in
+    // place, it would claim the "same/" folder first, pushing `realGroup` (which DOES carry data,
+    // and collides on the same sanitized name) to "same (1)/" instead -- a member-name divergence
+    // from TexTools, which never assembles the empty group into `p.Groups` in the first place.
+    const defaultGroup = group("Default", 0, [emptyOption()]);
+    const emptyReal = group("Same", 0, [option("Only", { files: [] })]);
+    const realGroup = group("Same", 0, [option("Only")]);
+    const d = data([defaultGroup, emptyReal, realGroup]);
+    const prefixes = optionPrefixes(d);
+
+    expect(prefixes.has(emptyReal.options[0]!)).toBe(false);
+    expect(prefixes.get(realGroup.options[0]!)).toBe("same/");
+  });
+
+  it("9. non-empty default + a page-0 group + a page-1 group: the shift strands the LAST created page empty instead of merging page 0", () => {
+    // WizardData.cs:1118-1158 + :1234-1244 (docs/TEXTOOLS_BUGS.md #7): with a non-empty Default AND
+    // more than one real page, the raw-index bug still routes the page-0 group onto the Default
+    // page (DataPages[0]), but the page-1 group lands on DataPages[1] -- the page CREATED for real
+    // page 0 -- because the loop always writes DataPages[g.Page] regardless of the Default-page
+    // shift. The page actually created for real page 1 (DataPages[2]) is left empty and pruned by
+    // ClearNulls. Net effect: two pages survive (not three), so the pN/ prefix DOES turn on, but
+    // the page-0 group merges onto the Default page's folder while the page-1 group gets bumped
+    // into the slot meant for page 0.
+    const defaultGroup = group("Default", 0, [option("Default")]);
+    const g0 = group("Everything", 0, [option("A")]);
+    const g1 = group("Beta", 1, [option("Only")]);
+    const d = data([defaultGroup, g0, g1]);
+    const prefixes = optionPrefixes(d);
+
+    expect(prefixes.get(defaultGroup.options[0]!)).toBe("p1/default/");
+    expect(prefixes.get(g0.options[0]!)).toBe("p1/everything/");
+    expect(prefixes.get(g1.options[0]!)).toBe("p2/beta/");
+  });
+
+  it("10. safeName's invalid-character substitution on an OPTION name, exercised through the multi-option branch (which actually appends oName to the path)", () => {
+    // Case 7 above only exercises safeName() on a GROUP name; its group has a single option, so
+    // MakeOptionPrefix's `group.options.length > 1` branch -- the one that actually appends `oName`
+    // to the path -- never runs there (the single-option branch discards `oName` and returns
+    // `groupFolderPath` verbatim, WizardData.cs:1443-1446). Use a multi-option group so the
+    // sanitized option-name segment is actually visible in the result.
+    const defaultGroup = group("Default", 0, [emptyOption()]);
+    const g = group("Group", 0, [option("X<Y>Z"), option("Normal")]);
+    const d = data([defaultGroup, g]);
+    const prefixes = optionPrefixes(d);
+
+    expect(prefixes.get(g.options[0]!)).toBe("group/x_y_z/");
+    expect(prefixes.get(g.options[1]!)).toBe("group/normal/");
+  });
+
   it("MakeGroupPrefix's non-incrementing collision loop throws rather than hanging on a 3-way collision", () => {
     // Three groups that all sanitize to the same folder name: the first claims "same/", the second
     // claims "same (1)/" (one retry succeeds), and the third would ALSO need "same (1)/" since the

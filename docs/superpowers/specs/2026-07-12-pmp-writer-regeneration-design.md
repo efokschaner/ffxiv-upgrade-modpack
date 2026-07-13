@@ -108,7 +108,7 @@ Two behaviours worth naming because they surprised us:
   the writer must re-derive the sharing from content, not from the source layout.
 - **`ResolveDuplicates` has a known zero-hash bug** for absent files
   (`PmpExtensions.cs:509-514` inserts a default `SHA1HashKey()`), already registered in
-  `docs/TEXTOOLS_BUGS.md` §7. Reproduce it; do not fix it.
+  `docs/TEXTOOLS_BUGS.md` §8. Reproduce it; do not fix it.
 
 ## 4. The fix
 

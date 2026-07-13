@@ -24,9 +24,37 @@
 //      written, but throws rather than reproducing the hang if collision resolution would need more
 //      than one retry.
 //
-// The group/option-level pruning ClearNulls also performs (removing a group none of whose options
-// carry data) is NOT ported: it only matters for a group whose every option is entirely
-// content-free, which none of writePmp's real inputs produce.
+// `ClearNulls` also prunes at the GROUP level within each surviving page (WizardData.cs:1246-1263:
+// `if (g == null || !g.HasData) { p.Groups.Remove(g); continue; }`) — a content-free group (every
+// option HasData-false, WizardGroupEntry.HasData, WizardData.cs:621-627) is removed from the page
+// before any prefix is generated. This IS ported (see `buildPages` below): left un-ported, a
+// content-free group would still occupy a MakeGroupPrefix collision slot, shifting the `" (1)/"`
+// suffix TexTools would assign to a later, real, data-carrying group of the same sanitized name —
+// a member-name divergence. `ClearNulls`' innermost step, `if (o == null) g.Options.Remove(o)`
+// (:1259-1262), is NOT ported: our `ModpackOption` model has no null-option representation, so that
+// step can never apply to data built from it.
+//
+// A NOTE FOR TASK 8 (writePmp) — two things this module's own shape depends on that the writer must
+// preserve:
+//   - `optionPrefixes` returns NO ENTRY for an option whose group never made it into a surviving
+//     page (e.g. the synthesized Default option when it's empty, or now also a content-free real
+//     group). A consumer must treat "absent from the map" as "this option contributes no files / no
+//     folder" — NOT as `""`, which is a real, valid prefix for a different case (a lone group on a
+//     lone page, MakePagePrefix's WizardData.cs:1375-1378 branch).
+//   - `WritePmp`'s own assembly loop throws BEFORE ever calling `MakeOptionPrefix` on a
+//     file-carrying group/option with a blank name (`InvalidDataException`, WizardData.cs:1520-1523:
+//     `if (string.IsNullOrWhiteSpace(o.Name) || string.IsNullOrWhiteSpace(g.Name))`). That means the
+//     "Blank Group" / "Blank Option" substitutions inside `makeGroupPrefix` / `makeOptionPrefix`
+//     below are UNREACHABLE on the real write path for any Standard-type group that carries files —
+//     TexTools fails the whole write first. They are ported faithfully anyway (tests pin them:
+//     `MakeGroupPrefix` / `MakeOptionPrefix` are correct ports of their own C# symbols regardless of
+//     what calls them) because the guard lives in `WritePmp`'s caller loop, not in the prefix
+//     builders themselves — WritePmp's loop only reaches line 1520 for `EGroupType.Standard` options
+//     (`o.GroupType != EGroupType.Standard` continues past it first, WizardData.cs:1513-1516), so a
+//     blank name on a non-Standard (Imc) group never hits this particular throw. `writePmp` MUST
+//     reproduce the :1520-1523 throw itself when it starts calling into this module, or a
+//     blank-named file-carrying Standard group would silently get a "Blank Group"/"Blank Option"
+//     folder instead of failing loud like TexTools does.
 
 import type {
   ModpackData,
@@ -91,7 +119,12 @@ function buildPages(data: ModpackData): Page[] {
   }
 
   // WizardData.ClearNulls (WizardData.cs:1234-1244): drop any page with no groups carrying data.
-  return pages.filter((p) => p.groups.some(groupHasData));
+  // Then, within each surviving page (WizardData.cs:1246-1263), drop any group that itself carries
+  // no data — otherwise a content-free group would still occupy a MakeGroupPrefix collision slot
+  // ahead of a later, real group with the same sanitized name (see the module header comment).
+  return pages
+    .filter((p) => p.groups.some(groupHasData))
+    .map((p) => ({ groups: p.groups.filter(groupHasData) }));
 }
 
 // Port of MakePagePrefix (WizardData.cs:1362-1382).

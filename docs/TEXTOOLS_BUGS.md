@@ -139,7 +139,7 @@ yet called by `writePmp` — Task 8 wires it into the writer.
 
 ---
 
-## 9. `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page
+## 7. `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page
 
 **Status:** reproduced · **Where:** `WizardData.cs:1118-1158` construction + `:1234-1244`
 (`ClearNulls`' page-level pruning) — see `src/container/option-prefix.ts`, `buildPages`
@@ -167,15 +167,17 @@ import wizard UI — `ImportWizardWindow.xaml.cs:143` — and is not on the head
 path).
 
 **Us:** ported verbatim — page construction uses the same raw, unshifted index, and the same
-page-level `HasData` pruning runs afterward, so whatever falls out (including the multi-real-page
-case, where the shift instead strands the LAST created page empty rather than merging page 0) is
-pinned by `test/container/option-prefix.test.ts` case 6.
+page-level `HasData` pruning runs afterward. The single-real-page merge-onto-Default case (no `pN/`
+prefix at all) is pinned by `test/container/option-prefix.test.ts` case 6; the multi-real-page case
+described above — where the shift instead strands the LAST created page empty, `pN/` DOES turn on,
+and the page-0 group's content still merges onto the Default page's folder while the page-1 group is
+bumped into the slot meant for page 0 — is pinned separately by case 9.
 
 **Upstream fix:** assign real groups to `DataPages[g.Page + (hasDefaultPage ? 1 : 0)]`.
 
 ---
 
-## 7. Missing files all share the zero hash, perturbing dedup paths
+## 8. Missing files all share the zero hash, perturbing dedup paths
 
 **Status:** **not reached** · **Where:** `PmpExtensions.cs:509-514` + `:537-551`
 
@@ -200,7 +202,7 @@ sentinel.
 
 ---
 
-## 8. `/upgrade` reports success and a destination path it never wrote
+## 9. `/upgrade` reports success and a destination path it never wrote
 
 **Status:** **worked around** · **Where:** `ConsoleTools/Program.cs:181,188` + `ModpackUpgrader.cs:216`
 

@@ -328,7 +328,7 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
 
   **Fixing it** means porting TexTools' regenerate-from-typed-model write: the `PMPMetaJson` /
   `PmpDefaultMod` Newtonsoft serialization shape for (1), and `ResolveDuplicates` + `MakeOptionPrefix`
-  (with their dedup/`common/N` behaviour, incl. the zero-hash bug in `docs/TEXTOOLS_BUGS.md` §7) for
+  (with their dedup/`common/N` behaviour, incl. the zero-hash bug in `docs/TEXTOOLS_BUGS.md` §8) for
   (2). Nontrivial: it affects **every** genuinely-upgraded PMP, so expect ratchet baselines to move.
   Originally found while investigating whether ConsoleTools `/resave` could serve as a write-side
   round-trip oracle — it cannot, for exactly this reason.
