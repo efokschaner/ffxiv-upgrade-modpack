@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadModpack, upgradeModpack, writeModpack } from "../../src/index";
 import { oracleKey } from "./oracle";
+import { pmpSelfConsistency } from "./pmp-self-consistency";
 import { diffArchives } from "./upgrade-archive-diff";
 import {
   compareToBaseline,
@@ -67,7 +68,21 @@ export function registerUpgradeCheck(pack: string): void {
         goldenBytes,
         target === "pmp" && golden.kind === "noop",
       );
-      const diff = { ...payload, files: [...payload.files, ...archive] };
+      // Oracle-free invariant on OUR OWN artifact: no dangling `Files` key, no orphan member.
+      // Independent of the golden, so it still guards a pack ConsoleTools cannot upgrade or that
+      // has no golden at all. PMP-only: a TTMP has no per-file zip members to orphan.
+      const selfDiffs =
+        target === "pmp"
+          ? pmpSelfConsistency(
+              oursArchive,
+              new Set(loadModpack(name, bytes).extraFiles?.keys() ?? []),
+            )
+          : [];
+
+      const diff = {
+        ...payload,
+        files: [...payload.files, ...archive, ...selfDiffs],
+      };
       const key = oracleKey(bytes);
 
       if (BLESS) {

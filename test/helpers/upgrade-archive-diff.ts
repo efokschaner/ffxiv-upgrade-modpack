@@ -55,8 +55,12 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
  *  looser than any plausible resolution rule (it strips every '.'/' ', not just a trailing run per
  *  path segment), so it can only ever confirm FEWER drops than the reader made: it fails closed. A
  *  genuinely never-packed payload matches nothing under any spelling, so the intended confirmations
- *  are unaffected. */
-function looseKey(path: string): string {
+ *  are unaffected.
+ *
+ *  Exported for reuse by `pmp-self-consistency.ts`, which needs the exact same looseness for the
+ *  exact same reason (its own doc comment explains why sharing THIS function, as opposed to the
+ *  PMP reader's `windowsPathKey`, is safe). */
+export function looseKey(path: string): string {
   return path.toLowerCase().replace(/[. ]/g, "");
 }
 
