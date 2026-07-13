@@ -217,7 +217,7 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   two ConsoleTools `/upgrade` outcomes: a produced **pack** or a **noop** marker
   (`GoldenResult = { kind: "pack" } | { kind: "noop" }`, `test/helpers/upgrade-golden.ts:29-31`).
   It has **no way to represent (or cache) an input on which `/upgrade` is *expected to error***. When
-  ConsoleTools returns `-1`, `run()`'s `execFileSync` throws (`test/helpers/oracle.ts:125-128`), the
+  ConsoleTools returns `-1`, `run()`'s `execFileSync` throws (`test/helpers/oracle.ts:198-204`), the
   exception propagates out of `upgradeGoldenCached` uncaught, the test hard-fails, and nothing is
   cached — so every subsequent run re-spawns ConsoleTools and throws again. There is no "bless this as
   an expected failure" path (the ratchet baseline only covers known byte-diffs on a *produced* pack).
@@ -350,7 +350,7 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 - **Audit temp-dir usage for leaks (`mkdtemp` cleanup).** Several helpers create OS temp working
   directories via `mkdtempSync(join(tmpdir(), …))` but never remove the *directory* (only inner
   files), so they accumulate across runs. The worst offenders run on **every `npm test`**:
-  `test/helpers/oracle.ts:169` (`oracle-*`, a per-worker module singleton `ORACLE_TMP`, never rm'd)
+  `test/helpers/oracle.ts:243` (`oracle-*`, a per-worker module singleton `ORACLE_TMP`, never rm'd)
   and `test/helpers/upgrade-golden.ts:49` (`upgrade-*`, `UPGRADE_TMP`, never rm'd) — these left the
   stale `oracle-*`/`upgrade-*` dirs found on 2026-07-10. Occasional offenders: `scripts/extract-index-overrides.ts:87`
   (`idxover-*`) and `scripts/extract-shader-params.ts:26` (`shparam-*`) (manual runs), and the test
