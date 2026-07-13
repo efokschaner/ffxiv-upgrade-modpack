@@ -30,6 +30,12 @@ function kindOf(v: unknown): string {
  * Orientation matches diffUpgrade/diffArchives: golden-only => "added", ours-only => "removed".
  * A node whose TYPE differs is a single `mismatch` at that node; we do not descend into it (the
  * children of an array and of an object are not comparable, so per-child diffs would be noise).
+ *
+ * The RESULT SET is deterministic across runs — each object node sorts its own key set, so neither
+ * JSON.parse's insertion order nor V8's numeric-key reordering can perturb it — which is the
+ * property the ratchet actually needs (`compareToBaseline` keys a Set by `idOf`, so it compares
+ * sets, not sequences). The result LIST is not globally sorted by pointer string: sorting is per
+ * level, so a sibling key like "a!" can trail a deeper pointer under "a". Don't rely on the order.
  */
 export function jsonPointerDiff(
   ours: unknown,
