@@ -122,14 +122,56 @@ by luck: it maps to 0 either way.)
 
 ## 6. Group-folder collision loop cannot terminate
 
-**Status:** **not reached** — we don't port prefix generation · **Where:** `WizardData.cs:1406-1409`
+**Status:** **gap** — we throw rather than hang · **Where:** `WizardData.cs:1406-1409` (see
+`src/container/option-prefix.ts`, `makeGroupPrefix`)
 
 The loop that de-collides duplicate group folder names never increments its counter `i`, so two
-groups whose names sanitize to the same folder would spin forever. Unreachable in our port: we
-re-emit the source manifest and reuse the source zip member names rather than regenerating
-`<optionPrefix><gamePath>` (see `BACKLOG.md` — that non-port is itself a latent divergence).
+groups whose names sanitize to the same folder AND whose first retry (`" (1)/"`) also collides
+would spin forever recomputing the same candidate. (The sibling loop in `MakeOptionPrefix`,
+`:1448-1453`, increments correctly — see below.)
+
+**Us:** ported the loop condition as written (a single retry at `" (1)/"` succeeds silently, matching
+the C#), but if resolving the collision would need a second retry we throw, citing this entry,
+instead of hanging. `optionPrefixes` is unit-tested (`test/container/option-prefix.test.ts`) but not
+yet called by `writePmp` — Task 8 wires it into the writer.
 
 **Upstream fix:** increment the counter.
+
+---
+
+## 9. `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page
+
+**Status:** reproduced · **Where:** `WizardData.cs:1118-1158` construction + `:1234-1244`
+(`ClearNulls`' page-level pruning) — see `src/container/option-prefix.ts`, `buildPages`
+
+When `default_mod.json` is non-empty, `FromPmp` unshifts a synthesized "Default" page onto the
+FRONT of `DataPages` before appending one page per real page index `0..pageMax`. The group-assignment
+loop right after still indexes `DataPages[g.Page]` with each real group's *raw*, unadjusted page
+number — so a group meant for page 0 lands on `DataPages[0]`, which is now the Default page, not the
+page just created for it; the page created for page 0 is left with zero groups.
+
+That would inflate `DataPages.Count` and switch on the `pN/` prefix for the whole pack — except
+`ClearNulls` (WizardData.cs:1234-1244) runs immediately afterward (`:1159`, inside `FromPmp` itself,
+and again — redundantly — at `:1462` inside `WritePmp`) and drops any page with zero
+data-carrying groups. For the common case (a single real page, `pageMax === 0`), that prunes the
+now-empty created page right back out, so `DataPages.Count` ends up **unchanged** (still 1) and NO
+`pN/` prefix appears. The bug's only surviving, observable effect is that the misrouted group's
+files merge directly onto the Default page's folder (e.g. both `default/…` and `everything/a/…`
+sit at the top level with no page prefix) instead of the group getting a page — and, in the page
+sense — of its own. A naive reading of the C# (assuming `ClearNulls` merely nulls fields and never
+removes pages) would predict `DataPages.Count === 2` and a `p1/`/`p2/` split instead; that reading is
+wrong — `ClearNulls`' page-removal step (`if (!p.HasData) { DataPages.Remove(p); continue; }`,
+`WizardData.cs:1240-1244`) is unconditional, not GUI-only (that distinction belongs to
+`ClearEmpties`, which additionally preserves one empty *option* per single-select group for the
+import wizard UI — `ImportWizardWindow.xaml.cs:143` — and is not on the headless `/upgrade`/`/resave`
+path).
+
+**Us:** ported verbatim — page construction uses the same raw, unshifted index, and the same
+page-level `HasData` pruning runs afterward, so whatever falls out (including the multi-real-page
+case, where the shift instead strands the LAST created page empty rather than merging page 0) is
+pinned by `test/container/option-prefix.test.ts` case 6.
+
+**Upstream fix:** assign real groups to `DataPages[g.Page + (hasDefaultPage ? 1 : 0)]`.
 
 ---
 
