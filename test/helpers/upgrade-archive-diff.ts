@@ -1,5 +1,6 @@
 import { readZip } from "../../src/zip/zip";
 import { bytesEqual } from "./compare";
+import { jsonPointerDiff } from "./json-diff";
 import type { FileDiff } from "./upgrade-diff";
 
 const dec = new TextDecoder();
@@ -38,25 +39,6 @@ function normalize(name: string, json: unknown): unknown {
     return v;
   };
   return strip(json);
-}
-
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== typeof b || a === null || b === null) return false;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length)
-      return false;
-    return a.every((x, i) => deepEqual(x, b[i]));
-  }
-  if (typeof a === "object") {
-    const ao = a as Record<string, unknown>;
-    const bo = b as Record<string, unknown>;
-    const ak = Object.keys(ao).sort();
-    const bk = Object.keys(bo).sort();
-    if (ak.length !== bk.length || ak.some((k, i) => k !== bk[i])) return false;
-    return ak.every((k) => deepEqual(ao[k], bo[k]));
-  }
-  return false;
 }
 
 function parse(name: string, bytes: Uint8Array): unknown {
@@ -303,13 +285,15 @@ export function diffArchives(
       const o = parse(name, om.get(name)!);
       const g = parse(name, gm.get(name)!);
       // The confirmation always runs; it is inert (returns `g` verbatim) whenever nothing in `g`
-      // qualifies as a confirmed drop, so this reduces to a straight deep-equal in that case.
-      if (!deepEqual(o, dropConfirmedAbsentKeys(o, g, gm))) {
+      // qualifies as a confirmed drop, so this reduces to a straight structural diff in that case.
+      // One FileDiff PER DIFFERING JSON POINTER, not one per document: see jsonPointerDiff's doc
+      // comment for why the old document-granular `mismatch` was a ratchet hazard.
+      for (const d of jsonPointerDiff(o, dropConfirmedAbsentKeys(o, g, gm))) {
         diffs.push({
           kind: "manifest",
-          gamePath: name,
+          gamePath: `${name}#${d.pointer}`,
           index: 0,
-          status: "mismatch",
+          status: d.status,
           detail: undefined,
         });
       }
