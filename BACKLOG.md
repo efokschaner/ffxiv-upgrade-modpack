@@ -6,8 +6,48 @@ finding and/or C# source it traces to, so it can be picked up cold.
 
 ## Prioritized
 
-`/upgrade`-pipeline work still to port — the rounds our pipeline currently stubs, roughly
-highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port — the rounds our
+pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
+`src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+
+- **A generated texture is written into the PMP with no `Files` key naming it — our upgraded packs
+  are functionally broken whenever the texture round fires.** This is a **shipping defect**, not a
+  byte-parity nit: the mod we emit does not work in Penumbra. It is the only item here that makes
+  our *output* wrong rather than merely different, which is why it leads.
+
+  `writeGeneratedTex` (`src/upgrade/texture.ts`) builds its replacement `ModpackFile` with **no
+  `pmpPath`**, while `optionToJson`'s raw branch (`src/container/pmp.ts`) re-emits the source
+  option's `Files` map **verbatim** and `writePmp`'s payload loop writes each file at
+  `f.pmpPath ?? f.gamePath`. Two distinct failures follow, both silent:
+  - A **generated** file that did not previously exist in the option (index map, gear mask —
+    `existing < 0` in `writeGeneratedTex`) gets a new zip member at `gamePath`, but **no `Files` key
+    is added to name it** (the raw `Files` map is untouched). Penumbra has no way to find it, so the
+    upgrade is a no-op from the mod's point of view — the whole point of the texture round is lost.
+  - An **in-place regenerated** file (HairMaps normal/mask — `existing >= 0`, the array slot is
+    replaced wholesale) **loses its `pmpPath`**, so its new member is written at `gamePath` while the
+    retained `Files` value for that same `gamePath` still names the *original* zip path — which no
+    longer has a member. The result is a dangling `Files` entry pointing at nothing, plus an orphan
+    zip member no `Files` key names.
+
+  **Why no test catches it.** `diffUpgrade` is a model-level payload-multiset diff that runs *before*
+  the write, so it never sees `writePmp`'s output. `diffArchives` compares payload member names only
+  on the **no-op** branch (`test/helpers/upgrade-archive-diff.ts`) — and a pack whose texture round
+  fires is by definition *not* a no-op. So the one comparison that could see it is switched off
+  exactly where it would fire.
+
+  **Pre-existing** — `optionToJson` returned `o.raw`'s `Files` map verbatim long before the
+  absent-file work; that work only made it visible (spec
+  `docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §4.2).
+
+  **To fix:** give `writeGeneratedTex` a `pmpPath` and add/repoint the option's `Files` key for the
+  gamePath it writes — i.e. stop treating the carried-through raw `Files` map as immutable once the
+  pipeline adds or replaces a file. Note this overlaps the *"`writePmp` round-trips the source pack
+  where TexTools regenerates it"* item below (TexTools regenerates the whole `Files` map from its
+  typed model, which is why it cannot hit this); fixing that item's manifest-regeneration half would
+  subsume this, but this is the part that makes packs **broken** and can be fixed on its own first.
+  **Needs a test that would have caught it** — the natural one is to extend the payload-member-name
+  comparison to the non-no-op branch, which is currently blocked by the writer-regeneration
+  divergence below.
 
 - **Partials round.** `partials` (`src/upgrade/upgrade.ts`) is a no-op stub for
   `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
@@ -110,32 +150,13 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
      `common/{idx}/<filename>` (`:537-551`). The source names are never retained: `UnpackPmpOption`
      (`PMP.cs:1071-1102`) uses the `Files` value only to locate the unzipped temp file and keys its
      dict by *game path*.
-  3. **Functional breakage whenever the texture round fires — our upgraded PMPs are broken, not just
-     mismatched.** `writeGeneratedTex` (`src/upgrade/texture.ts:122-139`) builds its replacement
-     `ModpackFile` with no `pmpPath` field, while `optionToJson`'s raw branch (`src/container/pmp.ts`)
-     re-emits the source option's `Files` map verbatim and `writePmp`'s payload loop
-     (`src/container/pmp.ts:304-308`) writes each file at `f.pmpPath ?? f.gamePath`. Two distinct
-     failures follow, both silent:
-     - A **generated** file that didn't previously exist in the option (index map, gear mask —
-       `existing < 0` in `writeGeneratedTex`) gets a new zip member at `gamePath`, but no `Files` key
-       is added to name it (the raw `Files` map is untouched) — Penumbra has no way to find it, so the
-       upgrade is a no-op from the mod's perspective.
-     - An **in-place regenerated** file (HairMaps normal/mask — `existing >= 0`, the array slot is
-       replaced wholesale) loses its `pmpPath`, so its new member is written at `gamePath` while the
-       retained `Files` value for that same `gamePath` still names the *original* `on\…` zip path —
-       which no longer has a member (the old `ModpackFile` object, and the entry that carried its
-       `pmpPath`, is gone; `allFiles`/`writePmp` never revisit it). The result is a dangling `Files`
-       entry pointing at nothing, and an orphan zip member no `Files` key names.
-
-     Both are invisible to `diffUpgrade` (a model-level payload-multiset diff that runs *before* the
-     write, so it never sees `writePmp`'s output) and to `diffArchives` on any pre-existing pack (the
-     mismatch lands inside the same `meta.json`/`default_mod.json` divergence from sub-symptom (1) that
-     is already sitting in that pack's ratchet baseline). **Pre-existing, not introduced by the
-     absent-file branch** — `optionToJson` returned `o.raw`'s `Files` map verbatim before that work too
-     — so this is documentation of a real defect, not a fix, in this change. A reader of this item
-     should take away that our upgraded PMPs are functionally affected today whenever a texture-round
-     target (index map, gear mask, or hair normal/mask) actually gets generated, not merely that the
-     manifest bytes differ from what TexTools would write.
+  3. **Functional breakage whenever the texture round fires.** Same root cause — we round-trip the
+     source `Files` map instead of regenerating it — but this one makes our output **broken**, not
+     merely different: a generated index map / gear mask is written into the zip with no `Files` key
+     naming it, and a regenerated hair normal/mask is left with a dangling key.
+     **Promoted to its own item at the top of *Prioritized*** — see there for the detail. Fixing
+     sub-symptom (1) here (regenerate the manifest from the model) would subsume it, but it can and
+     should be fixed on its own first, because it is the half that ships broken mods.
 
   **Why the corpus is green anyway.** Penumbra already lays packs out as `<group>/<option>/<gamePath>`,
   so "regenerated" and "verbatim" coincide for (2); and every real pack that exhibits (1) predates
