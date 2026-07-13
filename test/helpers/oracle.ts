@@ -138,7 +138,19 @@ export function assertCorpusPresent(
  *  guarantees and the residual race it does NOT close (deliberately: closing it fully needs OS-level
  *  locking this harness does not justify).
  *  Sleeping is synchronous (Atomics.wait on a throwaway SharedArrayBuffer) because run() is
- *  execFileSync — there is no event loop to yield to. */
+ *  execFileSync — there is no event loop to yield to.
+ *
+ *  WHY NOT `proper-lockfile` (or another off-the-shelf lock)? It has a sync API (`lockSync`) and a
+ *  better acquire primitive (`mkdir`, atomic even on network filesystems), but its actual safety
+ *  rests on a HEARTBEAT: it rewrites the lock's mtime every `stale/2` ms so a live-but-slow holder
+ *  is never judged stale, and reports `onCompromised` when that fails. **A heartbeat cannot fire
+ *  here.** Our critical section IS `execFileSync`, which blocks the event loop for the whole
+ *  multi-minute ConsoleTools run, so no timer runs; we would have to set `stale` to ~20min, at which
+ *  point the heartbeat is inert and the library degrades to exactly this design. The residual race
+ *  documented below is therefore inherent to break-on-staleness locking WITHOUT a heartbeat, not a
+ *  shortcoming of hand-rolling it — proper-lockfile has the same window and merely names it.
+ *  Getting a real heartbeat means making the oracle async (run/unwrapCached/upgradeGoldenCached and
+ *  their sync corpus call sites). That is the right long-term shape and is filed in BACKLOG.md. */
 const LOCK_PATH = join(tmpdir(), "ffxiv-upgrade-modpack-consoletools.lock");
 const LOCK_STALE_MS = 10 * 60 * 1000; // > the longest single ConsoleTools run we have seen
 const LOCK_TIMEOUT_MS = 20 * 60 * 1000;
