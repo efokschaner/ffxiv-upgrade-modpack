@@ -49,6 +49,32 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
      `common/{idx}/<filename>` (`:537-551`). The source names are never retained: `UnpackPmpOption`
      (`PMP.cs:1071-1102`) uses the `Files` value only to locate the unzipped temp file and keys its
      dict by *game path*.
+  3. **Functional breakage whenever the texture round fires — our upgraded PMPs are broken, not just
+     mismatched.** `writeGeneratedTex` (`src/upgrade/texture.ts:122-139`) builds its replacement
+     `ModpackFile` with no `pmpPath` field, while `optionToJson`'s raw branch (`src/container/pmp.ts`)
+     re-emits the source option's `Files` map verbatim and `writePmp`'s payload loop
+     (`src/container/pmp.ts:304-308`) writes each file at `f.pmpPath ?? f.gamePath`. Two distinct
+     failures follow, both silent:
+     - A **generated** file that didn't previously exist in the option (index map, gear mask —
+       `existing < 0` in `writeGeneratedTex`) gets a new zip member at `gamePath`, but no `Files` key
+       is added to name it (the raw `Files` map is untouched) — Penumbra has no way to find it, so the
+       upgrade is a no-op from the mod's perspective.
+     - An **in-place regenerated** file (HairMaps normal/mask — `existing >= 0`, the array slot is
+       replaced wholesale) loses its `pmpPath`, so its new member is written at `gamePath` while the
+       retained `Files` value for that same `gamePath` still names the *original* `on\…` zip path —
+       which no longer has a member (the old `ModpackFile` object, and the entry that carried its
+       `pmpPath`, is gone; `allFiles`/`writePmp` never revisit it). The result is a dangling `Files`
+       entry pointing at nothing, and an orphan zip member no `Files` key names.
+
+     Both are invisible to `diffUpgrade` (a model-level payload-multiset diff that runs *before* the
+     write, so it never sees `writePmp`'s output) and to `diffArchives` on any pre-existing pack (the
+     mismatch lands inside the same `meta.json`/`default_mod.json` divergence from sub-symptom (1) that
+     is already sitting in that pack's ratchet baseline). **Pre-existing, not introduced by the
+     absent-file branch** — `optionToJson` returned `o.raw`'s `Files` map verbatim before that work too
+     — so this is documentation of a real defect, not a fix, in this change. A reader of this item
+     should take away that our upgraded PMPs are functionally affected today whenever a texture-round
+     target (index map, gear mask, or hair normal/mask) actually gets generated, not merely that the
+     manifest bytes differ from what TexTools would write.
 
   **Why the corpus is green anyway.** Penumbra already lays packs out as `<group>/<option>/<gamePath>`,
   so "regenerated" and "verbatim" coincide for (2); and every real pack that exhibits (1) predates

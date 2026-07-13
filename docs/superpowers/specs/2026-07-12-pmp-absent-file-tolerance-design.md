@@ -175,15 +175,24 @@ must be tight enough that any OTHER difference still fails*") and of `normalize(
 
 **The rule:** when a manifest member fails `deepEqual`, an option's `Files` key may be **missing from
 ours** iff the golden's value for that key names a zip path that **does not resolve as a member of
-the golden's own archive**, under the same `windowsPathKey` normalization the reader uses. Any other
+the golden's own archive**, under `looseKey` — a normalization defined in the harness
+(`upgrade-archive-diff.ts`) that is deliberately **not** the reader's `windowsPathKey`. Any other
 difference — a key we dropped whose payload *is* present, a key whose value we changed, any other
 field — still fails.
 
 Two properties make it safe:
 
-- **It cannot mask the earlier normalization fixes.** A merely case-mismatched or trailing-dotted key
-  *does* resolve, so it is not covered. Reusing the exported `windowsPathKey` (rather than a second
-  copy) is what guarantees the carve-out and the loader agree on "absent".
+- **It cannot mask a regression in the reader.** A shared key function would make the carve-out agree
+  with any bug introduced into `windowsPathKey` itself: a lost case-fold or trailing-dot strip would
+  make the reader wrongly mark a resolvable file absent, the writer would drop it, and a confirmation
+  built on the *same* broken function would recompute "absent" the same broken way and bless the drop —
+  the corpus would go green while silently losing a file, with only the `pmp-read.test.ts` unit tests
+  left to notice. `looseKey` is independent code, and deliberately **looser** than any plausible
+  resolution rule (it strips every `.`/` `, not just a trailing run per path segment), so it can only
+  ever confirm *fewer* drops than the reader made: it fails closed. A merely case-mismatched or
+  trailing-dotted key still resolves under it (so the two normalization fixes stay under test), and a
+  genuinely never-packed payload matches nothing under any spelling (so the intended confirmations are
+  unaffected).
 - **It is inert whenever TexTools actually wrote.** A real ConsoleTools golden has already dropped the
   key (`PMP.cs:883`), so both sides agree and the confirmation never runs. It can only fire when the
   reference is the input pack.

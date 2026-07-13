@@ -20,7 +20,9 @@ what an upstream fix would look like.
 
 > **Status legend** — `reproduced`: our port deliberately mirrors the bug. `not reached`: the buggy
 > code is in a path we don't port, recorded so nobody "discovers" it later. `gap`: we do **not**
-> reproduce it yet and fail loud instead (a known parity hole).
+> reproduce it yet and fail loud instead (a known parity hole). `worked around`: we neither reproduce
+> nor fail loud — the harness absorbs the symptom by other means (see the entry for how) rather than
+> our port mirroring the buggy behaviour itself.
 
 ---
 
@@ -132,13 +134,21 @@ re-emit the source manifest and reuse the source zip member names rather than re
 
 ## 7. Missing files all share the zero hash, perturbing dedup paths
 
-**Status:** **not reached** · **Where:** `PmpExtensions.cs:503-510` + `:537-551`
+**Status:** **not reached** · **Where:** `PmpExtensions.cs:509-514` + `:537-551`
 
 `ResolveDuplicates` guards a file whose `RealPath` doesn't exist by assigning it a **default
 (all-zero) `SHA1HashKey`** instead of hashing it. Two or more absent files therefore collide as
-"duplicates", and the dedup logic relocates the first one's path into `common/{idx}/…` and bumps the
-shared `idx` counter — which changes the `common/N` numbering of *genuine* duplicates that follow.
-Harmless in practice only because absent files are dropped at write anyway (`PMP.cs:883-888`).
+"duplicates": on the second (and any later) absent file, the dedup loop sees the zero hash already in
+`seenFiles`, relocates the *first* absent file's path into `common/{idx}/…`, and increments the shared
+`idx` counter (`:537-543`) — all of this happens in `ResolveDuplicates`, entirely before
+`PopulatePmpStandardOption`'s write-time `!File.Exists` guard (`PMP.cs:883-888`) ever runs.
+
+That write-time guard drops the absent files' own `Files` entries and payload bytes, but it does
+**not** undo the `idx` increment their collision already consumed — `idx` is a local counter in a
+different function, already spent by the time the drop happens. So with two absent files, the very
+next **genuine** duplicate (two really-identical present files) is relocated into `common/2/…` instead
+of `common/1/…` — an observable member-name difference between our output and TexTools' that survives
+the write-time drop and would need reproducing if we ever port `ResolveDuplicates` (see `BACKLOG.md`).
 
 **Us:** not reached — we don't port `ResolveDuplicates`.
 
@@ -149,7 +159,7 @@ sentinel.
 
 ## 8. `/upgrade` reports success and a destination path it never wrote
 
-**Status:** worked around in the harness · **Where:** `ConsoleTools/Program.cs:181,188` + `ModpackUpgrader.cs:216`
+**Status:** **worked around** · **Where:** `ConsoleTools/Program.cs:181,188` + `ModpackUpgrader.cs:216`
 
 When the upgrade produces no changes, `rewriteOnNoChanges` is `false`, so **no output file is
 written** — but the CLI still prints `"Upgraded Modpack saved to: {dest}"` and returns exit code
