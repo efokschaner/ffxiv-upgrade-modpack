@@ -11,7 +11,7 @@ import {
   type ModpackData,
   ModpackFormat,
 } from "../../src/model/modpack";
-import { readZip } from "../../src/zip/zip";
+import { readZip, writeZip } from "../../src/zip/zip";
 import { makePmpZip } from "../helpers/make-packs";
 
 const dec = new TextDecoder();
@@ -179,5 +179,317 @@ describe("writePmp model-building fallback (no raw)", () => {
     const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
     expect(byPath.get("chara/equipment/foo.tex")).toEqual(fooBytes);
     expect(byPath.get("chara/equipment/red.tex")).toEqual(redBytes);
+  });
+
+  // Covers the model-building (non-`raw`) branch of optionToJson's own absent-file skip
+  // (`if (!f.data) continue;`, pmp.ts:231, PMP.cs:883-888) — every other absent-file test in this
+  // file goes through the `raw`-carry branch instead, because a PMP source (unlike this modeled,
+  // no-`raw` data) always has one.
+  it("drops an absent file from Files in the model-building branch, keeping present ones", () => {
+    const data = modeledData();
+    const redOption = data.groups[1]!.options[0]!;
+    redOption.files.push({
+      gamePath: "chara/equipment/missing.tex",
+      storage: FileStorageType.RawUncompressed,
+      // no `data` -> absent (PMP.cs:883-888)
+    });
+
+    const entries = readZip(writePmp(data));
+    const groupName = [...entries.keys()].find((n) =>
+      /^group_001_.*\.json$/.test(n),
+    );
+    expect(groupName).toBeDefined();
+    const grp = parseEntry<PmpGroupJson>(entries, groupName as string);
+    const opt = grp.Options?.[0] as PmpOptionJson;
+    expect(opt.Files).toEqual({
+      "chara/equipment/red.tex": "chara\\equipment\\red.tex",
+    });
+    expect(Object.keys(opt.Files)).not.toContain("chara/equipment/missing.tex");
+  });
+});
+
+// Port of WizardData.WritePmp's ExtraFiles copy-back (WizardData.cs:1477-1488), the write side of
+// the readPmp ExtraFiles scan (PMP.cs:213-215) tested in pmp-read.test.ts.
+describe("writePmp ExtraFiles (WizardData.cs:1477-1488)", () => {
+  const enc = new TextEncoder();
+  const gamePath = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const filePayload = new Uint8Array([1, 2, 3, 4]);
+  const extraPayload = new Uint8Array([9, 9, 9]);
+
+  function buildEntries(): Map<string, Uint8Array> {
+    const meta = {
+      FileVersion: 3,
+      Name: "Extras",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: { [gamePath]: gamePath.replace(/\//g, "\\") },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    return new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+      [gamePath, filePayload],
+      ["images/preview.png", extraPayload],
+    ]);
+  }
+
+  it("round-trips an unreferenced member as a written zip member", () => {
+    const out = writePmp(readPmp(writeZip(buildEntries())));
+    const members = readZip(out);
+    expect(members.get("images/preview.png")).toEqual(extraPayload);
+    expect(members.get(gamePath)).toEqual(filePayload);
+  });
+
+  it("does not duplicate/collide a payload member with an extra of the same name", () => {
+    // Construct a ModpackData directly: an extra whose key collides with a real payload member's
+    // zip path. readPmp can never actually produce this (a referenced member is never an extra —
+    // see pmp-read.test.ts), so this exercises writePmp's own defensive `!entries.has()` guard.
+    const data = readPmp(writeZip(buildEntries()));
+    data.extraFiles = new Map([[gamePath, extraPayload]]);
+
+    const out = writePmp(data);
+    const members = readZip(out);
+    // The payload write happens first, so it must win over the colliding extra.
+    expect(members.get(gamePath)).toEqual(filePayload);
+  });
+});
+
+// Port of PopulatePmpStandardOption's payload write (PMP.cs:908-910) followed by WritePmp's
+// directory zip (PMP.cs:864-868). Groove 001.pmp's Files JSON names the same physical payload
+// under two different casings for two different gamePaths; TexTools' writer can never actually
+// produce two members for that, because it writes into a real Windows directory first and zips
+// it afterward — a directory can't hold two names differing only by case, so the second
+// WriteAllBytes resolves to the SAME entry the first one created (keeping the first name, last
+// bytes) before the single-entry directory gets zipped.
+describe("writePmp payload dedup by windowsPathKey (PMP.cs:908-910 / :864-868)", () => {
+  const enc = new TextEncoder();
+  const gamePathA = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const gamePathB = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+  const zipPathLower = "on/shared/payload.mdl";
+  const zipPathUpper = "on/SHARED/PAYLOAD.mdl";
+  const payload = new Uint8Array([1, 2, 3, 4]);
+
+  function buildFixture(): Uint8Array {
+    const meta = {
+      FileVersion: 3,
+      Name: "Dedup",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: {
+        [gamePathA]: zipPathLower.replace(/\//g, "\\"),
+        [gamePathB]: zipPathUpper.replace(/\//g, "\\"),
+      },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
+      // Only ONE physical archive member — a zip (like the NTFS directory TexTools zips
+      // from) can't hold both casings of the same path.
+      [zipPathLower, payload],
+    ]);
+    return writeZip(entries);
+  }
+
+  it("emits the shared payload once, keeping the first Files value's casing, while both gamePaths still resolve", () => {
+    const out = writePmp(readPmp(buildFixture()));
+    const members = readZip(out);
+
+    // Exactly one payload member survives, under the FIRST-seen Files value's casing.
+    expect(members.has(zipPathLower)).toBe(true);
+    expect(members.has(zipPathUpper)).toBe(false);
+    expect(members.get(zipPathLower)).toEqual(payload);
+
+    // Both original Files keys survive in the manifest — they both still resolve, since the
+    // reader (and the filesystem TexTools writes to) is case-insensitive.
+    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    expect(Object.keys(dm.Files)).toEqual([gamePathA, gamePathB]);
+
+    const reread = readPmp(out);
+    const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
+    expect(byPath.get(gamePathA)).toEqual(payload);
+    expect(byPath.get(gamePathB)).toEqual(payload);
+  });
+});
+
+describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
+  // TexTools' writer skips a file whose RealPath does not exist, which bypasses BOTH the payload
+  // write (:910) and opt.Files.Add (:914). The written pack therefore has neither.
+  const enc = new TextEncoder();
+  const present = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const second = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+
+  // `secondMemberPresent` toggles whether `second`'s zip member is written: false reproduces the
+  // absent-file case (PMP.cs:883-888), true is the all-present control used to prove the prune is
+  // a no-op. Both variants share the identical meta/default_mod.json source text (2-space-indented,
+  // matching writePmp's own `JSON.stringify(_, null, 2)` — see pmp.ts:268/277/301) so the two are
+  // comparable byte-for-byte.
+  function buildPmpFixture(secondMemberPresent: boolean): Uint8Array {
+    const meta = {
+      FileVersion: 3,
+      Name: "Drop",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: {
+        [present]: `on\\${present.replace(/\//g, "\\")}`,
+        [second]: `on\\${second.replace(/\//g, "\\")}`,
+      },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
+      [`on/${present}`, new Uint8Array([1, 2, 3, 4])],
+    ]);
+    if (secondMemberPresent) {
+      entries.set(`on/${second}`, new Uint8Array([9, 9]));
+    }
+    // NOTE: when secondMemberPresent is false there is no member for `second` — that's the point.
+    return writeZip(entries);
+  }
+
+  it("emits neither the zip member nor the Files key for an absent file", () => {
+    const out = writePmp(readPmp(buildPmpFixture(false)));
+    const members = readZip(out);
+
+    expect([...members.keys()]).toContain(`on/${present}`);
+    expect([...members.keys()]).not.toContain(`on/${second}`);
+
+    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    expect(Object.keys(dm.Files)).toEqual([present]);
+  });
+
+  it("re-emits an all-present option's default_mod.json bytes verbatim (prune is inert)", () => {
+    // pruneAbsentFiles returns `raw` itself when nothing is absent (pmp.ts:207), so round-tripping
+    // an all-present option through readPmp/writePmp must reproduce the SOURCE manifest bytes
+    // exactly — not merely an equal `Files` object (which would miss key order/whitespace, and
+    // pmp.ts's own prune comment calls key order load-bearing for the golden byte diff).
+    const src = buildPmpFixture(true);
+    const sourceBytes = readZip(src).get("default_mod.json")!;
+    const out = writePmp(readPmp(src));
+    const writtenBytes = readZip(out).get("default_mod.json")!;
+    expect(writtenBytes).toEqual(sourceBytes);
+  });
+
+  it("drops only the absent file's Files key inside a group option, leaving the sibling option and every other key untouched", () => {
+    // Covers the prune firing on a group_*.json option (the tests above only exercise the
+    // default_mod.json/raw-carry path) — a multi-option group where only ONE option holds an
+    // absent file (PMP.cs:883-888).
+    const optAFile = "chara/equipment/e0003/model/c0101e0003_top.mdl";
+    const optBPresentFile = "chara/equipment/e0004/model/c0101e0004_top.mdl";
+    const optBAbsentFile = "chara/equipment/e0005/model/c0101e0005_top.mdl";
+    const toZipValue = (p: string) => `on\\${p.replace(/\//g, "\\")}`;
+    const meta = {
+      FileVersion: 3,
+      Name: "Drop2",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: {},
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const group = {
+      Version: 0,
+      Name: "Choice",
+      Description: "group desc",
+      Image: "grp.png",
+      Page: 0,
+      Priority: 3,
+      Type: "Single",
+      DefaultSettings: 0,
+      Options: [
+        {
+          Name: "OptA",
+          Description: "a desc",
+          Image: "a.png",
+          Files: { [optAFile]: toZipValue(optAFile) },
+          FileSwaps: {},
+          Manipulations: [],
+        },
+        {
+          Name: "OptB",
+          Description: "b desc",
+          Image: "b.png",
+          Files: {
+            [optBPresentFile]: toZipValue(optBPresentFile),
+            [optBAbsentFile]: toZipValue(optBAbsentFile),
+          },
+          FileSwaps: { "chara/x.mdl": "chara/y.mdl" },
+          Manipulations: [{ Type: "Imc" }],
+        },
+      ],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
+      ["group_001_Choice.json", enc.encode(JSON.stringify(group, null, 2))],
+      [`on/${optAFile}`, new Uint8Array([5, 6])],
+      [`on/${optBPresentFile}`, new Uint8Array([7, 8])],
+      // NOTE: no member for optBAbsentFile — that is the whole point.
+    ]);
+    const src = writeZip(entries);
+
+    const out = writePmp(readPmp(src));
+    const members = readZip(out);
+    const groupName = [...members.keys()].find((n) =>
+      /^group_001_.*\.json$/.test(n),
+    );
+    expect(groupName).toBeDefined();
+    const grp = parseEntry<PmpGroupJson>(members, groupName as string);
+
+    expect(grp.Options).toHaveLength(2);
+    const [optA, optB] = grp.Options as PmpOptionJson[];
+    // Sibling option (no absent file): untouched.
+    expect(optA!.Files).toEqual({ [optAFile]: toZipValue(optAFile) });
+    // Affected option: only the absent key is dropped.
+    expect(optB!.Files).toEqual({
+      [optBPresentFile]: toZipValue(optBPresentFile),
+    });
+    // Every other key on the affected option survives.
+    expect(optB!.Name).toBe("OptB");
+    expect(optB!.Description).toBe("b desc");
+    expect(optB!.Image).toBe("b.png");
+    expect(optB!.FileSwaps).toEqual({ "chara/x.mdl": "chara/y.mdl" });
+    expect(optB!.Manipulations).toEqual([{ Type: "Imc" }]);
+    // Group-level keys survive too.
+    expect(grp.Name).toBe("Choice");
+    expect(grp.Description).toBe("group desc");
+    expect(grp.Image).toBe("grp.png");
+    expect(grp.Priority).toBe(3);
+
+    expect([...members.keys()]).toContain(`on/${optAFile}`);
+    expect([...members.keys()]).toContain(`on/${optBPresentFile}`);
+    expect([...members.keys()]).not.toContain(`on/${optBAbsentFile}`);
   });
 });

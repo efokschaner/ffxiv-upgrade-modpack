@@ -6,6 +6,7 @@ import {
   allFiles,
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
@@ -41,27 +42,64 @@ function windowsPathKey(path: string): string {
     .join("/");
 }
 
+// Port of the ExtraFiles-scan "referenced" comparison (PMP.cs:196/:209 build allPmpFiles, :214
+// compare it against the on-disk listing). Deliberately NOT windowsPathKey: allPmpFiles is built
+// from the RAW `Files` value with only `.ToLower()` applied (backslashes and all, no trailing
+// dot/space trim), and PMP.cs:214 compares it against `IOUtil.GetFilesInFolder(path)` — the
+// on-disk relative path, which NTFS already trimmed when PMP.cs:76 unzipped the archive before this
+// scan ever runs. So a `Files` value that keeps a trailing dot/space on a folder segment (e.g.
+// `optional\rose acc.\…`) never matches the (already-trimmed) on-disk name, even though the SAME
+// file resolves as a payload one section up via the looser, NTFS-read-equivalent windowsPathKey
+// lookup (optionFromJson, below): that file is BOTH a resolved payload AND an ExtraFile in
+// TexTools. We reproduce that by using plain case-fold here, not the trimming windowsPathKey.
+function looseCaseKey(path: string): string {
+  return path.toLowerCase();
+}
+
+/** Port of IsPmpJsonFile (PMP.cs:228-241): matches on the lowercased BASENAME only (a manifest
+ *  json nested in a subfolder would still count — we don't reproduce that beyond mirroring the
+ *  basename-only check, since PMP manifests are never actually written into subfolders). Used by
+ *  LoadPMP's extras scan (PMP.cs:214) to exclude meta.json/default_mod.json/group_* from
+ *  ExtraFiles; deliberately looser than the `groupNames` group-parsing regex above (that one
+ *  requires a numeric suffix to actually parse a group — this one only decides what counts as
+ *  "manifest" for extras purposes, matching the C# exactly). */
+function isPmpJsonFile(zipPath: string): boolean {
+  const base = zipPath.split("/").pop()!.toLowerCase();
+  if (!base.endsWith(".json")) return false;
+  return (
+    base === "meta.json" ||
+    base === "default_mod.json" ||
+    base.startsWith("group_")
+  );
+}
+
 function optionFromJson(
   raw: PmpOptionJsonRaw,
   filesByKey: Map<string, Uint8Array>,
 ): ModpackOption {
   const o = parsePmpOption(raw);
-  const modFiles = Object.entries(o.Files).map(([gamePath, zipPathRaw]) => {
-    const zipPath = zipPathRaw.replace(/\\/g, "/");
-    // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
-    // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
-    // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
-    // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
-    // manifest value verbatim so the writer/golden are unaffected.
-    const data = filesByKey.get(windowsPathKey(zipPath));
-    if (!data) throw new Error(`pmp: missing file entry ${zipPath}`);
-    return {
-      gamePath,
-      data,
-      storage: FileStorageType.RawUncompressed,
-      pmpPath: zipPath,
-    };
-  });
+  const modFiles: ModpackFile[] = Object.entries(o.Files).map(
+    ([gamePath, zipPathRaw]) => {
+      const zipPath = zipPathRaw.replace(/\\/g, "/");
+      // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
+      // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
+      // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
+      // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
+      // manifest value verbatim so the writer/golden are unaffected.
+      //
+      // A miss is NOT an error: the file is genuinely not packed. TexTools tolerates that at load —
+      // UnpackPmpOption still adds the entry, with a RealPath that does not exist (PMP.cs:1071-1102)
+      // — and defers the consequences to each read seam (ResolveFile, EndwalkerUpgrade.cs:1758) and
+      // to the writer, which drops it (PMP.cs:883-888). So we emit the file with NO bytes.
+      const data = filesByKey.get(windowsPathKey(zipPath));
+      return {
+        gamePath,
+        data,
+        storage: FileStorageType.RawUncompressed,
+        pmpPath: zipPath,
+      };
+    },
+  );
   return {
     name: o.Name,
     description: o.Description,
@@ -129,6 +167,31 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     });
   }
 
+  // Port of the ExtraFiles scan (PMP.cs:213-215): every archive member that is neither a manifest
+  // json nor referenced by an option's `Files` value is preserved verbatim so writePmp can re-emit
+  // it (WizardData.WritePmp, WizardData.cs:1477-1488). "Referenced" is decided the way PMP.cs
+  // itself decides it — `looseCaseKey`, NOT `windowsPathKey` — so a member referenced only via
+  // case-folding is still NOT an extra (case-fold is part of both), but a member referenced only
+  // via a trailing dot/space Files value IS still an extra (see `looseCaseKey`'s doc comment):
+  // that mismatch between the payload lookup's looser key and this scan's tighter one is the
+  // faithfully-reproduced TexTools behaviour, not a bug. Every option's `pmpPath` already carries
+  // the forward-slashed zip path a Files value named, whether or not that name resolved to a real
+  // member (an absent one references nothing further).
+  const referencedKeys = new Set<string>();
+  for (const g of groups) {
+    for (const o of g.options) {
+      for (const f of o.files) {
+        if (f.pmpPath) referencedKeys.add(looseCaseKey(f.pmpPath));
+      }
+    }
+  }
+  const extraFiles = new Map<string, Uint8Array>();
+  for (const [name, data] of entries) {
+    if (isPmpJsonFile(name)) continue;
+    if (referencedKeys.has(looseCaseKey(name))) continue;
+    extraFiles.set(windowsPathKey(name), data);
+  }
+
   return {
     sourceFormat: ModpackFormat.Pmp,
     isSimple: false,
@@ -144,6 +207,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       raw: metaRaw, // carries FileVersion, DefaultPreferredItems, and any other meta fields
     },
     groups,
+    extraFiles: extraFiles.size > 0 ? extraFiles : undefined,
   };
 }
 
@@ -188,6 +252,31 @@ export function safeName(s: string): string {
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;
 
+/** Port of the absent-file drop in PopulatePmpStandardOption (PMP.cs:883-888): a file whose
+ *  RealPath does not exist is skipped by `continue`, which bypasses BOTH File.WriteAllBytes (:910)
+ *  AND opt.Files.Add (:914) — so the written pack carries neither the payload member nor the
+ *  `Files` key. ("Sometimes poorly behaved penumbra folders don't actually have the files they
+ *  claim they do. Remove them in this case.") We re-emit the source option JSON verbatim, so the
+ *  key has to be pruned out of a COPY of it; the map is keyed by gamePath, so the pruning is exact.
+ *  Returns `raw` itself when nothing is absent, keeping the common path byte-for-byte verbatim. */
+function pruneAbsentFiles(
+  o: ModpackOption,
+  raw: PmpOptionJsonRaw,
+): PmpOptionJsonRaw {
+  const absent = new Set(o.files.filter((f) => !f.data).map((f) => f.gamePath));
+  if (absent.size === 0) return raw;
+  const files = raw.Files;
+  if (!isObj(files)) return raw;
+  return {
+    ...raw,
+    // Object.entries preserves insertion order, so the surviving keys keep their original
+    // order — the emitted JSON bytes are unchanged apart from the dropped keys.
+    Files: Object.fromEntries(
+      Object.entries(files).filter(([gamePath]) => !absent.has(gamePath)),
+    ),
+  };
+}
+
 /** Reconstruct a PMP option JSON DOCUMENT. Prefers the carried-through original (`raw`) for
  * full fidelity; falls back to building from modeled fields (non-PMP sources). Raw, not parsed:
  * `includeMeta=false` deliberately omits Name/Description/Image, mirroring C#'s ShouldSerialize*
@@ -196,9 +285,10 @@ function optionToJson(
   o: ModpackOption,
   includeMeta: boolean,
 ): PmpOptionJsonRaw {
-  if (isObj(o.raw)) return o.raw as PmpOptionJsonRaw;
+  if (isObj(o.raw)) return pruneAbsentFiles(o, o.raw as PmpOptionJsonRaw);
   const Files: Record<string, string> = {};
   for (const f of o.files) {
+    if (!f.data) continue; // absent -> no Files key (PMP.cs:883-888)
     const zip = f.pmpPath ?? f.gamePath; // forward slashes (zip entry name)
     Files[f.gamePath] = zip.replace(/\//g, "\\"); // backslashes in JSON value
   }
@@ -271,9 +361,44 @@ export function writePmp(data: ModpackData): Uint8Array {
     entries.set(fileName, enc.encode(JSON.stringify(groupJson, null, 2)));
   });
 
+  // Port of PopulatePmpStandardOption's payload write (PMP.cs:908-910) followed by WritePmp's
+  // directory zip (PMP.cs:864-868): TexTools writes every option's payload via
+  // `File.WriteAllBytes(Path.Combine(workingPath, fi.PmpPath), data)` into a *working directory*,
+  // and only zips that directory afterward (`ZipFile.CreateFromDirectory`). A Windows directory
+  // cannot hold two names differing only by case (or a trailing dot/space): NTFS resolves the
+  // second WriteAllBytes call's name case-insensitively to the SAME directory entry the first
+  // call created, so that entry keeps its FIRST name but ends up holding the LAST call's bytes.
+  // A pack whose Files JSON spells the same physical zip member under two different casings
+  // (several gamePaths deduped onto one payload — e.g. Groove 001.pmp) must therefore collapse
+  // to exactly ONE member here too. Collapse by windowsPathKey — the same NTFS-equivalent key
+  // the reader resolves Files values with — first-name-wins, last-data-wins, instead of the
+  // exact-string `entries.has` check this used to be (which let two casings of the same path
+  // both survive as separate members).
+  const payloadByKey = new Map<string, { zipPath: string; data: Uint8Array }>();
   for (const f of allFiles(data)) {
+    if (!f.data) continue; // absent: no member AND no Files key (PMP.cs:883-888) — see optionToJson
     const zipPath = (f.pmpPath ?? f.gamePath).replace(/\\/g, "/");
-    if (!entries.has(zipPath)) entries.set(zipPath, f.data);
+    const key = windowsPathKey(zipPath);
+    const existing = payloadByKey.get(key);
+    if (existing) {
+      existing.data = f.data; // NTFS: same directory entry as the first write, content overwritten
+    } else {
+      payloadByKey.set(key, { zipPath, data: f.data });
+    }
+  }
+  for (const { zipPath, data: payload } of payloadByKey.values()) {
+    entries.set(zipPath, payload);
+  }
+
+  // Re-emit ExtraFiles verbatim (WizardData.WritePmp, WizardData.cs:1477-1488 — both /upgrade and
+  // /resave pass saveExtraFiles=true). A payload member of the same name always wins; readPmp's
+  // referencedKeys check means the two sets can't actually collide, but guard explicitly rather
+  // than rely on that — via windowsPathKey (not an exact-string check), matching the same
+  // NTFS case-folding the payload collapse above applies, so a same-file collision differing
+  // only by case (or a trailing dot/space) is still caught.
+  for (const [zipPath, bytes] of data.extraFiles ?? []) {
+    if (payloadByKey.has(windowsPathKey(zipPath))) continue;
+    entries.set(zipPath, bytes);
   }
 
   return writeZip(entries, { store: false });

@@ -11,7 +11,9 @@ modpack-serialization / manifest parity work
 ## 1. Problem
 
 `readPmp` rejects real Penumbra packs that TexTools loads without complaint. A local scan
-(`local-notes/scan-failed-loads.ts`) over 1116 packs found **47** that our `loadModpack`
+(`scan-failed-loads.ts`, a `local-notes/` script since retired — see
+`docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §1 for the outcome and
+`scripts/scan-modpack-loads.ts` for its successor) over 1116 packs found **47** that our `loadModpack`
 pipeline throws on, every one with the same shape:
 
 ```
@@ -24,7 +26,7 @@ pmp: missing file entry <zipPath>      (src/container/pmp.ts:30)
 with its **option-folder display case** preserved (`Ear Physics/Off/chara/...`). Our exact-map
 lookup misses and throws; the pack never loads.
 
-Classifying all 47 (`local-notes/classify-fails.ts`):
+Classifying all 47 (`classify-fails.ts`, also since retired):
 
 - **41 packs** — pure **case-only** mismatches: every referenced `Files` value resolves against
   the archive under a case-insensitive lookup. These are the target of this change.

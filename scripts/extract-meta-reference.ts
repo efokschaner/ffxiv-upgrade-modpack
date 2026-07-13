@@ -499,8 +499,12 @@ if (IMC_LIMIT !== Number.POSITIVE_INFINITY) {
 // C#.
 function uncompress(f: {
   storage: FileStorageType;
-  data: Uint8Array;
+  data?: Uint8Array;
 }): Uint8Array {
+  // .meta files are synthesized from PMP Manipulations, never from a zip `Files` member (absent-file
+  // design spec §3.3), so a `.meta` ModpackFile always carries bytes.
+  if (!f.data)
+    throw new Error("extract-meta-reference: .meta file has no bytes");
   return f.storage === FileStorageType.SqPackCompressed
     ? decodeSqPackFile(f.data).data
     : f.data;

@@ -19,7 +19,10 @@ intuition** when the two conflict:
   xivModdingFramework do here?" — then reproduce it. The C# is the spec; `reference/`
   is the map. Port behaviour; don't invent it. This extends to quirks and apparent
   bugs: reproduce them faithfully (a "fix" diverges from the golden) and note the
-  quirk in a comment rather than correcting it.
+  quirk in a comment rather than correcting it. When what you are reproducing is a genuine
+  **defect** rather than a transcribed oddity — a null deref, a guard that can never fire, a
+  loop that can't terminate — also add an entry to `docs/TEXTOOLS_BUGS.md`, the register of
+  TexTools bugs we knowingly reproduce and could propose upstream.
 - **Every line of business logic has TexTools provenance.** All non-test, non-
   scaffolding code traces to a named C# source, cited as `file · symbol · lines` in a
   header or comment. If you can't point to the TexTools code a behaviour came from, it

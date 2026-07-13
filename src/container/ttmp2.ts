@@ -134,15 +134,25 @@ function buildBlob(files: ModpackFile[]): {
   >();
   let off = 0;
   for (const f of files) {
-    const key = fnv1aKey(f.data);
+    if (!f.data) {
+      // Unreachable: absent files are PMP-only (they come from a PMP `Files` value with no zip
+      // member) and /upgrade never converts formats. TTMP's own importer skips such files
+      // (TTMP.cs:1067), but we have no golden for a TTMP *write* of one, so we fail loud rather
+      // than guess. See the absent-file design spec §3.4.
+      throw new Error(
+        `ttmp2: cannot write a file with no bytes: ${f.gamePath}`,
+      );
+    }
+    const data = f.data; // narrow once: TS does not retain the `!f.data` guard across the closure below
+    const key = fnv1aKey(data);
     const bucket = seen.get(key) ?? [];
-    let pos = bucket.find((e) => bytesEqual(e.data, f.data))?.pos;
+    let pos = bucket.find((e) => bytesEqual(e.data, data))?.pos;
     if (!pos) {
-      pos = { off, size: f.data.length };
-      bucket.push({ pos, data: f.data });
+      pos = { off, size: data.length };
+      bucket.push({ pos, data });
       seen.set(key, bucket);
-      parts.push(f.data);
-      off += f.data.length;
+      parts.push(data);
+      off += data.length;
     }
     place.set(f, pos);
   }
@@ -150,6 +160,15 @@ function buildBlob(files: ModpackFile[]): {
 }
 
 export function writeTtmp2(data: ModpackData): Uint8Array {
+  // A PMP source can carry ExtraFiles (previews, readmes — PMP.cs:213-215); TTMP has no analogous
+  // container member (its payloads are byte offsets into a single .mpd, not zip members), and
+  // /upgrade never converts formats, so no golden exists for what a TTMP write of one should do.
+  // Fail loud rather than silently drop it, consistent with buildBlob's absent-file guard below.
+  if (data.extraFiles && data.extraFiles.size > 0) {
+    throw new Error(
+      `ttmp2: cannot write ExtraFiles (${data.extraFiles.size}) — TTMP has no equivalent container member`,
+    );
+  }
   const files = allFiles(data);
   const { blob, place } = buildBlob(files);
 

@@ -149,7 +149,7 @@ describe("upgradeRemainingTextures", () => {
     upgradeRemainingTextures(o, targets);
     const idxFile = o.files.find((f) => f.gamePath === indexPath);
     expect(idxFile).toBeDefined();
-    const got = decodeToRgba(parseTex(idxFile!.data));
+    const got = decodeToRgba(parseTex(idxFile!.data!));
     expect(Array.from(got)).toEqual(Array.from(createIndexTexture(rgba, w, h)));
   });
 

@@ -22,9 +22,15 @@ import { bytesEqual } from "./compare";
 import { confirmDocumentedDivergence } from "./geometry-divergence";
 import { upgradeGoldenCached } from "./upgrade-golden";
 
-function mdlFilesOf(data: ModpackData): ModpackFile[] {
+/** A ModpackFile narrowed to the always-has-bytes SqPackCompressed variant. */
+type SqPackCompressedFile = Extract<
+  ModpackFile,
+  { storage: FileStorageType.SqPackCompressed }
+>;
+
+function mdlFilesOf(data: ModpackData): SqPackCompressedFile[] {
   return allFiles(data).filter(
-    (f) =>
+    (f): f is SqPackCompressedFile =>
       f.storage === FileStorageType.SqPackCompressed &&
       f.gamePath.toLowerCase().endsWith(".mdl"),
   );
@@ -40,6 +46,8 @@ function roundTripModels(data: ModpackData, label: string): number {
   for (const f of mdlFilesOf(data)) {
     let decoded: ReturnType<typeof decodeSqPackFile>;
     try {
+      // SqPackCompressed (filtered by mdlFilesOf above) is TTMP/PMP-compressed-only and always
+      // carries bytes; only a PMP RawUncompressed entry can be absent (absent-file design spec §3.1).
       decoded = decodeSqPackFile(f.data);
     } catch {
       continue; // tolerated undecodable legacy model (mirrors corpus-mdl)

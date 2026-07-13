@@ -3,7 +3,9 @@ import { upgradeModpack } from "../../src/index";
 import {
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
+  type SqPackCompressedFile,
 } from "../../src/model/modpack";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import { ESamplerId, SHPK_CHARACTER } from "../../src/mtrl/shader";
@@ -19,7 +21,7 @@ import {
   encodeUncompressedTex,
   parseTex,
 } from "../../src/tex/tex";
-import { restore, uncompressedBytes } from "../../src/upgrade/upgrade";
+import { requireBytes, restore } from "../../src/upgrade/upgrade";
 import { firstCorpusModel } from "../helpers/corpus-models";
 
 function sampleData(): ModpackData {
@@ -211,7 +213,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     const out = upgradeModpack(input);
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
-    expect(Array.from(outFile.data)).toEqual(Array.from(uncompressed));
+    expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
 
   it("leaves an unparseable chara/**.mtrl file byte-untouched", () => {
@@ -225,7 +227,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     const out = upgradeModpack(input);
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
-    expect(Array.from(outFile.data)).toEqual([1, 2, 3, 4, 5]);
+    expect(Array.from(outFile.data!)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("leaves a colorset material with no resolvable normal texture byte-untouched (regression: C# throws an NRE on normalTex.Dx11Path before the mask code, and its per-material try/catch swallows it, leaving the file untouched)", () => {
@@ -239,7 +241,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     const out = upgradeModpack(input);
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
-    expect(Array.from(outFile.data)).toEqual(Array.from(uncompressed));
+    expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
 });
 
@@ -257,7 +259,7 @@ describe("upgradeModpack (material round)", () => {
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
     expect(outFile.storage).toBe(FileStorageType.SqPackCompressed);
-    const decoded = decodeSqPackFile(outFile.data).data;
+    const decoded = decodeSqPackFile(outFile.data!).data;
     const parsed = parseMtrl(decoded, outFile.gamePath);
     expect(parsed.colorSetData.length).toBe(1024);
     expect(parsed.shaderPackRaw).toBe("characterlegacy.shpk");
@@ -275,7 +277,7 @@ describe("upgradeModpack (skeleton)", () => {
     const out = upgradeModpack(input);
     expect(out.meta.name).toBe("M");
     expect(out.groups[0]!.options[0]!.files[0]!.gamePath).toBe("a/b.mtrl");
-    expect(Array.from(out.groups[0]!.options[0]!.files[0]!.data)).toEqual([
+    expect(Array.from(out.groups[0]!.options[0]!.files[0]!.data!)).toEqual([
       1, 2, 3,
     ]);
   });
@@ -401,23 +403,34 @@ describe("upgradeModpack texture round (e2e)", () => {
     const files = out.groups[0]!.options[0]!.files;
     const idx = files.find((f) => f.gamePath === "chara/x/tex/foo_id.tex");
     expect(idx).toBeDefined();
-    expect(Array.from(decodeToRgba(parseTex(idx!.data)))).toEqual(
+    expect(Array.from(decodeToRgba(parseTex(idx!.data!)))).toEqual(
       Array.from(createIndexTexture(rgba, w, h)),
     );
+  });
+});
+
+describe("requireBytes", () => {
+  it("throws when the file has no bytes (direct read, no ResolveFile-style skip)", () => {
+    const f: ModpackFile = {
+      gamePath: "chara/x.mdl",
+      storage: FileStorageType.RawUncompressed,
+    };
+    expect(() => requireBytes(f)).toThrow(/file has no bytes/);
   });
 });
 
 describe("restore threads the source SqPack type", () => {
   it("round-trips a Standard entry (mechanism, arbitrary bytes)", () => {
     const raw = new Uint8Array([1, 2, 3, 4, 5]);
-    const f = {
+    const f: SqPackCompressedFile = {
       gamePath: "chara/x.mtrl",
       data: encodeSqPackFile(raw, SqPackType.Standard),
       storage: FileStorageType.SqPackCompressed,
     };
-    const { bytes, type } = uncompressedBytes(f);
+    const { bytes, type } = requireBytes(f);
     expect(type).toBe(SqPackType.Standard);
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
+    // f is SqPackCompressed, so restore()'s SqPackCompressedFile overload guarantees `data` back.
     expect(decodeSqPackFile(restore(f, bytes, type).data).type).toBe(
       SqPackType.Standard,
     );
@@ -425,12 +438,12 @@ describe("restore threads the source SqPack type", () => {
 
   it("re-encodes a real Model .mdl as SqPackType.Model (lossless re-wrap)", () => {
     const bytes = firstCorpusModel().bytes;
-    const f = {
+    const f: SqPackCompressedFile = {
       gamePath: "chara/x.mdl",
       data: encodeSqPackFile(bytes, SqPackType.Model),
       storage: FileStorageType.SqPackCompressed,
     };
-    const dec = uncompressedBytes(f);
+    const dec = requireBytes(f);
     expect(dec.type).toBe(SqPackType.Model);
     const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data);
     expect(re.type).toBe(SqPackType.Model);

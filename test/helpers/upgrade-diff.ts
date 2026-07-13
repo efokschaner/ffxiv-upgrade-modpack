@@ -22,7 +22,8 @@ export interface PackDiff {
   files: FileDiff[]; // ONLY non-matched entries
 }
 
-function uncompressed(f: ModpackFile): Uint8Array {
+function uncompressed(f: ModpackFile): Uint8Array | undefined {
+  if (!f.data) return undefined; // absent PMP file: no payload (absent-file design spec §4.1)
   return f.storage === FileStorageType.SqPackCompressed
     ? decodeSqPackFile(f.data).data
     : f.data;
@@ -31,8 +32,12 @@ function uncompressed(f: ModpackFile): Uint8Array {
 function byGamePath(d: ModpackData): Map<string, Uint8Array[]> {
   const m = new Map<string, Uint8Array[]>();
   for (const f of allFiles(d)) {
+    const bytes = uncompressed(f);
+    // An absent file has no payload and so is not a member of the per-gamePath multiset on either
+    // side of the diff — that is the definition of the set, not a special case (design spec §4.1).
+    if (!bytes) continue;
     const list = m.get(f.gamePath) ?? [];
-    list.push(uncompressed(f));
+    list.push(bytes);
     m.set(f.gamePath, list);
   }
   return m;

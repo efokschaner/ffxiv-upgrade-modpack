@@ -12,7 +12,10 @@ second facet that appears in the real corpus (trailing-dot/space stripping).
 ## 1. Problem
 
 `readPmp` still rejects `[Jaque] Romeo & Juliet [feb 2023] - DT update.pmp`, one of the six packs
-the case-insensitive fix left throwing `pmp: missing file entry`. The backlog
+the case-insensitive fix left throwing `pmp: missing file entry`. (The `local-notes/scan-failed-loads.ts`
+/ `classify-fails.ts` scripts this section originally cited have since been retired — see
+`docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §1 for the current numbers and
+their successor, `scripts/scan-modpack-loads.ts`. Left otherwise unchanged as a historical record.) The backlog
 (`BACKLOG.md`) classified all six as **genuinely-absent** `Files` entries. Re-investigation shows
 that classification is **wrong for Romeo**: its ten "absent" entries are present in the archive
 under a **trailing-dot-normalized** folder name.
@@ -155,9 +158,10 @@ archive under **any** Windows normalization — verified. All five `/upgrade` to
 files are never read/needed). Matching that means TexTools' load-tolerance: load without throwing,
 represent the absent entry without inventing bytes, defer any failure to first byte-demand, and
 reproduce the noop. `BACKLOG.md` is rewritten to remove Romeo (fixed here) and narrow the item to
-these five, citing `PMP.cs:124`/`:1080`. Re-derive the list with `local-notes/scan-failed-loads.ts`
-+ `local-notes/classify-fails.ts` (extend the classifier to apply `windowsPathKey`-equivalent
-normalization so it no longer mislabels normalization cases as absent).
+these five, citing `PMP.cs:124`/`:1080`. (Historical note: this section's `scan-failed-loads.ts`
+/ `classify-fails.ts` scripts have since been retired along with the rest of `local-notes/` — see
+`docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §1 for the outcome and
+`scripts/scan-modpack-loads.ts` for the successor used to re-check today.)
 
 ## 7. Out of scope
 

@@ -7,6 +7,8 @@ import {
   type ModpackFile,
   type ModpackGroup,
   type ModpackOption,
+  type RawUncompressedFile,
+  type SqPackCompressedFile,
 } from "../model/modpack";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
 import {
@@ -59,11 +61,49 @@ export function cloneModpack(data: ModpackData): ModpackData {
     ...data,
     meta: { ...data.meta, tags: [...data.meta.tags] },
     groups: data.groups.map(cloneGroup),
+    // Fresh Map: `...data` would otherwise share the SOURCE map by reference, so a caller mutating
+    // the clone's extraFiles (or a future upgrade round adding/removing entries) would mutate
+    // `data` too — silently contradicting this function's (and upgradeModpack's) "never mutates
+    // `data`" contract. The values (Uint8Array payloads) stay shared/opaque, matching cloneFile.
+    extraFiles: data.extraFiles && new Map(data.extraFiles),
   };
 }
 
-/** Uncompresses a ModpackFile for a codec to read, carrying the source SqPack entry type. */
-export function uncompressedBytes(f: ModpackFile): Decoded {
+/**
+ * Port of EndwalkerUpgrade.ResolveFile, the file-list branch (EndwalkerUpgrade.cs:1761-1774).
+ * Returns the file's uncompressed bytes for a codec to read, carrying the source SqPack entry
+ * type — or NULL when the file has no bytes, mirroring C#'s
+ * `if (RealPath == null || !File.Exists(RealPath)) return null;` (:1765) for a PMP `Files` entry
+ * the archive never contained — OR when decoding throws, mirroring the `catch { return null; }`
+ * wrapped around the read (:1771-1774). The `tx` fallback (:1777-1782) has no analogue here: our
+ * model carries no transaction store to fall back to.
+ *
+ * Callers must NOT treat null uniformly: each C# call site decides for itself, and they disagree.
+ * See the per-seam table in docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md §2.
+ */
+export function resolveFile(f: ModpackFile): Decoded | null {
+  if (!f.data) return null;
+  if (f.storage === FileStorageType.SqPackCompressed) {
+    try {
+      const d = decodeSqPackFile(f.data);
+      return { bytes: d.data, type: d.type };
+    } catch {
+      return null;
+    }
+  }
+  return { bytes: f.data };
+}
+
+/**
+ * A DIRECT read — NOT a ResolveFile port. Used only at seams whose C# counterpart reads the file
+ * unguarded, with no ResolveFile call and therefore no swallow-and-return-null around a decode
+ * failure: throws when the file has no bytes at all, and lets a decode error propagate unchanged
+ * (rather than mapping it to the same "no bytes" error) so a corrupt entry surfaces its real
+ * failure instead of a misleading one. Use ONLY for seams that are not ResolveFile callers (see
+ * the §2 table) — everything that IS a ResolveFile call site must use `resolveFile` instead.
+ */
+export function requireBytes(f: ModpackFile): Decoded {
+  if (!f.data) throw new Error(`upgrade: file has no bytes: ${f.gamePath}`);
   if (f.storage === FileStorageType.SqPackCompressed) {
     const d = decodeSqPackFile(f.data);
     return { bytes: d.data, type: d.type };
@@ -77,6 +117,24 @@ export function uncompressedBytes(f: ModpackFile): Decoded {
  * .mtrl, Model for .mdl — so models stay valid Type-3 entries the game can load; for a
  * RawUncompressed (pmp) source, store raw. Keeps writeModpack's single-storage-form invariant.
  */
+export function restore(
+  f: SqPackCompressedFile,
+  bytes: Uint8Array,
+  type: SqPackType | undefined,
+): SqPackCompressedFile;
+export function restore(
+  f: RawUncompressedFile,
+  bytes: Uint8Array,
+  type: SqPackType | undefined,
+): RawUncompressedFile;
+// Fallback for a caller whose `f` is not yet narrowed to a specific ModpackFile variant (e.g.
+// a `.map()` over `option.files: ModpackFile[]`) — keeps the two narrower overloads above for
+// callers that DO have a narrowed input, without forcing every call site to narrow first.
+export function restore(
+  f: ModpackFile,
+  bytes: Uint8Array,
+  type: SqPackType | undefined,
+): ModpackFile;
 export function restore(
   f: ModpackFile,
   bytes: Uint8Array,
@@ -99,8 +157,15 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
   const infos: UpgradeInfo[] = [];
   option.files = option.files.map((f) => {
     if (!IS_CHARA_MTRL.test(f.gamePath)) return f;
+    // ResolveFile returned null -> UpdateEndwalkerMaterials `continue`s past this material
+    // (EndwalkerUpgrade.cs:495-499), leaving the entry untouched. Hoisted ABOVE the try/catch
+    // below: C#'s `continue` (:496-499) precedes the per-material `try` (:501), so a
+    // resolve-failure must skip before the parse/serialize failure handler ever runs, not fall
+    // through it.
+    const resolved = resolveFile(f);
+    if (!resolved) return f;
+    const { bytes, type } = resolved;
     try {
-      const { bytes, type } = uncompressedBytes(f);
       const mtrl = parseMtrl(bytes, f.gamePath);
       const got = upgradeMaterial(mtrl);
       if (got.length === 0) return f; // no update needed
@@ -125,14 +190,35 @@ const IS_MDL = /\.mdl$/;
 /**
  * Round 1 (model half of UpdateEndwalkerFiles): normalize every `.mdl` via FixOldModel
  * when the pack needs the fix (TTMP major < 2). Re-wrapped as a Model (Type-3) entry.
- * Throws from the normalizer are surfaced (not swallowed) so the golden ratchet exposes
- * any unported model structure rather than silently passing the source through.
+ *
+ * FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file via
+ * `TransactionDataHandler.GetUncompressedFile(file)` with NO null/existence guard — unlike
+ * the different, unrelated `UpdateEndwalkerModel` (:250-256), which calls `ResolveFile` and
+ * returns on null. This round is TTMP-only (gated by `needsMdlFix`, mirroring
+ * `DoesModpackNeedFix`, TTMP.cs:916), and absent files are a PMP-only phenomenon (a PMP
+ * `Files` entry with no zip member; TTMP resolves payloads by offset into the .mpd, so it
+ * has none). An absent file can therefore never reach this round via `requireBytes`'s
+ * no-bytes throw.
+ *
+ * That said, TexTools DOES have a skip on this path — just one level up the call stack,
+ * not inside FixOldModel itself. Every caller on the /upgrade path (WizardData.cs:716-727,
+ * the one ModpackUpgrader.cs:58 -> WizardData.FromModpack actually takes; also TTMP.cs:741-754
+ * and :1380-1393, same shape) wraps the FixOldModel call in
+ * `try { … } catch (Exception ex) { Trace.WriteLine(ex); continue; }` — the `continue` skips
+ * the `data.Files.Add`/`[...] =` a few lines below (WizardData.cs:729-737), so a model
+ * FixOldModel chokes on is DROPPED from the option, not fatal to the whole pack.
+ *
+ * We do NOT reproduce that: `normalizeModel` throws propagate all the way out of
+ * `upgradeModpack`, killing the pack. That is a real, PRE-EXISTING divergence from TexTools
+ * (unrelated to absent-file tolerance — it was true before this change too), kept
+ * deliberately fail-loud so an unported model structure surfaces loudly during development
+ * instead of silently shipping a pack missing a model. See BACKLOG.md.
  */
 function modelRound(option: ModpackOption, gate: boolean): void {
   if (!gate) return;
   option.files = option.files.map((f) => {
     if (!IS_MDL.test(f.gamePath)) return f;
-    const { bytes, type } = uncompressedBytes(f);
+    const { bytes, type } = requireBytes(f);
     return restore(
       f,
       normalizeModel(bytes, f.gamePath),
@@ -151,7 +237,12 @@ const IS_META = /\.meta$/;
 function metadataRound(option: ModpackOption): void {
   option.files = option.files.map((f) => {
     if (!IS_META.test(f.gamePath)) return f;
-    const { bytes, type } = uncompressedBytes(f);
+    // No absent-file analogue: PMP .meta files are materialized from manipulations
+    // (PMP.cs:1141-1164), never read from a zip member, so a .meta with no bytes is unreachable.
+    // Write-side confirmation: TexTools' PMP writer turns any `.meta` into `Manipulations` rather
+    // than a zip member (PMP.cs:891-895), so a PMP `Files` entry naming a `.meta` is not something
+    // TexTools or Penumbra produce. Fail loud.
+    const { bytes, type } = requireBytes(f);
     const out = serializeMeta(
       reconstructMeta(deserializeMeta(bytes), f.gamePath),
     );

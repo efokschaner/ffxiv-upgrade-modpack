@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readTtmp2, writeTtmp2 } from "../../src/container/ttmp2";
-import { allFiles } from "../../src/model/modpack";
+import {
+  allFiles,
+  FileStorageType,
+  type ModpackData,
+  type ModpackFile,
+  ModpackFormat,
+} from "../../src/model/modpack";
 import { makeTtmp2Simple, makeTtmp2Wizard } from "../helpers/make-packs";
 
 function roundTrip(bytes: Uint8Array) {
@@ -33,9 +39,59 @@ describe("writeTtmp2 round-trip", () => {
     const data = readTtmp2(makeTtmp2Simple().bytes);
     // Force two files to share identical bytes.
     const files = allFiles(data);
-    files[1]!.data = files[0]!.data.slice();
+    // TTMP files always carry bytes (fileFromMod slices them from the .mpd blob); only a PMP
+    // Files entry can be absent (absent-file design spec §3.1).
+    files[1]!.data = files[0]!.data!.slice();
     const reread = readTtmp2(writeTtmp2(data));
     const rf = allFiles(reread);
     expect(rf[0]!.data).toEqual(rf[1]!.data);
+  });
+
+  it("throws when a file has no bytes (structurally PMP-only; unreachable in practice — design spec §3.4)", () => {
+    const data: ModpackData = {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: true,
+      meta: {
+        name: "M",
+        author: "A",
+        version: "1",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "Default",
+              description: "",
+              image: "",
+              priority: 0,
+              fileSwaps: {},
+              manipulations: [],
+              files: [
+                // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
+                // writeTtmp2's defensive runtime guard; structurally unreachable through any real
+                // reader (design spec §3.4), hence the cast.
+                {
+                  gamePath: "chara/x.mtrl",
+                  storage: FileStorageType.SqPackCompressed,
+                } as ModpackFile,
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(() => writeTtmp2(data)).toThrow(/cannot write a file with no bytes/);
   });
 });

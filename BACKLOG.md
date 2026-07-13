@@ -6,8 +6,48 @@ finding and/or C# source it traces to, so it can be picked up cold.
 
 ## Prioritized
 
-`/upgrade`-pipeline work still to port — the rounds our pipeline currently stubs, roughly
-highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port — the rounds our
+pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
+`src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+
+- **A generated texture is written into the PMP with no `Files` key naming it — our upgraded packs
+  are functionally broken whenever the texture round fires.** This is a **shipping defect**, not a
+  byte-parity nit: the mod we emit does not work in Penumbra. It is the only item here that makes
+  our *output* wrong rather than merely different, which is why it leads.
+
+  `writeGeneratedTex` (`src/upgrade/texture.ts`) builds its replacement `ModpackFile` with **no
+  `pmpPath`**, while `optionToJson`'s raw branch (`src/container/pmp.ts`) re-emits the source
+  option's `Files` map **verbatim** and `writePmp`'s payload loop writes each file at
+  `f.pmpPath ?? f.gamePath`. Two distinct failures follow, both silent:
+  - A **generated** file that did not previously exist in the option (index map, gear mask —
+    `existing < 0` in `writeGeneratedTex`) gets a new zip member at `gamePath`, but **no `Files` key
+    is added to name it** (the raw `Files` map is untouched). Penumbra has no way to find it, so the
+    upgrade is a no-op from the mod's point of view — the whole point of the texture round is lost.
+  - An **in-place regenerated** file (HairMaps normal/mask — `existing >= 0`, the array slot is
+    replaced wholesale) **loses its `pmpPath`**, so its new member is written at `gamePath` while the
+    retained `Files` value for that same `gamePath` still names the *original* zip path — which no
+    longer has a member. The result is a dangling `Files` entry pointing at nothing, plus an orphan
+    zip member no `Files` key names.
+
+  **Why no test catches it.** `diffUpgrade` is a model-level payload-multiset diff that runs *before*
+  the write, so it never sees `writePmp`'s output. `diffArchives` compares payload member names only
+  on the **no-op** branch (`test/helpers/upgrade-archive-diff.ts`) — and a pack whose texture round
+  fires is by definition *not* a no-op. So the one comparison that could see it is switched off
+  exactly where it would fire.
+
+  **Pre-existing** — `optionToJson` returned `o.raw`'s `Files` map verbatim long before the
+  absent-file work; that work only made it visible (spec
+  `docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §4.2).
+
+  **To fix:** give `writeGeneratedTex` a `pmpPath` and add/repoint the option's `Files` key for the
+  gamePath it writes — i.e. stop treating the carried-through raw `Files` map as immutable once the
+  pipeline adds or replaces a file. Note this overlaps the *"`writePmp` round-trips the source pack
+  where TexTools regenerates it"* item below (TexTools regenerates the whole `Files` map from its
+  typed model, which is why it cannot hit this); fixing that item's manifest-regeneration half would
+  subsume this, but this is the part that makes packs **broken** and can be fixed on its own first.
+  **Needs a test that would have caught it** — the natural one is to extend the payload-member-name
+  comparison to the non-no-op branch, which is currently blocked by the writer-regeneration
+  divergence below.
 
 - **Partials round.** `partials` (`src/upgrade/upgrade.ts`) is a no-op stub for
   `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
@@ -15,6 +55,135 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   hair/ear/tail sampler tables) — no corpus coverage exercises it yet.
 
 ## Unprioritized
+
+- **Port IBM437 (CP437) zip entry-name decoding, matching `Ionic.Zip`.** `src/zip/zip.ts`'s
+  `readZip` currently THROWS when a zip entry's UTF-8 general-purpose flag (bit 11) is unset and
+  its raw name contains a byte >= 0x80, rather than silently decoding it: fflate's `unzipSync`
+  falls back to latin1 for that case, but TexTools unzips via `Ionic.Zip` (`IOUtil.UnzipFiles`,
+  `IOUtil.cs:625/654/669`), whose non-UTF-8 fallback is IBM437 — a different mapping above 0x7F, so
+  we would otherwise silently resolve a different member name than TexTools does. Porting a real
+  IBM437 decode table (256-entry byte→codepoint) would let these packs load, instead of failing
+  loud. **No pack in the corpus currently trips the throw** (real corpus mods use ASCII or
+  UTF-8-flagged names), so this is deferred until one does, or until we want to widen coverage
+  proactively. See `src/zip/zip.ts`'s `findNonUtf8HighByteEntryNames` doc comment for the full
+  reasoning, and the CRITICAL review finding that added the throw (PR for
+  `feat/pmp-absent-file-tolerance`, 2026-07-12).
+
+  **Empirically confirmed (2026-07-12), not just read from Ionic's docs.** Probe:
+  `scripts/probes/probe-cp437-zip.ts` hand-assembles
+  a PMP zip byte-for-byte (local file headers + central directory + EOCD, method 0/stored) with a
+  payload entry named `[0x78, 0x81, 0x78]` (`'x'`, CP437 `0x81`, `'x'` -- CP437 decodes this to `"xüx"`;
+  the same bytes under latin1, fflate's fallback, decode to a control char instead of `'ü'`) and the
+  UTF-8 general-purpose flag bit CLEARED, alongside a `default_mod.json` whose `Files` map spells the
+  game path's target as real UTF-8 `"xüx"` (`{"chara/test.file": "xüx"}`). Ran ConsoleTools `/resave`
+  (pure load -> write, `Program.cs:191-221`) on it and inspected the output:
+  - **Output `Files` map:** `{"chara/test.file": "default\\chara\\test.file"}` -- the key **survived**
+    (a dropped/absent file would have removed it, per `PMP.cs:883-888`, the same signal
+    `probe-resave-absent.ts` uses).
+  - **Output zip members:** `default_mod.json`, `meta.json`, `default/chara/test.file` -- a payload
+    member exists at the renamed path (`/resave` renames every payload entry, see the `writePmp`
+    round-trip item below), and its bytes are the original `[0, 1, 2, 3]` payload verbatim (checked
+    directly), not empty or zeroed.
+  - **VERDICT: ConsoleTools RESOLVED the CP437-named member.** Ionic decoded the raw `0x81` byte as
+    CP437 `'u with diaeresis'`, matched it against the `Files` value, and round-tripped the real payload.
+  A control run (folded into the same script, `scripts/probes/probe-cp437-zip.ts`, same hand-rolled zip
+  format, plain-ASCII entry name `"xyx"` instead of the CP437 byte) was necessary and used to validate the harness itself:
+  the FIRST attempt used a `Files`/game-path key (`"some/random/path.file"`) that doesn't start with a
+  recognized `XivDataFile` folder key, so `PMP.cs:752-770` (`CanImport`) silently dropped the file in
+  BOTH the CP437 and the ASCII-control run -- a false negative unrelated to zip name decoding. Switching
+  the game path to `"chara/test.file"` (a real `XivDataFile` prefix) made the ASCII control resolve
+  correctly, confirming the zip-construction and harness were sound, and only then did the CP437 run
+  above give the real answer. **This confirms the premise behind the fail-loud throw is correct**:
+  Ionic really does fall back to CP437 (not latin1, not UTF-8, not a load error) for an unflagged
+  high-byte name, so `readZip`'s divergence from that behaviour is real, and porting an IBM437 decode
+  table remains the right fix once a pack needs it.
+
+- **`modelRound` propagates a model-normalizer throw and kills the whole pack; TexTools drops just
+  the file.** `src/upgrade/upgrade.ts` (`modelRound`) calls `requireBytes` + `normalizeModel`
+  unguarded, so a throw from `normalizeModel` (an unported/unparseable model structure) propagates
+  out of `upgradeModpack` and fails the entire `/upgrade`. TexTools does not fail the pack here:
+  every caller of `FixOldModel` on the `/upgrade` path wraps it in
+  `try { … } catch (Exception ex) { Trace.WriteLine(ex); continue; }` — `WizardData.cs:716-727`
+  (the one `ModpackUpgrader.cs:58 -> WizardData.FromModpack` actually takes), and the same shape at
+  `TTMP.cs:741-754` and `:1380-1393` — and the `continue` skips the `data.Files.Add` a few lines
+  below (`WizardData.cs:729-737`), so the file is silently DROPPED from the option rather than
+  killing the pack. Pre-existing (true before the absent-file-tolerance change; unrelated to it —
+  an absent file can never reach `modelRound` at all, since absent files are PMP-only and this
+  round is gated off for PMP by `needsMdlFix`/`DoesModpackNeedFix`, `TTMP.cs:916`). **Deliberate,
+  not an oversight:** fail-loud here is what exposes an unported model structure as a loud failure
+  during development instead of silently shipping a pack with a missing model — matching TexTools'
+  *outcome* (dropping the file) would require catching the normalizer's throw and removing the file
+  from the option, the same shape as `materialRound`'s per-file try/catch. Revisit once model
+  normalization coverage is broad enough that a throw here is more likely a real unported case than
+  a bug worth surfacing loudly.
+
+- **Audit the port for TexTools bugs we already reproduce, and register them.**
+  `docs/TEXTOOLS_BUGS.md` is the register of upstream **bugs** (null derefs, dead guards,
+  non-terminating loops, lying exit codes) that we deliberately reproduce for byte-parity, or
+  deliberately don't reach, or fail loud on instead. It was seeded from the PMP absent-file
+  investigation plus a grep for existing `QUIRK` / `NRE` comments, so it is **not** exhaustive —
+  it captures what was in reach, not what is there. Sweep `src/` (and the `reference/` C# it cites)
+  for the rest and add an entry per finding. Candidates to adjudicate on the way through, all of
+  which are currently only noted in code comments: the EQP set-0 omission
+  (`src/meta/reconstruct.ts:190`, `ItemMetadata.cs:522-528`); the `PlayableRaces` vs
+  `PlayableRacesWithNPCs` race-order disagreement (`src/meta/playable-races.ts:1`, `Eqp.cs:48-92`);
+  `MakePMPPathSafe`'s platform-dependent `Path.GetInvalidFileNameChars()`
+  (`src/container/pmp.ts:151`, `PMP.cs:1316-1326`). Each needs the bug-vs-quirk call the register's
+  header describes — a faithfully transcribed SE oddity is a quirk and stays a code comment; only a
+  genuine defect gets an entry. Useful both as a correctness audit (a reproduced bug we *think* we
+  reproduce may not actually match) and as the shortlist of patches we could offer upstream.
+
+- **`writePmp` round-trips the source pack where TexTools *regenerates* it.** TexTools' PMP writer
+  never round-trips: it rebuilds the whole pack from its fully-defaulted typed model. Ours re-emits
+  the source manifest verbatim (`data.meta.raw` / `o.raw`) and reuses the source zip names
+  (`pmpPath`). Two confirmed sub-symptoms of the one root cause:
+  1. **Manifest content** — *empirically confirmed* (2026-07-12, see below). TexTools serializes its
+     typed model, so every initialized field is written: a `meta.json` that Penumbra wrote without
+     `Image` comes back **with** `"Image": ""`, and `default_mod.json` comes back as
+     `{"Version": 0, "Files": …, "FileSwaps": …, "Manipulations": …}` — the source's `Name` /
+     `Description` **dropped**, a `Version` **added** (`PMP.cs:830-869`; `WizardData.cs:1496` even
+     forces `FileVersion`). Ours keeps the source document verbatim.
+  2. **Zip member names** — anticipated, still unconfirmed directly. `ResolveDuplicates`
+     (`PmpExtensions.cs:534`) **renames every payload entry** to `<optionPrefix><gamePath>` —
+     `optionPrefix` being the lowercased, path-safe group name (plus option name when the group has
+     more than one option; `WizardData.cs:1362-1458`) — and content-dedups shared files into
+     `common/{idx}/<filename>` (`:537-551`). The source names are never retained: `UnpackPmpOption`
+     (`PMP.cs:1071-1102`) uses the `Files` value only to locate the unzipped temp file and keys its
+     dict by *game path*.
+  3. **Functional breakage whenever the texture round fires.** Same root cause — we round-trip the
+     source `Files` map instead of regenerating it — but this one makes our output **broken**, not
+     merely different: a generated index map / gear mask is written into the zip with no `Files` key
+     naming it, and a regenerated hair normal/mask is left with a dangling key.
+     **Promoted to its own item at the top of *Prioritized*** — see there for the detail. Fixing
+     sub-symptom (1) here (regenerate the manifest from the model) would subsume it, but it can and
+     should be fixed on its own first, because it is the half that ships broken mods.
+
+  **Why the corpus is green anyway.** Penumbra already lays packs out as `<group>/<option>/<gamePath>`,
+  so "regenerated" and "verbatim" coincide for (2); and every real pack that exhibits (1) predates
+  the ratchet, so its `meta.json` / `default_mod.json` mismatch is **already sitting in its baseline**
+  (e.g. `test/corpus/.upgrade-baseline/dec0279….json`, `bd7130d….json`). A **newly added** pack gets
+  no such grandfathering and must match fully — which is how this surfaced.
+
+  **How it surfaced, and the repro.** The absent-file work (spec
+  `docs/superpowers/specs/2026-07-12-pmp-absent-file-tolerance-design.md` §4.2) tried to add a
+  synthetic pack that both carries an absent `Files` entry and genuinely upgrades, so ConsoleTools
+  would actually *write* it. ConsoleTools did write it, and the repro target matched **byte-for-byte**
+  (`group_001_absent.json` — TexTools drops the absent key, we drop it identically). The pack still
+  could not land, blocked solely by (1): `default_mod.json#0:mismatch, meta.json#0:mismatch`. The
+  builder now lives at `scripts/generate-synthetics/build-synthetic-absent-file-upgraded.ts` —
+  it is a single-option group named `Absent` holding a hand-built EW 256-entry-colorset `.mtrl` at
+  `chara/equipment/e9999/…` plus an absent `Files` entry — but it is **not** registered in
+  `build-all.ts` yet, since it cannot reach a clean 0-diff until this item is fixed. **Land it by
+  adding `import "./build-synthetic-absent-file-upgraded";` to `build-all.ts` once this item is
+  fixed** — it was the only thing blocking a clean 0-diff, so it should go green immediately, and it
+  is the golden that pins both this fix and the absent-file drop on a real (non-noop) write.
+
+  **Fixing it** means porting TexTools' regenerate-from-typed-model write: the `PMPMetaJson` /
+  `PmpDefaultMod` Newtonsoft serialization shape for (1), and `ResolveDuplicates` + `MakeOptionPrefix`
+  (with their dedup/`common/N` behaviour, incl. the zero-hash bug in `docs/TEXTOOLS_BUGS.md` §7) for
+  (2). Nontrivial: it affects **every** genuinely-upgraded PMP, so expect ratchet baselines to move.
+  Originally found while investigating whether ConsoleTools `/resave` could serve as a write-side
+  round-trip oracle — it cannot, for exactly this reason.
 
 - **PMP group with an unrecognized `Type` yields an empty group instead of failing loud.**
   `parsePmpGroup` (`src/container/manifest-types.ts`) defaults `Options` to `[]`, so a group whose
@@ -76,7 +245,7 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
 
 - **v1 metadata support.** `src/meta/deserialize.ts` now throws on any `.meta` with
   `version !== 2` rather than silently mis-upgrading it. An empirical probe
-  (`local-notes/probe-v1-meta.ts`: downgrade a real pack's v2 equipment meta to v1 --
+  (`scripts/probes/probe-v1-meta.ts`: downgrade a real pack's v2 equipment meta to v1 --
   `version=1`, EST/GMP stripped -- run it through ConsoleTools `/upgrade`, inspect the golden)
   confirmed ConsoleTools cleanly upgrades v1 -> v2 by **injecting base-game data** the v1 meta
   lacks, per C#'s `dataVersion==1` default-injection branches:
@@ -92,30 +261,6 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
   not wired into the harness) to re-verify against a fresh ConsoleTools build if this is ever
   picked up. `src/meta/serialize.ts` always writes version `2` on output regardless of input
   version (`ItemMetadata.Serialize`, `ItemMetadata.cs:509`), so this is purely a read-side gap.
-
-- **PMP load-tolerance for genuinely-absent `Files` entries.** After the case-insensitive
-  (`docs/superpowers/specs/2026-07-11-pmp-case-insensitive-file-resolution-design.md`) and Windows
-  path-normalization (`docs/superpowers/specs/2026-07-11-pmp-windows-path-normalization-design.md`)
-  resolution fixes, **5 packs still fail loud** with `pmp: missing file entry` because their `Files`
-  value names a path absent from the archive under *any* Windows normalization (case-fold + trailing
-  dot/space strip) — genuinely not packed, not a resolution bug. TexTools tolerates these at **load**:
-  `LoadPMP` (`PMP.cs:124`) does no existence check, and only builds
-  `FileStorageInformation.RealPath = Path.Combine(unzipPath, file.Value)` (`PMP.cs:1080`) — a path
-  that simply doesn't exist on disk — deferring any failure to read/import time. All 5 `/upgrade` to a
-  **noop** (the absent files are never read/needed), verified against ConsoleTools. Reproducing that
-  means deferring our **eager** byte-read to first use and representing an absent entry without
-  inventing bytes (then letting `/upgrade` surface it only if the file is actually needed), and
-  reproducing the noop through the write/harness path. We keep failing loud for now. Re-derive the
-  list with `local-notes/scan-failed-loads.ts` + `local-notes/classify-fails.ts` (the classifier now
-  applies the same case-fold + trailing-dot/space normalization, so it no longer mislabels
-  normalization cases — the earlier list wrongly included `[Jaque] Romeo & Juliet`, since fixed); as of
-  2026-07-11 the 5 are: Skelomae Custom Skeleton v3.3.0 (`.pmp`, ×2 — Skeleton + Devkit; missing
-  `files/files/common/arachne/*.sklb`), `Hoodie Megapack 3 - 2.0.2.pmp` (missing
-  `chara/equipment/e6033/model/c0201e6033_top.mdl` + a `designs/default` `.tex`),
-  `[Nyameru]Cute Loop.pmp` (missing `chara/cuteloop2.pap`), and `[Shy] Tactical Hoodie [DT].pmp`
-  (missing `chara/equipment/e0834/material/v0001/mt_c0201e0834_top_a.mtrl`). Distinct from the
-  resolution fixes; revisit if faithful load-tolerance is wanted (or a real pack needs one of these to
-  upgrade).
 
 - **NonSet (weapon/monster/demihuman) IMC reference table.** `src/meta/reference/imc-table.ts`
   (`scripts/extract-meta-reference.ts`) is now **exhaustive over base-game equipment/accessory** —
