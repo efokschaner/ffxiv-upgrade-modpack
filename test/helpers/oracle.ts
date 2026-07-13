@@ -131,9 +131,13 @@ export function assertCorpusPresent(
  *  Vitest's `forks` pool, so an in-process lock cannot help: the lock must be a filesystem object.
  *
  *  O_EXCL create is the acquire; unlink is the release. A holder that crashes leaves the file
- *  behind, so a lock older than `staleMs` is broken by force. Sleeping is synchronous (Atomics.wait
- *  on a throwaway SharedArrayBuffer) because run() is execFileSync — there is no event loop to
- *  yield to. */
+ *  behind, so a lock older than `staleMs` is broken by force. Because breaking a stale lock is a
+ *  guess (not a proof the old holder is dead — `staleMs` is an empirical bound, not a guarantee),
+ *  each acquisition writes a random token into the lock file; release only unlinks if the file
+ *  still holds that same token. If it doesn't, our lock was already broken by another waiter and
+ *  the file now belongs to them — deleting it would let a third acquirer in while they still run.
+ *  Sleeping is synchronous (Atomics.wait on a throwaway SharedArrayBuffer) because run() is
+ *  execFileSync — there is no event loop to yield to. */
 const LOCK_PATH = join(tmpdir(), "ffxiv-upgrade-modpack-consoletools.lock");
 const LOCK_STALE_MS = 10 * 60 * 1000; // > the longest single ConsoleTools run we have seen
 const LOCK_TIMEOUT_MS = 20 * 60 * 1000;
@@ -151,27 +155,41 @@ export function withConsoleToolsLock<T>(
   const staleMs = opts.staleMs ?? LOCK_STALE_MS;
   const timeoutMs = opts.timeoutMs ?? LOCK_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
+  const token = randomUUID();
   let fd: number | null = null;
 
   for (;;) {
     try {
       fd = openSync(lockPath, "wx"); // O_CREAT | O_EXCL — atomic acquire
+      writeFileSync(fd, token);
       break;
     } catch {
-      // Held by someone. Break it if it is older than staleMs (its holder crashed).
-      let age = 0;
-      try {
-        age = Date.now() - statSync(lockPath).mtimeMs;
-      } catch {
-        continue; // vanished between open and stat — retry the acquire immediately
-      }
-      if (age > staleMs) {
+      if (fd !== null) {
+        // openSync succeeded but writing our token failed (e.g. disk full) — don't leak the
+        // fd; fall through and retry as if the acquire itself had failed.
         try {
-          unlinkSync(lockPath);
+          closeSync(fd);
         } catch {
-          // Another waiter broke it first; either way the next acquire attempt decides.
+          // best effort
         }
-        continue;
+        fd = null;
+      }
+      // Held by someone, or the file vanished mid-race (TOCTOU), or statSync failed for some
+      // other transient reason (e.g. an AV sharing violation). Every path below reaches the
+      // deadline check + sleepSync before looping back — a `continue` that skipped both would
+      // busy-spin the CPU without ever timing out.
+      try {
+        const age = Date.now() - statSync(lockPath).mtimeMs;
+        if (age > staleMs) {
+          try {
+            unlinkSync(lockPath);
+          } catch {
+            // Another waiter broke it first; either way the next acquire attempt decides.
+          }
+        }
+      } catch {
+        // statSync failed — vanished between open and stat, or some other transient error.
+        // Can't determine staleness this iteration; fall through to the deadline/backoff below.
       }
       if (Date.now() > deadline) {
         throw new Error(
@@ -186,11 +204,23 @@ export function withConsoleToolsLock<T>(
   try {
     return body();
   } finally {
+    // Close and unlink are independent: one failing must not skip the other, or the fd/lock
+    // file leaks until the next staleness break.
     try {
       closeSync(fd);
-      unlinkSync(lockPath);
     } catch {
-      // Already released/broken — nothing to do.
+      // Already closed/broken — still attempt the unlink below.
+    }
+    try {
+      let owned = false;
+      try {
+        owned = readFileSync(lockPath, "utf8") === token;
+      } catch {
+        // Vanished already (e.g. broken as stale by another waiter) — nothing to unlink.
+      }
+      if (owned) unlinkSync(lockPath);
+    } catch {
+      // Best effort — if this fails, the file is left for the next staleness break.
     }
   }
 }

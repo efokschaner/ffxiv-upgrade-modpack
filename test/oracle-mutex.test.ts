@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -44,5 +50,54 @@ describe("withConsoleToolsLock", () => {
       },
       { lockPath: lock },
     );
+  });
+
+  it("does not delete another holder's lock when ours was broken as stale (ownership token)", () => {
+    const lock = join(dir, "d.lock");
+    withConsoleToolsLock(
+      () => {
+        // Simulate a second waiter concluding (wrongly, from a very slow run, or correctly,
+        // from a real crash) that our lock is stale: it breaks it and re-acquires with its
+        // own token while we are still "running" inside this body.
+        rmSync(lock, { force: true });
+        writeFileSync(lock, "other-holder-token");
+      },
+      { lockPath: lock },
+    );
+    // Our release must see the token no longer matches and must NOT unlink the new holder's
+    // lock — deleting it here would let a third acquirer in while the second is still running.
+    expect(existsSync(lock)).toBe(true);
+    expect(readFileSync(lock, "utf8")).toBe("other-holder-token");
+  });
+
+  it("honours the deadline even when statSync keeps failing for a non-vanished reason (busy-spin guard)", () => {
+    // A lock path whose parent directory never exists: openSync always throws ENOENT (held/
+    // uncreatable) and the subsequent statSync also always throws ENOENT — a persistent
+    // failure, not the one-off TOCTOU race the inner catch was written for. A loop that
+    // `continue`s past this without checking the deadline never terminates.
+    const lock = join(dir, "missing-parent-dir", "e.lock");
+    const start = Date.now();
+    expect(() =>
+      withConsoleToolsLock(() => "unreachable", {
+        lockPath: lock,
+        staleMs: 10 * 60 * 1000,
+        timeoutMs: 200,
+      }),
+    ).toThrow(/Timed out after 200ms waiting for the ConsoleTools lock/);
+    expect(Date.now() - start).toBeLessThan(5000);
+  }, 15_000);
+
+  it("throws an actionable error when timeoutMs elapses against a live, non-stale holder", () => {
+    const lock = join(dir, "f.lock");
+    // A lock file that looks freshly created (not stale) and that we deliberately never
+    // release, simulating another live ConsoleTools run still holding it.
+    writeFileSync(lock, "live-holder-token");
+    expect(() =>
+      withConsoleToolsLock(() => "unreachable", {
+        lockPath: lock,
+        staleMs: 10 * 60 * 1000,
+        timeoutMs: 200,
+      }),
+    ).toThrow(/Timed out after 200ms waiting for the ConsoleTools lock/);
   });
 });
