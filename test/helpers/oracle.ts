@@ -133,9 +133,10 @@ export function assertCorpusPresent(
  *  O_EXCL create is the acquire; unlink is the release. A holder that crashes leaves the file
  *  behind, so a lock older than `staleMs` is broken by force. Because breaking a stale lock is a
  *  guess (not a proof the old holder is dead — `staleMs` is an empirical bound, not a guarantee),
- *  each acquisition writes a random token into the lock file; release only unlinks if the file
- *  still holds that same token. If it doesn't, our lock was already broken by another waiter and
- *  the file now belongs to them — deleting it would let a third acquirer in while they still run.
+ *  each acquisition writes a random token into the lock file; release reads the file back and only
+ *  unlinks if it still holds that same token — see the `finally` block below for exactly what that
+ *  guarantees and the residual race it does NOT close (deliberately: closing it fully needs OS-level
+ *  locking this harness does not justify).
  *  Sleeping is synchronous (Atomics.wait on a throwaway SharedArrayBuffer) because run() is
  *  execFileSync — there is no event loop to yield to. */
 const LOCK_PATH = join(tmpdir(), "ffxiv-upgrade-modpack-consoletools.lock");
@@ -173,6 +174,17 @@ export function withConsoleToolsLock<T>(
           // best effort
         }
         fd = null;
+        // The lock file we just created is empty (the token write never landed) with a
+        // brand-new mtime, so the staleness check below won't break it for a full `staleMs`
+        // — every process, including this one, would otherwise spin for up to `staleMs`
+        // before anyone reclaims it. We just created it and own it outright, so clean up our
+        // own mess immediately instead of waiting on the staleness path.
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // Best effort — if this fails, the normal staleness path still reclaims it, just
+          // after the full staleMs wait.
+        }
       }
       // Held by someone, or the file vanished mid-race (TOCTOU), or statSync failed for some
       // other transient reason (e.g. an AV sharing violation). Every path below reaches the
@@ -212,6 +224,24 @@ export function withConsoleToolsLock<T>(
       // Already closed/broken — still attempt the unlink below.
     }
     try {
+      // Release is read-then-unlink, not one atomic syscall. What the token guarantees:
+      // release will not delete a lock that has already been broken and re-taken by another
+      // waiter — EXCEPT in the narrow window between the readFileSync below and the
+      // unlinkSync a few lines down. If a waiter breaks our lock as stale and re-creates it
+      // with its own token inside that window, we still delete their fresh lock: the same
+      // failure class the token was added to close, now needing a syscall-width race instead
+      // of any staleness break at all.
+      //
+      // Accepted as a bounded, documented risk rather than eliminated:
+      //  - Reaching the window at all requires OUR OWN ConsoleTools run to have already run
+      //    past `staleMs` — i.e. we are already in crash-recovery territory, not steady state.
+      //  - The worst case is two ConsoleTools processes running concurrently, whose observed
+      //    failure mode is a loud non-zero exit (see the class doc comment above) that fails
+      //    the test run — a spurious red a re-run clears, not silent corruption. The cache is
+      //    content-addressed, so nothing wrong gets persisted either way.
+      //  - Closing it for real needs OS-level locking (e.g. a Windows named mutex / flock),
+      //    which this test harness does not justify building — no inode checks, no
+      //    unique-per-holder filenames, no other machinery here.
       let owned = false;
       try {
         owned = readFileSync(lockPath, "utf8") === token;
