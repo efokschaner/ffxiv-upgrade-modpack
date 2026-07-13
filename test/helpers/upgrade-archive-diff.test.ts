@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { writeZip } from "../../src/zip/zip";
+import { readZip, writeZip } from "../../src/zip/zip";
 import { diffArchives } from "./upgrade-archive-diff";
 
 const enc = new TextEncoder();
@@ -87,5 +87,97 @@ describe("diffArchives", () => {
       "TTMPD.mpd": new Uint8Array([9]),
     });
     expect(diffArchives(ours, golden)).toEqual([]); // offsets/sizes AND the .mpd blob are ignored here
+  });
+});
+
+describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
+  const enc = new TextEncoder();
+  const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+  const ABSENT = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+
+  /** `files` is the option's Files map; `members` the payload members actually in the archive. */
+  function archive(
+    files: Record<string, string>,
+    members: Record<string, Uint8Array>,
+  ): Uint8Array {
+    const meta = { FileVersion: 3, Name: "A", Author: "t", ModTags: [] };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      [
+        "default_mod.json",
+        enc.encode(
+          JSON.stringify({
+            Version: 0,
+            Files: files,
+            FileSwaps: {},
+            Manipulations: [],
+          }),
+        ),
+      ],
+    ]);
+    for (const [name, bytes] of Object.entries(members))
+      entries.set(name, bytes);
+    return writeZip(entries);
+  }
+
+  const payload = new Uint8Array([1, 2, 3]);
+  const bothKeys = {
+    [PRESENT]: `on\\${PRESENT.replace(/\//g, "\\")}`,
+    [ABSENT]: `on\\${ABSENT.replace(/\//g, "\\")}`,
+  };
+  const oneKey = { [PRESENT]: `on\\${PRESENT.replace(/\//g, "\\")}` };
+
+  it("confirms a dropped key whose payload is genuinely absent from the golden", () => {
+    // Golden = the noop reference (the input pack): lists ABSENT but never contained its member.
+    const golden = archive(bothKeys, { [`on/${PRESENT}`]: payload });
+    const ours = archive(oneKey, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toEqual([]);
+  });
+
+  it("REJECTS a dropped key whose payload IS present in the golden", () => {
+    const golden = archive(bothKeys, {
+      [`on/${PRESENT}`]: payload,
+      [`on/${ABSENT}`]: payload,
+    });
+    const ours = archive(oneKey, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECTS a dropped key that only LOOKS absent (resolves under windowsPathKey)", () => {
+    // The member is stored with display case + a trailing dot stripped — the reader resolves it,
+    // so it is NOT absent and dropping it is a real bug, not the PMP.cs:883 drop.
+    const value = `On.\\${ABSENT.replace(/\//g, "\\")}`;
+    const golden = archive(
+      { ...oneKey, [ABSENT]: value },
+      { [`on/${PRESENT}`]: payload, [`On/${ABSENT}`]: payload },
+    );
+    const ours = archive(oneKey, { [`on/${PRESENT}`]: payload });
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECTS a changed value even when another key is a confirmed drop", () => {
+    const golden = archive(bothKeys, { [`on/${PRESENT}`]: payload });
+    const ours = archive(
+      { [PRESENT]: "somewhere\\else.mdl" },
+      { [`on/${PRESENT}`]: payload },
+    );
+    expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+
+  it("REJECTS an unrelated field difference alongside a confirmed drop", () => {
+    const golden = archive(bothKeys, { [`on/${PRESENT}`]: payload });
+    const ours = readZip(archive(oneKey, { [`on/${PRESENT}`]: payload }));
+    ours.set(
+      "default_mod.json",
+      enc.encode(
+        JSON.stringify({
+          Version: 1, // <- differs
+          Files: oneKey,
+          FileSwaps: {},
+          Manipulations: [],
+        }),
+      ),
+    );
+    expect(diffArchives(writeZip(ours), golden)).toHaveLength(1);
   });
 });
