@@ -137,6 +137,12 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
       SoundId: 0,
     });
     expect("AttributeAndSound" in imcGroup.DefaultEntry).toBe(false);
+    // The other three Imc-only group extras (PMP.cs:1426-1436) round-trip verbatim too, alongside
+    // DefaultEntry -- all four are the genuinely untyped subtype extras `filteredRaw` (pmp.ts)
+    // exists to preserve.
+    expect(imcGroup.Identifier).toEqual({ PrimaryId: 1 });
+    expect(imcGroup.AllVariants).toBe(false);
+    expect(imcGroup.OnlyAttributes).toBe(false);
     expect("Files" in imcOpt).toBe(false); // Imc options have no Files (PmpImcOptionJson, PMP.cs:1544-1551)
     // Every OTHER option (Standard or Imc alike) always regenerates Name/Description/Image, even
     // when the source omitted Image (PMPOptionJson's base ShouldSerialize* default true; only
@@ -162,6 +168,77 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     // Version.TryParse("3") fails (needs at least major.minor) -> falls back to "1.0"
     // (WizardData.cs:1474-1475/:1494).
     expect(meta.Version).toBe("1.0");
+  });
+});
+
+describe("pmp group manifest drops foreign keys (PMPGroupJson, PMP.cs:1387-1408, no [JsonExtensionData])", () => {
+  // PMPGroupJson is fully typed and SelectedSettings is [JsonIgnore] (:1400) -- a real typed
+  // round-trip drops ANY key the class does not own, the same class of bug already proven for
+  // meta.json's DefaultPreferredItems and an option's own foreign keys. Finding 5's fix
+  // (`filteredRaw` in pmp.ts) replaced a blanket `...rawObj` spread -- which used to carry every
+  // source key forward -- with an explicit pick of the typed fields.
+  function makeGroupWithForeignKeys(): Uint8Array {
+    const meta = {
+      FileVersion: 3,
+      Name: "T",
+      Author: "",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: {},
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const group = {
+      Version: 0,
+      Name: "Foreign",
+      Description: "",
+      Image: "",
+      Page: 0,
+      Priority: 0,
+      Type: "Single",
+      DefaultSettings: 0,
+      // [JsonIgnore] on the real C# type -- never serialized either way, but a document authored
+      // outside TexTools (or an old TexTools version) could still carry it.
+      SelectedSettings: 5,
+      // Not a field of ANY PMPGroupJson subtype at all.
+      SomeToolMetadata: "not a real field",
+      Options: [
+        {
+          Name: "Only",
+          Description: "",
+          Files: {},
+          FileSwaps: {},
+          Manipulations: [],
+        },
+      ],
+    };
+    return writeZip(
+      new Map<string, Uint8Array>([
+        ["meta.json", enc.encode(JSON.stringify(meta))],
+        ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+        ["group_001_Foreign.json", enc.encode(JSON.stringify(group))],
+      ]),
+    );
+  }
+
+  it("drops SelectedSettings and an arbitrary unrecognized key from the written group_NNN.json", () => {
+    const out = readZip(writePmp(readPmp(makeGroupWithForeignKeys())));
+    const groupName = [...out.keys()].find((n) =>
+      /^group_\d+.*\.json$/i.test(n),
+    );
+    expect(groupName).toBeDefined();
+    const grp = JSON.parse(dec.decode(out.get(groupName as string)!));
+    expect("SelectedSettings" in grp).toBe(false);
+    expect("SomeToolMetadata" in grp).toBe(false);
+    // The typed fields survive untouched.
+    expect(grp.Name).toBe("Foreign");
+    expect(grp.Type).toBe("Single");
   });
 });
 

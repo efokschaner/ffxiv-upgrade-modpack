@@ -169,22 +169,24 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(g.options[0]!)).toBe("a-b-c-/");
   });
 
-  it("8. ClearNulls' group-level pruning: a content-free group must not occupy a collision slot ahead of a later, data-carrying group of the same name", () => {
-    // WizardData.cs:1246-1263: within a surviving page, ClearNulls also removes any group whose
-    // HasData is false (WizardGroupEntry.HasData, WizardData.cs:621-627 — Options.Any(x => x.HasData)).
-    // `emptyReal`'s only option carries no files/manipulations, so the group itself has no data and
-    // must be pruned BEFORE MakeGroupPrefix ever runs over the page's groups. If it were left in
-    // place, it would claim the "same/" folder first, pushing `realGroup` (which DOES carry data,
-    // and collides on the same sanitized name) to "same (1)/" instead -- a member-name divergence
-    // from TexTools, which never assembles the empty group into `p.Groups` in the first place.
+  it("8. a content-free group is KEPT (WizardOptionEntry.HasData's Read-mode short-circuit, WizardData.cs:257-266) and DOES occupy a collision slot ahead of a later, same-named group", () => {
+    // WizardData.cs:1246-1263: within a surviving page, ClearNulls removes any group whose HasData is
+    // false (WizardGroupEntry.HasData, WizardData.cs:621-627 — Options.Any(x => x.HasData)). But
+    // WizardOptionEntry.HasData (WizardData.cs:257-278) short-circuits TRUE whenever `_Group.ModOption
+    // != null` — "Read mode" — and ModOption is set unconditionally by BOTH group constructors our
+    // load paths ever reach (FromWizardGroup :649, FromPMPGroup :767). So on every pack this port
+    // loads, `emptyReal`'s lone (file-less, manipulation-less) option still HasData=true, the group
+    // survives ClearNulls intact, and — being FIRST in the page — claims the "same/" folder itself,
+    // pushing `realGroup` (which collides on the same sanitized name) to "same (1)/". A "fix" that
+    // prunes `emptyReal` for lacking content silently diverges from this real TexTools behaviour.
     const defaultGroup = group("Default", 0, [emptyOption()]);
     const emptyReal = group("Same", 0, [option("Only", { files: [] })]);
     const realGroup = group("Same", 0, [option("Only")]);
     const d = data([defaultGroup, emptyReal, realGroup]);
     const prefixes = optionPrefixes(d);
 
-    expect(prefixes.has(emptyReal.options[0]!)).toBe(false);
-    expect(prefixes.get(realGroup.options[0]!)).toBe("same/");
+    expect(prefixes.get(emptyReal.options[0]!)).toBe("same/");
+    expect(prefixes.get(realGroup.options[0]!)).toBe("same (1)/");
   });
 
   it("9. non-empty default + a page-0 group + a page-1 group: the shift strands the LAST created page empty instead of merging page 0", () => {

@@ -89,26 +89,38 @@ export function resolveDuplicates(
           "come from optionPrefixes(data) for this same data",
       );
     }
-    // FileSwaps cannot be reproduced faithfully. In TexTools, ResolveDuplicates runs over
-    // WizardStandardOptionData.Files, which UnpackPmpOption (PMP.cs:1104-1137) populates by
-    // merging custom Files AND FileSwaps into one dictionary. On the /upgrade load path
-    // (WizardData.cs:818: `UnpackPmpOption(o, null, unzipPath, false)`) `zipArchivePath` is null,
-    // so `includeData` is false (PMP.cs:1015) and each FileSwap whose source resolves in the
-    // live game index becomes an empty placeholder, `ret.Add(src, new FileStorageInformation())`
-    // (PMP.cs:1130) -- deciding this requires `tx.Get8xDataOffset` against the GAME INDEX
-    // (PMP.cs:1063-1067, :1117-1122), which this browser-targeted library does not have and
-    // cannot open. `WizardStandardOptionData` has no separate FileSwaps field (WizardData.cs:69-80),
-    // so that placeholder flows on as an ordinary Files entry and reaches ResolveDuplicates, where
-    // it fails `File.Exists(null)` and burns an idx on the zero-hash path (PmpExtensions.cs:509-514;
-    // docs/TEXTOOLS_BUGS.md #8), shifting every later common/N number. We cannot reproduce that
-    // without a game index, so fail loud rather than silently diverge -- see BACKLOG.md.
-    if (Object.keys(option.fileSwaps).length > 0) {
-      throw new Error(
-        "resolveDuplicates: option has a non-empty FileSwaps map, which this port cannot reproduce " +
-          "faithfully -- deciding whether a swap yields an empty placeholder entry (PMP.cs:1104-1137) " +
-          "requires querying the live game index (tx.Get8xDataOffset, PMP.cs:1117-1122), which this " +
-          "browser-targeted library does not have. See BACKLOG.md for the full analysis.",
-      );
+  }
+
+  // FileSwaps cannot be reproduced faithfully. In TexTools, ResolveDuplicates runs over
+  // WizardStandardOptionData.Files, which UnpackPmpOption (PMP.cs:1104-1137) populates by merging
+  // custom Files AND FileSwaps into one dictionary. On the /upgrade load path (WizardData.cs:818:
+  // `UnpackPmpOption(o, null, unzipPath, false)`) `zipArchivePath` is null, so `includeData` is false
+  // (PMP.cs:1015) and each FileSwap whose source resolves in the live game index becomes an empty
+  // placeholder, `ret.Add(src, new FileStorageInformation())` (PMP.cs:1130) -- deciding this requires
+  // `tx.Get8xDataOffset` against the GAME INDEX (PMP.cs:1063-1067, :1117-1122), which this
+  // browser-targeted library does not have and cannot open. `WizardStandardOptionData` has no
+  // separate FileSwaps field (WizardData.cs:69-80), so that placeholder flows on as an ordinary
+  // Files entry and reaches ResolveDuplicates, where it fails `File.Exists(null)` and burns an idx
+  // on the zero-hash path (PmpExtensions.cs:509-514; docs/TEXTOOLS_BUGS.md #8), shifting every later
+  // common/N number. We cannot reproduce that without a game index, so fail loud rather than
+  // silently diverge -- see BACKLOG.md.
+  //
+  // Checked over EVERY option in `data.groups`, NOT just `prefixes.keys()` -- i.e. independent of
+  // whatever `buildPages` (option-prefix.ts) pruned. An option can be absent from `prefixes` (its
+  // group didn't survive pruning) while still carrying a non-empty FileSwaps map; iterating only
+  // `prefixes.keys()` would silently skip the guard for exactly that option instead of throwing --
+  // the inverse of "fail loud, never silently diverge" (AGENTS.md). `prefixes` itself is still used
+  // above for the knownOptions cross-check (a caller-mismatch guard, unrelated to pruning).
+  for (const g of data.groups) {
+    for (const option of g.options) {
+      if (Object.keys(option.fileSwaps).length > 0) {
+        throw new Error(
+          "resolveDuplicates: option has a non-empty FileSwaps map, which this port cannot reproduce " +
+            "faithfully -- deciding whether a swap yields an empty placeholder entry (PMP.cs:1104-1137) " +
+            "requires querying the live game index (tx.Get8xDataOffset, PMP.cs:1117-1122), which this " +
+            "browser-targeted library does not have. See BACKLOG.md for the full analysis.",
+        );
+      }
     }
   }
 

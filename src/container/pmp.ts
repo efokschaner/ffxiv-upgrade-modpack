@@ -470,6 +470,33 @@ export function writePmp(data: ModpackData): Uint8Array {
     }
   }
 
+  // PopulatePmpStandardOption's THIRD skip (PMP.cs:901-905, checked after the absent-file and
+  // .meta/.rgsp branches above): `else if (IOUtil.IsMetaInternalFile(fi.Path)) { continue; }` — a
+  // raw .cmp/.eqp/.eqdp/.gmp/.est/.imc file gets NEITHER a payload member NOR a `Files` key
+  // (IOUtil.cs:577-592 for the exact extension set). Order matters: ResolveDuplicates
+  // (PmpExtensions.cs:476-566, our `resolveDuplicates` above) runs BEFORE this skip in WritePmp's own
+  // pipeline (WizardData.cs:1502/:1526 -> PMP.cs:871-928), so the file must still be hashed and still
+  // claim/burn its zip path (already done, above) — this drop is purely at the EMISSION step: delete
+  // it from `zipPaths` now, after resolveDuplicates ran, so optionToJson's Files-loop and the payload
+  // -write loop below both skip it exactly like an absent file (PMP.cs:883-888) already does.
+  const META_INTERNAL_EXTENSIONS = new Set([
+    ".cmp",
+    ".eqp",
+    ".eqdp",
+    ".gmp",
+    ".est",
+    ".imc",
+  ]);
+  function isMetaInternalFile(gamePath: string): boolean {
+    const base = gamePath.slice(gamePath.lastIndexOf("/") + 1);
+    const dot = base.lastIndexOf(".");
+    if (dot === -1) return false;
+    return META_INTERNAL_EXTENSIONS.has(base.slice(dot).toLowerCase());
+  }
+  for (const f of [...zipPaths.keys()]) {
+    if (isMetaInternalFile(f.gamePath)) zipPaths.delete(f);
+  }
+
   // meta.json is always regenerated from the model: PMPMetaJson (PMP.cs:1369-1381) is a flat, fully
   // typed class with no extension-data capture, so ANY key the source carries outside its 8 fields
   // (e.g. Penumbra's own `DefaultPreferredItems`) is silently dropped by a real typed round-trip —
@@ -569,36 +596,69 @@ export function writePmp(data: ModpackData): Uint8Array {
       const hasStandardFields = g.selectionType !== "Imc";
       const isMultiOption = g.selectionType === "Multi"; // Priority only exists on PmpMultiOptionJson
       const rawObj = isObj(g.raw) ? (g.raw as Record<string, unknown>) : {};
+      // PMPGroupJson (PMP.cs:1387-1408) is fully typed with NO [JsonExtensionData], and
+      // SelectedSettings is [JsonIgnore] (:1400) -- a real typed round-trip therefore drops every
+      // foreign key on the source document, exactly like meta.json's DefaultPreferredItems and an
+      // option's own foreign keys (see optionToJson's doc comment). Filter `rawObj` down to the
+      // known typed keys BEFORE spreading, instead of the old blanket `...rawObj`, so an unrecognized
+      // key (e.g. a stray SelectedSettings some tool wrote, or literally anything else) cannot
+      // survive into the output. Filtering (not rebuilding from scratch) preserves whatever KEY
+      // ORDER the source document had for a real PMP: Json.NET's default member order for a type
+      // without explicit [JsonProperty(Order=...)] sorts DERIVED class members before INHERITED base
+      // members (see PMP.cs:1487-1488's own comment on why PMPOptionJson.Name/Description/Image
+      // need Order=-10 for exactly this reason), so an
+      // Imc group's real order is Identifier/DefaultEntry/AllVariants/OnlyAttributes THEN the base
+      // Version/Name/.../DefaultSettings THEN Options (Order=99) -- exactly the order a genuine
+      // ConsoleTools-written document has, and exactly what filtering (not rebuilding) reproduces.
+      const KNOWN_GROUP_KEYS = new Set([
+        "Version",
+        "Name",
+        "Description",
+        "Image",
+        "Page",
+        "Priority",
+        "Type",
+        "DefaultSettings",
+        "Options",
+        "Identifier", // PMPImcGroupJson-only (PMP.cs:1426-1436)
+        "DefaultEntry",
+        "AllVariants",
+        "OnlyAttributes",
+      ]);
+      const filteredRaw: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rawObj)) {
+        if (KNOWN_GROUP_KEYS.has(k)) filteredRaw[k] = v;
+      }
       // PMPImcGroupJson.DefaultEntry (PMP.cs:1429) is a PMPImcEntry — the SAME struct as a per-
       // manipulation Imc `Entry` (PmpManipulation.cs:311-321) — so its `AttributeAndSound` field is
-      // dropped by the SAME [JsonIgnore] (:318) on write. Override it (not spread verbatim) so it
-      // survives the typed round-trip the same way `Manipulations`' own Imc entries already do
+      // dropped by the SAME [JsonIgnore] (:318) on write. Override it (not passed through verbatim)
+      // so it survives the typed round-trip the same way `Manipulations`' own Imc entries already do
       // (pmp-manipulation.ts). Positioned via the object-literal spread order below, not appended,
-      // so it lands where `DefaultEntry` already sat in the source document.
+      // so it lands where `DefaultEntry` already sat in the (filtered) source document.
       const defaultEntryOverride: Record<string, unknown> =
-        g.selectionType === "Imc" && isObj(rawObj.DefaultEntry)
+        g.selectionType === "Imc" && isObj(filteredRaw.DefaultEntry)
           ? {
               DefaultEntry: normalizeImcEntry(
-                rawObj.DefaultEntry as Record<string, unknown>,
+                filteredRaw.DefaultEntry as Record<string, unknown>,
                 "Imc group DefaultEntry",
               ),
             }
           : {};
       // PMPGroupJson's 8 base fields (Version/Name/Description/Image/Page/Priority/Type/
-      // DefaultSettings, PMP.cs:1387-1404) are ALWAYS regenerated from the model, never raw-spread —
+      // DefaultSettings, PMP.cs:1387-1404) are ALWAYS regenerated from the model, never raw-carried —
       // confirmed empirically (`Flower Child - by Solona.pmp`'s source "Size" group spells
       // `"Description": null`, but the /resave golden writes `""`: TexTools' JSON settings use
       // NullValueHandling.Ignore, so a literal `null` deserializes as ABSENT, leaving the C# field
       // at its own initializer default — exactly what `g.description` (parsePmpGroup's `?? ""`)
       // already models. Version has no source at all; it is hard-forced to 0 (PMP.cs:1389 field
-      // initializer, never reassigned). `g.raw` is kept ONLY for genuinely untyped subtype extras —
-      // Imc's Identifier/AllVariants/OnlyAttributes (PMP.cs:1426-1436) and (overridden above)
-      // DefaultEntry.
+      // initializer, never reassigned). `filteredRaw` is kept ONLY for genuinely untyped subtype
+      // extras — Imc's Identifier/AllVariants/OnlyAttributes (PMP.cs:1426-1436) and (overridden
+      // above) DefaultEntry.
       //
       // Image: same WizardHelpers.WriteImage caveat as meta.json's Image and an option's Image
       // above (WizardData.cs:953) — carried through verbatim, unported; see BACKLOG.md.
       const groupJson: PmpGroupJsonRaw = {
-        ...rawObj,
+        ...filteredRaw,
         ...defaultEntryOverride,
         Version: 0,
         Name: g.name,

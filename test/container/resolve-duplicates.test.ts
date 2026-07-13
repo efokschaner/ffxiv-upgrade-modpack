@@ -236,6 +236,23 @@ describe("resolveDuplicates", () => {
     },
   );
 
+  it(
+    "throws on a non-empty FileSwaps map even when the option was PRUNED and has no `prefixes` " +
+      "entry -- the guard must not depend on buildPages' pruning (an option whose ONLY content is " +
+      "FileSwaps would otherwise be silently dropped instead of failing loud)",
+    () => {
+      const opt = option("Opt", [], {
+        "chara/dest.tex": "chara/src.tex",
+      });
+      // `prefixes` has NO entry for `opt` at all -- simulating a group/option that buildPages
+      // pruned out of the surviving pages. `data.groups` still carries it, though.
+      const prefixes = new Map<ModpackOption, string>();
+      const d = pack([group("G", [opt])]);
+
+      expect(() => resolveDuplicates(d, prefixes)).toThrow(/FileSwaps/);
+    },
+  );
+
   it("8. composes with the real optionPrefixes(): a content duplicate across two DIFFERENT options dedupes globally, matching the observed corpus shape ([Jaque] Romeo & Juliet: one common/N/ shared by paths from two options)", () => {
     const emptyDefault = option("", []);
     const defaultGroup: ModpackGroup = {

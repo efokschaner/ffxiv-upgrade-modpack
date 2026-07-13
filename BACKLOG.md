@@ -548,7 +548,23 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   residual after the writer-regeneration fix (Task 8, `feat/pmp-writer-regeneration`) is
   `common/24/…id.tex`, a payload
   **byte-length** mismatch (~80/160 bytes, a multiple of the 80-byte padding chunk) — exactly this
-  fixup's signature, not T2's. Neither half is ported: our `applyLoadFixes`
+  fixup's signature, not T2's.
+
+  **Its blast radius is bigger than a byte diff: it changes MEMBER NAMES, via the dedup.**
+  `ResolveDuplicates` (`PmpExtensions.cs:476-566`) keys its dedup on a SHA1 of the file's *loaded*
+  content, so a fixup applied at load decides the content-equality classes — and therefore which
+  files collapse into `common/{idx}/`. Two textures that differ ONLY by trailing null padding are
+  identical to TexTools (post-truncation) and distinct to us. Confirmed on
+  `Westlaketea's Constellation Crown (Dawntrail Edition).pmp`: the golden resolves
+  `chara/equipment/e6041/texture/v01_c0101e6041_met_d_m.tex` (option *Black Veil*) to
+  `common\1\mt_c0101e6041_met_c_id.tex` — deduped against a *different game path's* content, whose
+  basename it therefore carries — while we, not having truncated, keep it as its own member at
+  `options\black veil\…\v01_c0101e6041_met_d_m.tex`. That is the entire cause of the three
+  `structure/removed` (ours-only) payload members in that pack's `/resave` baseline, the only three
+  member-name divergences left anywhere in the PMP corpus. So this fixup must land before member-name
+  parity can be claimed complete — it is not merely a `.tex` content gap.
+
+  Neither half is ported: our `applyLoadFixes`
   (`src/upgrade/upgrade.ts` / the `/resave` harness's load-fix seam, `docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md`
   §4.3.1) has no PMP branch at all today — that spec's §4.3.1 claimed "PMP has no load-time fixes at
   all (both are TTMP-gated)", which this finding shows is false; the spec text has been corrected in
@@ -605,6 +621,37 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   wire size is already small and any real cost is more likely eager parse/eval or the upgrade
   compute path — but treat that as a hypothesis to test, not a conclusion, and let the profiler
   point at whatever is actually hot. Housekeeping / perf; no correctness impact.
+
+- **Split `writePmp` (`src/container/pmp.ts`) — it currently blends two different C# symbols into
+  one TS module, violating AGENTS.md's "split, don't blend."** `writePmp` merges `PMP.WritePmp`
+  (`PMP.cs:830-928` — the zip assembly: meta.json/default_mod.json/group_NNN.json/payload directory
+  write, `ZipFile.CreateFromDirectory`) with `WizardData.WritePmp` (`WizardData.cs:1460-1619` — the
+  DataPages walk, default-mod absorption search, `Page` renumbering, and the call into
+  `PopulatePmpStandardOption`/`ResolveDuplicates`). These are two separate C# methods in two
+  separate files/classes; our port collapses them into one function in one module, unlike the rest
+  of the PMP write path (`option-prefix.ts` ports `WizardData`'s prefix generators on their own,
+  `resolve-duplicates.ts` ports `PmpExtensions.ResolveDuplicates` on its own). **Fix:** carve
+  `writePmp` into `pmp-write.ts` (the `PMP.WritePmp`-shaped zip/JSON assembly — meta.json,
+  default_mod.json, group_NNN.json serialization, the payload/ExtraFiles zip write) and
+  `wizard-write-pmp.ts` (the `WizardData.WritePmp`-shaped orchestration — DataPages walk, absorption
+  search, Page renumbering — already largely factored out into `buildPages`/`optionPrefixes`, this
+  would just relocate the remaining orchestration currently still inline in `writePmp`). Deferred out
+  of the write-regeneration review (Task 9, 2026-07-13) as a pure reorganization with no behavioral
+  change — real risk is byte-for-byte parity regressions from a mechanical refactor with no new
+  test signal, so it needs its own careful pass rather than riding along with a correctness fix.
+
+- **`buildPages` (`option-prefix.ts`) is called twice per `writePmp` invocation — once inside
+  `optionPrefixes` (for the prefix map) and again directly in `writePmp` (for the default-mod
+  absorption search and group_NNN emission order/Page renumbering).** Both calls are pure and
+  deterministic over the same `data`, so this is only a wasted recomputation, not a correctness bug
+  (confirmed: `buildPages` has no side effects and both call sites pass the same `data` reference) —
+  but it doubles the `FromPmp`/`ClearNulls` page-construction work on every write. **Fix:** have
+  `writePmp` call `buildPages(data)` once and pass the result into `optionPrefixes` (which would need
+  a signature change to accept pre-built `pages` instead of re-deriving them), or have `writePmp`
+  derive prefixes directly from its own single `buildPages` call instead of going through
+  `optionPrefixes` at all. Deferred alongside the split above (Task 9, 2026-07-13) — bundling a
+  signature change with the split makes more sense than two separate mechanical passes over the same
+  code.
 
 - **Audit temp-dir usage for leaks (`mkdtemp` cleanup).** Several helpers create OS temp working
   directories via `mkdtempSync(join(tmpdir(), …))` but never remove the *directory* (only inner

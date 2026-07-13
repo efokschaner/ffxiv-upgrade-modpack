@@ -8,13 +8,18 @@ import { resaveGoldenCached } from "./resave-golden";
 /** Builds an Error shaped like what `execFileSync` throws when the CHILD PROCESS actually ran
  * and exited non-zero (or was killed by a signal) — see oracle.ts's `run()`: ConsoleTools
  * returns -1 on error. `status`/`signal` are the discriminating fields resave-golden.ts's
- * classifier keys on; a plain `new Error(...)` has neither and must NOT be mistaken for this. */
+ * classifier keys on; a plain `new Error(...)` has neither and must NOT be mistaken for this.
+ * `stderr` defaults to `message` so this reproduces a REAL ConsoleTools failure, which always
+ * prints something (execFileSync's own `.message` is a generic "Command failed: ..." that carries
+ * no diagnostic content on its own — see resave-golden.ts's `processOutputText`). Pass an empty
+ * string explicitly to build the lock-race shape (a bare non-zero exit with nothing captured). */
 function processError(
   message: string,
   status: number | null = -1,
   signal: string | null = null,
+  stderr = message,
 ): Error {
-  return Object.assign(new Error(message), { status, signal });
+  return Object.assign(new Error(message), { status, signal, stderr });
 }
 
 // Focused test for the "oracle itself errors" marker (BACKLOG.md, "Expected-failure golden
@@ -143,5 +148,60 @@ describe("resaveGoldenCached — error marker", () => {
     const entries = readdirSync(dir);
     expect(entries.some((f) => f === `${key}.bin`)).toBe(false);
     expect(entries.some((f) => f.endsWith(".tmp"))).toBe(false);
+  });
+
+  // Finding 4 regression guard: a process-shaped error (status/signal set, like a genuine
+  // ConsoleTools failure) but with NO stdout/stderr captured is oracle.ts's documented residual
+  // lock-race signature ("two ConsoleTools processes running concurrently -> a loud non-zero exit
+  // -> a spurious red a re-run clears"), not a real TexTools verdict on this pack. Caching it would
+  // permanently and silently remove the pack from the write-side oracle on the very next run.
+  it("does not cache a process-shaped error with EMPTY stdout/stderr (lock-race signature) — propagates and retries instead", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rg-"));
+    const input = new Uint8Array([7]);
+    let calls = 0;
+    const produce = (): Uint8Array => {
+      calls++;
+      // status/signal set (process-shaped) but stdout/stderr both empty — no message field either,
+      // matching execFileSync's own generic "Command failed: ..." carrying nothing diagnostic.
+      throw Object.assign(new Error("Command failed"), {
+        status: -1,
+        signal: null,
+        stdout: "",
+        stderr: "",
+      });
+    };
+
+    expect(() =>
+      resaveGoldenCached("m.ttmp2", input, { dir, available: true, produce }),
+    ).toThrow(/Command failed/);
+    expect(calls).toBe(1);
+
+    const key = oracleKey(input);
+    expect(existsSync(join(dir, `${key}.error`))).toBe(false);
+    expect(existsSync(join(dir, `${key}.bin`))).toBe(false);
+
+    // A retry re-invokes the producer rather than replaying a cached false verdict.
+    expect(() =>
+      resaveGoldenCached("m.ttmp2", input, { dir, available: true, produce }),
+    ).toThrow(/Command failed/);
+    expect(calls).toBe(2);
+  });
+
+  it("still caches a process-shaped error that DOES carry stdout/stderr (a genuine ConsoleTools failure, not a lock race)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rg-"));
+    const input = new Uint8Array([8]);
+    const produce = (): Uint8Array => {
+      throw processError("CMP Format Changed - Unable to read all CMP data.");
+    };
+
+    const first = resaveGoldenCached("m.ttmp2", input, {
+      dir,
+      available: true,
+      produce,
+    });
+    expect(first?.kind).toBe("error");
+
+    const key = oracleKey(input);
+    expect(existsSync(join(dir, `${key}.error`))).toBe(true);
   });
 });

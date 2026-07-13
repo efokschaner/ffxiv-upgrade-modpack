@@ -75,6 +75,23 @@ function describeProduceError(err: unknown): string {
   return String(err);
 }
 
+/** The captured child-process OUTPUT only (stdout+stderr) — deliberately excluding `.message`,
+ * which execFileSync always populates with a generic "Command failed: ..." even when the process
+ * printed nothing at all. Used to distinguish a genuine ConsoleTools failure (which always prints
+ * something describing what went wrong, e.g. the Milktruck "CMP Format Changed" stack trace) from
+ * a bare non-zero exit with no diagnostic output — see `resaveGoldenCached`'s catch block. */
+function processOutputText(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const e = err as {
+    stdout?: Uint8Array | string;
+    stderr?: Uint8Array | string;
+  };
+  const parts: string[] = [];
+  if (e.stdout && e.stdout.length > 0) parts.push(String(e.stdout));
+  if (e.stderr && e.stderr.length > 0) parts.push(String(e.stderr));
+  return parts.join("\n");
+}
+
 /**
  * True only for a throw shaped like `execFileSync`'s non-zero-exit / signal-kill error (see
  * oracle.ts's `run()`): Node sets BOTH `status` (the exit code, or `null` if killed by signal)
@@ -171,6 +188,18 @@ export function resaveGoldenCached(
     // in THIS harness, not TexTools, and must propagate and fail the test loudly rather than be
     // cached forever as a false "oracle errors" verdict that is never retried.
     if (!isConsoleToolsProcessError(err)) throw err;
+    // A lock-race kill (see oracle.ts's `withConsoleToolsLock` doc comment: the accepted residual
+    // race's failure mode is exactly "two ConsoleTools processes running concurrently -> a loud
+    // non-zero exit -> a spurious red a re-run clears") carries NO stdout/stderr — it is not
+    // ConsoleTools reporting a reason, just an abrupt kill. A GENUINE ConsoleTools failure
+    // (Program.cs:94-138's generic -1) always prints something describing what went wrong (see the
+    // Milktruck "CMP Format Changed" stack trace this same cache stores). Persisting a marker built
+    // from an EMPTY capture would misfile a transient race as a permanent, content-addressed
+    // "TexTools cannot resave this pack" verdict that is never retried — exactly the failure mode
+    // this finding exists to close. So: refuse to cache when stdout+stderr are BOTH empty and
+    // propagate instead, exactly like a harness bug (see the `isConsoleToolsProcessError` branch
+    // above) — the run goes red once, and a re-run (this being a race) is expected to clear it.
+    if (processOutputText(err).trim().length === 0) throw err;
     const message = describeProduceError(err);
     mkdirSync(dir, { recursive: true });
     writeFileSync(errPath, message);
