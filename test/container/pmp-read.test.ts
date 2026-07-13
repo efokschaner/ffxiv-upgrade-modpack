@@ -83,7 +83,12 @@ describe("readPmp case-insensitive Files resolution", () => {
     expect(data.sourceFormat).toBe(ModpackFormat.Pmp);
   });
 
-  it("throws when no archive entry matches under any casing", () => {
+  // A Files value naming a path the archive genuinely does not contain (under ANY Windows
+  // normalization) is TOLERATED, not fatal: LoadPMP does no existence check (PMP.cs:124) and
+  // UnpackPmpOption builds a FileStorageInformation whose RealPath simply does not exist
+  // (PMP.cs:1071-1102). The entry STAYS in the option — the upgrade rounds gate on
+  // files.ContainsKey (EndwalkerUpgrade.cs:1840/:1852/:1867), which is true for it.
+  it("tolerates a Files value absent from the archive: entry kept, no bytes", () => {
     const gamePath =
       "chara/equipment/e0834/material/v0001/mt_c0201e0834_top_a.mtrl";
     const meta = {
@@ -108,9 +113,12 @@ describe("readPmp case-insensitive Files resolution", () => {
       ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
     ]);
 
-    expect(() => readPmp(writeZip(entries))).toThrow(
-      /missing file entry files\/missing\.mtrl/,
-    );
+    const data = readPmp(writeZip(entries));
+    const f = allFiles(data).find((x) => x.gamePath === gamePath);
+    expect(f).toBeDefined();
+    expect(f!.data).toBeUndefined();
+    expect(f!.pmpPath).toBe("files/missing.mtrl");
+    expect(f!.storage).toBe(FileStorageType.RawUncompressed);
   });
 });
 

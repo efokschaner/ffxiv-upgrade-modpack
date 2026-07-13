@@ -36,7 +36,9 @@ export function registerMdlChecks(pack: string): void {
       for (const f of files) {
         let decoded: ReturnType<typeof decodeSqPackFile>;
         try {
-          decoded = decodeSqPackFile(f.data);
+          // SqPackCompressed (filtered by mdlFiles above) always carries bytes; only a PMP
+          // RawUncompressed entry can be absent (absent-file design spec §3.1).
+          decoded = decodeSqPackFile(f.data!);
         } catch {
           legacySkipped++; // tolerated undecodable legacy model (mirrors corpus-sqpack)
           continue;

@@ -40,7 +40,9 @@ function roundTripModels(data: ModpackData, label: string): number {
   for (const f of mdlFilesOf(data)) {
     let decoded: ReturnType<typeof decodeSqPackFile>;
     try {
-      decoded = decodeSqPackFile(f.data);
+      // SqPackCompressed (filtered by mdlFilesOf above) is TTMP/PMP-compressed-only and always
+      // carries bytes; only a PMP RawUncompressed entry can be absent (absent-file design spec §3.1).
+      decoded = decodeSqPackFile(f.data!);
     } catch {
       continue; // tolerated undecodable legacy model (mirrors corpus-mdl)
     }

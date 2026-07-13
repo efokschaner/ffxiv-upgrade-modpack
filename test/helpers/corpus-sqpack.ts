@@ -52,11 +52,13 @@ function compressedFiles(path: string): ModpackFile[] {
 
 /** The SQPack entry type is the int32 at offset 4 — readable without decompressing. */
 function entryType(f: ModpackFile): number {
-  return new DataView(
-    f.data.buffer,
-    f.data.byteOffset,
-    f.data.byteLength,
-  ).getInt32(4, true);
+  // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
+  // RawUncompressed entry can be absent (absent-file design spec §3.1).
+  const data = f.data!;
+  return new DataView(data.buffer, data.byteOffset, data.byteLength).getInt32(
+    4,
+    true,
+  );
 }
 
 /**
@@ -70,7 +72,9 @@ function decodeTolerant(
   legacyTex: string[],
 ): DecodedFile | null {
   try {
-    return decodeSqPackFile(f.data);
+    // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
+    // RawUncompressed entry can be absent (absent-file design spec §3.1).
+    return decodeSqPackFile(f.data!);
   } catch (err) {
     if (entryType(f) === SqPackType.Texture) {
       legacyTex.push(`${f.gamePath} (${(err as Error).message})`);
@@ -181,7 +185,9 @@ export function registerSqpackChecks(pack: string): void {
         // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
         // Policy: fail (don't skip) when we cannot verify — a null means the oracle output is neither
         // cached nor generable (TexTools absent), so we cannot cross-check and must fail loudly.
-        const oracleOut = unwrapCached(f.data);
+        // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
+        // RawUncompressed entry can be absent (absent-file design spec §3.1).
+        const oracleOut = unwrapCached(f.data!);
         if (oracleOut === null) {
           throw new Error(
             `cannot cross-check ${f.gamePath}: no cached /unwrap output and ConsoleTools unavailable`,

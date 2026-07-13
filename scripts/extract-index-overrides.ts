@@ -36,9 +36,12 @@ const CORPUS = "test/corpus";
 const cacheDir = `${CORPUS}/.upgrade-cache`;
 
 function uncompressed(f: {
-  data: Uint8Array;
+  data?: Uint8Array;
   storage: FileStorageType;
-}): Uint8Array {
+}): Uint8Array | undefined {
+  // Absent (PMP file with no zip member, see the absent-file design spec §3.1) has no payload to
+  // uncompress; the caller drops it from its per-gamePath list rather than inventing bytes.
+  if (!f.data) return undefined;
   return f.storage === FileStorageType.SqPackCompressed
     ? decodeSqPackFile(f.data).data
     : f.data;
@@ -50,8 +53,10 @@ function mtrlPayloads(
   const m = new Map<string, Uint8Array[]>();
   for (const f of allFiles(data)) {
     if (!f.gamePath.endsWith(".mtrl")) continue;
+    const bytes = uncompressed(f);
+    if (!bytes) continue;
     const list = m.get(f.gamePath) ?? [];
-    list.push(uncompressed(f));
+    list.push(bytes);
     m.set(f.gamePath, list);
   }
   return m;

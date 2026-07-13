@@ -11,7 +11,7 @@ import {
   type ModpackData,
   ModpackFormat,
 } from "../../src/model/modpack";
-import { readZip } from "../../src/zip/zip";
+import { readZip, writeZip } from "../../src/zip/zip";
 import { makePmpZip } from "../helpers/make-packs";
 
 const dec = new TextDecoder();
@@ -179,5 +179,67 @@ describe("writePmp model-building fallback (no raw)", () => {
     const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
     expect(byPath.get("chara/equipment/foo.tex")).toEqual(fooBytes);
     expect(byPath.get("chara/equipment/red.tex")).toEqual(redBytes);
+  });
+});
+
+describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
+  // TexTools' writer skips a file whose RealPath does not exist, which bypasses BOTH the payload
+  // write (:910) and opt.Files.Add (:914). The written pack therefore has neither.
+  const enc = new TextEncoder();
+  function buildPmpWithAbsent(): Uint8Array {
+    const present = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+    const absent = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+    const meta = {
+      FileVersion: 3,
+      Name: "Drop",
+      Author: "t",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: {
+        [present]: `on\\${present.replace(/\//g, "\\")}`,
+        [absent]: `on\\${absent.replace(/\//g, "\\")}`,
+      },
+      FileSwaps: {},
+      Manipulations: [],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod))],
+      [`on/${present}`, new Uint8Array([1, 2, 3, 4])],
+      // NOTE: no member for `absent` — that is the whole point.
+    ]);
+    return writeZip(entries);
+  }
+
+  it("emits neither the zip member nor the Files key for an absent file", () => {
+    const out = writePmp(readPmp(buildPmpWithAbsent()));
+    const members = readZip(out);
+    const present = "chara/equipment/e0001/model/c0101e0001_top.mdl";
+    const absent = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+
+    expect([...members.keys()]).toContain(`on/${present}`);
+    expect([...members.keys()]).not.toContain(`on/${absent}`);
+
+    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    expect(Object.keys(dm.Files)).toEqual([present]);
+  });
+
+  it("leaves an all-present option's manifest byte-for-byte verbatim", () => {
+    // The prune must be inert when nothing is absent: `raw` is re-emitted unchanged.
+    const src = buildPmpWithAbsent();
+    const srcMembers = readZip(src);
+    const noAbsent = new Map(srcMembers);
+    const dm = parseEntry<PmpOptionJson>(srcMembers, "default_mod.json");
+    const absent = "chara/equipment/e0002/model/c0101e0002_top.mdl";
+    noAbsent.set(`on/${absent}`, new Uint8Array([9, 9]));
+    const out = writePmp(readPmp(writeZip(noAbsent)));
+    const written = parseEntry<PmpOptionJson>(readZip(out), "default_mod.json");
+    expect(written.Files).toEqual(dm.Files);
   });
 });

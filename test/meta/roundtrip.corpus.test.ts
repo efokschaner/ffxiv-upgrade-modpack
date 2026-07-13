@@ -10,7 +10,10 @@ import { decodeSqPackFile } from "../../src/sqpack/sqpack";
 import { corpusPacks } from "../helpers/corpus-roots";
 
 const CACHE = join(__dirname, "..", "corpus", ".upgrade-cache");
-function unc(f: { storage: FileStorageType; data: Uint8Array }): Uint8Array {
+function unc(f: { storage: FileStorageType; data?: Uint8Array }): Uint8Array {
+  // .meta files are synthesized from PMP Manipulations, never from a zip `Files` member (absent-file
+  // design spec §3.3), so a `.meta` ModpackFile always carries bytes.
+  if (!f.data) throw new Error("roundtrip.corpus: .meta file has no bytes");
   return f.storage === FileStorageType.SqPackCompressed
     ? decodeSqPackFile(f.data).data
     : f.data;

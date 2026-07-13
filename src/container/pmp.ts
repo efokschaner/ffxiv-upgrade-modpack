@@ -33,7 +33,7 @@ const dec = new TextDecoder();
 // component). readZip already normalizes '\' -> '/', so segments split on '/'. Penumbra lowercases
 // the Files value and can retain a trailing dot/space the archive/on-disk name drops; normalizing
 // both sides the same way resolves them (see the PMP Windows path-normalization design spec).
-function windowsPathKey(path: string): string {
+export function windowsPathKey(path: string): string {
   return path
     .toLowerCase()
     .split("/")
@@ -53,8 +53,12 @@ function optionFromJson(
     // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
     // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
     // manifest value verbatim so the writer/golden are unaffected.
+    //
+    // A miss is NOT an error: the file is genuinely not packed. TexTools tolerates that at load —
+    // UnpackPmpOption still adds the entry, with a RealPath that does not exist (PMP.cs:1071-1102)
+    // — and defers the consequences to each read seam (ResolveFile, EndwalkerUpgrade.cs:1758) and
+    // to the writer, which drops it (PMP.cs:883-888). So we emit the file with NO bytes.
     const data = filesByKey.get(windowsPathKey(zipPath));
-    if (!data) throw new Error(`pmp: missing file entry ${zipPath}`);
     return {
       gamePath,
       data,
@@ -188,6 +192,31 @@ export function safeName(s: string): string {
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;
 
+/** Port of the absent-file drop in PopulatePmpStandardOption (PMP.cs:883-888): a file whose
+ *  RealPath does not exist is skipped by `continue`, which bypasses BOTH File.WriteAllBytes (:910)
+ *  AND opt.Files.Add (:914) — so the written pack carries neither the payload member nor the
+ *  `Files` key. ("Sometimes poorly behaved penumbra folders don't actually have the files they
+ *  claim they do. Remove them in this case.") We re-emit the source option JSON verbatim, so the
+ *  key has to be pruned out of a COPY of it; the map is keyed by gamePath, so the pruning is exact.
+ *  Returns `raw` itself when nothing is absent, keeping the common path byte-for-byte verbatim. */
+function pruneAbsentFiles(
+  o: ModpackOption,
+  raw: PmpOptionJsonRaw,
+): PmpOptionJsonRaw {
+  const absent = new Set(o.files.filter((f) => !f.data).map((f) => f.gamePath));
+  if (absent.size === 0) return raw;
+  const files = raw.Files;
+  if (!isObj(files)) return raw;
+  return {
+    ...raw,
+    // Object.entries preserves insertion order, so the surviving keys keep their original
+    // order — the emitted JSON bytes are unchanged apart from the dropped keys.
+    Files: Object.fromEntries(
+      Object.entries(files).filter(([gamePath]) => !absent.has(gamePath)),
+    ),
+  };
+}
+
 /** Reconstruct a PMP option JSON DOCUMENT. Prefers the carried-through original (`raw`) for
  * full fidelity; falls back to building from modeled fields (non-PMP sources). Raw, not parsed:
  * `includeMeta=false` deliberately omits Name/Description/Image, mirroring C#'s ShouldSerialize*
@@ -196,9 +225,10 @@ function optionToJson(
   o: ModpackOption,
   includeMeta: boolean,
 ): PmpOptionJsonRaw {
-  if (isObj(o.raw)) return o.raw as PmpOptionJsonRaw;
+  if (isObj(o.raw)) return pruneAbsentFiles(o, o.raw as PmpOptionJsonRaw);
   const Files: Record<string, string> = {};
   for (const f of o.files) {
+    if (!f.data) continue; // absent -> no Files key (PMP.cs:883-888)
     const zip = f.pmpPath ?? f.gamePath; // forward slashes (zip entry name)
     Files[f.gamePath] = zip.replace(/\//g, "\\"); // backslashes in JSON value
   }
@@ -272,6 +302,7 @@ export function writePmp(data: ModpackData): Uint8Array {
   });
 
   for (const f of allFiles(data)) {
+    if (!f.data) continue; // absent: no member AND no Files key (PMP.cs:883-888) — see optionToJson
     const zipPath = (f.pmpPath ?? f.gamePath).replace(/\\/g, "/");
     if (!entries.has(zipPath)) entries.set(zipPath, f.data);
   }

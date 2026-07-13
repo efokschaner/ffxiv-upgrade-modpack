@@ -33,7 +33,9 @@ describe("writeTtmp2 round-trip", () => {
     const data = readTtmp2(makeTtmp2Simple().bytes);
     // Force two files to share identical bytes.
     const files = allFiles(data);
-    files[1]!.data = files[0]!.data.slice();
+    // TTMP files always carry bytes (fileFromMod slices them from the .mpd blob); only a PMP
+    // Files entry can be absent (absent-file design spec §3.1).
+    files[1]!.data = files[0]!.data!.slice();
     const reread = readTtmp2(writeTtmp2(data));
     const rf = allFiles(reread);
     expect(rf[0]!.data).toEqual(rf[1]!.data);

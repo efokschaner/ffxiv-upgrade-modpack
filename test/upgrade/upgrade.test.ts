@@ -211,7 +211,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     const out = upgradeModpack(input);
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
-    expect(Array.from(outFile.data)).toEqual(Array.from(uncompressed));
+    expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
 
   it("leaves an unparseable chara/**.mtrl file byte-untouched", () => {
@@ -225,7 +225,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     const out = upgradeModpack(input);
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
-    expect(Array.from(outFile.data)).toEqual([1, 2, 3, 4, 5]);
+    expect(Array.from(outFile.data!)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("leaves a colorset material with no resolvable normal texture byte-untouched (regression: C# throws an NRE on normalTex.Dx11Path before the mask code, and its per-material try/catch swallows it, leaving the file untouched)", () => {
@@ -239,7 +239,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     const out = upgradeModpack(input);
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
-    expect(Array.from(outFile.data)).toEqual(Array.from(uncompressed));
+    expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
 });
 
@@ -257,7 +257,7 @@ describe("upgradeModpack (material round)", () => {
     const outFile = out.groups[0]!.options[0]!.files[0]!;
 
     expect(outFile.storage).toBe(FileStorageType.SqPackCompressed);
-    const decoded = decodeSqPackFile(outFile.data).data;
+    const decoded = decodeSqPackFile(outFile.data!).data;
     const parsed = parseMtrl(decoded, outFile.gamePath);
     expect(parsed.colorSetData.length).toBe(1024);
     expect(parsed.shaderPackRaw).toBe("characterlegacy.shpk");
@@ -275,7 +275,7 @@ describe("upgradeModpack (skeleton)", () => {
     const out = upgradeModpack(input);
     expect(out.meta.name).toBe("M");
     expect(out.groups[0]!.options[0]!.files[0]!.gamePath).toBe("a/b.mtrl");
-    expect(Array.from(out.groups[0]!.options[0]!.files[0]!.data)).toEqual([
+    expect(Array.from(out.groups[0]!.options[0]!.files[0]!.data!)).toEqual([
       1, 2, 3,
     ]);
   });
@@ -401,7 +401,7 @@ describe("upgradeModpack texture round (e2e)", () => {
     const files = out.groups[0]!.options[0]!.files;
     const idx = files.find((f) => f.gamePath === "chara/x/tex/foo_id.tex");
     expect(idx).toBeDefined();
-    expect(Array.from(decodeToRgba(parseTex(idx!.data)))).toEqual(
+    expect(Array.from(decodeToRgba(parseTex(idx!.data!)))).toEqual(
       Array.from(createIndexTexture(rgba, w, h)),
     );
   });
@@ -418,7 +418,9 @@ describe("restore threads the source SqPack type", () => {
     const { bytes, type } = uncompressedBytes(f);
     expect(type).toBe(SqPackType.Standard);
     expect(Array.from(bytes)).toEqual([1, 2, 3, 4, 5]);
-    expect(decodeSqPackFile(restore(f, bytes, type).data).type).toBe(
+    // restore() always sets `data` on both its SqPackCompressed and RawUncompressed branches;
+    // the interface type is optional only to represent a PMP absent-file entry (design spec §3.1).
+    expect(decodeSqPackFile(restore(f, bytes, type).data!).type).toBe(
       SqPackType.Standard,
     );
   });
@@ -432,7 +434,7 @@ describe("restore threads the source SqPack type", () => {
     };
     const dec = uncompressedBytes(f);
     expect(dec.type).toBe(SqPackType.Model);
-    const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data);
+    const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data!);
     expect(re.type).toBe(SqPackType.Model);
     expect(Array.from(re.data)).toEqual(Array.from(bytes));
   });

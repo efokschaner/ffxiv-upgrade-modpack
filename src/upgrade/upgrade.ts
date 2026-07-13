@@ -64,6 +64,11 @@ export function cloneModpack(data: ModpackData): ModpackData {
 
 /** Uncompresses a ModpackFile for a codec to read, carrying the source SqPack entry type. */
 export function uncompressedBytes(f: ModpackFile): Decoded {
+  if (!f.data) {
+    // TODO(Task 2): port ResolveFile (EndwalkerUpgrade.cs:1758) — return null and let each round
+    // skip or throw per its own C# call site. Throwing here is the interim fail-loud state.
+    throw new Error(`upgrade: file has no bytes: ${f.gamePath}`);
+  }
   if (f.storage === FileStorageType.SqPackCompressed) {
     const d = decodeSqPackFile(f.data);
     return { bytes: d.data, type: d.type };

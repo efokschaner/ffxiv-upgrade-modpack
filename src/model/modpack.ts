@@ -19,7 +19,14 @@ export interface TtmpFileMeta {
 
 export interface ModpackFile {
   gamePath: string; // internal game path, forward slashes
-  data: Uint8Array; // OPAQUE: SQPack blob (ttmp) or raw file (pmp)
+  /** OPAQUE payload: an SQPack blob (ttmp) or a raw file (pmp).
+   *  ABSENT (undefined) when the PMP's `Files` map named a zip member the archive does not
+   *  contain — TexTools' analogue is a FileStorageInformation whose RealPath does not exist
+   *  (PMP.cs:1071-1102, after a LoadPMP that never checks existence, PMP.cs:124). The entry is
+   *  still a member of the option: the upgrade rounds gate on files.ContainsKey
+   *  (EndwalkerUpgrade.cs:1840/:1852/:1867), which is true for it. We do NOT substitute empty
+   *  bytes — an empty buffer would decode-fail inside a codec instead of being skipped. */
+  data?: Uint8Array;
   storage: FileStorageType;
   ttmp?: TtmpFileMeta; // present iff sourced from a TTMP container
   pmpPath?: string; // original PMP zip path (forward slashes) iff sourced from PMP

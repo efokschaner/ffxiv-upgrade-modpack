@@ -65,6 +65,9 @@ export function texFixRound(data: ModpackData): void {
         if (!IS_TEX.test(f.gamePath)) return true;
         if (IS_UI.test(f.gamePath)) return true;
         if (f.storage !== FileStorageType.SqPackCompressed) return true;
+        // Absent files are PMP-only and PMP never needs the tex fix (needsTexFix), so the storage
+        // gate above already excludes them; this keeps the types honest without inventing bytes.
+        if (!f.data) return true;
         try {
           decodeSqPackFile(f.data);
           return true;

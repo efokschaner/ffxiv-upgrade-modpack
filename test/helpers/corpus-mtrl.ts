@@ -57,7 +57,9 @@ export function registerMtrlChecks(pack: string): void {
       const unstable: string[] = [];
       const semanticBreaks: string[] = [];
       for (const f of files) {
-        const decoded = decodeSqPackFile(f.data);
+        // SqPackCompressed (filtered by mtrlFiles above) always carries bytes; only a PMP
+        // RawUncompressed entry can be absent (absent-file design spec §3.1).
+        const decoded = decodeSqPackFile(f.data!);
         if (decoded.type !== SqPackType.Standard) continue; // materials are Type 2
         const re = serializeMtrl(parseMtrl(decoded.data, f.gamePath));
         if (bytesEqual(re, decoded.data)) {
