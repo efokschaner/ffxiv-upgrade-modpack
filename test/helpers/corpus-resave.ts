@@ -27,20 +27,36 @@ const BLESS = process.env.UPDATE_UPGRADE_BASELINE === "1";
 export function registerResaveCheck(pack: string): void {
   const name = basename(pack);
   describe(`resave golden: ${name}`, () => {
-    it("matches ConsoleTools /resave within the ratchet baseline", () => {
+    it("matches ConsoleTools /resave within the ratchet baseline", (ctx) => {
       const bytes = new Uint8Array(readFileSync(pack));
       const ours = loadModpack(name, bytes);
       applyLoadFixes(ours); // TexTools' load is not inert for old packs — see applyLoadFixes
       const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
       const oursArchive = writeModpack(ours, target);
 
-      const goldenBytes = resaveGoldenCached(name, bytes);
-      if (goldenBytes === null) {
+      const result = resaveGoldenCached(name, bytes);
+      if (result === null) {
         throw new Error(
           `No /resave golden for ${name}: uncached and no oracle (TexTools) available. ` +
             `Run with ConsoleTools installed to populate test/corpus/.resave-cache.`,
         );
       }
+      if (result.kind === "error") {
+        // The ORACLE errors on this input — ConsoleTools cannot resave it at all (e.g. its
+        // RSP-manipulation write path reads the installed game's human.cmp and throws "CMP
+        // Format Changed"). There is nothing to diff our writer against, so this is neither a
+        // pass nor a generic skip: log it loudly and mark the writer explicitly UNVERIFIED for
+        // this pack, rather than letting the suite go quietly green as if it had matched.
+        const message =
+          `ConsoleTools /resave CANNOT round-trip ${name} — the oracle itself errors, so our ` +
+          `writer is UNVERIFIED (not matched, not passing) for this pack. See BACKLOG.md, ` +
+          `"Expected-failure golden capability for the upgrade harness". Oracle error:\n` +
+          result.message;
+        console.error(`[resave] UNVERIFIED: ${message}`);
+        ctx.skip(message);
+        return;
+      }
+      const goldenBytes = result.bytes;
       const golden = loadModpack(`golden.${target}`, goldenBytes);
 
       const payload = diffUpgrade(

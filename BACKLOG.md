@@ -49,6 +49,37 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   comparison to the non-no-op branch, which is currently blocked by the writer-regeneration
   divergence below.
 
+- **`writeTtmp2` writes the LEGACY `SelectionType` spelling, and our READER only understands the
+  legacy one — so a `Multi` group is silently downgraded to single-select. This makes our
+  *output* wrong for users**, the same class as the `Files`-key item above: a mod author's
+  multi-select group becomes single-select in the pack we emit, which is a functional
+  regression for whoever installs it, not merely a byte-parity nit. `src/container/ttmp2.ts`
+  reader: `g.SelectionType === "Multi Selection" ? "Multi" : "Single"`; writer:
+  `g.selectionType === "Multi" ? "Multi Selection" : "Single Selection"`. Modern TexTools writes
+  the bare enum name (`"Single"` / `"Multi"`), not the legacy `"… Selection"` string.
+  **Evidence:** `Fantasia.ttmp2`'s source `.mpl` declares its one group as `["Race","Multi"]`;
+  our reader does not match `"Multi Selection"`, so it falls through to `Single`, and our writer
+  emits `"SelectionType":"Single Selection"` — while the `/resave` golden emits `"Multi"`. Shows
+  as `#/ModGroups/N/SelectionType [mismatch]` + `#/OptionList/N/SelectionType [mismatch]` on 36
+  packs in the `/resave` baselines (`test/corpus/.resave-baseline/`).
+
+  **This defect is ALSO already sitting in the `/upgrade` ratchet baselines, not just `/resave`'s**
+  (checked 2026-07-13: `Select-String -Pattern SelectionType -Path test/corpus/.upgrade-baseline/*.json`).
+  It hits the exact same 36 files as the `/resave` baselines, 643 `SelectionType`-pointer lines total
+  (e.g. `7f8d4701a82d….json` alone carries 25: `TTMPL.mpl#/ModPackPages/0/ModGroups/N/SelectionType`
+  and `…/OptionList/N/SelectionType` for every group/option in the pack, all `status: "mismatch"`).
+  That means the `/upgrade` harness has been **blessing** this defect all along — every affected
+  pack's baseline already records the mismatch as "known, ratchet-passing" rather than catching it
+  as a regression. It only became legible as a *named, greppable* finding once manifest diffs
+  started being reported **per JSON pointer** (Task 2) instead of a single opaque manifest-mismatch
+  count; before that this was invisible noise inside an aggregate diff. That is the sharpest
+  statement of why the per-pointer harness work mattered: it turned a silently-tolerated defect
+  into something you can literally `grep` for and name.
+
+  **Fix (not done here — deliberately deferred):** accept both spellings on read; write the bare
+  enum name on write. Note the reader fix changes `ModpackData`, so the `/upgrade` baselines will
+  move (in the good direction — the 643 lines above should mostly disappear) once it lands.
+
 - **Partials round.** `partials` (`src/upgrade/upgrade.ts`) is a no-op stub for
   `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap round 6).
   Needs the bundled reference assets (eye textures, iris `(race,face)→path`, canonical
@@ -80,20 +111,6 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   `TTMPL.mpl#/ModPackPages [added]` + `#/SimpleModsList [mismatch]` + `#/TTMPVersion [mismatch]`
   (13 packs each). Decide deliberately whether to match this (our simple round-trip is arguably nicer,
   but it is not what TexTools does).
-
-- **`writeTtmp2` writes the LEGACY `SelectionType` spelling, and our READER only understands the legacy
-  one — so a `Multi` group is silently downgraded to single-select.** This is the one finding here with
-  a **semantic** (not merely cosmetic) consequence, and it is a *read*-side bug as much as a write-side
-  one. `src/container/ttmp2.ts` reader: `g.SelectionType === "Multi Selection" ? "Multi" : "Single"`;
-  writer: `g.selectionType === "Multi" ? "Multi Selection" : "Single Selection"`. Modern TexTools writes
-  the bare enum name (`"Single"` / `"Multi"`), not the legacy `"… Selection"` string. **Evidence:**
-  `Fantasia.ttmp2`'s source `.mpl` declares its one group as `["Race","Multi"]`; our reader does not
-  match `"Multi Selection"`, so it falls through to `Single`, and our writer emits
-  `"SelectionType":"Single Selection"` — while the `/resave` golden emits `"Multi"`. **A multi-select
-  group becomes single-select in our output.** Shows as `#/ModGroups/N/SelectionType [mismatch]` +
-  `#/OptionList/N/SelectionType [mismatch]` on 36 packs. Fix both halves (accept both spellings on read;
-  write the bare enum name) — and note the reader fix changes `ModpackData`, so the `/upgrade` baselines
-  may move.
 
 - **`writeTtmp2` omits `.mpl` fields TexTools always writes.** All on 36 packs, all `[added]` (i.e.
   present in the golden, absent from ours):
@@ -380,10 +397,31 @@ output is **byte-identical to the `/upgrade` golden**; the divergence is that we
   On write, TexTools converts each `.rgsp` into an RSP manipulation, which reads the **installed game's**
   `human.cmp`; this TexTools build does not recognize the current game's CMP layout and throws. `/upgrade`
   never hit it because `/upgrade` on this pack is a no-op — ConsoleTools writes nothing, so `WriteModpack`
-  is never reached. **Not swallowed deliberately** (per `AGENTS.md` fail-loud): a `try/catch` here would
-  hide a real oracle failure. Needs the decision this item describes — an `{ kind: "error" }` golden with a
-  cached marker and a bless path — or an explicit, documented per-pack exclusion. Until then the `/resave`
-  suite is red on this one pack.
+  is never reached. **This is the real, general reason `/upgrade` can never see a whole class of write-side
+  oracle failures**, not a one-off: `/upgrade` only reaches TexTools' writer when the transform actually
+  changes something, so any pack whose upgrade happens to be a no-op gets a free pass on every defect in
+  TexTools' own writer, this CMP crash included. `/resave` always writes, so it is the only oracle that can
+  see this class at all.
+
+  **Update (2026-07-13): the `/resave` half of this item is now DONE.** `resaveGoldenCached`
+  (`test/helpers/resave-golden.ts`) gained a `ResaveGoldenResult = { kind: "pack"; bytes } | { kind: "error";
+  message }` (mirroring `upgrade-golden.ts`'s `GoldenResult`), catches a `produce()` throw, and caches it as a
+  content-addressed `<sha>.error` marker (analogous to `<sha>.noop`) so ConsoleTools is spawned at most once
+  for this pack instead of throwing on every run. `registerResaveCheck` (`test/helpers/corpus-resave.ts`)
+  treats `{ kind: "error" }` as neither pass nor generic skip: it `console.error`s a loud, explicit message
+  naming the pack and the oracle's error text, then calls `ctx.skip(message)` so the test reports as
+  **skipped with a note**, not green — the writer is explicitly UNVERIFIED for this pack, never silently
+  treated as matching. Covered by a focused unit test (`test/helpers/resave-golden.test.ts`) exercising the
+  `opts.produce` injection seam (no real ConsoleTools spawn). Scoped to `/resave` only, per the request that
+  landed this.
+
+  **The `/upgrade` half is still NOT done** — `upgradeGoldenCached` / `GoldenResult`
+  (`test/helpers/upgrade-golden.ts:29-31`) remains two-outcome (`pack` | `noop`) with no `error` kind, so an
+  `/upgrade` input on which ConsoleTools itself errors would still hard-fail every run uncached, exactly as
+  described above. No corpus pack currently forces this on the `/upgrade` side (Milktruck's `/upgrade` is a
+  no-op, so it never reaches `WriteModpack` there), so it remains deferred until one does — extend
+  `upgrade-golden.ts` the same way (`{ kind: "error" }` + `<sha>.error` marker + loud skip in
+  `corpus-upgrade.ts`) if/when it's needed.
 
 - **v1 metadata support.** `src/meta/deserialize.ts` now throws on any `.meta` with
   `version !== 2` rather than silently mis-upgrading it. An empirical probe
