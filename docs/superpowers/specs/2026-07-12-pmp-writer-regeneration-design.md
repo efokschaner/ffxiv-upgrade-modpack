@@ -86,9 +86,20 @@ is therefore faithful, and `readPmp` is correct to hold no `.meta` files for a P
 | Option folder prefix from group/option *names* (`pagePrefix + safeGroup + "/" [+ safeOption + "/"]`, with the count/uniqueness rules) | `MakePagePrefix`/`MakeGroupPrefix`/`MakeOptionPrefix`, `WizardData.cs:1362-1458` |
 | `pmpPath = OptionPrefix + gamePath`, then content-dedup: a repeat SHA1 moves the shared file to `common/{idx}/{filename}` | `ResolveDuplicates`, `PmpExtensions.cs:476-566` |
 | Payload write + `opt.Files.Add(fi.Path, fi.PmpPath.Replace("/", "\\"))`; a file whose payload does not exist is dropped from *both*; a `.meta`/`.rgsp` becomes `Manipulations` instead of a member | `PopulatePmpStandardOption`, `PMP.cs:871-928` |
-| `.meta` → manipulation JSON; `.rgsp` → manipulation JSON | `MetadataToManipulations` / `RgspToManipulations`, `PmpExtensions.cs:417` |
+| `.meta` → manipulation JSON; `.rgsp` → manipulation JSON — **deliberately NOT ported**, see §4.2 | `MetadataToManipulations` / `RgspToManipulations`, `PmpExtensions.cs:417` |
 | Manifests serialized from the typed model — every initialized field written; `default_mod.json` gets `Version` and loses `Name`/`Description` (`ShouldSerialize*` on `IsDataContainerOnly`, `PMP.cs:1496-1501`); `meta.json` always carries `Image` | `PMP.WritePmp`, `PMP.cs:830-869`; `WizardData.WritePmp`, `WizardData.cs:1460-1560` |
 | Blank group or option name → `InvalidDataException` | `WizardData.cs:1520-1523` |
+
+**Output format follows the source, by default.** `WriteModpack` (`WizardData.cs:1312-1326`)
+dispatches purely on the destination *extension* — `.pmp` → `WritePmp`, `.ttmp2` →
+`WriteWizardPack` — and `/upgrade` calls the same method (`ModpackUpgrader.cs:218`), so format
+is the caller's choice, not a property of the operation. What the caller chooses:
+the GUI upgrade handler (`MainWindow.xaml.cs`) reuses the source extension
+(`ext = Path.GetExtension(path)`, falling back to the `Default_Modpack_Format` setting only for
+an extensionless source — a Penumbra folder), naming the output `<name>_dt<ext>`. So a `.ttmp2`
+upgrades to a `.ttmp2` and a `.pmp` to a `.pmp`, which is exactly what our harness does
+(`target` from the source extension). **Format conversion is not an upgrade flow**, and that is
+what makes `.meta` on the PMP write path unreachable (§4.2).
 
 Two behaviours worth naming because they surprised us:
 
@@ -120,8 +131,13 @@ does *not* excuse value spelling: `Files` values are backslashed strings
    `common/{idx}/…` (port of `ResolveDuplicates` — e.g. `src/container/resolve-duplicates.ts`);
 3. emits each option's `Files` map from the model, dropping absent files (the existing
    `PMP.cs:883-888` drop, now a natural consequence rather than a manifest carve-out);
-4. converts `.meta`/`.rgsp` files to `Manipulations` (only reachable from a TTMP-sourced
-   model — a PMP-sourced one holds no `.meta`);
+4. **throws** on a `.meta`/`.rgsp` file, citing `PMP.cs:891-900` +
+   `PmpExtensions.cs:417` as unported. A `.meta` can only reach the PMP writer from a
+   **TTMP-sourced** model (a PMP-sourced one holds none — see §3's `mergeManipulations = false`),
+   i.e. only via a TTMP→PMP conversion, and no upgrade flow performs one. Porting the conversion
+   would mean porting the whole manipulation-serialization surface for a path nothing exercises.
+   Backlog it, noting that `/resave x.ttmp2 → y.pmp` is the golden waiting for it if format
+   conversion ever becomes a product feature;
 5. regenerates `meta.json` / `default_mod.json` / `group_NNN_*.json` from the model.
 
 `o.raw` / `g.raw` / `meta.raw` remain the carriers for fields the model does not type
@@ -137,7 +153,7 @@ it for the `ExtraFiles` referenced-set, `PMP.cs:213-215`), but it is no longer a
 | # | Change | Closes |
 |---|---|---|
 | A | `diffUpgrade` consumes `loadModpack(name, oursArchive)` — the artifact we ship, not the in-memory model | §2.1 |
-| B | New `/resave` write-side oracle check per corpus pack: `writeModpack(loadModpack(pack))` vs `ConsoleTools /resave`, same content-addressed cache + ratchet. PMP→PMP pins the writer; **TTMP→PMP** pins the `.meta`/`.rgsp` → `Manipulations` conversion (`/resave` re-saves "to a new path **or type**", `Program.cs:441`), over the ~50 real TTMPs already in the corpus | §2.4 |
+| B | New `/resave` **write-side oracle** check per corpus pack — `writeModpack(loadAndFix(pack), sourceFormat)` vs `ConsoleTools /resave pack out.<same ext>`, same content-addressed cache + ratchet. Covers **both** formats (see §4.3.1): PMP→PMP pins `writePmp`, TTMP2→TTMP2 pins `writeTtmp2` across ~50 corpus packs. Neither writer has ever been AB-tested | §2.4 |
 | C | `checkPayloadMembers` on unconditionally for PMP. A member name *is* `optionPrefix + gamePath`, so this also catches a file landing in the **wrong option** — which `diffUpgrade`'s gamePath-keyed multiset flattens away | §2.3 |
 | D | Manifest diffs keyed **per difference** (JSON pointer, e.g. `default_mod.json#/Files/chara~1…`) instead of per document, so a blessed diff cannot blind the ratchet to the rest of the document | §2.2 |
 | E | Self-consistency invariant on our own output: re-read the written PMP and assert no `Files` key resolves to nothing, and no payload member is orphaned — i.e. every member is either named by an option's `Files`/`Image` or was already an `ExtraFile` of the source (`PMP.cs:213-215`). No oracle needed; fails closed where no golden exists | belt-and-braces for §2.1 |
@@ -145,13 +161,36 @@ it for the `ExtraFiles` referenced-set, `PMP.cs:213-215`), but it is no longer a
 **A alone would have caught this bug**: the orphan member re-reads as an `ExtraFile`, so its
 `gamePath` vanishes from our multiset and shows as `added` against the golden.
 
+### 4.3.1 The load-fix seam that B needs
+
+`/resave` is *load + write*, and TexTools' load is not inert: for an old pack
+(`DoesModpackNeedFix`, `TTMP.cs:916`) it runs every `.mdl` through `FixOldModel`
+(`WizardData.cs:716-727`) and every `.tex` through `FixOldTexData`
+(`TTMP.cs:1367-1379/1413-1460`) **at load time**. Our equivalents — `modelRound` and
+`texFixRound` — live *inside* `upgradeModpack`, so `writeModpack(loadModpack(x))` is not the
+same thing as TexTools' resave and would diff spuriously on every old TTMP.
+
+Fix by naming the seam TexTools already has: export `applyLoadFixes(data)` (`texFixRound` +
+`modelRound`, gated by `needsMdlFix` exactly as today), called by `upgradeModpack` first — as it
+effectively is now — and by the resave check. Net behaviour of `upgradeModpack` is unchanged;
+`loadModpack` stays pure (other corpus checks depend on it returning the pack's real bytes).
+This is a **fidelity improvement in its own right**: our current structure blends TexTools'
+load-time fixes into the upgrade transform, and this un-blends them.
+
+PMP has no load-time fixes at all (both are TTMP-gated), so the PMP half of B is a clean writer
+oracle regardless.
+
 ### 4.4 Sequencing
 
 Harness first, so each new check is *seen failing on the bug it exists to catch* (AGENTS.md:
 "a found divergence is a test-coverage gap too").
 
-1. **Harness (A, D, E, and B's oracle plumbing)**, with baselines blessed to today's — broken —
-   state. The defect now shows as red diffs the harness can actually see; record what they are.
+0. **ConsoleTools mutex** (existing backlog item) — B multiplies cold-cache spawns, and the
+   concurrency failure reads as a spurious hard failure. Prerequisite, not optional.
+1. **Harness (A, D, E, and B — oracle + the §4.3.1 load-fix seam)**, with baselines blessed to
+   today's — broken — state. The defect now shows as red diffs the harness can actually see;
+   record what they are. The TTMP half of B lands here too, and whatever it finds about
+   `writeTtmp2` gets blessed and filed, not fixed here.
 2. **Writer port** (§4.2). Those diffs go green. Re-bless: every PMP baseline moves, most of
    them *toward* zero.
 3. **C** on, once names regenerate the TexTools way.
@@ -170,15 +209,28 @@ Harness first, so each new check is *seen failing on the bug it exists to catch*
 - **`.rgsp` support** needs `RacialGenderScalingParameter` + `CMP.GetRgspPath`, neither ported.
   Step one of the plan is to scan the corpus for a `.rgsp`; if none exists, fail loud on it and
   backlog the conversion rather than port it blind (there would be no golden to pin it).
+- **Which of our rounds are load-time in C#** is settled for two of them and open for a third.
+  `texFixRound` and `modelRound` are load-time (cited in §4.3.1). `metadataRound` is assumed to
+  be upgrade-time and therefore *excluded* from `applyLoadFixes` — but if TexTools in fact
+  reconstructs `.meta` at load, `/resave` will show it, and the resave check will go red on
+  every pack with a `.meta`. **Do not settle this by reading; let the first resave golden say so**
+  and move `metadataRound` into the seam if it does.
+- **`writeTtmp2` has never been oracled either.** The TTMP half of B is expected to surface its
+  own divergences (`ModOffset`/`ModSize` blob layout is already known and normalized away in
+  `upgrade-archive-diff.ts:26`; anything else is new information). Those are *findings*, not
+  blockers — bless them into the baseline, file what they are, and keep them out of this
+  change's critical path.
 - **Ratchet churn** across every PMP is expected, and is the point.
-- **ConsoleTools concurrency**: adding a second oracle command multiplies cold-cache spawns.
-  The known "ConsoleTools is not safe to run concurrently" backlog item bites harder here — the
-  cross-process mutex it asks for is now closer to a prerequisite than a nicety.
+- **ConsoleTools concurrency**: B roughly doubles the oracle commands, so a cold cache spawns
+  many more ConsoleTools. The known "ConsoleTools is not safe to run concurrently" backlog item
+  bites much harder here — its cross-process mutex is now a **prerequisite**, not a nicety, and
+  should be step zero of the plan.
 
 ## 6. Out of scope
 
+- **`.meta`/`.rgsp` → `Manipulations` on the PMP write path** (`PMP.cs:891-900`,
+  `PmpExtensions.cs:417`): fail loud, backlog. Unreachable without a TTMP→PMP conversion, and no
+  upgrade flow performs one (§3). `/resave x.ttmp2 → y.pmp` is the golden if we ever want it.
 - The `mergeManipulations = true` import path (`PMP.cs:1141-1205`).
-- `writeTtmp2` regeneration parity (`/resave x.ttmp2 → y.ttmp2` would be the oracle; worth a
-  follow-up backlog entry now that the plumbing exists).
 - The remaining `BACKLOG.md` texture-round gaps (T2/T3/T4), the partials round, and everything
   else that is about the *transform* rather than the writer.
