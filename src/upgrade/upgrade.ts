@@ -61,6 +61,11 @@ export function cloneModpack(data: ModpackData): ModpackData {
     ...data,
     meta: { ...data.meta, tags: [...data.meta.tags] },
     groups: data.groups.map(cloneGroup),
+    // Fresh Map: `...data` would otherwise share the SOURCE map by reference, so a caller mutating
+    // the clone's extraFiles (or a future upgrade round adding/removing entries) would mutate
+    // `data` too — silently contradicting this function's (and upgradeModpack's) "never mutates
+    // `data`" contract. The values (Uint8Array payloads) stay shared/opaque, matching cloneFile.
+    extraFiles: data.extraFiles && new Map(data.extraFiles),
   };
 }
 

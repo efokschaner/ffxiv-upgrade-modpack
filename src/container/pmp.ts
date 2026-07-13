@@ -42,6 +42,20 @@ function windowsPathKey(path: string): string {
     .join("/");
 }
 
+// Port of the ExtraFiles-scan "referenced" comparison (PMP.cs:196/:209 build allPmpFiles, :214
+// compare it against the on-disk listing). Deliberately NOT windowsPathKey: allPmpFiles is built
+// from the RAW `Files` value with only `.ToLower()` applied (backslashes and all, no trailing
+// dot/space trim), and PMP.cs:214 compares it against `IOUtil.GetFilesInFolder(path)` — the
+// on-disk relative path, which NTFS already trimmed when PMP.cs:76 unzipped the archive before this
+// scan ever runs. So a `Files` value that keeps a trailing dot/space on a folder segment (e.g.
+// `optional\rose acc.\…`) never matches the (already-trimmed) on-disk name, even though the SAME
+// file resolves as a payload one section up via the looser, NTFS-read-equivalent windowsPathKey
+// lookup (optionFromJson, below): that file is BOTH a resolved payload AND an ExtraFile in
+// TexTools. We reproduce that by using plain case-fold here, not the trimming windowsPathKey.
+function looseCaseKey(path: string): string {
+  return path.toLowerCase();
+}
+
 /** Port of IsPmpJsonFile (PMP.cs:228-241): matches on the lowercased BASENAME only (a manifest
  *  json nested in a subfolder would still count — we don't reproduce that beyond mirroring the
  *  basename-only check, since PMP manifests are never actually written into subfolders). Used by
@@ -155,25 +169,27 @@ export function readPmp(bytes: Uint8Array): ModpackData {
 
   // Port of the ExtraFiles scan (PMP.cs:213-215): every archive member that is neither a manifest
   // json nor referenced by an option's `Files` value is preserved verbatim so writePmp can re-emit
-  // it (WizardData.WritePmp, WizardData.cs:1477-1488). "Referenced" is decided the same way the
-  // reader itself resolves a Files value — windowsPathKey — so a member referenced only under
-  // case-folding (or a trailing dot/space the archive's real name lacks) is NOT an extra; every
-  // option's `pmpPath` already carries the forward-slashed zip path a Files value named, whether or
-  // not that name resolved to a real member (an absent one references nothing further).
+  // it (WizardData.WritePmp, WizardData.cs:1477-1488). "Referenced" is decided the way PMP.cs
+  // itself decides it — `looseCaseKey`, NOT `windowsPathKey` — so a member referenced only via
+  // case-folding is still NOT an extra (case-fold is part of both), but a member referenced only
+  // via a trailing dot/space Files value IS still an extra (see `looseCaseKey`'s doc comment):
+  // that mismatch between the payload lookup's looser key and this scan's tighter one is the
+  // faithfully-reproduced TexTools behaviour, not a bug. Every option's `pmpPath` already carries
+  // the forward-slashed zip path a Files value named, whether or not that name resolved to a real
+  // member (an absent one references nothing further).
   const referencedKeys = new Set<string>();
   for (const g of groups) {
     for (const o of g.options) {
       for (const f of o.files) {
-        if (f.pmpPath) referencedKeys.add(windowsPathKey(f.pmpPath));
+        if (f.pmpPath) referencedKeys.add(looseCaseKey(f.pmpPath));
       }
     }
   }
   const extraFiles = new Map<string, Uint8Array>();
   for (const [name, data] of entries) {
     if (isPmpJsonFile(name)) continue;
-    const key = windowsPathKey(name);
-    if (referencedKeys.has(key)) continue;
-    extraFiles.set(key, data);
+    if (referencedKeys.has(looseCaseKey(name))) continue;
+    extraFiles.set(windowsPathKey(name), data);
   }
 
   return {

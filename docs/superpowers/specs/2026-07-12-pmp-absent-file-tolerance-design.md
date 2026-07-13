@@ -211,31 +211,37 @@ way:
   never-packed payload matches nothing under any spelling (so the intended confirmations are
   unaffected).
 
-- **It is NOT the thing that catches a silently-lost member, for any other reason.** This rule only
-  ever inspects `Files` map *keys*; it can't see a payload member vanish for a reason that never
-  touches a `Files` key at all — e.g. a decode bug in the shared `readZip` step (`src/zip/zip.ts`,
-  fflate decodes a zip entry name as **latin1 when the UTF-8 general-purpose-flag bit is unset**,
-  common in repacked archives, yielding a mojibake member name distinct from the correctly-UTF8-decoded
-  `Files` value that names it), or a writer/reader bug that drops an **`ExtraFile`** — a non-manifest
-  zip member no `Files`/`Image` field references at all (`PMP.cs:213-215`; a readme, a preview image).
-  An earlier revision of this rule tried to patch that blind spot with an archive-wide
+- **It is NOT the thing that catches a member the writer silently dropped, for any other reason.**
+  This rule only ever inspects `Files` map *keys*; it can't see a payload member vanish for a reason
+  that never touches a `Files` key at all — e.g. a writer/reader bug that drops an **`ExtraFile`** —
+  a non-manifest zip member no `Files`/`Image` field references at all (`PMP.cs:213-215`; a readme, a
+  preview image). An earlier revision of this rule tried to patch that blind spot with an archive-wide
   "orphan-payload-member" guard (disable the confirmation entirely whenever the golden contains any
   unreferenced payload member) — but that guard was both a hack (it inferred a name-resolution failure
   indirectly, by absence of a reference, rather than checking the thing that actually matters) and
   wrong at the archive granularity: a pack with a *legitimate* extra (e.g. `[DVNO] DMBX Shoes 1.pmp`'s
   34 preview images) would disable the confirmation for the whole file even with zero actual drops.
 
-  **What actually catches it:** `diffArchives` separately compares the *names* of non-manifest
-  ("payload") members between our archive and the golden — a plain multiset diff, bucketed by
-  `looseKey` so a legitimate spelling difference (case, a stripped trailing dot) isn't flagged. This
-  needs no theory about *why* a member might be missing: if a payload member the golden has is absent
-  from ours (or vice versa), under any name spelling, it is reported directly as a `structure` diff,
-  per member — whether the cause is the confirmation's own blind spot, a decode bug, or a plain writer
-  bug. This comparison only runs when the caller passes `checkPayloadMembers: true`
-  (`corpus-upgrade.ts` passes `golden.kind === "noop"`): on a real ConsoleTools-written golden, TexTools
+  **What actually catches it:** `diffArchives` separately compares the *names* (and, for matched
+  pairs, the bytes) of non-manifest ("payload") members between our archive and the golden — a plain
+  multiset diff, bucketed by `looseKey` so a legitimate spelling difference (case, a stripped trailing
+  dot) isn't flagged. If a payload member the golden has is absent from ours (or vice versa), under any
+  name spelling, it is reported directly as a `structure` diff, per member. This comparison only runs
+  when the caller passes `checkPayloadMembers: true` (`corpus-upgrade.ts` passes
+  `target === "pmp" && golden.kind === "noop"` — PMP only: TTMP's single opaque `TTMPD.mpd` blob is not
+  a PMP-shaped per-gamePath payload member at all): on a real ConsoleTools-written golden, TexTools
   regenerates every payload member's name (`<optionPrefix><gamePath>`, `PmpExtensions.cs:534`) where our
   writer reuses the source pack's own names — a real, separately tracked divergence
   (`BACKLOG.md`) this comparison must not light up.
+
+  **What this does NOT cover:** an entry name TexTools' Ionic.Zip would decode differently than fflate
+  does — a byte >= 0x80 with the zip's UTF-8 general-purpose-flag bit unset, where Ionic falls back to
+  IBM437 and fflate falls back to latin1 — never reaches either comparison above. `readZip`
+  (`src/zip/zip.ts`) scans the zip's Central Directory and **throws** on exactly that case before any
+  entry is decoded, per AGENTS.md's "fail loud, never silently diverge": we do not implement IBM437
+  (`BACKLOG.md`), so silently picking fflate's latin1 name would resolve a *different* file than
+  TexTools does, with the mis-decoded member re-emitted as an ExtraFile under its wrong name — a
+  balanced member count on both sides, invisible to the multiset diff above.
 - **It is inert whenever TexTools actually wrote.** A real ConsoleTools golden has already dropped the
   key (`PMP.cs:883`), so both sides agree and the confirmation never runs. It can only fire when the
   reference is the input pack.

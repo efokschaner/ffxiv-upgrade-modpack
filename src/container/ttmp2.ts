@@ -160,6 +160,15 @@ function buildBlob(files: ModpackFile[]): {
 }
 
 export function writeTtmp2(data: ModpackData): Uint8Array {
+  // A PMP source can carry ExtraFiles (previews, readmes — PMP.cs:213-215); TTMP has no analogous
+  // container member (its payloads are byte offsets into a single .mpd, not zip members), and
+  // /upgrade never converts formats, so no golden exists for what a TTMP write of one should do.
+  // Fail loud rather than silently drop it, consistent with buildBlob's absent-file guard below.
+  if (data.extraFiles && data.extraFiles.size > 0) {
+    throw new Error(
+      `ttmp2: cannot write ExtraFiles (${data.extraFiles.size}) — TTMP has no equivalent container member`,
+    );
+  }
   const files = allFiles(data);
   const { blob, place } = buildBlob(files);
 

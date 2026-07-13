@@ -285,7 +285,14 @@ describe("readPmp ExtraFiles (PMP.cs:213-215)", () => {
     expect(data.extraFiles).toBeUndefined();
   });
 
-  it("does not treat a member referenced only via a trailing-dot Files value as an extra", () => {
+  it("DOES treat a member referenced only via a trailing-dot Files value as an extra too (PMP.cs:196/:209/:214)", () => {
+    // TexTools' allPmpFiles (PMP.cs:196/:209) is the RAW Files value, `.ToLower()`'d only — no
+    // trailing dot/space trim — compared (PMP.cs:214) against the on-disk relative path, which NTFS
+    // already trimmed by the time LoadPMP's ExtraFiles scan runs (PMP.cs:76 unzips first). So a
+    // trailing-dot Files value never matches that already-trimmed name: the SAME file is both a
+    // resolved payload (the windowsPathKey lookup one section up tolerates the trailing dot) AND
+    // an ExtraFile. This looks odd but is the faithfully-reproduced TexTools behaviour, not a bug —
+    // see the design spec and the ExtraFiles-scan doc comment in src/container/pmp.ts.
     const strippedEntry = `Optional/Rose acc/${gamePath}`;
     const filesValue = `optional\\rose acc.\\${gamePath.replace(/\//g, "\\")}`;
     const meta = {
@@ -311,7 +318,15 @@ describe("readPmp ExtraFiles (PMP.cs:213-215)", () => {
     ]);
 
     const data = readPmp(writeZip(entries));
-    expect(data.extraFiles).toBeUndefined();
+    // Resolved as a payload...
+    const f = allFiles(data).find((x) => x.gamePath === gamePath);
+    expect(f?.data).toEqual(extraPayload);
+    // ...AND also captured as an ExtraFile, per the untrimmed PMP.cs:214 comparison. The archive
+    // member name here has no trailing dot/space of its own, so windowsPathKey reduces to a plain
+    // case-fold (matching the extraFiles map key, src/container/pmp.ts).
+    expect(data.extraFiles?.get(strippedEntry.toLowerCase())).toEqual(
+      extraPayload,
+    );
   });
 
   it("never treats meta.json/default_mod.json/group_*.json as extras", () => {

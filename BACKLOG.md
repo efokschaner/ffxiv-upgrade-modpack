@@ -16,6 +16,19 @@ highest-priority first. Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods
 
 ## Unprioritized
 
+- **Port IBM437 (CP437) zip entry-name decoding, matching `Ionic.Zip`.** `src/zip/zip.ts`'s
+  `readZip` currently THROWS when a zip entry's UTF-8 general-purpose flag (bit 11) is unset and
+  its raw name contains a byte >= 0x80, rather than silently decoding it: fflate's `unzipSync`
+  falls back to latin1 for that case, but TexTools unzips via `Ionic.Zip` (`IOUtil.UnzipFiles`,
+  `IOUtil.cs:625/654/669`), whose non-UTF-8 fallback is IBM437 — a different mapping above 0x7F, so
+  we would otherwise silently resolve a different member name than TexTools does. Porting a real
+  IBM437 decode table (256-entry byte→codepoint) would let these packs load, instead of failing
+  loud. **No pack in the corpus currently trips the throw** (real corpus mods use ASCII or
+  UTF-8-flagged names), so this is deferred until one does, or until we want to widen coverage
+  proactively. See `src/zip/zip.ts`'s `findNonUtf8HighByteEntryNames` doc comment for the full
+  reasoning, and the CRITICAL review finding that added the throw (PR for
+  `feat/pmp-absent-file-tolerance`, 2026-07-12).
+
 - **`modelRound` propagates a model-normalizer throw and kills the whole pack; TexTools drops just
   the file.** `src/upgrade/upgrade.ts` (`modelRound`) calls `requireBytes` + `normalizeModel`
   unguarded, so a throw from `normalizeModel` (an unported/unparseable model structure) propagates

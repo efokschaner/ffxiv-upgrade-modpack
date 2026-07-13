@@ -49,10 +49,14 @@ export function registerUpgradeCheck(pack: string): void {
         reference,
         confirmDivergence,
       );
+      // checkPayloadMembers's counts-only comparison assumes PMP's payload-member shape (every
+      // non-manifest zip entry). A TTMP noop's "TTMPD.mpd" is a single opaque blob, not a set of
+      // per-gamePath payload members like PMP's, so scope this to PMP noops only (see
+      // diffPayloadMembers' doc comment).
       const archive = diffArchives(
         oursArchive,
         goldenBytes,
-        golden.kind === "noop",
+        target === "pmp" && golden.kind === "noop",
       );
       const diff = { ...payload, files: [...payload.files, ...archive] };
       const key = oracleKey(bytes);

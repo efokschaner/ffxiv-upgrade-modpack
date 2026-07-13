@@ -1,4 +1,5 @@
 import { readZip } from "../../src/zip/zip";
+import { bytesEqual } from "./compare";
 import type { FileDiff } from "./upgrade-diff";
 
 const dec = new TextDecoder();
@@ -97,11 +98,18 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *     NOT covered — the two normalization fixes stay under test, and independently so: a future
  *     regression in `windowsPathKey` cannot silently agree with this rule, because this rule never
  *     calls it. **This is the actual guarantee** ("fails closed against a `windowsPathKey`
- *     regression"), not a blanket one: if we ever silently lost a member we shouldn't have — a
- *     decode bug in the shared `readZip` step, a bad `windowsPathKey`, a writer bug — that is no
+ *     regression"), not a blanket one: if we ever silently lost a member we shouldn't have — a bad
+ *     `windowsPathKey`, a writer bug dropping something no `Files`/`Image` field names — that is no
  *     longer this rule's problem to catch: `diffArchives`' payload-member comparison (below) catches
- *     a lost member directly, by name, regardless of cause. That is what replaced the previous
- *     orphan-payload-member guard here (see git history / the design spec §4.1 for that episode);
+ *     a member the WRITER dropped (present on one side's archive, absent from the other's) directly,
+ *     by name. It does NOT cover every conceivable cause of a lost member — in particular, an entry
+ *     name fflate and TexTools' Ionic.Zip/IBM437 fallback would decode differently (a byte >= 0x80
+ *     with the zip's UTF-8 flag unset) is caught earlier and separately, by `readZip` itself
+ *     throwing (src/zip/zip.ts) rather than by any comparison here: ExtraFiles re-emits a
+ *     mis-decoded member as an "extra" under its (wrong) decoded name, so the member count would
+ *     still balance and this comparison would see nothing to flag. That is what replaced the
+ *     previous orphan-payload-member guard here (see git history / the design spec §4.1 for that
+ *     episode);
  *   - only a key MISSING from ours is covered; a changed value is still a mismatch;
  *   - every other field is still deep-equal'd.
  *  It is inert whenever ConsoleTools actually wrote the golden: TexTools dropped the key there too,
@@ -162,18 +170,25 @@ function payloadNames(members: Map<string, Uint8Array>): string[] {
   return [...members.keys()].filter((n) => !isManifest(n));
 }
 
-/** Multiset-compare payload (non-manifest) member NAMES between our archive and the golden,
- *  bucketed by `looseKey` so a legitimate spelling difference (case, a stripped trailing dot) is
- *  not flagged — the same normalization `dropConfirmedAbsentKeys` uses to decide "does this zip path
- *  resolve to a member of this archive". This is what makes the orphan-payload-member guard that
- *  used to live here unnecessary: that guard existed because the drop confirmation above only ever
- *  looks at `Files` keys, so a member lost for any OTHER reason (a decode bug mangling a name, a
- *  writer bug dropping an `ExtraFile` no `Files`/`Image` field ever referenced — PMP.cs:213-215) was
- *  invisible to it. Comparing the member-name sets directly catches exactly that, per member, and
- *  regardless of cause — see the regression test in upgrade-archive-diff.test.ts pinning the
- *  "silently lost an unreferenced member" hole this replaces.
+/** Multiset-compare payload (non-manifest) member NAMES (and, for matched pairs, BYTES) between our
+ *  archive and the golden, bucketed by `looseKey` so a legitimate spelling difference (case, a
+ *  stripped trailing dot) is not flagged — the same normalization `dropConfirmedAbsentKeys` uses to
+ *  decide "does this zip path resolve to a member of this archive". This is what makes the
+ *  orphan-payload-member guard that used to live here unnecessary: that guard existed because the
+ *  drop confirmation above only ever looks at `Files` keys, so a member the WRITER silently dropped
+ *  for any OTHER reason (e.g. a writer bug dropping an `ExtraFile` no `Files`/`Image` field ever
+ *  referenced — PMP.cs:213-215) was invisible to it. Comparing the member-name sets directly catches
+ *  a member missing on one side, per member — see the regression test in
+ *  upgrade-archive-diff.test.ts pinning the "silently lost an unreferenced member" hole this
+ *  replaces. It does NOT catch every way a member could be wrong: an entry name fflate would decode
+ *  differently than TexTools' Ionic.Zip/IBM437 fallback (a byte >= 0x80 with the UTF-8 flag unset)
+ *  never reaches this comparison at all — `readZip` throws on it first (src/zip/zip.ts) rather than
+ *  silently producing a name for this function to compare.
  *
- *  Reported as `structure` diffs, same as a missing/extra manifest member above. */
+ *  Reported as `structure` diffs, same as a missing/extra manifest member above, except a
+ *  content-mismatched matched pair, reported as `mismatch` (Minor 4: content was previously
+ *  unchecked here — a corrupted or swapped extra, which has no `gamePath` for `diffUpgrade` to
+ *  catch it under, was invisible). */
 function diffPayloadMembers(
   ours: Map<string, Uint8Array>,
   golden: Map<string, Uint8Array>,
@@ -194,6 +209,23 @@ function diffPayloadMembers(
     const os = (ob.get(key) ?? []).slice().sort();
     const gs = (gb.get(key) ?? []).slice().sort();
     const n = Math.min(os.length, gs.length);
+    // Matched pairs (same looseKey bucket, paired in sorted order): compare BYTES. Names alone
+    // proved a member exists on both sides, but content was never diffed anywhere else — extras
+    // have no `gamePath`, so `diffUpgrade` (keyed by gamePath) cannot see them, and a corrupted or
+    // swapped extra would otherwise pass silently (Minor 4).
+    for (let i = 0; i < n; i++) {
+      const oBytes = ours.get(os[i]!)!;
+      const gBytes = golden.get(gs[i]!)!;
+      if (!bytesEqual(oBytes, gBytes)) {
+        diffs.push({
+          kind: "structure",
+          gamePath: gs[i]!,
+          index: 0,
+          status: "mismatch",
+          detail: `${oBytes.length} vs ${gBytes.length} bytes`,
+        });
+      }
+    }
     // Extra golden members past the shared count are ones ours is missing; extra "ours" members
     // past the shared count are ones ours has that the golden doesn't. Orientation matches the
     // manifest-name diff above: golden-only => "added", ours-only => "removed".
@@ -225,13 +257,18 @@ function diffPayloadMembers(
  * See docs/superpowers/specs/2026-07-08-modpack-serialization-parity-design.md §3.
  *
  * `checkPayloadMembers` additionally compares the *names* of non-manifest members (see
- * `diffPayloadMembers`). Callers should only pass `true` on a no-op upgrade: when ConsoleTools
- * actually wrote the golden it regenerates every payload member's name as
- * `<optionPrefix><gamePath>` (and lowercases extras) where our writer reuses the source pack's own
- * names — a real, pre-existing, and separately tracked divergence (BACKLOG.md: "`writePmp`
- * round-trips the source pack where TexTools *regenerates* it"). Turning this comparison on for a
- * real golden would light up that unrelated, already-known gap instead of anything this change is
- * about, so it stays off there. */
+ * `diffPayloadMembers`). Callers should only pass `true` for a PMP no-op upgrade — two separate
+ * reasons, both about what "payload member" means:
+ *  - PMP only: `isManifest` counts `.mpl` but not `.mpd`, so a TTMP's single opaque `TTMPD.mpd`
+ *    blob is not a PMP-shaped "payload member" (a per-gamePath zip entry) at all — turning this on
+ *    for TTMP would compare the wrong thing (and any OTHER member in a source `.ttmp2`/`.ttmp`
+ *    archive, which `writeTtmp2` has no analogue for, would produce a spurious diff).
+ *  - No-op only: when ConsoleTools actually wrote the golden it regenerates every payload member's
+ *    name as `<optionPrefix><gamePath>` (and lowercases extras) where our writer reuses the source
+ *    pack's own names — a real, pre-existing, and separately tracked divergence (BACKLOG.md:
+ *    "`writePmp` round-trips the source pack where TexTools *regenerates* it"). Turning this
+ *    comparison on for a real golden would light up that unrelated, already-known gap instead of
+ *    anything this change is about, so it stays off there. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
