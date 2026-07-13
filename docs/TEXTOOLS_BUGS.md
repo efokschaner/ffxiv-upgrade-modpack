@@ -179,7 +179,8 @@ bumped into the slot meant for page 0 — is pinned separately by case 9.
 
 ## 8. Missing files all share the zero hash, perturbing dedup paths
 
-**Status:** **not reached** · **Where:** `PmpExtensions.cs:509-514` + `:537-551`
+**Status:** reproduced · **Where:** `PmpExtensions.cs:509-514` + `:537-551` (see
+`src/container/resolve-duplicates.ts`)
 
 `ResolveDuplicates` guards a file whose `RealPath` doesn't exist by assigning it a **default
 (all-zero) `SHA1HashKey`** instead of hashing it. Two or more absent files therefore collide as
@@ -195,7 +196,12 @@ next **genuine** duplicate (two really-identical present files) is relocated int
 of `common/1/…` — an observable member-name difference between our output and TexTools' that survives
 the write-time drop and would need reproducing if we ever port `ResolveDuplicates` (see `BACKLOG.md`).
 
-**Us:** not reached — we don't port `ResolveDuplicates`.
+**Us:** `resolveDuplicates` inserts the same all-zero sentinel hash for a byte-less
+`ModpackFile` (`data === undefined`) and lets it dedupe against every other absent file, burning
+`idx` values exactly as the C# does; a later genuine duplicate's `common/N` numbering shifts to
+match. Pinned by `test/container/resolve-duplicates.test.ts` case 6. Absent files are still excluded
+from the function's returned map — that is `PopulatePmpStandardOption`'s separate `!File.Exists`
+guard (`PMP.cs:883-888`), which does not undo the `idx` this bug already spent.
 
 **Upstream fix:** exclude missing files from the dedup set instead of hashing them to a shared
 sentinel.
