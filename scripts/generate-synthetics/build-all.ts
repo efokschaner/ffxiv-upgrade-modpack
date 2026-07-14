@@ -9,3 +9,4 @@ import "./build-synthetic-case-mismatch";
 import "./build-synthetic-trailing-dot";
 import "./build-synthetic-absent-file";
 import "./build-synthetic-absent-file-upgraded";
+import "./build-synthetic-selection-type";
