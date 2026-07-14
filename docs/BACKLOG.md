@@ -162,6 +162,12 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   on would hard-fail uncached every run. Deferred until one does.
 - [Serial cache-warm entry point for the corpus](backlog/2026-07-12-corpus-cache-warm-entry-point.md)
   — a cold corpus still pays for each ConsoleTools spawn serially inside the parallel test run.
+- [Nothing prunes baselines/goldens for packs that no longer exist](backlog/2026-07-14-orphaned-baseline-cache-entries.md)
+  — they are keyed by `sha256(input pack)`, so re-keying a pack strands its old entries (4 baselines,
+  13 cached goldens today). Cheap in disk, but it makes the file counts lie during a bless. The trap:
+  the corpus is gitignored and often partial, so a naive "delete what no pack references" pruner would
+  wipe every real pack's baseline on a fresh clone — and a missing baseline reads as "no known
+  divergences", not as an error.
 - [Audit temp-dir usage for leaks](backlog/2026-07-10-temp-dir-leaks.md) — several `mkdtempSync`
   sites never remove their directory; the two worst run on every `npm test`.
 - [Vet page-load and upgrade-operation performance](backlog/2026-07-11-webapp-performance-vetting.md)
