@@ -115,8 +115,8 @@ function writtenMpl(data: ModpackData): ModPackJson {
 }
 
 // WizardData.cs:652 — `tGroup.SelectionType == "Single" ? Single : Multi`. The comparison is against
-// "Single" ONLY, so every other value — including the "Single Selection" spelling this port once
-// invented, and an absent key — lands on Multi.
+// "Single" only, so every other value — an unrecognized string, an absent key — lands on Multi.
+// ConsoleTools confirms each row: test/corpus/synthetic/selection-type{,-absent}.ttmp2.
 describe("readTtmp2 SelectionType (WizardData.cs:652)", () => {
   it.each([
     ["Single", "Single"],
@@ -141,8 +141,8 @@ describe("writeTtmp2 SelectionType (WizardData.cs:877/:419)", () => {
   it.each([
     ["Single", "Single"],
     ["Multi", "Multi"],
-    // Not "Single", therefore Multi — the case a guard on "unrecognized" values would have wrongly
-    // thrown on. FromPMPGroup (:769) collapses it exactly this way.
+    // A PMP group type reaching the TTMP writer: not "Single", so it collapses to Multi, exactly as
+    // FromPMPGroup (:769) collapses it on the way in.
     ["Combining", "Multi"],
   ])("writes %j as %j at group and option level", (input, expected) => {
     const mpl = writtenMpl(dataWith(input));
@@ -151,7 +151,8 @@ describe("writeTtmp2 SelectionType (WizardData.cs:877/:419)", () => {
     expect(g.OptionList[0]!.SelectionType).toBe(expected);
   });
 
-  it("never writes the invented '… Selection' spelling", () => {
+  // EOptionType.ToString() can only ever yield the bare enum name, never a "… Selection" string.
+  it("writes only the bare enum name", () => {
     const raw = dec.decode(
       readZip(writeTtmp2(dataWith("Multi"))).get("TTMPL.mpl")!,
     );
