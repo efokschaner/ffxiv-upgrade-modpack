@@ -305,10 +305,12 @@ survives.
   `/resave` residual (a payload length mismatch, a multiple of the 80-byte null-padding chunk —
   this fixup's signature, not `FixOldTexData`'s).
 - **The write-side oracle's biggest catch wasn't in this spec's scope at all.** Building the
-  `/resave` oracle (§4.3, item B) to prove the writer port surfaced `writeTtmp2` writing the
-  legacy `"Multi Selection"`/`"Single Selection"` `SelectionType` spelling — which our *reader*
-  never matched (`"Multi Selection"` != the modern bare `"Multi"`/`"Single"` TexTools actually
-  writes), so every `Multi`-select group we ever emitted was silently downgraded to single-select.
+  `/resave` oracle (§4.3, item B) to prove the writer port surfaced `writeTtmp2` writing a
+  `"Multi Selection"`/`"Single Selection"` `SelectionType` spelling that **TexTools has never
+  written or read** — it exists only in two doc-comments (`ModGroup.cs:32`, `ModPackJson.cs:144`),
+  and the port had coded the comment instead of the code (`WizardData.cs:652`). Our *reader* never
+  matched the bare `"Multi"`/`"Single"` TexTools actually writes, so every `Multi`-select group we
+  ever emitted was silently downgraded to single-select.
   Worse: 643 `SelectionType` JSON-pointer diffs were **already sitting blessed** in the
   `/upgrade` ratchet baselines (`test/corpus/.upgrade-baseline/`) across 36 packs, invisible
   because the harness used to report one opaque manifest-mismatch token per document (Task 2's
@@ -316,8 +318,8 @@ survives.
   branch for why the harness-first sequencing (§4.4) mattered: a real, user-facing shipping
   defect had been passing the ratchet for who knows how long, and only became *legible* — greppable,
   nameable, countable — once the reporting granularity was fine enough to say what, specifically,
-  was different. Filed as the (still-open, deliberately not fixed here) top item in
-  `docs/BACKLOG.md`'s Prioritized section.
+  was different.
+  Fixed on its own branch; see `docs/superpowers/specs/2026-07-13-ttmp2-selection-type-design.md`.
 - **Turning on `checkPayloadMembers` for every PMP (harness fix C, done in Task 9) surfaced no new
   bug.** Every new diff it produced on the three real packs it touched
   (`Westlaketea's Constellation Crown`, `[Jaque] Marcellus`, `[Jaque] Romeo & Juliet`) traced

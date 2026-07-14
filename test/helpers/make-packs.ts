@@ -95,14 +95,14 @@ export function makeTtmp2Wizard(): SyntheticPack {
         ModGroups: [
           {
             GroupName: "Choice",
-            SelectionType: "Single Selection",
+            SelectionType: "Single",
             OptionList: [
               {
                 Name: "A",
                 Description: "",
                 ImagePath: "",
                 GroupName: "Choice",
-                SelectionType: "Single Selection",
+                SelectionType: "Single",
                 ModsJsons: [
                   {
                     Name: "Body",
@@ -120,7 +120,7 @@ export function makeTtmp2Wizard(): SyntheticPack {
                 Description: "",
                 ImagePath: "",
                 GroupName: "Choice",
-                SelectionType: "Single Selection",
+                SelectionType: "Single",
                 ModsJsons: [
                   {
                     Name: "Mat",

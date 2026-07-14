@@ -36,13 +36,7 @@ Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port �
 pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
 `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [`writeTtmp2` writes the legacy `SelectionType` spelling](backlog/2026-07-13-ttmp2-selection-type-spelling.md)
-   — our reader only understands `"Multi Selection"` and modern TexTools writes the bare `"Multi"`,
-   so a mod author's multi-select group is silently downgraded to single-select in the pack we emit.
-   A functional regression for whoever installs it, not a byte-parity nit. Already blessed into 36
-   packs' `/upgrade` baselines. Fix: accept both spellings on read, write the bare enum name.
-
-2. [Partials round](backlog/2026-07-08-partials-round.md) — `partials` (`src/upgrade/upgrade.ts`) is
+1. [Partials round](backlog/2026-07-08-partials-round.md) — `partials` (`src/upgrade/upgrade.ts`) is
    a no-op stub for `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap
    round 6). Needs bundled reference assets (eye textures, iris `(race,face)→path`, canonical
    hair/ear/tail sampler tables); no corpus coverage exercises it yet.

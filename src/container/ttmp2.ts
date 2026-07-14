@@ -98,8 +98,9 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
         image: "",
         page: page.PageIndex,
         priority: 0,
-        selectionType:
-          g.SelectionType === "Multi Selection" ? "Multi" : "Single",
+        // WizardData.cs:652 — `tGroup.SelectionType == "Single" ? Single : Multi`. The comparison is
+        // against "Single" only, so every other value — including an absent one — is Multi.
+        selectionType: g.SelectionType === "Single" ? "Single" : "Multi",
         defaultSettings: 0,
         options: g.OptionList.map((o) => ({
           name: o.Name,
@@ -197,20 +198,30 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   } else {
     const byPage = new Map<number, TtmpModGroupJson[]>();
     for (const g of data.groups) {
+      // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
+      // Groups.") as its first statement, before it builds the ModGroup or visits any option.
+      // `selectionType === "Imc"` stands in for GroupType == EGroupType.Imc (:609-618), as at
+      // option-prefix.ts:288 and pmp.ts:485. Only a PMP source carries an Imc group, and /upgrade
+      // never converts formats, so this is unreachable today.
+      if (g.selectionType === "Imc") {
+        throw new Error("ttmp2: TTMP Does not support IMC Groups.");
+      }
+      // WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()` over
+      // EOptionType { Single, Multi } (:25-29), the enum both readers collapse the raw string into at
+      // load (:652 TTMP, :769 PMP). So any non-"Single" value — "Combining" included — writes as
+      // "Multi". An option has no type of its own: it delegates to its group (:335-341), so the same
+      // value is written at both levels.
+      const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
       const list = byPage.get(g.page) ?? [];
       list.push({
         GroupName: g.name,
-        SelectionType:
-          g.selectionType === "Multi" ? "Multi Selection" : "Single Selection",
+        SelectionType: selectionType,
         OptionList: g.options.map((o) => ({
           Name: o.name,
           Description: o.description,
           ImagePath: o.image,
           GroupName: g.name,
-          SelectionType:
-            g.selectionType === "Multi"
-              ? "Multi Selection"
-              : "Single Selection",
+          SelectionType: selectionType,
           ModsJsons: o.files.map(modOf),
         })),
       });
