@@ -94,15 +94,43 @@ value — explicitly *not* an accommodation for a "legacy spelling", so the phan
 reintroduced by someone helpfully "fixing" the asymmetry later.
 
 **Writer** — the bare enum name (`OptionType.ToString()`) at group and option level, both taken from
-the group, per `:877`/`:419`/`:335-341`.
+the group, per `:877`/`:419`/`:335-341`. That means the *same collapse the reader performs*:
 
-**Writer guard** — throw on a `selectionType` outside `{Single, Multi}`. `Imc`/`Combining` are PMP
-group types (`src/container/pmp.ts:214` carries `g.Type` through verbatim) and can only reach
-`writeTtmp2` via a PMP→TTMP conversion, which `/upgrade` never performs. C# does not silently coerce
-such an option either — `WizardOptionEntry.ToModOption` throws `NotImplementedException` on it
-(`WizardData.cs:423-426`). Mapping `Imc → "Single"` would be exactly the silent divergence
-`AGENTS.md` forbids; failing loud is the house rule, and it is consistent with `writeTtmp2`'s
-existing `extraFiles` and absent-file guards.
+```ts
+SelectionType: g.selectionType === "Single" ? "Single" : "Multi",
+```
+
+**Two axes, not one — and C# keeps them separate.** Both C# readers collapse the raw type string
+into the two-valued `EOptionType` **at load** — `WizardData.cs:652` (TTMP) and `:769` (PMP,
+`pGroup.Type == "Single" ? Single : Multi`). C# never retains an `"Imc"` or `"Combining"`
+*option-type* anywhere. Imc-ness rides a separate axis: `ImcData != null` → `GroupType`
+(`:609-618`), set by `FromPMPGroup` only for a `PMPImcGroupJson` (`:784-787`).
+
+Our `ModpackGroup.selectionType` **blends those two axes into one string** (`"Single" | "Multi" |
+"Imc" | "Combining"`), because `src/container/pmp.ts:214` carries PMP's `Type` through verbatim and
+the PMP writer needs it back verbatim for byte-parity. That blend is ours, not TexTools'. It is
+retained (unpicking it would ripple through the PMP writer for no byte-parity gain), but it must not
+leak into behaviour, so the TTMP writer reproduces C#'s two axes explicitly:
+
+- **Option type** → the collapse above. `"Combining"` is not `"Single"`, so it writes as `"Multi"` —
+  which is exactly what C# does, and why an earlier draft of this spec was wrong to propose throwing
+  on it.
+- **Imc-ness** → `writeTtmp2` throws when an option's group is Imc, reproducing
+  `WizardOptionEntry.ToModOption` (`WizardData.cs:423-426`), which throws
+  `NotImplementedException("TTMP Export does not support one or more of the selected Option types.")`
+  when `StandardData == null` — true precisely for an Imc group's options. The test is
+  `g.selectionType === "Imc"`, the same stand-in for `GroupType == EGroupType.Imc` already used at
+  `option-prefix.ts:288` and `pmp.ts:485` (both citing `WizardData.cs:1513-1516`).
+
+Unreachable in `/upgrade` either way — only a PMP→TTMP conversion could get there, and `/upgrade`
+never converts formats — but reproduced because it is TexTools' behaviour, not invented because it
+seemed safe.
+
+> **A guard is a ported behaviour like any other.** The first draft of this spec proposed throwing on
+> any `selectionType` outside `{Single, Multi}`. That guard has no C# counterpart, and it would have
+> thrown on `"Combining"`, which TexTools handles fine. It was the same mistake as §3 — inventing
+> behaviour that felt right instead of porting the behaviour that exists — committed one section
+> after diagnosing it. Fail-loud does not license a throw the C# does not have.
 
 ## 5. Scrubbing the phantom
 
@@ -180,7 +208,9 @@ pack flows into both harnesses with no wiring.
 
 - Reader: the four-way mapping of §6.2's table, citing `WizardData.cs:652`.
 - Writer: bare `"Single"`/`"Multi"` at group **and** option level.
-- Writer guard: an `Imc` group throws.
+- Writer collapse: a `"Combining"` group writes as `"Multi"` — the case the retracted guard would
+  have wrongly thrown on, so it is pinned deliberately.
+- Writer Imc throw: an `Imc` group throws, reproducing `ToModOption` (`WizardData.cs:423-426`).
 
 ## 7. Risks and sequencing
 
