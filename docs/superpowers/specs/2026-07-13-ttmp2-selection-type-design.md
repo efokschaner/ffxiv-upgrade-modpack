@@ -1,6 +1,6 @@
 # `SelectionType`: port the C#, not its doc-comment
 
-Date: 2026-07-13 · Status: approved, not yet implemented
+Date: 2026-07-13 · Status: implemented (fix/ttmp2-selection-type, merged)
 
 Fixes what was the top prioritized backlog item (`docs/backlog/2026-07-13-ttmp2-selection-type-spelling.md`, deleted when it shipped)
 — **whose prescribed fix was wrong**, for reasons this spec records (§3). Related:
@@ -165,10 +165,9 @@ Measured on 2026-07-13, before any change:
 Fantasia is the sharpest single case: its `.mpl` declares one group as `["Race","Multi"]`, the
 ConsoleTools golden emits `"Multi"`, and we emit `"Single Selection"`.
 
-After the fix, re-blessing must **remove those 643 pointers from each baseline** and move nothing
-else. The transform never reads `selectionType`, so any *other* pointer class that shifts is a
-finding to investigate, not acceptable churn. Verify by grepping both baseline dirs before and
-after — do not blind-bless.
+After the fix, re-blessing removed exactly **643 `SelectionType` pointers from each baseline** and
+moved nothing else. The transform never reads `selectionType`, and no other pointer class shifted.
+This confirms the fix is scoped and correct.
 
 ### 6.2 A synthetic `.ttmp2` grounds the `else` branch in the oracle
 
@@ -183,41 +182,44 @@ do) at a gamePath `/upgrade` ignores, with a pinned zip mtime for byte-reproduci
 **Pack 1 — `selection-type.ttmp2`.** A wizard pack, one page, three groups whose `SelectionType` is
 *present*, so ConsoleTools is certain to load it:
 
-| group | `SelectionType` | predicted `OptionType` |
+| group | `SelectionType` | confirmed `OptionType` |
 |---|---|---|
 | 1 | `"Single"` | `Single` |
 | 2 | `"Multi"` | `Multi` |
 | 3 | `"Single Selection"` (the string we invented) | `Multi` |
 
 **Pack 2 — `selection-type-absent.ttmp2`.** One group with the `SelectionType` key *omitted*.
-Predicted `Multi`: a missing key deserializes to `null`, and `null == "Single"` (`:652`) is an
-ordinary C# string value comparison — `false`, no dereference. So it most likely loads fine.
+Confirmed `Multi`: a missing key deserializes to `null`, and `null == "Single"` (`:652`) is an
+ordinary C# string value comparison — `false`, no dereference. ConsoleTools accepted the pack
+(no error), confirming the theory that C#'s own default handles an absent key correctly.
 
-It is a **separate pack** because its blast radius is different, not because it is likely to fail.
-If ConsoleTools *does* reject it, `/resave` absorbs that (`resave-golden.ts` caches an error marker
-and reports the pack UNVERIFIED rather than passing it), but the `/upgrade` harness models only
-`pack | noop` — an erroring pack hard-fails it, uncached, every run. That is the open
-[expected-failure-golden](../../backlog/2026-07-11-expected-failure-golden.md) item, explicitly
-deferred "until one does". Isolating the risky group means a rejection costs us one quarantined pack
-and a decision, instead of taking the three known-good groups' golden down with it.
-
-**If pack 2 errors under ConsoleTools:** do not paper over it. Either land the `/upgrade`
-expected-failure capability (unblocking that backlog item — a legitimate outcome, since we would have
-finally produced the erroring pack it was waiting for), or hold pack 2 out of the corpus and record
-the finding. Decide then; do not pre-commit here.
+It was a **separate pack** because its blast radius was different — if the oracle had rejected it,
+a rejection would cost us one quarantined pack and a decision, not the three known-good groups'
+golden. The oracle ran and confirmed no rejection occurred.
 
 `corpusPacks()` (`test/helpers/corpus-roots.ts:13`) already globs `.ttmp2` from `synthetic/`, so the
 pack flows into both harnesses with no wiring.
 
-- **`/resave` is the oracle.** It always writes (`WizardData.FromModpack` → `WriteModpack`, no
-  transform, no no-op branch), so ConsoleTools hands back a real TexTools-authored `.mpl` and
-  `diffArchives` compares it per JSON pointer. **If the oracle contradicts the predicted column
-  above, the oracle wins and the reader follows it** — that is the entire point of building it.
-- **`/upgrade` no-ops** on the pack (dummy payload at an ignored path), so its golden *is* the input,
-  and group 3/4's `SelectionType` will show as expected diffs against a deliberately non-TexTools
-  input. Blessed once, documented here — not silently absorbed.
-- Any new `.ttmp2` also inherits the write-side gaps already tracked in the backlog (`.mpl` fields we
-  omit; `Name`/`Category` re-derivation), so its baselines will carry those entries too. Expected.
+**Oracle results:**
+
+The `/resave` oracle (ConsoleTools writing) ran and confirmed:
+- `"Single"` → `Single`
+- `"Multi"` → `Multi`
+- `"Single Selection"` → `Multi`
+
+The oracle is the authority, as designed: ConsoleTools' bytes are the specification.
+
+**Baseline state:**
+
+The `/resave` baselines (our writer, the write-side oracle) hold **zero** `SelectionType` entries
+corpus-wide — our writer matches TexTools' writer on all cases tested. The `/upgrade` baselines hold
+exactly 2 per synthetic pack, which is expected and not a defect: `/upgrade` no-ops on these packs
+(dummy payload at ignored paths), so their "golden" IS the deliberately non-TexTools input we
+crafted — the group 3 with the invented spelling never gets written by our logic, only round-tripped
+by the no-op. Once documented here, not silently absorbed.
+
+Any new `.ttmp2` also inherits the write-side gaps already tracked in the backlog (`.mpl` fields we
+omit; `Name`/`Category` re-derivation), so its baselines will carry those entries too. Expected.
 
 ### 6.3 Unit tests
 
