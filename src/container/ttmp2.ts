@@ -202,18 +202,14 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   } else {
     const byPage = new Map<number, TtmpModGroupJson[]>();
     for (const g of data.groups) {
-      // WizardData.cs:423-426 — ToModOption throws NotImplementedException("TTMP Export does not
-      // support one or more of the selected Option types.") when StandardData is null, which is
-      // true exactly for an Imc group's options (StandardData returns null unless GroupType ==
-      // Standard, :375-386; GroupType is Imc iff ImcData != null, :609-618). Only a PMP source
-      // carries an Imc group and /upgrade never converts formats, so this is unreachable today.
-      // Reproduced because it is TexTools' behaviour — not invented as a defensive guard.
+      // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
+      // Groups.") at its first statement, before it builds the ModGroup or visits any option. Only
+      // a PMP source carries an Imc group and /upgrade never converts formats, so this is unreachable
+      // today. Reproduced because it is TexTools' behaviour — not invented as a defensive guard.
       // `selectionType === "Imc"` is the same stand-in for GroupType used at option-prefix.ts:288
       // and pmp.ts:485.
       if (g.selectionType === "Imc") {
-        throw new Error(
-          "ttmp2: TTMP Export does not support one or more of the selected Option types.",
-        );
+        throw new Error("ttmp2: TTMP Does not support IMC Groups.");
       }
       // WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()`, where
       // OptionType is EOptionType { Single, Multi } (:25-29), the two-valued enum BOTH readers

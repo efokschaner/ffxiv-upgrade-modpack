@@ -116,10 +116,10 @@ leak into behaviour, so the TTMP writer reproduces C#'s two axes explicitly:
   which is exactly what C# does, and why an earlier draft of this spec was wrong to propose throwing
   on it.
 - **Imc-ness** → `writeTtmp2` throws when an option's group is Imc, reproducing
-  `WizardOptionEntry.ToModOption` (`WizardData.cs:423-426`), which throws
-  `NotImplementedException("TTMP Export does not support one or more of the selected Option types.")`
-  when `StandardData == null` — true precisely for an Imc group's options. The test is
-  `g.selectionType === "Imc"`, the same stand-in for `GroupType == EGroupType.Imc` already used at
+  `WizardGroupEntry.ToModGroup` (`WizardData.cs:868-871`), which throws
+  `InvalidDataException("TTMP Does not support IMC Groups.")` at its first statement,
+  before it builds the ModGroup or visits any option. The test is `g.selectionType === "Imc"`,
+  the same stand-in for `GroupType == EGroupType.Imc` already used at
   `option-prefix.ts:288` and `pmp.ts:485` (both citing `WizardData.cs:1513-1516`).
 
 Unreachable in `/upgrade` either way — only a PMP→TTMP conversion could get there, and `/upgrade`

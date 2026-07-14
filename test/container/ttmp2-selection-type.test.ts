@@ -159,11 +159,11 @@ describe("writeTtmp2 SelectionType (WizardData.cs:877/:419)", () => {
     expect(raw).toContain('"SelectionType":"Multi"');
   });
 
-  // ToModOption throws NotImplementedException when StandardData is null (WizardData.cs:423-426),
-  // which is true exactly for an Imc group's options.
-  it("throws on an Imc group (ToModOption, WizardData.cs:423-426)", () => {
+  // ToModGroup throws InvalidDataException at its first statement (WizardData.cs:868-871),
+  // before it builds the ModGroup or visits any option.
+  it("throws on an Imc group (ToModGroup, WizardData.cs:868-871)", () => {
     expect(() => writeTtmp2(dataWith("Imc"))).toThrow(
-      /does not support one or more of the selected Option types/,
+      /TTMP Does not support IMC Groups/,
     );
   });
 });
