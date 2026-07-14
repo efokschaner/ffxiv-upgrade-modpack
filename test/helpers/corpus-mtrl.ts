@@ -1,31 +1,9 @@
-import { readFileSync } from "node:fs";
-import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadModpack } from "../../src/index";
-import {
-  allFiles,
-  FileStorageType,
-  type ModpackFile,
-} from "../../src/model/modpack";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import type { XivMtrl } from "../../src/mtrl/types";
-import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
+import { SqPackType } from "../../src/sqpack/sqpack";
 import { bytesEqual } from "./compare";
-
-/** A ModpackFile narrowed to the always-has-bytes SqPackCompressed variant. */
-type SqPackCompressedFile = Extract<
-  ModpackFile,
-  { storage: FileStorageType.SqPackCompressed }
->;
-
-function mtrlFiles(path: string): SqPackCompressedFile[] {
-  const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
-  return allFiles(data).filter(
-    (f): f is SqPackCompressedFile =>
-      f.storage === FileStorageType.SqPackCompressed &&
-      f.gamePath.toLowerCase().endsWith(".mtrl"),
-  );
-}
+import { decodedOfType, type PackContext } from "./corpus-decode";
 
 // A stable key for a parsed model, masking the additionalData[0] 0x08 dye flag that serialize
 // deterministically toggles (design §5.3). Two models with the same key carry identical semantic
@@ -53,20 +31,17 @@ function modelKey(m: XivMtrl): string {
 // our own output reproduces it byte-for-byte; and (2) SEMANTICALLY LOSSLESS — parse(original) and
 // parse(reserialized) are the same model modulo the 0x08 dye flag (see modelKey). A non-fixed-point
 // (unstable) or content-changing (semantic-break) result is a real codec bug and fails the test.
-export function registerMtrlChecks(pack: string): void {
-  const name = basename(pack);
+export function registerMtrlChecks(ctx: PackContext): void {
+  const { name } = ctx;
   describe(`mtrl corpus: ${name}`, () => {
     it(`round-trips or faithfully normalizes every .mtrl in ${name}`, () => {
-      const files = mtrlFiles(pack);
+      // Materials are Type 2 (Standard); the shared decode already ran (corpus-decode.ts).
+      const files = decodedOfType(ctx, SqPackType.Standard, ".mtrl");
       let exact = 0;
       let normalized = 0;
       const unstable: string[] = [];
       const semanticBreaks: string[] = [];
-      for (const f of files) {
-        // SqPackCompressed (filtered by mtrlFiles above) always carries bytes; only a PMP
-        // RawUncompressed entry can be absent (absent-file design spec §3.1).
-        const decoded = decodeSqPackFile(f.data);
-        if (decoded.type !== SqPackType.Standard) continue; // materials are Type 2
+      for (const { f, d: decoded } of files) {
         const re = serializeMtrl(parseMtrl(decoded.data, f.gamePath));
         if (bytesEqual(re, decoded.data)) {
           exact++;

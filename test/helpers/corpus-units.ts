@@ -4,15 +4,7 @@ import { corpusPacks } from "./corpus-roots";
 // runs NO test registration on import, so the Node-API runner can import it outside any test
 // worker. The vitest-dependent dispatch lives in corpus-register.ts (loaded only inside workers).
 
-export type CheckKind =
-  | "sqpack"
-  | "golden"
-  | "mtrl"
-  | "tex"
-  | "mdl"
-  | "geometry"
-  | "upgrade"
-  | "resave";
+export type CheckKind = "assets" | "golden" | "upgrade" | "resave";
 export interface Unit {
   pack: string;
   check: CheckKind;
@@ -20,9 +12,18 @@ export interface Unit {
 
 /**
  * Every (pack × check-family) work unit, in a stable order: packs sorted ascending, then per pack
- * the fixed check order [sqpack, golden, mtrl, tex, mdl, geometry, upgrade, resave]. sqpack is ONE
- * unit (its three tests share one decode via beforeAll). The index into this array is the virtual
+ * the fixed check order [assets, golden, upgrade, resave]. The index into this array is the virtual
  * module's identity.
+ *
+ * `assets` is ONE unit covering all five ASSET-LEVEL families (sqpack, mtrl, tex, mdl, geometry)
+ * over a single shared load + decode — see corpus-assets.ts. They were five separate units until
+ * 2026-07-14; each re-ran readFileSync -> loadModpack -> decodeSqPackFile in its own worker, which
+ * made the per-filetype checks ~95% duplicated inflate (the `tex` check spent 3951 ms re-decoding
+ * and 189 ms asserting on the biggest pack). Every assertion is retained; only the decode is shared.
+ *
+ * The three PACK-LEVEL checks stay separate units on purpose: they exercise the write path and the
+ * ConsoleTools oracles rather than the shared decode, and keeping them apart preserves the
+ * scheduling granularity the forks pool needs to fill all cores.
  *
  * There used to be a ninth, PMP-only "pmp" check (`registerPmpManifestChecks`, formerly
  * corpus-pmp.ts) that compared `writePmp(readPmp(x))` structurally against the SOURCE `x`. Retired
@@ -39,12 +40,8 @@ export interface Unit {
 export function enumerateUnits(): Unit[] {
   const units: Unit[] = [];
   for (const pack of corpusPacks()) {
-    units.push({ pack, check: "sqpack" });
+    units.push({ pack, check: "assets" });
     units.push({ pack, check: "golden" });
-    units.push({ pack, check: "mtrl" });
-    units.push({ pack, check: "tex" });
-    units.push({ pack, check: "mdl" });
-    units.push({ pack, check: "geometry" });
     units.push({ pack, check: "upgrade" });
     units.push({ pack, check: "resave" });
   }

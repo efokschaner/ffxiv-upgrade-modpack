@@ -1,7 +1,5 @@
 import { readFileSync } from "node:fs";
-import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadModpack } from "../../src/index";
 import {
   decodeVertexData,
   encodeIndices,
@@ -11,50 +9,48 @@ import {
   parseVertexDeclarations,
   transpose,
 } from "../../src/mdl/mdl";
-import {
-  allFiles,
-  FileStorageType,
-  type ModpackData,
-  type ModpackFile,
-} from "../../src/model/modpack";
+import type { ModpackData } from "../../src/model/modpack";
 import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
 import { bytesEqual } from "./compare";
+import {
+  compressedFilesOf,
+  decodedOfType,
+  type PackContext,
+} from "./corpus-decode";
 import { confirmDocumentedDivergence } from "./geometry-divergence";
 import { upgradeGoldenCached } from "./upgrade-golden";
 
-/** A ModpackFile narrowed to the always-has-bytes SqPackCompressed variant. */
-type SqPackCompressedFile = Extract<
-  ModpackFile,
-  { storage: FileStorageType.SqPackCompressed }
->;
-
-function mdlFilesOf(data: ModpackData): SqPackCompressedFile[] {
-  return allFiles(data).filter(
-    (f): f is SqPackCompressedFile =>
-      f.storage === FileStorageType.SqPackCompressed &&
-      f.gamePath.toLowerCase().endsWith(".mdl"),
-  );
+/** A decoded model: its game path and its decompressed .mdl bytes. */
+interface Model {
+  gamePath: string;
+  bytes: Uint8Array;
 }
 
-/** Byte-exact decode->transpose->encode over every mesh of every decodable model in `data`.
- *  Returns the count of models round-tripped (0 if none decodable). A byte mismatch is only
- *  tolerated when a re-decode of our re-encoded bytes is semantically identical to the source
- *  decode (confirmDocumentedDivergence) — i.e. the difference lies solely in the reference's own
- *  lossy channels (Half4 W / NaN-Inf clamp / NaN-UV / handedness). Any real divergence throws. */
-function roundTripModels(data: ModpackData, label: string): number {
-  let models = 0;
-  for (const f of mdlFilesOf(data)) {
-    let decoded: ReturnType<typeof decodeSqPackFile>;
+/** Decode the .mdl entries of a ModpackData we did NOT pre-decode (the /upgrade golden, for A2).
+ *  Tolerates an undecodable legacy model, exactly as the shared source decode does. */
+function goldenModels(data: ModpackData): Model[] {
+  const out: Model[] = [];
+  for (const f of compressedFilesOf(data)) {
+    if (!f.gamePath.toLowerCase().endsWith(".mdl")) continue;
     try {
-      // SqPackCompressed (filtered by mdlFilesOf above) is TTMP/PMP-compressed-only and always
-      // carries bytes; only a PMP RawUncompressed entry can be absent (absent-file design spec §3.1).
-      decoded = decodeSqPackFile(f.data);
+      const d = decodeSqPackFile(f.data);
+      if (d.type === SqPackType.Model)
+        out.push({ gamePath: f.gamePath, bytes: d.data });
     } catch {
-      continue; // tolerated undecodable legacy model (mirrors corpus-mdl)
+      // tolerated undecodable legacy model (mirrors the shared decode)
     }
-    if (decoded.type !== SqPackType.Model) continue;
-    const bytes = decoded.data;
-    const mdl = parseMdl(bytes, f.gamePath);
+  }
+  return out;
+}
+
+/** Byte-exact decode->transpose->encode over every mesh of every model in `models`.
+ *  Returns the count of models round-tripped. A byte mismatch is only tolerated when a re-decode of
+ *  our re-encoded bytes is semantically identical to the source decode (confirmDocumentedDivergence)
+ *  — i.e. the difference lies solely in the reference's own lossy channels (Half4 W / NaN-Inf clamp /
+ *  NaN-UV / handedness). Any real divergence throws. */
+function roundTripModels(models: Model[], label: string): number {
+  for (const { gamePath, bytes } of models) {
+    const mdl = parseMdl(bytes, gamePath);
     const layout = parseGeometryLayout(mdl);
     const decls = parseVertexDeclarations(mdl.vertexInfo, mdl.header.meshCount);
     for (let m = 0; m < layout.meshes.length; m++) {
@@ -84,7 +80,7 @@ function roundTripModels(data: ModpackData, label: string): number {
       );
       const srcIdx = bytes.subarray(io, io + idx.length);
 
-      const where = `${label} ${f.gamePath} mesh ${m}`;
+      const where = `${label} ${gamePath} mesh ${m}`;
       // Primary fast path: byte-exact on all three buffers.
       if (
         bytesEqual(stream0, src0) &&
@@ -124,35 +120,39 @@ function roundTripModels(data: ModpackData, label: string): number {
         `${where} ${which}: byte mismatch NOT confined to documented lossy channels (field: ${verdict.reason})`,
       ).toBe(true);
       console.log(
-        `[geometry] ${f.gamePath} mesh ${m}: expected divergence confirmed (source non-canonical bytes in normalized channels — Half4 W / handedness / NaN-UV — re-decode is semantically identical)`,
+        `[geometry] ${gamePath} mesh ${m}: expected divergence confirmed (source non-canonical bytes in normalized channels — Half4 W / handedness / NaN-UV — re-decode is semantically identical)`,
       );
     }
-    models++;
   }
-  return models;
+  return models.length;
 }
 
 // Sub-project A gate: decode->encode symmetry on real geometry. A1 runs on the corpus
-// SOURCE models (no oracle). A2 repeats on the cached /upgrade golden (Float-format),
-// proving the decoder/encoder on normalized data too. See the geometry-codec design spec.
-export function registerGeometryChecks(pack: string): void {
-  const name = basename(pack);
-  const bytes = () => new Uint8Array(readFileSync(pack));
+// SOURCE models (no oracle, and reuses the shared decode — see corpus-decode.ts). A2 repeats on the
+// cached /upgrade golden (Float-format), proving the decoder/encoder on normalized data too, and so
+// must decode that golden itself. See the geometry-codec design spec.
+export function registerGeometryChecks(ctx: PackContext): void {
+  const { name, pack } = ctx;
 
   describe(`geometry corpus: ${name}`, () => {
     it("A1 source round-trip: decode->encode is byte-exact per mesh", () => {
-      const n = roundTripModels(loadModpack(name, bytes()), "A1");
+      const models = decodedOfType(ctx, SqPackType.Model, ".mdl").map(
+        ({ f, d }) => ({ gamePath: f.gamePath, bytes: d.data }),
+      );
+      const n = roundTripModels(models, "A1");
       console.log(`[geometry] ${name}: A1 round-tripped ${n} source model(s)`);
     }, 1_200_000);
 
     it("A2 golden cross-check: decode->encode is byte-exact on Float-format goldens", () => {
-      const input = bytes();
-      const golden = upgradeGoldenCached(name, input);
+      const golden = upgradeGoldenCached(
+        name,
+        new Uint8Array(readFileSync(pack)),
+      );
       if (golden === null || golden.kind === "noop") {
         console.log(`[geometry] ${name}: A2 skipped (no golden / no-op)`);
         return;
       }
-      const n = roundTripModels(golden.data, "A2");
+      const n = roundTripModels(goldenModels(golden.data), "A2");
       console.log(`[geometry] ${name}: A2 round-tripped ${n} golden model(s)`);
     }, 1_200_000);
   });

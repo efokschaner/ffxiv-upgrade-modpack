@@ -1,20 +1,12 @@
-import { readFileSync } from "node:fs";
-import { basename } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadModpack } from "../../src/index";
+import { describe, expect, it } from "vitest";
 import {
-  allFiles,
-  FileStorageType,
-  type ModpackFile,
-} from "../../src/model/modpack";
-import {
-  type DecodedFile,
   decodeSqPackFile,
   encodeSqPackFile,
   SqPackType,
 } from "../../src/sqpack/sqpack";
 import { texMipSizes } from "../../src/sqpack/type4";
 import { bytesEqual } from "./compare";
+import type { PackContext } from "./corpus-decode";
 import { unwrapCached } from "./oracle";
 
 const TEX_HEADER_SIZE = 80;
@@ -43,91 +35,22 @@ function isPrefixRelation(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** A ModpackFile narrowed to the always-has-bytes SqPackCompressed variant. */
-type SqPackCompressedFile = Extract<
-  ModpackFile,
-  { storage: FileStorageType.SqPackCompressed }
->;
-
-function compressedFiles(path: string): SqPackCompressedFile[] {
-  const data = loadModpack(basename(path), new Uint8Array(readFileSync(path)));
-  return allFiles(data).filter(
-    (f): f is SqPackCompressedFile =>
-      f.storage === FileStorageType.SqPackCompressed,
-  );
-}
-
-/** The SQPack entry type is the int32 at offset 4 — readable without decompressing. */
-function entryType(f: SqPackCompressedFile): number {
-  // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
-  // RawUncompressed entry can be absent (absent-file design spec §3.1) — the type guarantees it here.
-  const data = f.data;
-  return new DataView(data.buffer, data.byteOffset, data.byteLength).getInt32(
-    4,
-    true,
-  );
-}
-
-/**
- * Decode a file, tolerating ONLY Type-4 (texture) decode failures. A tiny number of legacy textures
- * (imported by old TexTools with improper block spacing) trip the skip/rewind block-recovery heuristic;
- * our reader ports that heuristic faithfully from Dat.cs, so those files are undecodable by the reference
- * algorithm too. We log and tolerate them for Type 4, but any Type-2/3 decode failure is a hard error.
- */
-function decodeTolerant(
-  f: SqPackCompressedFile,
-  legacyTex: string[],
-): DecodedFile | null {
-  try {
-    // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
-    // RawUncompressed entry can be absent (absent-file design spec §3.1).
-    return decodeSqPackFile(f.data);
-  } catch (err) {
-    if (entryType(f) === SqPackType.Texture) {
-      legacyTex.push(`${f.gamePath} (${(err as Error).message})`);
-      return null;
-    }
-    throw err; // Type 2/3 must always decode.
-  }
-}
-
-/** One compressed inner file paired with its tolerant decode result — d is null iff a tolerated Type-4 failure. */
-interface PackEntry {
-  f: SqPackCompressedFile;
-  d: DecodedFile | null;
-}
-
-/** Register the three sqpack checks (decode-all, self round-trip, /unwrap oracle cross-check) for one
- * pack. The pack is read + parsed + decoded ONCE in beforeAll and shared by the three its; afterAll
- * releases the decoded data so per-worker memory stays at ~one pack. */
-export function registerSqpackChecks(pack: string): void {
-  const name = basename(pack);
+/** Register the three sqpack checks (decode-all, self round-trip, /unwrap oracle cross-check).
+ * The pack is loaded + decoded ONCE by corpus-assets.ts and shared via `ctx` — see corpus-decode.ts. */
+export function registerSqpackChecks(ctx: PackContext): void {
+  const { name } = ctx;
   describe(`sqpack corpus: ${name}`, () => {
-    let entries: PackEntry[] = [];
-    const legacyTex: string[] = [];
-
-    beforeAll(() => {
-      entries = compressedFiles(pack).map((f) => ({
-        f,
-        d: decodeTolerant(f, legacyTex),
-      }));
-    }, 1_200_000);
-
-    afterAll(() => {
-      entries = [];
-    });
-
     it(`decodes every compressed inner file in ${name}`, () => {
       let decoded = 0;
-      for (const { d } of entries) {
+      for (const { d } of ctx.entries) {
         if (d === null) continue;
         expect(d.data.length).toBeGreaterThan(0);
         decoded++;
       }
       console.log(
-        `[decode-all] ${name}: ${decoded}/${entries.length} decoded` +
-          (legacyTex.length
-            ? `; ${legacyTex.length} legacy Type-4 tolerated: ${legacyTex.join(", ")}`
+        `[decode-all] ${name}: ${decoded}/${ctx.entries.length} decoded` +
+          (ctx.legacyTex.length
+            ? `; ${ctx.legacyTex.length} legacy Type-4 tolerated: ${ctx.legacyTex.join(", ")}`
             : ""),
       );
     }, 1_200_000);
@@ -136,7 +59,7 @@ export function registerSqpackChecks(pack: string): void {
       const canonicalized: string[] = [];
       const testedByType = new Map<number, number>();
       const totalByType = new Map<number, number>();
-      for (const { f, d: first } of entries) {
+      for (const { f, d: first } of ctx.entries) {
         if (first === null) continue;
         totalByType.set(first.type, (totalByType.get(first.type) ?? 0) + 1);
         if ((testedByType.get(first.type) ?? 0) >= SELF_CAP_PER_TYPE) continue;
@@ -187,13 +110,11 @@ export function registerSqpackChecks(pack: string): void {
 
     it(`matches /unwrap for every Type 2/3 entry in ${name}`, () => {
       const testedByType = new Map<number, number>();
-      for (const { f, d: decoded } of entries) {
+      for (const { f, d: decoded } of ctx.entries) {
         if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
         // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
         // Policy: fail (don't skip) when we cannot verify — a null means the oracle output is neither
         // cached nor generable (TexTools absent), so we cannot cross-check and must fail loudly.
-        // SqPackCompressed (filtered by compressedFiles above) always carries bytes; only a PMP
-        // RawUncompressed entry can be absent (absent-file design spec §3.1).
         const oracleOut = unwrapCached(f.data);
         if (oracleOut === null) {
           throw new Error(
