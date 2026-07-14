@@ -175,21 +175,37 @@ after — do not blind-bless.
 
 §2's `else → Multi` claim is currently *our reading of the C#*. Ground it in ConsoleTools instead.
 
-New `scripts/generate-synthetics/ttmp2-builder.ts` (all five existing builders are PMP-only), plus a
-builder emitting `test/corpus/synthetic/selection-type.ttmp2`: a wizard pack, one page, four groups
-declaring —
+New `scripts/generate-synthetics/ttmp2-builder.ts` (all five existing builders are PMP-only), plus
+**two** packs. Each carries one SqPack-compressed dummy payload (`src/sqpack`'s `encodeSqPackFile`;
+TTMP payloads live in the `.mpd` as compressed blobs, so the PMP builders' raw 4-byte dummy will not
+do) at a gamePath `/upgrade` ignores, with a pinned zip mtime for byte-reproducibility, as
+`pmp-builder.ts` does and for the same reason (the golden cache is keyed by `sha256(input pack)`).
+
+**Pack 1 — `selection-type.ttmp2`.** A wizard pack, one page, three groups whose `SelectionType` is
+*present*, so ConsoleTools is certain to load it:
 
 | group | `SelectionType` | predicted `OptionType` |
 |---|---|---|
 | 1 | `"Single"` | `Single` |
 | 2 | `"Multi"` | `Multi` |
 | 3 | `"Single Selection"` (the string we invented) | `Multi` |
-| 4 | absent | `Multi` |
 
-— over one SqPack-compressed dummy payload (`src/sqpack`'s `encodeSqPackFile`; TTMP payloads live in
-the `.mpd` as compressed blobs, so the PMP builders' raw 4-byte dummy will not do) at a gamePath
-`/upgrade` ignores. Pinned zip mtime for byte-reproducibility, as `pmp-builder.ts` does and for the
-same reason (the golden cache is keyed by `sha256(input pack)`).
+**Pack 2 — `selection-type-absent.ttmp2`.** One group with the `SelectionType` key *omitted*.
+Predicted `Multi`: a missing key deserializes to `null`, and `null == "Single"` (`:652`) is an
+ordinary C# string value comparison — `false`, no dereference. So it most likely loads fine.
+
+It is a **separate pack** because its blast radius is different, not because it is likely to fail.
+If ConsoleTools *does* reject it, `/resave` absorbs that (`resave-golden.ts` caches an error marker
+and reports the pack UNVERIFIED rather than passing it), but the `/upgrade` harness models only
+`pack | noop` — an erroring pack hard-fails it, uncached, every run. That is the open
+[expected-failure-golden](../../backlog/2026-07-11-expected-failure-golden.md) item, explicitly
+deferred "until one does". Isolating the risky group means a rejection costs us one quarantined pack
+and a decision, instead of taking the three known-good groups' golden down with it.
+
+**If pack 2 errors under ConsoleTools:** do not paper over it. Either land the `/upgrade`
+expected-failure capability (unblocking that backlog item — a legitimate outcome, since we would have
+finally produced the erroring pack it was waiting for), or hold pack 2 out of the corpus and record
+the finding. Decide then; do not pre-commit here.
 
 `corpusPacks()` (`test/helpers/corpus-roots.ts:13`) already globs `.ttmp2` from `synthetic/`, so the
 pack flows into both harnesses with no wiring.
@@ -216,17 +232,14 @@ pack flows into both harnesses with no wiring.
 
 1. Reader + writer + `make-packs.ts` + unit tests. Suite goes red on the corpus checks (baselines
    still record the old strings) — expected.
-2. `ttmp2-builder.ts` + the synthetic pack; `npm run synthetics`.
+2. `ttmp2-builder.ts` + `selection-type.ttmp2` (§6.2 pack 1); `npm run synthetics`.
 3. Run the suite. **Inspect** the resulting diffs, then bless. Grep both baseline dirs and confirm:
    643 `SelectionType` pointers gone from each; nothing else moved except the new synthetic's own
    entries.
-4. Read the synthetic's `/resave` golden and confirm — or correct — §2's `else` branch.
-5. Docs: correct the pmp-writer spec's lessons section; delete the backlog item and index entry.
-
-**Risk:** ConsoleTools may *error* on group 4's absent `SelectionType` rather than defaulting. The
-`/resave` harness already models an erroring oracle (`resave-golden.ts`'s error marker, surfaced as
-UNVERIFIED rather than a silent pass), so this fails legibly rather than lying. If it happens, drop
-group 4 and record what we learned.
+4. Read pack 1's `/resave` golden and confirm — or correct — §2's `else` branch.
+5. `selection-type-absent.ttmp2` (§6.2 pack 2) last, on its own, so a rejection by the oracle is
+   isolated to a step where nothing else is in flight.
+6. Docs: correct the pmp-writer spec's lessons section; delete the backlog item and index entry.
 
 **Risk:** blessing is a big, mostly-deletion diff across ~70 baseline files. It is only safe because
 the expected shape is stated up front (step 3). Blessing first and reading after would defeat the
