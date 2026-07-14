@@ -43,6 +43,15 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 
 ## Unprioritized
 
+### Corpus coverage
+
+- [The asset-level corpus checks silently skip every PMP pack](backlog/2026-07-14-pmp-assets-never-codec-checked.md)
+  — `sqpack`/`mtrl`/`tex`/`mdl`/`geometry` filter for `SqPackCompressed`, but a PMP stores its game
+  files `RawUncompressed`, so they assert on **zero files** for every PMP and go green. The codec
+  round-trips run on TTMP-sourced assets only. The fix is to make the shared decode storage-agnostic;
+  kept separate from the perf work that found it because it is a coverage *expansion* that may
+  surface real failures.
+
 ### PMP write path
 
 - [Port `.meta`/`.rgsp` → `Manipulations` conversion](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)
