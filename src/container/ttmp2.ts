@@ -98,8 +98,13 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
         image: "",
         page: page.PageIndex,
         priority: 0,
-        selectionType:
-          g.SelectionType === "Multi Selection" ? "Multi" : "Single",
+        // WizardData.cs:652 — `tGroup.SelectionType == "Single" ? Single : Multi`. The comparison is
+        // against "Single" ONLY: every other value, including an absent one, is Multi. Do NOT
+        // "restore" a `"Multi Selection"` / `"Single Selection"` test here. Those strings appear
+        // nowhere in TexTools except two doc-comments (ModGroup.cs:32, ModPackJson.cs:144); no C#
+        // has ever read or written them, and coding that comment instead of the code is the bug
+        // this line replaced. See docs/superpowers/specs/2026-07-13-ttmp2-selection-type-design.md.
+        selectionType: g.SelectionType === "Single" ? "Single" : "Multi",
         defaultSettings: 0,
         options: g.OptionList.map((o) => ({
           name: o.Name,
@@ -197,20 +202,35 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   } else {
     const byPage = new Map<number, TtmpModGroupJson[]>();
     for (const g of data.groups) {
+      // WizardData.cs:423-426 — ToModOption throws NotImplementedException("TTMP Export does not
+      // support one or more of the selected Option types.") when StandardData is null, which is
+      // true exactly for an Imc group's options (StandardData returns null unless GroupType ==
+      // Standard, :375-386; GroupType is Imc iff ImcData != null, :609-618). Only a PMP source
+      // carries an Imc group and /upgrade never converts formats, so this is unreachable today.
+      // Reproduced because it is TexTools' behaviour — not invented as a defensive guard.
+      // `selectionType === "Imc"` is the same stand-in for GroupType used at option-prefix.ts:288
+      // and pmp.ts:485.
+      if (g.selectionType === "Imc") {
+        throw new Error(
+          "ttmp2: TTMP Export does not support one or more of the selected Option types.",
+        );
+      }
+      // WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()`, where
+      // OptionType is EOptionType { Single, Multi } (:25-29), the two-valued enum BOTH readers
+      // collapse the raw string into at load (:652 TTMP, :769 PMP). So any non-"Single" value —
+      // "Combining" included — writes as "Multi". An option has no type of its own: it delegates to
+      // its group (:335-341), so the same value is written at both levels.
+      const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
       const list = byPage.get(g.page) ?? [];
       list.push({
         GroupName: g.name,
-        SelectionType:
-          g.selectionType === "Multi" ? "Multi Selection" : "Single Selection",
+        SelectionType: selectionType,
         OptionList: g.options.map((o) => ({
           Name: o.name,
           Description: o.description,
           ImagePath: o.image,
           GroupName: g.name,
-          SelectionType:
-            g.selectionType === "Multi"
-              ? "Multi Selection"
-              : "Single Selection",
+          SelectionType: selectionType,
           ModsJsons: o.files.map(modOf),
         })),
       });
