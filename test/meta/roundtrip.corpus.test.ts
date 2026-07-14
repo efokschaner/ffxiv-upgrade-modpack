@@ -21,15 +21,16 @@ function unc(f: { storage: FileStorageType; data?: Uint8Array }): Uint8Array {
 
 describe("meta codec round-trips every golden .meta", () => {
   it("serialize(deserialize(x)) === x for all cached goldens", () => {
+    // Read the cache listing ONCE, not once per pack (it holds one entry per corpus pack, so the
+    // per-pack readdir made this quadratic in corpus size).
+    const cached = existsSync(CACHE) ? readdirSync(CACHE) : [];
     let checked = 0;
     for (const pack of corpusPacks()) {
       const bytes = new Uint8Array(readFileSync(pack));
       const key = createHash("sha256").update(bytes).digest("hex");
-      const goldenFile = existsSync(CACHE)
-        ? readdirSync(CACHE).find(
-            (f) => f.startsWith(key) && f.endsWith(".bin"),
-          )
-        : undefined;
+      const goldenFile = cached.find(
+        (f) => f.startsWith(key) && f.endsWith(".bin"),
+      );
       if (!goldenFile) continue;
       const golden = loadModpack(
         pack,
@@ -44,5 +45,9 @@ describe("meta codec round-trips every golden .meta", () => {
     }
     // Corpus is local/gitignored; a fresh clone with no goldens checks nothing but must not fail.
     expect(checked).toBeGreaterThanOrEqual(0);
-  });
+    // This walks every corpus pack AND every cached golden (~1 GB), so it is far too slow for
+    // Vitest's 5s default — it ran 4.2s on an idle machine and timed out at 10s under load. It has
+    // no oracle spawn to wait on (cache reads only), so it does not need the corpus checks'
+    // 20-minute budget; 2 minutes is ~30x headroom over the observed time.
+  }, 120_000);
 });

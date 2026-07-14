@@ -25,7 +25,11 @@ export function registerUpgradeCheck(pack: string): void {
   describe(`upgrade golden: ${name}`, () => {
     it("matches ConsoleTools /upgrade within the ratchet baseline", () => {
       const bytes = new Uint8Array(readFileSync(pack));
-      const oursModel = upgradeModpack(loadModpack(name, bytes));
+      // ONE load of the source, reused three ways below (upgrade input, no-op reference, and the
+      // source ExtraFiles key set). Safe because upgradeModpack cloneModpack()s and never mutates
+      // its argument (src/upgrade/upgrade.ts). Re-loading cost ~3s per big PMP, three times over.
+      const source = loadModpack(name, bytes);
+      const oursModel = upgradeModpack(source);
       const golden = upgradeGoldenCached(name, bytes);
       if (golden === null) {
         throw new Error(
@@ -35,8 +39,7 @@ export function registerUpgradeCheck(pack: string): void {
       }
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
-      const reference =
-        golden.kind === "noop" ? loadModpack(name, bytes) : golden.data;
+      const reference = golden.kind === "noop" ? source : golden.data;
       const goldenBytes = golden.kind === "noop" ? bytes : golden.bytes;
 
       // Exercise the real writer on the oracle path (audit blind spot #5): the archive it produces
@@ -44,7 +47,10 @@ export function registerUpgradeCheck(pack: string): void {
       // the payload diff used to run on the in-memory model and so was blind to the writer entirely.
       // See the parity design spec.
       const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
-      const oursArchive = writeModpack(oursModel, target);
+      // store: the archive we write here is only ever re-READ (below, and by diffArchives /
+      // pmpSelfConsistency), and nothing compares its compressed bytes — so DEFLATE-ing it is work
+      // whose only consumer immediately inflates it again. See writePmp's doc comment.
+      const oursArchive = writeModpack(oursModel, target, { store: true });
       // Diff the ARTIFACT WE SHIP, not the in-memory model. Feeding `oursModel` here made every
       // writer bug invisible by construction: a file the writer emits with no `Files` key naming it
       // is a perfectly good file in the model and an unreachable orphan in the pack. Re-reading
@@ -74,7 +80,7 @@ export function registerUpgradeCheck(pack: string): void {
         target === "pmp"
           ? pmpSelfConsistency(
               oursArchive,
-              new Set(loadModpack(name, bytes).extraFiles?.keys() ?? []),
+              new Set(source.extraFiles?.keys() ?? []),
             )
           : [];
 

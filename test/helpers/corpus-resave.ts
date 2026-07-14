@@ -32,7 +32,9 @@ export function registerResaveCheck(pack: string): void {
       const ours = loadModpack(name, bytes);
       applyLoadFixes(ours); // TexTools' load is not inert for old packs — see applyLoadFixes
       const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
-      const oursArchive = writeModpack(ours, target);
+      // store: only the archive's member names and DECOMPRESSED content are diffed against the
+      // golden (diffArchives / diffUpgrade), never its deflated bytes. See writePmp's doc comment.
+      const oursArchive = writeModpack(ours, target, { store: true });
 
       const result = resaveGoldenCached(name, bytes);
       if (result === null) {

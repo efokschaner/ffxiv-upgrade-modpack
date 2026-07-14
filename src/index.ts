@@ -60,9 +60,12 @@ export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
   }
 }
 
+/** `opts.store` is a PMP-only test-speed knob — see writePmp. It is ignored for ttmp2, whose
+ * members are already stored (the .mpd carries pre-compressed SQPack payloads). */
 export function writeModpack(
   data: ModpackData,
   target: "ttmp2" | "pmp",
+  opts: { store?: boolean } = {},
 ): Uint8Array {
   const needed =
     target === "ttmp2"
@@ -76,5 +79,5 @@ export function writeModpack(
         `(ttmp2/ttmp -> ttmp2, pmp -> pmp).`,
     );
   }
-  return target === "ttmp2" ? writeTtmp2(data) : writePmp(data);
+  return target === "ttmp2" ? writeTtmp2(data) : writePmp(data, opts);
 }

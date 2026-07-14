@@ -458,7 +458,26 @@ function optionToJson(
   return base;
 }
 
-export function writePmp(data: ModpackData): Uint8Array {
+/**
+ * `store` writes the zip members uncompressed (level 0) instead of DEFLATE-ing them.
+ *
+ * The DEFAULT (`false` — DEFLATE) is the faithful one and is what we ship: TexTools writes a PMP
+ * with `System.IO.Compression.ZipFile.CreateFromDirectory` (PMP.cs:867), whose default is
+ * `CompressionLevel.Optimal`. Do not change that default.
+ *
+ * `store: true` exists purely as a TEST-SPEED knob, and it is sound because the compressed
+ * REPRESENTATION is not part of any assertion we make: the golden harness compares zip member
+ * NAMES and DECOMPRESSED content (upgrade-archive-diff.ts / upgrade-diff.ts), never the deflated
+ * bytes — it cannot, since our fflate output never matches .NET's DeflateStream byte-for-byte
+ * anyway. The corpus checks re-read the archive they just wrote, so level-6 deflate there is work
+ * whose only consumer immediately inflates it again (measured: 17.7s -> 2.6s on a 232 MB pack).
+ * Everything the checks DO assert — member naming, content dedup, manifest regeneration — is
+ * unaffected by the level.
+ */
+export function writePmp(
+  data: ModpackData,
+  opts: { store?: boolean } = {},
+): Uint8Array {
   const enc = new TextEncoder();
   const entries = new Map<string, Uint8Array>();
 
@@ -793,5 +812,5 @@ export function writePmp(data: ModpackData): Uint8Array {
     entries.set(zipPath, bytes);
   }
 
-  return writeZip(entries, { store: false });
+  return writeZip(entries, { store: opts.store ?? false });
 }

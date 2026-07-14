@@ -27,7 +27,9 @@ export function registerGoldenCheck(pack: string): void {
       const name = basename(pack);
       const data = loadModpack(name, readFileSync(pack));
       const target = data.sourceFormat === ModpackFormat.Pmp ? "pmp" : "ttmp2";
-      const rewritten = writeModpack(data, target);
+      // store: this is a reader->writer->reader round-trip; the archive is written only to be read
+      // back, and the assertion is on the inner files, not the container's compressed bytes.
+      const rewritten = writeModpack(data, target, { store: true });
       const reread = loadModpack(
         target === "pmp" ? "x.pmp" : "x.ttmp2",
         rewritten,
