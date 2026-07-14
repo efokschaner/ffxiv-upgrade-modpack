@@ -1,6 +1,6 @@
 # `SelectionType`: port the C#, not its doc-comment
 
-Date: 2026-07-13 · Status: implemented (fix/ttmp2-selection-type, merged)
+Date: 2026-07-13 · Status: implemented on branch `fix/ttmp2-selection-type` (PR #23, not yet merged)
 
 Fixes what was the top prioritized backlog item (`docs/backlog/2026-07-13-ttmp2-selection-type-spelling.md`, deleted when it shipped)
 — **whose prescribed fix was wrong**, for reasons this spec records (§3). Related:

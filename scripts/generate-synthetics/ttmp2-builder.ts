@@ -58,7 +58,7 @@ export function writeTtmp2Pack(
     FullPath: DUMMY_GAME_PATH,
     ModOffset: 0,
     ModSize: DUMMY_PAYLOAD.length,
-    DatFile: "040000.win32.dat0",
+    DatFile: "040000",
     IsDefault: false,
   };
   const modGroups = groups.map((g) => {
