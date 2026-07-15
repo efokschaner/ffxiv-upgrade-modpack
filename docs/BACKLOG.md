@@ -40,6 +40,11 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
    a no-op stub for `UpdateUnclaimedHairTextures` / `UpdateEyeMask` / `UpdateSkinPaths` (roadmap
    round 6). Needs bundled reference assets (eye textures, iris `(race,face)→path`, canonical
    hair/ear/tail sampler tables); no corpus coverage exercises it yet.
+2. [Port the `ResolveHighlightOptionsAndMashupHair` pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
+   — `upgradeModpack` (`src/upgrade/upgrade.ts`) has no pre-round, but TexTools runs this
+   Hair-shader highlight/mashup resolver unconditionally before round 1 (`ModpackUpgrader.cs:83`).
+   The highlight-resolution half (cross-option pointer stapling + a fail-loud throw) is portable
+   today; the `RepathHairMashups` half needs the live DT game index like the hair/eye partials.
 
 ## Unprioritized
 
