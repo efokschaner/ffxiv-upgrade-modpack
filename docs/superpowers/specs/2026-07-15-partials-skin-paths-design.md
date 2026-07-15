@@ -128,8 +128,8 @@ Per AGENTS.md's preference order (real golden > synthetic golden > synthetic uni
 
 ## 7. Backlog changes
 
-- Rewrite `docs/backlog/2026-07-08-partials-round.md` to cover only what remains after this
-  slice (hair + eye), or retire it in favour of the two new items below.
+- Retire the old umbrella partials item and split it into the two focused, pickup-cold items
+  below (done in this change).
 - File `docs/backlog/2026-07-15-partials-unclaimed-hair.md` — `UpdateUnclaimedHairTextures`
   (+ `UpdateUnclaimedHairAccessory`). Needs a bundled canonical hair/tail/ear/accessory material
   table (per material: normal/mask Dx11 sampler paths, shaderpack, material flags) extracted from
