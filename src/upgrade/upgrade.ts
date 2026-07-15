@@ -334,9 +334,9 @@ export function applyLoadFixes(data: ModpackData): void {
  * Pass 1 runs the material round per option and collects the texture-upgrade
  * targets it records into a single first-wins-deduped map; pass 2 applies
  * those targets to every option's textures (round 2,
- * UpgradeRemainingTextures). The partial round remains a structural stub
- * pending a later task. Always returns a fresh ModpackData (never mutates
- * `data`).
+ * UpgradeRemainingTextures). The partial round runs UpdateSkinPaths (skin path
+ * aliasing); UpdateUnclaimedHairTextures and UpdateEyeMask remain unported.
+ * Always returns a fresh ModpackData (never mutates `data`).
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
