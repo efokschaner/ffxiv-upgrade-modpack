@@ -45,12 +45,11 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 
 ### Corpus coverage
 
-- [The asset-level corpus checks silently skip every PMP pack](backlog/2026-07-14-pmp-assets-never-codec-checked.md)
-  — `sqpack`/`mtrl`/`tex`/`mdl`/`geometry` filter for `SqPackCompressed`, but a PMP stores its game
-  files `RawUncompressed`, so they assert on **zero files** for every PMP and go green. The codec
-  round-trips run on TTMP-sourced assets only. The fix is to make the shared decode storage-agnostic;
-  kept separate from the perf work that found it because it is a coverage *expansion* that may
-  surface real failures.
+- [The geometry A2 golden cross-check silently skips PMP-sourced goldens](backlog/2026-07-14-geometry-a2-golden-pmp-models.md)
+  — sibling of the source-side gap already closed: A2 decodes the `/upgrade` golden via a separate
+  SqPack-only path (`goldenModels` → `compressedFilesOf`), so a PMP golden's `RawUncompressed` models
+  match nothing and A2 round-trips **0 golden models** for every PMP pack. Make `goldenModels`
+  storage-agnostic like `assetFilesOf`; may surface geometry divergences on normalized Float goldens.
 
 ### PMP write path
 

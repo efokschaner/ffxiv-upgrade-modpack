@@ -20,7 +20,7 @@ const DECODE_SAMPLE_CAP_PER_FORMAT = 2;
 // (design spec §2) makes serializeTex(parseTex(x)) === x UNCONDITIONALLY byte-exact for any decodable
 // .tex — no normalization branch (unlike mtrl). We skip ONLY textures whose SQPack Type-4 decode
 // fails: a few legacy textures were imported with improper block spacing and are undecodable by the
-// reference block-recovery heuristic too (see corpus-decode.ts decodeTolerant). Any decodable .tex
+// reference block-recovery heuristic too (see corpus-decode.ts decodeEntry). Any decodable .tex
 // that does not round-trip byte-exact is a hard failure.
 //
 // Alongside the round-trip gate, a bounded per-format sample of the SAME textures gets its top mip

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { FileStorageType } from "../../src/model/modpack";
 import {
   decodeSqPackFile,
   encodeSqPackFile,
@@ -28,10 +29,30 @@ function canonicalTexLength(decoded: Uint8Array): number {
 
 const SELF_CAP_PER_TYPE = 25; // full round-trip cap per SqPack type per pack
 
+// The reserved runtime-header padding a Type-3 (model) SQPack decode canonically appends: the output
+// is sized `68 + decompressedSize`, and `decompressedSize` (entry offset 8) already counts the same
+// 68-byte header, leaving 68 trailing zero bytes (type3.ts decodeType3, mirroring Dat.cs:801). This
+// is what /unwrap emits, so it is the canonical decoded length — see the Type-3 tolerance below.
+const MODEL_TRAILING_PADDING = 68;
+
 /** True when one buffer is a byte-exact prefix of the other (they differ only in trailing bytes). */
 function isPrefixRelation(a: Uint8Array, b: Uint8Array): boolean {
   const m = Math.min(a.length, b.length);
   for (let i = 0; i < m; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** True when `longer` is exactly `shorter` followed by `pad` trailing ZERO bytes and nothing else —
+ *  i.e. the only difference is a run of `pad` zeros appended to `shorter`. */
+function isTrailingZeroGrowth(
+  shorter: Uint8Array,
+  longer: Uint8Array,
+  pad: number,
+): boolean {
+  if (longer.length !== shorter.length + pad) return false;
+  if (!isPrefixRelation(shorter, longer)) return false;
+  for (let i = shorter.length; i < longer.length; i++)
+    if (longer[i] !== 0) return false;
   return true;
 }
 
@@ -57,6 +78,7 @@ export function registerSqpackChecks(ctx: PackContext): void {
 
     it(`self round-trips a bounded sample per type in ${name}`, () => {
       const canonicalized: string[] = [];
+      const modelPadded: string[] = [];
       const testedByType = new Map<number, number>();
       const totalByType = new Map<number, number>();
       for (const { f, d: first } of ctx.entries) {
@@ -89,6 +111,31 @@ export function registerSqpackChecks(ctx: PackContext): void {
             );
             continue;
           }
+          // Type 3 (model): the SQPack decode canonically appends MODEL_TRAILING_PADDING (68) zero
+          // bytes of reserved runtime-header padding (see the constant). A game .mdl stored
+          // uncompressed in a PMP does NOT carry that padding, so decode(encode(x)) is x followed by
+          // exactly those 68 zeros — the same non-idempotency as Type 4, and equally benign. A
+          // decoded TTMP model already carries the padding, so it stays byte-exact and never reaches
+          // here. Tolerate ONLY when the difference is EXACTLY the padding: x is a byte-exact prefix,
+          // the re-decode is exactly 68 bytes longer, and those 68 bytes are zero (isTrailingZeroGrowth
+          // proves all three). Any other Type-3 divergence is a hard failure.
+          if (
+            first.type === SqPackType.Model &&
+            isTrailingZeroGrowth(
+              first.data,
+              second.data,
+              MODEL_TRAILING_PADDING,
+            )
+          ) {
+            modelPadded.push(
+              `${f.gamePath} (${first.data.length}->${second.data.length})`,
+            );
+            testedByType.set(
+              first.type,
+              (testedByType.get(first.type) ?? 0) + 1,
+            );
+            continue;
+          }
           expect.fail(
             `self round-trip mismatch (type ${first.type}) for ${f.gamePath}: ` +
               `${first.data.length} vs ${second.data.length} bytes`,
@@ -106,12 +153,21 @@ export function registerSqpackChecks(ctx: PackContext): void {
           `[self round-trip] ${name}: ${canonicalized.length} Type-4 mip-canonicalized (trailing-byte only): ${canonicalized.join(", ")}`,
         );
       }
+      if (modelPadded.length) {
+        console.log(
+          `[self round-trip] ${name}: ${modelPadded.length} Type-3 header-padding-canonicalized (+68 trailing zeros only): ${modelPadded.join(", ")}`,
+        );
+      }
     }, 1_200_000);
 
     it(`matches /unwrap for every Type 2/3 entry in ${name}`, () => {
       const testedByType = new Map<number, number>();
       for (const { f, d: decoded } of ctx.entries) {
         if (decoded === null || decoded.type === SqPackType.Texture) continue; // /unwrap doesn't decompress Type 4
+        // /unwrap decompresses a SQPack payload; a PMP RawUncompressed entry has no compressed form
+        // to cross-check (its bytes are already the uncompressed game file), so there is nothing to
+        // unwrap. The codec round-trips above still exercise it.
+        if (f.storage !== FileStorageType.SqPackCompressed) continue;
         // Content-addressed cache: a cache hit skips the ConsoleTools spawn (~436ms) entirely.
         // Policy: fail (don't skip) when we cannot verify — a null means the oracle output is neither
         // cached nor generable (TexTools absent), so we cannot cross-check and must fail loudly.
