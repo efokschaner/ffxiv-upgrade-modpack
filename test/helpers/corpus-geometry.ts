@@ -9,14 +9,10 @@ import {
   parseVertexDeclarations,
   transpose,
 } from "../../src/mdl/mdl";
-import type { ModpackData } from "../../src/model/modpack";
+import { FileStorageType, type ModpackData } from "../../src/model/modpack";
 import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
 import { bytesEqual } from "./compare";
-import {
-  compressedFilesOf,
-  decodedOfType,
-  type PackContext,
-} from "./corpus-decode";
+import { assetFilesOf, decodedOfType, type PackContext } from "./corpus-decode";
 import { confirmDocumentedDivergence } from "./geometry-divergence";
 import { upgradeGoldenCached } from "./upgrade-golden";
 
@@ -27,11 +23,20 @@ interface Model {
 }
 
 /** Decode the .mdl entries of a ModpackData we did NOT pre-decode (the /upgrade golden, for A2).
- *  Tolerates an undecodable legacy model, exactly as the shared source decode does. */
+ *  Storage-agnostic via the same `assetFilesOf` selector the source decode uses (so A2 and the
+ *  source cannot drift back to covering different files): a TTMP golden's models are SQPack payloads
+ *  to inflate; a PMP golden stores each .mdl RawUncompressed, already the uncompressed model. Without
+ *  this, a PMP-sourced golden matched zero models and A2 silently round-tripped nothing. Tolerates an
+ *  undecodable legacy SQPack model, exactly as the shared source decode does (the raw path can't
+ *  fail to decode — the bytes are taken as-is). */
 function goldenModels(data: ModpackData): Model[] {
   const out: Model[] = [];
-  for (const f of compressedFilesOf(data)) {
+  for (const f of assetFilesOf(data)) {
     if (!f.gamePath.toLowerCase().endsWith(".mdl")) continue;
+    if (f.storage === FileStorageType.RawUncompressed) {
+      out.push({ gamePath: f.gamePath, bytes: f.data });
+      continue;
+    }
     try {
       const d = decodeSqPackFile(f.data);
       if (d.type === SqPackType.Model)

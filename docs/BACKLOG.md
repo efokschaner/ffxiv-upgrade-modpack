@@ -43,14 +43,6 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 
 ## Unprioritized
 
-### Corpus coverage
-
-- [The geometry A2 golden cross-check silently skips PMP-sourced goldens](backlog/2026-07-14-geometry-a2-golden-pmp-models.md)
-  — sibling of the source-side gap already closed: A2 decodes the `/upgrade` golden via a separate
-  SqPack-only path (`goldenModels` → `compressedFilesOf`), so a PMP golden's `RawUncompressed` models
-  match nothing and A2 round-trips **0 golden models** for every PMP pack. Make `goldenModels`
-  storage-agnostic like `assetFilesOf`; may surface geometry divergences on normalized Float goldens.
-
 ### PMP write path
 
 - [Port `.meta`/`.rgsp` → `Manipulations` conversion](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)

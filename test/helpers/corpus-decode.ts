@@ -75,16 +75,6 @@ export function entryType(f: SqPackCompressedFile): number {
   );
 }
 
-/** Only the SqPackCompressed game files of a pack — the compressed payloads. Used by the geometry
- *  A2 check to decode a /upgrade golden ModpackData directly (not via the shared decode). The
- *  source-side shared decode uses `assetFilesOf` instead, which spans both storage kinds. */
-export function compressedFilesOf(data: ModpackData): SqPackCompressedFile[] {
-  return allFiles(data).filter(
-    (f): f is SqPackCompressedFile =>
-      f.storage === FileStorageType.SqPackCompressed,
-  );
-}
-
 /** Every file a per-asset check should look at, across BOTH storage kinds:
  *  - SqPackCompressed (TTMP): the compressed payload, inflated by `decodeEntry`.
  *  - RawUncompressed (PMP): the raw game file — a PMP stores game files uncompressed, so there is
