@@ -65,15 +65,27 @@ never removes the source and never rewrites content — pure aliasing.
     case, but we match C# exactly.
   - `{ ...source, gamePath: target }` duplicates the pointer: it shares the source's `data`
     reference and copies `storage` and any `ttmp` metadata, exactly like `cloneFile` with a new
-    path. (TexTools re-derives `Name`/`Category` from the game path on write — an orthogonal,
-    already-baselined `/resave` seam — so carrying `ttmp` through is faithful and parity-neutral.)
+    path — the closest analogue to C#'s `opt.Files.Add(target, fkv.Value)`, which reuses the same
+    `FileStorageInformation`.
+  - **Manifest caveat (corrected 2026-07-15 after running the harness).** Carrying the source's
+    `ttmp` metadata is faithful but NOT parity-neutral: the aliased file becomes a new
+    `TTMPL.mpl` `ModsJsons` entry, and our `writeTtmp2` round-trips the carried `Name`/`Category`
+    (and omits `ModPackEntry`) where TexTools re-derives `Name`/`Category` from the new game path
+    and writes `ModPackEntry: null`. This is the **already-filed TTMP writer divergence**
+    (`docs/backlog/2026-07-13-resave-ttmp2-name-category.md`,
+    `…-missing-mpl-fields.md`) — the same divergence the pack's *original* files already exhibit —
+    now reachable on one more file. The file **payload** is byte-exact; only the `.mpl` manifest
+    metadata diverges, so it is handled by the ratchet baseline (§6), not a `DIVERGENCE_RULES`
+    entry. Fixing it belongs to the writer backlog items, not this slice.
 
 Appending new files is the same pattern the generated-texture round already uses
 (`texture.ts` `writeGeneratedTex` pushes), which passes goldens today, so output member
 ordering is already known-compatible.
 
-**No encoder/divergence risk.** The aliased file is byte-identical to its source at a new path;
-there is no pixel transform, so no `DIVERGENCE_RULES` entry is needed.
+**No encoder/divergence risk on the payload.** The aliased file's bytes are byte-identical to its
+source at a new path; there is no pixel transform, so no `DIVERGENCE_RULES` entry is needed. (The
+`.mpl` *manifest* entry for the new file does diverge, per the writer gap in the Manifest caveat
+above — handled by the ratchet baseline, not `DIVERGENCE_RULES`.)
 
 ## 4. Data table
 
@@ -82,9 +94,9 @@ built from a literal array of `[old, new]` pairs transcribed verbatim from
 `SkinRepathDict` (`EndwalkerUpgrade.cs:2197-2246`). A `Map` (not a plain object) mirrors the
 C# `Dictionary`'s `ContainsKey`/indexer semantics and sidesteps prototype-key pitfalls.
 
-Only the **active** entries are ported (~45: base-game bodies, Bibo, TBSE bodies, Au Ra
+Only the **active** entries are ported (36: 10 base-game bodies, 5 Bibo, 5 TBSE bodies, 16 Au Ra
 tails). The large commented-out "norms" block below the active entries
-(`EndwalkerUpgrade.cs:2248+`) is inactive in C# and is **omitted**, with a header comment
+(`EndwalkerUpgrade.cs:2248-2280`) is inactive in C# and is **omitted**, with a header comment
 noting why so a future reader does not "restore" it.
 
 ## 5. Orchestration seam
@@ -105,12 +117,14 @@ Per AGENTS.md's preference order (real golden > synthetic golden > synthetic uni
   (b) target already present → no-op (no duplicate); (c) multiple matching keys in one option →
   multiple additions; (d) non-matching files untouched; (e) source left in place (not moved).
   This survives a fresh clone where the corpus is empty.
-- **Real golden (corpus).** Skin/body mods (Bibo, TBSE) are among the most common mod types, so
-  a real corpus pack very likely already exercises this and currently sits as a ratchet-baselined
-  diff. After the port, **re-bless the baselines** and confirm the skin-path diff *shrinks* (the
-  `_base.tex`/aliased entry now matches the golden) rather than assuming it. If no corpus pack
-  hits it, note that and add a synthetic modpack builder under `scripts/generate-synthetics/`
-  that includes a `--c….._d.tex` skin texture.
+- **Real golden (corpus) — observed 2026-07-15.** Three real corpus packs exercise the transform;
+  all changes are `kind: manifest` (TTMPL.mpl), **zero file-payload divergences** — the aliased
+  `.tex` bytes match the golden everywhere. Two simple TTMP packs **shrank** (their previously-
+  baselined missing-`_base.tex` file diffs are now resolved; residual is only the pre-existing
+  simple-pack manifest gap). One pack (Fantasia) **grew by +9** manifest entries: the aliased
+  file's `ModsJsons` entry exhibits the *same* `Name`/`Category`/`ModPackEntry` writer divergence
+  its original files already showed — no new divergence class. Baselines re-blessed to record it;
+  a fresh clone (empty corpus) falls back to the synthetic unit tests above.
 
 ## 7. Backlog changes
 
