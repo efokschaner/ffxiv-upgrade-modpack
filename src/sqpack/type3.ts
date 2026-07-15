@@ -124,10 +124,22 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
     geometry.push(indexBuffers[i]!);
   }
 
-  // Match Dat.ReadSqPackType3 (Dat.cs:801): the output buffer is sized `baseHeaderLength +
-  // decompressedSize`, where `decompressedSize` (entry offset 8) itself already counts the 68-byte
-  // header (encode writes uncompressedSize = 68 + content). This leaves 68 trailing zero bytes, which
-  // ConsoleTools /unwrap also emits — matching it is required by the byte-identical-decompressed bar.
+  // Match Dat.ReadSqPackType3 (Dat.cs:801): `new byte[baseHeaderLength + decompressedSize]`. This is
+  // a benign TexTools DECODER quirk — a double-count of the 68-byte header — that we reproduce
+  // deliberately. `decompressedSize` (entry offset 8) is ALREADY the true model size *including* the
+  // 68-byte header: encode writes exactly `68 + content` (Mdl.cs:2259, our encodeType3), which is
+  // correct. The decoder then adds `baseHeaderLength` (68) a SECOND time, over-allocating by one
+  // header and leaving 68 trailing ZERO bytes that no header field points at.
+  //
+  // It is a weird internal behaviour with NO externally visible effect. The padding is regenerated on
+  // every decode and dropped on every re-encode — encodeType3 slices by the header's offsets/sizes,
+  // never reads past `content`, and recomputes `decompressedSize` back to `68 + content` — so it is
+  // never stored in a compressed entry and never reaches our /upgrade output (a benign decoder defect,
+  // registered as docs/TEXTOOLS_BUGS.md #11 and worth upstreaming). ConsoleTools /unwrap emits the same 68 zeros, so
+  // reproducing them is required by the byte-identical-decompressed bar. The one consequence worth
+  // knowing: decode(encode(x)) is non-idempotent for a model that entered UN-padded — a PMP stores
+  // each .mdl at its true `68 + content` size, so its first decode appends the 68 zeros it lacked.
+  // The corpus self-round-trip check tolerates exactly that growth (test/helpers/corpus-sqpack.ts).
   const out = new Uint8Array(MDL_HEADER + decompressedSize);
   out.set(header.toUint8Array(), 0);
   let o = MDL_HEADER;
