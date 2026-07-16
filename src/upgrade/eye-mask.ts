@@ -88,11 +88,15 @@ export function updateEyeMask(
   const file = option.files.get(maskPath);
   if (!file) return;
   // :2030-2032 — ResolveFile + XivTex.FromUncompressedTex, run BEFORE the face regex and the iris
-  // FileExists gate. A byte-less or undecodable mask makes ResolveFile null -> FromUncompressedTex
-  // throws (ArgumentNullException, XivTex.cs:96); a decodable-but-malformed mask throws in the header
-  // parse (EndOfStreamException). Reproduce that seam so an unparseable mask fails loud here instead of
-  // being silently skipped by the iris gate below. (The parsed tex is consumed by the deferred pixel
-  // half; here we invoke the parse for its throw behaviour, matching the C# ordering.)
+  // FileExists gate, so an unparseable mask fails loud here instead of being silently skipped by the
+  // iris gate below. A byte-less or undecodable mask makes ResolveFile null -> FromUncompressedTex
+  // throws (ArgumentNullException, XivTex.cs:96) — reproduced by the null throw. Our `parseTex` is a
+  // lossless/permissive reader (parse.ts): it reproduces FromUncompressedTex's truncated-header throw
+  // (a sub-80-byte header EndsOfStream in the BinaryReader) but NOT its unknown-`TextureFormat`
+  // KeyNotFoundException (XivTex.cs:123 TextureTypeDictionary lookup) — a residual, near-zero-
+  // reachability UNDER-throw (a valid-length header carrying a bogus format + an absent iris would skip
+  // where C# throws; it never OVER-throws a valid mod). That gap closes for free when the deferred pixel
+  // half actually consumes the parsed tex's format/mips; not worth perturbing the shared parser now.
   const resolved = resolveFile(file); // ResolveFile (:2030) — a ResolveFile call site (decode error -> null)
   if (!resolved) {
     throw new Error(
@@ -100,7 +104,7 @@ export function updateEyeMask(
         `XivTex.FromUncompressedTex throws on null (EndwalkerUpgrade.cs:2032): ${maskPath}`,
     );
   }
-  parseTex(resolved.bytes); // FromUncompressedTex (:2032) — throws on a malformed header
+  parseTex(resolved.bytes); // FromUncompressedTex (:2032) — throws on a truncated header
   // :2024 — _ConvertedTextures dedup. The caller passes it as null (ModpackUpgrader.cs:176), so C#
   // allocates a fresh empty set per call; with one path per call the guard can never fire. Not modeled.
   // :2034-2039 — face id from the filename.

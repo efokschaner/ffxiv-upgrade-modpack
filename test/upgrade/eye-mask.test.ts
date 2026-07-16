@@ -73,6 +73,25 @@ describe("updateEyeMask", () => {
     expect(() => updateEyeMask(o, MASK, table)).toThrow();
     expect(() => updateEyeMask(o, MASK, table)).not.toThrow(/unported/i);
   });
+
+  it("throws on a byte-less mask (ResolveFile null) before the iris gate — EndwalkerUpgrade.cs:2030-2032", () => {
+    // A PMP Files entry can name a mask with no bytes (RawUncompressed, data undefined). ResolveFile
+    // returns null (:2030) and C# then throws at FromUncompressedTex(null) (XivTex.cs:96); reproduced
+    // by the explicit null throw, before the FileExists gate — even though the iris IS in-table here.
+    const o: ModpackOption = {
+      name: "o",
+      description: "",
+      image: "",
+      priority: 0,
+      fileSwaps: {},
+      manipulations: [],
+      files: new Map<string, ModpackFile>([
+        [MASK, { storage: FileStorageType.RawUncompressed }],
+      ]),
+    };
+    expect(() => updateEyeMask(o, MASK, table)).toThrow(/did not resolve/i);
+    expect(() => updateEyeMask(o, MASK, table)).not.toThrow(/unported/i);
+  });
 });
 
 describe("raceCodeFromPath (IOUtil.GetRaceFromPath().GetRaceCode())", () => {
