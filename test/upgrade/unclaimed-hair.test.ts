@@ -1,6 +1,7 @@
-// Tests for the hair/tail/ear rescue (EndwalkerUpgrade.cs:1342-1503), see
-// src/upgrade/unclaimed-hair.ts for provenance. No tail-rewrite / accessory coverage here
-// (Tasks 5/6); this file only exercises the shared match->group->winnow->copy->transform path.
+// Tests for the hair/tail/ear rescue (EndwalkerUpgrade.cs:1342-1503) AND the tail-only
+// constant-swap material rewrite (EndwalkerUpgrade.cs:1504-1516), see
+// src/upgrade/unclaimed-hair.ts for provenance. No accessory coverage here (Task 6); this file
+// exercises the shared match->group->winnow->copy->transform path plus the tail rewrite.
 import { describe, expect, it } from "vitest";
 import {
   FileStorageType,
@@ -253,5 +254,54 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       "chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl",
     );
     expect(back.shaderConstants).toEqual(sample.shaderConstants);
+  });
+
+  it("skips the rewrite when the canonical tail material already has HideBackfaces (no tailRewriteMtrlBase64)", () => {
+    // Matches the generator's real invariant (hair-materials-types.ts): tailRewriteMtrlBase64 is
+    // present ONLY for tail entries lacking HideBackfaces, so an already-set entry has none.
+    const mat =
+      "chara/human/c0201/obj/tail/t0006/material/v0001/mt_c0201t0006_a.mtrl";
+    const normDest =
+      "chara/human/c0201/obj/tail/t0006/texture/--c0201t0006_etc_norm.tex";
+    const maskDest =
+      "chara/human/c0201/obj/tail/t0006/texture/--c0201t0006_etc_mask.tex";
+    const t: HairMaterialTable = new Map([
+      [
+        mat,
+        {
+          shaderPackRaw: "hair.shpk",
+          normalDx11Path: normDest,
+          maskDx11Path: maskDest,
+          hideBackfaces: true,
+        },
+      ],
+    ]);
+    const nOld =
+      "chara/human/c0201/obj/tail/t0006/texture/c0201t0006_etc_n.tex";
+    const sOld =
+      "chara/human/c0201/obj/tail/t0006/texture/c0201t0006_etc_s.tex";
+    const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
+
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t);
+
+    // Textures are still rescued...
+    expect(o.files.has(normDest)).toBe(true);
+    expect(o.files.has(maskDest)).toBe(true);
+    // ...but the canonical material is never written.
+    expect(o.files.has(mat)).toBe(false);
+  });
+
+  it("does not rewrite a material for a HAIR group (isTail false)", () => {
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
+    const sOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
+    const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
+
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table);
+
+    expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
+    expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
+    expect(o.files.has(HAIR_MAT)).toBe(false);
   });
 });

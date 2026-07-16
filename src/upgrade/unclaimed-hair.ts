@@ -4,9 +4,10 @@
 // hair-material table (the FileExists oracle; src/upgrade/reference/hair-materials-types.ts).
 // See docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md §4.2-§4.4.
 //
-// This module covers ONLY the shared hair/tail/ear function, without the tail-specific
-// material rewrite (EndwalkerUpgrade.cs:1504-1516, Task 5) and without the accessory variant
-// (UpdateUnclaimedHairAccessory, EndwalkerUpgrade.cs:1522-1716, Task 6).
+// This module covers the shared hair/tail/ear function, INCLUDING the tail-specific
+// constant-swap material rewrite (EndwalkerUpgrade.cs:1504-1516, added Task 5), but still
+// without the accessory variant (UpdateUnclaimedHairAccessory, EndwalkerUpgrade.cs:1522-1716,
+// Task 6).
 import type { ModpackFile, ModpackOption } from "../model/modpack";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "./reference/hair-materials";
