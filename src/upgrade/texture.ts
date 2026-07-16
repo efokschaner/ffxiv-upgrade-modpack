@@ -137,6 +137,27 @@ export function writeGeneratedTex(
   option.files.set(gamePath, file);
 }
 
+/** Writes a generated raw .mtrl into the option, mirroring the storage form of a reference
+ *  source file in the same option — same storage-mirroring rationale as writeGeneratedTex, but
+ *  encoding as a Type-2 Standard SqPack entry (a .mtrl, not a .tex) when mirroring a
+ *  SqPackCompressed sibling. Used by the tail constant-swap rewrite
+ *  (EndwalkerUpgrade.cs:1504-1516, WriteFile at :1515). */
+export function writeGeneratedMtrl(
+  option: ModpackOption,
+  gamePath: string,
+  mtrlBytes: Uint8Array,
+  reference: ModpackFile,
+): void {
+  const file: ModpackFile =
+    reference.storage === FileStorageType.SqPackCompressed
+      ? {
+          storage: FileStorageType.SqPackCompressed,
+          data: encodeSqPackFile(mtrlBytes, SqPackType.Standard),
+        }
+      : { storage: FileStorageType.RawUncompressed, data: mtrlBytes };
+  option.files.set(gamePath, file);
+}
+
 /** Port of UpgradeRemainingTextures (EndwalkerUpgrade.cs:1832). For each target, generate
  *  its texture(s) only if the option locally holds the required source(s); a resize-
  *  unsupported target is skipped (baselined diff), everything else stays fail-loud. */

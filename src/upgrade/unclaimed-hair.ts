@@ -8,8 +8,14 @@
 // material rewrite (EndwalkerUpgrade.cs:1504-1516, Task 5) and without the accessory variant
 // (UpdateUnclaimedHairAccessory, EndwalkerUpgrade.cs:1522-1716, Task 6).
 import type { ModpackFile, ModpackOption } from "../model/modpack";
+import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
+import { SAMPLE_HAIR_MTRL_BASE64 } from "./reference/hair-materials";
 import type { HairMaterialTable } from "./reference/hair-materials-types";
-import { updateEndwalkerHairTextures, writeGeneratedTex } from "./texture";
+import {
+  updateEndwalkerHairTextures,
+  writeGeneratedMtrl,
+  writeGeneratedTex,
+} from "./texture";
 import { resolveFile } from "./upgrade";
 
 type TexType = "normal" | "specular" | "diffuse";
@@ -173,8 +179,26 @@ export function updateUnclaimedHairTextures(
         // reproduce rather than narrow.
         continue;
       }
-      if (isTail) {
-        // Tail rewrite (EndwalkerUpgrade.cs:1504-1516) — added in Task 5.
+      // Tail-only constant-swap rewrite (EndwalkerUpgrade.cs:1504-1516). Only fires when the
+      // canonical tail material lacks HideBackfaces; `tailRewriteMtrlBase64` is present in the
+      // table ONLY for that case (hair-materials-types.ts), so its presence stands in for both
+      // the `hairset == TailRegexes` and the `MaterialFlags & HideBackfaces == 0` C# conditions.
+      if (isTail && !entry.hideBackfaces && entry.tailRewriteMtrlBase64) {
+        const canon = parseMtrl(
+          new Uint8Array(Buffer.from(entry.tailRewriteMtrlBase64, "base64")),
+          matPath,
+        );
+        canon.materialFlags |= 0x01; // EMaterialFlags1.HideBackfaces (XivMtrl.cs:43)
+        // Rip constants from standard hair to better match usages (EndwalkerUpgrade.cs:1510-1512).
+        const sample = parseMtrl(
+          new Uint8Array(Buffer.from(SAMPLE_HAIR_MTRL_BASE64, "base64")),
+          "chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl",
+        );
+        canon.shaderConstants = sample.shaderConstants;
+        const bytes = serializeMtrl(canon);
+        // WriteFile (EndwalkerUpgrade.cs:1515); mirror the just-written normal destination's
+        // storage form, same rationale as writeGeneratedTex's storage mirroring.
+        writeGeneratedMtrl(option, matPath, bytes, option.files.get(normDest)!);
       }
     }
   }

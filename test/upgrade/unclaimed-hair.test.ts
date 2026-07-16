@@ -7,9 +7,13 @@ import {
   type ModpackFile,
   type ModpackOption,
 } from "../../src/model/modpack";
+import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import { parseTex } from "../../src/tex/tex";
+import { SAMPLE_HAIR_MTRL_BASE64 } from "../../src/upgrade/reference/hair-materials";
 import type { HairMaterialTable } from "../../src/upgrade/reference/hair-materials-types";
 import { updateUnclaimedHairTextures } from "../../src/upgrade/unclaimed-hair";
+import { resolveFile } from "../../src/upgrade/upgrade";
+import { buildMinimalMtrl } from "../mtrl/make-mtrl";
 import { buildMinimalTex, buildMinimalTexSized } from "../tex/make-tex";
 
 function opt(files: Record<string, Uint8Array>): ModpackOption {
@@ -197,5 +201,57 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     // Bytes at the destinations equal the raw source bytes verbatim -- untransformed.
     expect(o.files.get(HAIR_NORM_DEST)!.data).toEqual(normBytes);
     expect(o.files.get(HAIR_MASK_DEST)!.data).toEqual(maskBytes);
+  });
+});
+
+describe("updateUnclaimedHairTextures (tail)", () => {
+  const TAIL_MAT =
+    "chara/human/c0201/obj/tail/t0005/material/v0001/mt_c0201t0005_a.mtrl";
+  const TAIL_NORM_DEST =
+    "chara/human/c0201/obj/tail/t0005/texture/--c0201t0005_etc_norm.tex";
+  const TAIL_MASK_DEST =
+    "chara/human/c0201/obj/tail/t0005/texture/--c0201t0005_etc_mask.tex";
+
+  // Fixture canonical tail mtrl with HideBackfaces explicitly CLEARED, so the assertion below
+  // actually exercises the rewrite (buildMinimalMtrl()'s raw materialFlags happens to already
+  // carry that bit; clearing it first keeps the test meaningful).
+  const canonParsed = parseMtrl(buildMinimalMtrl(), TAIL_MAT);
+  canonParsed.materialFlags &= ~0x01;
+  const tailRewriteMtrlBase64 = Buffer.from(
+    serializeMtrl(canonParsed),
+  ).toString("base64");
+
+  const tailTable: HairMaterialTable = new Map([
+    [
+      TAIL_MAT,
+      {
+        shaderPackRaw: "hair.shpk",
+        normalDx11Path: TAIL_NORM_DEST,
+        maskDx11Path: TAIL_MASK_DEST,
+        hideBackfaces: false,
+        tailRewriteMtrlBase64,
+      },
+    ],
+  ]);
+
+  it("tail: writes the canonical material with HideBackfaces set", () => {
+    const nOld =
+      "chara/human/c0201/obj/tail/t0005/texture/c0201t0005_etc_n.tex";
+    const sOld =
+      "chara/human/c0201/obj/tail/t0005/texture/c0201t0005_etc_s.tex";
+    const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
+
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), tailTable);
+
+    const written = o.files.get(TAIL_MAT);
+    expect(written).toBeDefined();
+    const back = parseMtrl(resolveFile(written!)!.bytes, TAIL_MAT);
+    expect(back.materialFlags & 0x01).toBe(0x01);
+    // Constants are ripped from _SampleHair, not left as the canon's own.
+    const sample = parseMtrl(
+      new Uint8Array(Buffer.from(SAMPLE_HAIR_MTRL_BASE64, "base64")),
+      "chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl",
+    );
+    expect(back.shaderConstants).toEqual(sample.shaderConstants);
   });
 });
