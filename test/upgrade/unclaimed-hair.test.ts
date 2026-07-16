@@ -12,7 +12,10 @@ import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import { parseTex } from "../../src/tex/tex";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "../../src/upgrade/reference/hair-materials";
 import type { HairMaterialTable } from "../../src/upgrade/reference/hair-materials-types";
-import { updateUnclaimedHairTextures } from "../../src/upgrade/unclaimed-hair";
+import {
+  updateUnclaimedHairAccessory,
+  updateUnclaimedHairTextures,
+} from "../../src/upgrade/unclaimed-hair";
 import { resolveFile } from "../../src/upgrade/upgrade";
 import { buildMinimalMtrl } from "../mtrl/make-mtrl";
 import { buildMinimalTex, buildMinimalTexSized } from "../tex/make-tex";
@@ -303,5 +306,201 @@ describe("updateUnclaimedHairTextures (tail)", () => {
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
     expect(o.files.has(HAIR_MAT)).toBe(false);
+  });
+});
+
+// Accessory (EndwalkerUpgrade.cs:1522-1716). Differs from hair/tail/ear in several load-bearing
+// ways -- see src/upgrade/unclaimed-hair.ts's updateUnclaimedHairAccessory header for citations.
+describe("updateUnclaimedHairAccessory", () => {
+  const ACC_MAT =
+    "chara/human/c0101/obj/hair/h0001/material/v0001/mt_c0101h0001_acc_b.mtrl";
+  const ACC_NORM_DEST =
+    "chara/human/c0101/obj/hair/h0001/texture/--c0101h0001_acc_norm.tex";
+  const ACC_DIFF_DEST =
+    "chara/human/c0101/obj/hair/h0001/texture/--c0101h0001_acc_diff.tex";
+  const ACC_MASK_DEST =
+    "chara/human/c0101/obj/hair/h0001/texture/--c0101h0001_acc_mask.tex";
+
+  const accTable: HairMaterialTable = new Map([
+    [
+      ACC_MAT,
+      {
+        shaderPackRaw: "character.shpk",
+        normalDx11Path: ACC_NORM_DEST,
+        maskDx11Path: ACC_MASK_DEST,
+        diffuseDx11Path: ACC_DIFF_DEST,
+        hideBackfaces: false,
+      },
+    ],
+  ]);
+
+  it("copies a loose normal+diffuse to the entry's normal + diffuse Dx11 destinations", () => {
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const o = opt({ [nOld]: buildMinimalTex(), [dOld]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([nOld, dOld]), accTable);
+
+    expect(o.files.has(ACC_NORM_DEST)).toBe(true);
+    expect(o.files.has(ACC_DIFF_DEST)).toBe(true);
+  });
+
+  it("skips the whole (race,id) -- nothing copied -- when a specular tex is present but the entry has no maskDx11Path", () => {
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
+    const sOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_s.tex";
+    const t: HairMaterialTable = new Map([
+      [
+        ACC_MAT,
+        {
+          shaderPackRaw: "character.shpk",
+          normalDx11Path: ACC_NORM_DEST,
+          // no maskDx11Path
+          hideBackfaces: false,
+        },
+      ],
+    ]);
+    const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([nOld, sOld]), t);
+
+    // Early break (EndwalkerUpgrade.cs:1656-1660) aborts the whole (race,id): even the
+    // normal tex, which had a valid destination, is not copied either.
+    expect(o.files.has(ACC_NORM_DEST)).toBe(false);
+    expect(o.files.has(ACC_MASK_DEST)).toBe(false);
+  });
+
+  it("does NOT require both texTypes -- a single diffuse-only tex with no material still gets copied (no bothTypesRequired winnow, unlike hair)", () => {
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const o = opt({ [dOld]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([dOld]), accTable);
+
+    expect(o.files.has(ACC_DIFF_DEST)).toBe(true);
+    // No normal source was provided, so nothing is written to the normal destination.
+    expect(o.files.has(ACC_NORM_DEST)).toBe(false);
+  });
+
+  it("winnow drops a (race,id) whose material IS present in `contained` (no-material-only, EndwalkerUpgrade.cs:1590-1596)", () => {
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const o = opt({ [dOld]: buildMinimalTex(), [ACC_MAT]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([dOld, ACC_MAT]), accTable);
+
+    expect(o.files.has(ACC_DIFF_DEST)).toBe(false);
+  });
+
+  it("scans ONLY `contained` for materials -- a material present in option.files but absent from `contained` does not winnow it out (asymmetry vs hair, EndwalkerUpgrade.cs:1527)", () => {
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    // ACC_MAT is present in the option's files but deliberately excluded from `contained` --
+    // hair would still notice it (it scans option.files.keys() for materials); accessory must not.
+    const o = opt({ [dOld]: buildMinimalTex(), [ACC_MAT]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([dOld]), accTable);
+
+    expect(o.files.has(ACC_DIFF_DEST)).toBe(true);
+  });
+
+  it("accepts characterlegacy.shpk as well as character.shpk", () => {
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const t: HairMaterialTable = new Map([
+      [
+        ACC_MAT,
+        {
+          shaderPackRaw: "characterlegacy.shpk",
+          normalDx11Path: ACC_NORM_DEST,
+          diffuseDx11Path: ACC_DIFF_DEST,
+          hideBackfaces: false,
+        },
+      ],
+    ]);
+    const o = opt({ [dOld]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([dOld]), t);
+
+    expect(o.files.has(ACC_DIFF_DEST)).toBe(true);
+  });
+
+  it("skips when the shader pack is neither character.shpk nor characterlegacy.shpk", () => {
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const t: HairMaterialTable = new Map([
+      [
+        ACC_MAT,
+        {
+          shaderPackRaw: "hair.shpk",
+          normalDx11Path: ACC_NORM_DEST,
+          diffuseDx11Path: ACC_DIFF_DEST,
+          hideBackfaces: false,
+        },
+      ],
+    ]);
+    const o = opt({ [dOld]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([dOld]), t);
+
+    expect(o.files.has(ACC_DIFF_DEST)).toBe(false);
+  });
+
+  it("skips the whole (race,id) when the entry has no normalDx11Path at all", () => {
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const t: HairMaterialTable = new Map([
+      [
+        ACC_MAT,
+        {
+          shaderPackRaw: "character.shpk",
+          // no normalDx11Path
+          diffuseDx11Path: ACC_DIFF_DEST,
+          hideBackfaces: false,
+        },
+      ],
+    ]);
+    const o = opt({ [dOld]: buildMinimalTex() });
+
+    updateUnclaimedHairAccessory(o, new Set([dOld]), t);
+
+    expect(o.files.has(ACC_DIFF_DEST)).toBe(false);
+  });
+
+  it("skips when a destination is already present (already-converted guard)", () => {
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const o = opt({
+      [nOld]: buildMinimalTex(),
+      [dOld]: buildMinimalTex(),
+      [ACC_DIFF_DEST]: buildMinimalTex(), // already converted
+    });
+
+    updateUnclaimedHairAccessory(o, new Set([nOld, dOld]), accTable);
+
+    // The whole (race,id) is skipped -- the normal destination must NOT be written either.
+    expect(o.files.has(ACC_NORM_DEST)).toBe(false);
+  });
+
+  it("performs a pure raw copy -- no pixel transform -- even for mismatched normal/diffuse sizes", () => {
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const normBytes = buildMinimalTexSized(2, 2);
+    const diffBytes = buildMinimalTexSized(4, 4);
+    const o = opt({ [nOld]: normBytes, [dOld]: diffBytes });
+
+    updateUnclaimedHairAccessory(o, new Set([nOld, dOld]), accTable);
+
+    // Bytes at the destinations equal the raw source bytes verbatim -- no transform attempted,
+    // so a size mismatch that would throw in the hair pixel transform is a non-issue here.
+    expect(o.files.get(ACC_NORM_DEST)!.data).toEqual(normBytes);
+    expect(o.files.get(ACC_DIFF_DEST)!.data).toEqual(diffBytes);
   });
 });
