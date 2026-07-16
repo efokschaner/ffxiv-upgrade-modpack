@@ -28,26 +28,48 @@ const SQPACK =
 const SAMPLE_HAIR =
   "chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl";
 
-// Race codes: playable + NPC (Character.cs · IDRaceDictionary · 530-571).
+// Race codes: the FULL IDRaceDictionary (Character.cs:530-571) — every human race's playable
+// (xx01) AND NPC (xx04) variant, plus the two NPC catch-alls (9104/9204). Completeness is
+// load-bearing: the emitted table is the FileExists oracle, so a race with real DT materials that
+// is NOT enumerated here would be silently mis-skipped (see the design spec §3.1/§3.3/§6). The xx04
+// codes are NOT empty — they carry real hair/tail/accessory materials in retail.
 const RACES = [
   "0101",
+  "0104",
   "0201",
+  "0204",
   "0301",
+  "0304",
   "0401",
+  "0404",
   "0501",
+  "0504",
   "0601",
+  "0604",
   "0701",
+  "0704",
   "0801",
+  "0804",
   "0901",
+  "0904",
   "1001",
+  "1004",
   "1101",
+  "1104",
   "1201",
+  "1204",
   "1301",
+  "1304",
   "1401",
+  "1404",
   "1501",
+  "1504",
   "1601",
+  "1604",
   "1701",
+  "1704",
   "1801",
+  "1804",
   "9104",
   "9204",
 ];

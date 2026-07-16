@@ -110,9 +110,11 @@ incomplete table.
 
 ### 3.3 The candidate grid
 
-TexTools' own picker grid (`Items/Categories/Character.cs`): races from `IDRaceDictionary`
-(`0101…1804` playable, plus NPC `9104`/`9204`) × ids `1..500` (`_SCAN_LIMIT`), formatted through the
-four material templates verbatim from `EndwalkerUpgrade.cs:1293-1321`:
+TexTools' own picker grid (`Items/Categories/Character.cs`): the **full** `IDRaceDictionary`
+(`Character.cs:530-571`) — all 38 codes, i.e. every human race's playable (`xx01`) *and* NPC
+(`xx04`) variant for `01…18`, plus the two NPC catch-alls `9104`/`9204` — × ids `1..500`
+(`_SCAN_LIMIT`), formatted through the four material templates verbatim from
+`EndwalkerUpgrade.cs:1293-1321`:
 
 - Hair `mt_c{race}h{id}_hir_a.mtrl`, Tail `mt_c{race}t{id}_a.mtrl`,
   Ear `mt_c{race}z{id}_a.mtrl`, Accessory `mt_c{race}h{id}_acc_b.mtrl`.
