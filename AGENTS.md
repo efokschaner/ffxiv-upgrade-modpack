@@ -181,6 +181,19 @@ The C# source is the map we navigate by, so keep the port traceable back to it.
   that shape at the same seam. A tidier phase-split that is behaviourally equivalent for the
   common case can still diverge on an edge the original ordering handled (e.g. a duplicate whose
   fix fails, where fix-then-collapse keeps the earlier good copy but collapse-then-fix drops it).
+- **Bundle the minimum data surface, but enough to port any input faithfully.** When the C#
+  reads live game data we have no runtime access to (the SqPack index, a canonical material, a
+  base-game index-override), pre-extract it into a *generated* constants table via a committed
+  `scripts/extract-*` script, citing the C# read it stands in for (`file · symbol · lines`).
+  Bundle only the **fields the ported logic actually reads** — never a whole game file when a few
+  resolved paths or flags suffice — but bundle them for the **complete** set of inputs the
+  transform can encounter, so any mod ports faithfully, not just the ones a corpus happens to
+  reach. Where an existence check drives control flow (`FileExists`), let the table *be* the
+  existence oracle: enumerate exactly the game files that exist, so a lookup **miss** means the
+  file is genuinely absent — a faithful skip (the `FileExists == false` branch), not a silent
+  divergence hiding a gap. Prefer TexTools' own cheap in-process primitive over a brute probe
+  (e.g. CRC32-hash a candidate path against the once-read `.index`, as `IndexFile.FileExists`
+  does — do not spawn a subprocess per candidate).
 
 ## Conventions
 
