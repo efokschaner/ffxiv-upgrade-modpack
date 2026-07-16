@@ -3,7 +3,8 @@
 Date: 2026-07-15 · Status: approved-pending-review
 
 Foundation / roadmap: `docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md`.
-Backlog item this closes: `docs/backlog/2026-07-15-option-files-map.md` (top of the prioritized list).
+Closes the top prioritized backlog item — the `option.files` Map mis-port — which is retired (deleted
+from `docs/backlog/`) by the change this spec drives.
 
 ## Scope
 
