@@ -16,8 +16,12 @@ intuition** when the two conflict:
   right" or "our own tests pass" is not the bar — matching TexTools byte-for-byte is.
 - **Ask what TexTools does, first.** When deciding how something should behave, the
   question is never "what's the best design?" but "what does TexTools /
-  xivModdingFramework do here?" — then reproduce it. The C# is the spec; `reference/`
-  is the map. Port behaviour; don't invent it. This extends to quirks and apparent
+  xivModdingFramework do here?" — then reproduce it, from the symbol the oracle
+  *actually executes*. Trace the call path (the `/upgrade` and `/resave` load runs
+  through `WizardData.FromWizardGroup`, not the look-alike `MakeFileStorageInformationDictionary`);
+  a plausible sibling symbol — a different loader, an overload — can behave differently,
+  and porting from it is a divergence even though the citation looks right. The C# is
+  the spec; `reference/` is the map. Port behaviour; don't invent it. This extends to quirks and apparent
   bugs: reproduce them faithfully (a "fix" diverges from the golden) and note the
   quirk in a comment rather than correcting it. When what you are reproducing is a genuine
   **defect** rather than a transcribed oddity — a null deref, a guard that can never fire, a
@@ -26,7 +30,8 @@ intuition** when the two conflict:
 - **Every line of business logic has TexTools provenance.** All non-test, non-
   scaffolding code traces to a named C# source, cited as `file · symbol · lines` in a
   header or comment. If you can't point to the TexTools code a behaviour came from, it
-  does not belong in the port.
+  does not belong in the port. Verify each citation against `reference/` itself — read
+  the C#, don't port from memory, a secondhand summary, or an unreviewed draft.
 - **Split, don't blend.** Carving one large C# file into several focused TS modules
   is encouraged; merging logic from *different* C# files/symbols into one TS module is
   not. Details in *Porting fidelity* below.
@@ -165,6 +170,17 @@ The C# source is the map we navigate by, so keep the port traceable back to it.
   `TTModel.Getv6BoneSet` / `GetUsageInfo` belong with the `TTModel` equivalent, not the
   serializer). Traceability beats tidier-looking groupings — prefer it over reshuffling
   already-merged, tested port code purely for aesthetics.
+- **Mirror the C# data structure, not just its values.** A keyed or unique C# collection
+  (`Dictionary`, `HashSet`, `SortedDictionary`) ports to the JS type that mirrors it (`Map`,
+  `Set`) — not a plain array. An array can represent states the C# type forbids (a duplicate
+  key it would collapse or throw on), a latent divergence that hides behind green byte-parity
+  until an edge input reaches it; the mirror also lets every `ContainsKey` / indexer / `Add`
+  transcribe 1:1.
+- **Reproduce the C# control flow, not just its output.** When the C# fuses steps in one loop
+  — a per-item fix *then* a collapse, a specific visitation order, an interleaving — reproduce
+  that shape at the same seam. A tidier phase-split that is behaviourally equivalent for the
+  common case can still diverge on an edge the original ordering handled (e.g. a duplicate whose
+  fix fails, where fix-then-collapse keeps the earlier good copy but collapse-then-fix drops it).
 
 ## Conventions
 
@@ -189,9 +205,11 @@ The C# source is the map we navigate by, so keep the port traceable back to it.
   - **Specs are durable; plans are transient.** A spec captures *why* and *what*
     (decisions, invariants, trade-offs) and is kept indefinitely — other docs and
     source READMEs link to it. A plan is an execution checklist for a spec: commit it
-    when written (so it lives in history), then **delete it once the work is merged**.
-    The shipped code, tests, and git history are the record of what was done; a
-    completed plan past its lifetime is just bloat.
+    when written (so it lives in history), then **delete it on the branch as the final
+    step before merge** — so a completed plan never lands on the default branch, while
+    still living in the branch's history from when it was committed. The shipped code,
+    tests, and git history are the record of what was done; a plan on the main line is
+    just bloat.
 - **Deferred work is recorded in the backlog.** When we decide to defer something —
   a feature known to be unported, hardening parked behind a decision, cleanup that
   outlives the current change — record it in `docs/BACKLOG.md` rather than leaving a
