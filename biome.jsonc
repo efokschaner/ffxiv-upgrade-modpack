@@ -8,16 +8,18 @@
   "files": {
     // reference/, node_modules/, dist/, test/corpus/ (incl. its .oracle-cache) are all gitignored
     // and thus already skipped via useIgnoreFile above — no need to restate them here. The only
-    // excludes we must spell out are committed (non-gitignored) files: the two generated meta
-    // reference tables (est-table.ts / imc-table.ts), machine-emitted by
-    // scripts/extract-meta-reference.ts ("do not edit by hand"), where formatting the large IMC
-    // table (~1.2 MB of packed number arrays) to 80-col would explode it into hundreds of
-    // thousands of lines for no benefit. Listed by exact filename (not the whole src/meta/reference
-    // folder) so any hand-written file added there is still linted.
+    // excludes we must spell out are committed (non-gitignored) files: the machine-emitted reference
+    // tables ("do not edit by hand"), where reflowing one-line-per-entry data to 80-col would explode
+    // them for no benefit AND break byte-reproducibility (their extract-* scripts emit the exact
+    // committed bytes, so a formatter pass would make a regenerated file differ from the committed one):
+    //   - est-table.ts / imc-table.ts — scripts/extract-meta-reference.ts (~1.2 MB of packed arrays)
+    //   - hair-materials.ts — scripts/extract-hair-materials.ts (one line per DT hair/tail/ear/accessory material)
+    // Listed by exact filename (not the whole reference folder) so any hand-written file added there is still linted.
     "includes": [
       "**",
       "!src/meta/reference/imc-table.ts",
-      "!src/meta/reference/est-table.ts"
+      "!src/meta/reference/est-table.ts",
+      "!src/upgrade/reference/hair-materials.ts"
     ]
   },
   "formatter": {
