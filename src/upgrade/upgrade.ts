@@ -16,7 +16,9 @@ import {
   encodeSqPackFile,
   SqPackType,
 } from "../sqpack/sqpack";
+import { updateEyeMask } from "./eye-mask";
 import { upgradeMaterial } from "./material";
+import { EYE_MATERIALS } from "./reference/eye-materials";
 import { HAIR_MATERIALS } from "./reference/hair-materials";
 import { SKIN_REPATH_DICT } from "./skin-repath-dict";
 import { upgradeRemainingTextures } from "./texture";
@@ -225,7 +227,8 @@ function metadataRound(option: ModpackOption): void {
  * so a target added earlier in this same pass is seen; we mirror that by snapshotting the source
  * list and checking `option.files.has(target)` directly against the growing, live Map.
  * UpdateUnclaimedHairTextures (the rest of the includePartials block, ModpackUpgrader.cs:158-182) is
- * ported in `partials`; UpdateEyeMask alone remains unported — see
+ * ported in `partials`; UpdateEyeMask now runs as a fail-loud control-flow gate
+ * (`src/upgrade/eye-mask.ts`) — only its pixel conversion is deferred, see
  * docs/backlog/2026-07-15-partials-eye-mask.md.
  */
 export function updateSkinPaths(option: ModpackOption): void {
@@ -245,8 +248,10 @@ export function updateSkinPaths(option: ModpackOption): void {
  * `contained` = `unused` (globally-unreferenced textures, {@link computeUnusedTextures}) intersected
  * with that option's own files (:171, `o.StandardData.Files.ContainsKey(x)`), fed to the
  * hair/tail/ear rescue and the accessory rescue (both `EndwalkerUpgrade.UpdateUnclaimedHairTextures`
- * calls fused into the C#'s single wrapper, :172/:1324-1330 — see src/upgrade/unclaimed-hair.ts).
- * `UpdateEyeMask` (:174-177) remains deferred — docs/backlog/2026-07-15-partials-eye-mask.md.
+ * calls fused into the C#'s single wrapper, :172/:1324-1330 — see src/upgrade/unclaimed-hair.ts), then
+ * `UpdateEyeMask` (:174-177), which now runs as a fail-loud control-flow gate
+ * (`src/upgrade/eye-mask.ts`) — only its pixel conversion is deferred, see
+ * docs/backlog/2026-07-15-partials-eye-mask.md.
  */
 function partials(data: ModpackData, unused: Set<string>): void {
   for (const group of data.groups) {
@@ -257,9 +262,16 @@ function partials(data: ModpackData, unused: Set<string>): void {
   for (const group of data.groups) {
     for (const option of group.options) {
       // ModpackUpgrader.cs:171: `unusedTextures.Where(x => o.StandardData.Files.ContainsKey(x))`.
+      // Snapshotted here (== the C# `.ToList()` at :172) for the hair/accessory calls.
       const contained = new Set([...unused].filter((t) => option.files.has(t)));
       updateUnclaimedHairTextures(option, contained, HAIR_MATERIALS);
       updateUnclaimedHairAccessory(option, contained, HAIR_MATERIALS);
+      // ModpackUpgrader.cs:174-177: the eye loop re-enumerates the LAZY `contained` query, so it
+      // sees any file the hair pass just added/removed — re-filter `unused` against live files here.
+      for (const maskPath of unused) {
+        if (!option.files.has(maskPath)) continue;
+        updateEyeMask(option, maskPath, EYE_MATERIALS);
+      }
     }
   }
 }
@@ -311,7 +323,8 @@ function targetKey(info: UpgradeInfo): string {
  * a single first-wins-deduped map, plus every option's `.tex` keys into `allTextures` (:108-109);
  * pass 2 applies those targets to every option's textures (round 2, UpgradeRemainingTextures). The
  * partial round runs UpdateSkinPaths (skin path aliasing) and the unclaimed-hair/accessory rescue
- * (:162-182) over `allTextures` minus every target value; only UpdateEyeMask remains deferred — see
+ * (:162-182) over `allTextures` minus every target value; UpdateEyeMask now runs as a fail-loud
+ * control-flow gate (`src/upgrade/eye-mask.ts`) — only its pixel conversion is deferred, see
  * `partials`. Always returns a fresh ModpackData (never mutates `data`).
  */
 export function upgradeModpack(data: ModpackData): ModpackData {

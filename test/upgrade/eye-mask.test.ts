@@ -3,12 +3,16 @@
 // (docs/backlog/2026-07-15-partials-eye-mask.md); this file pins the guards and the fail-loud throw.
 import { describe, expect, it } from "vitest";
 import {
+  emptyMeta,
   FileStorageType,
   type ModpackFile,
+  ModpackFormat,
   type ModpackOption,
 } from "../../src/model/modpack";
 import { raceCodeFromPath, updateEyeMask } from "../../src/upgrade/eye-mask";
+import { EYE_MATERIALS } from "../../src/upgrade/reference/eye-materials";
 import type { EyeMaterialTable } from "../../src/upgrade/reference/eye-materials-types";
+import { upgradeModpack } from "../../src/upgrade/upgrade";
 
 function opt(files: Record<string, Uint8Array>): ModpackOption {
   return {
@@ -69,5 +73,60 @@ describe("raceCodeFromPath (IOUtil.GetRaceFromPath().GetRaceCode())", () => {
     expect(
       raceCodeFromPath("chara/human/c9998/obj/face/f0002/texture/x.tex"),
     ).toBe("0000");
+  });
+});
+
+function pack(files: Record<string, Uint8Array>) {
+  return {
+    sourceFormat: ModpackFormat.Pmp,
+    isSimple: false,
+    meta: emptyMeta(),
+    groups: [
+      {
+        name: "g",
+        description: "",
+        image: "",
+        page: 0,
+        priority: 0,
+        selectionType: "Single",
+        defaultSettings: 0,
+        options: [
+          {
+            name: "o",
+            description: "",
+            image: "",
+            priority: 0,
+            fileSwaps: {},
+            manipulations: [],
+            files: new Map(
+              Object.entries(files).map(([p, d]) => [
+                p,
+                { storage: FileStorageType.RawUncompressed, data: d } as const,
+              ]),
+            ),
+          },
+        ],
+      },
+    ],
+  };
+}
+
+// Derive a real, in-table mask path from the first committed iris material key.
+const firstIris = [...EYE_MATERIALS.keys()][0]!;
+const rc = /c([0-9]{4}).*?f([0-9]{4})/.exec(firstIris)!;
+const realMask = `chara/human/c${rc[1]}/obj/face/f${rc[2]}/texture/--c${rc[1]}f${rc[2]}_iri_s.tex`;
+
+describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () => {
+  it("throws the documented gap on an unclaimed iri_s.tex whose iris material exists", () => {
+    expect(() =>
+      upgradeModpack(pack({ [realMask]: new Uint8Array([1]) })),
+    ).toThrow(/unported/i);
+  });
+
+  it("does not throw when the iris material is absent (bogus face f9999)", () => {
+    const absent = `chara/human/c${rc[1]}/obj/face/f9999/texture/--c${rc[1]}f9999_iri_s.tex`;
+    expect(() =>
+      upgradeModpack(pack({ [absent]: new Uint8Array([1]) })),
+    ).not.toThrow();
   });
 });
