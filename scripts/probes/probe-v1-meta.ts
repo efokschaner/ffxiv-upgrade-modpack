@@ -21,7 +21,11 @@ import { join } from "node:path";
 import { loadModpack, writeModpack } from "../../src/index";
 import { deserializeMeta } from "../../src/meta/deserialize";
 import { serializeMeta } from "../../src/meta/serialize";
-import { allFiles, FileStorageType } from "../../src/model/modpack";
+import {
+  allFiles,
+  FileStorageType,
+  type ModpackFile,
+} from "../../src/model/modpack";
 import {
   decodeSqPackFile,
   encodeSqPackFile,
@@ -102,8 +106,12 @@ const model = loadModpack(chosen.pack, bytes);
 let before = "";
 for (const g of model.groups)
   for (const o of g.options) {
-    o.files = o.files.map((f) => {
-      if (f.gamePath !== chosen!.gamePath) return f;
+    const next = new Map<string, ModpackFile>();
+    for (const [path, f] of o.files) {
+      if (f.gamePath !== chosen!.gamePath) {
+        next.set(path, f);
+        continue;
+      }
       const orig = unc(f);
       before = metaSegs(orig);
       const m = deserializeMeta(orig);
@@ -115,8 +123,9 @@ for (const g of model.groups)
         f.storage === FileStorageType.SqPackCompressed
           ? encodeSqPackFile(v1bytes, SqPackType.Standard)
           : v1bytes;
-      return { ...f, data };
-    });
+      next.set(path, { ...f, data });
+    }
+    o.files = next;
   }
 console.log(`input meta (downgraded to v1): ${before}  ->  v1 form`);
 

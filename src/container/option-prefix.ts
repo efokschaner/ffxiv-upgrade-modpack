@@ -90,7 +90,7 @@ function isEmptyDefaultOption(o: ModpackOption): boolean {
     );
   }
   return (
-    o.files.length === 0 &&
+    o.files.size === 0 &&
     Object.keys(o.fileSwaps).length === 0 &&
     o.manipulations.length === 0
   );

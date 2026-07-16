@@ -9,6 +9,7 @@ import {
   type ModpackGroup,
   type ModpackOption,
 } from "../../src/model/modpack";
+import { filesMap } from "../helpers/make-packs";
 
 // Minimal builders local to this test file. `resolveDuplicates` only reads gamePath/data off
 // ModpackFile and files/name off ModpackOption; `data.groups` is used only for the
@@ -29,7 +30,7 @@ function option(
     description: "",
     image: "",
     priority: 0,
-    files,
+    files: filesMap(files),
     fileSwaps,
     manipulations: [],
   };

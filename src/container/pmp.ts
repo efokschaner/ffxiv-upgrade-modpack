@@ -114,7 +114,7 @@ function optionFromJson(
   referencedKeys: Set<string>,
 ): ModpackOption {
   const o = parsePmpOption(raw);
-  const modFiles: ModpackFile[] = [];
+  const modFiles = new Map<string, ModpackFile>();
   for (const [gamePath, zipPathRaw] of Object.entries(o.Files)) {
     const zipPath = zipPathRaw.replace(/\\/g, "/");
     // PMP.cs:196/:209 build the ExtraFiles "referenced" set from the RAW Files value directly,
@@ -134,7 +134,7 @@ function optionFromJson(
     // — and defers the consequences to each read seam (ResolveFile, EndwalkerUpgrade.cs:1758) and
     // to the writer, which drops it (PMP.cs:883-888). So we emit the file with NO bytes.
     const data = filesByKey.get(windowsPathKey(zipPath));
-    modFiles.push({
+    modFiles.set(gamePath, {
       gamePath,
       data,
       storage: FileStorageType.RawUncompressed,
@@ -429,7 +429,7 @@ function optionToJson(
 
   if (hasStandardFields) {
     const Files: Record<string, string> = {};
-    for (const f of o.files) {
+    for (const f of o.files.values()) {
       const zip = zipPaths.get(f);
       if (zip === undefined) continue; // absent: no member, no key (PMP.cs:883-888)
       Files[f.gamePath] = zip.replace(/\//g, "\\"); // PMP.cs:914

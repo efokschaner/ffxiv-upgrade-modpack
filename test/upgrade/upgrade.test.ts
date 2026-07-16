@@ -23,6 +23,7 @@ import {
 } from "../../src/tex/tex";
 import { requireBytes, restore } from "../../src/upgrade/upgrade";
 import { firstCorpusModel } from "../helpers/corpus-models";
+import { filesMap } from "../helpers/make-packs";
 
 function sampleData(): ModpackData {
   return {
@@ -55,13 +56,13 @@ function sampleData(): ModpackData {
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files: [
+            files: filesMap([
               {
                 gamePath: "a/b.mtrl",
                 data: new Uint8Array([1, 2, 3]),
                 storage: FileStorageType.SqPackCompressed,
               },
-            ],
+            ]),
           },
         ],
       },
@@ -138,7 +139,7 @@ function modpackWithSingleFile(
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files: [{ gamePath, data, storage }],
+            files: filesMap([{ gamePath, data, storage }]),
           },
         ],
       },
@@ -211,7 +212,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradeModpack(input);
-    const outFile = out.groups[0]!.options[0]!.files[0]!;
+    const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
@@ -225,7 +226,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradeModpack(input);
-    const outFile = out.groups[0]!.options[0]!.files[0]!;
+    const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual([1, 2, 3, 4, 5]);
   });
@@ -239,7 +240,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradeModpack(input);
-    const outFile = out.groups[0]!.options[0]!.files[0]!;
+    const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
@@ -256,7 +257,7 @@ describe("upgradeModpack (material round)", () => {
     );
 
     const out = upgradeModpack(input);
-    const outFile = out.groups[0]!.options[0]!.files[0]!;
+    const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
 
     expect(outFile.storage).toBe(FileStorageType.SqPackCompressed);
     const decoded = decodeSqPackFile(outFile.data!).data;
@@ -276,10 +277,9 @@ describe("upgradeModpack (skeleton)", () => {
     const input = sampleData();
     const out = upgradeModpack(input);
     expect(out.meta.name).toBe("M");
-    expect(out.groups[0]!.options[0]!.files[0]!.gamePath).toBe("a/b.mtrl");
-    expect(Array.from(out.groups[0]!.options[0]!.files[0]!.data!)).toEqual([
-      1, 2, 3,
-    ]);
+    const outFile = out.groups[0]!.options[0]!.files.get("a/b.mtrl")!;
+    expect(outFile.gamePath).toBe("a/b.mtrl");
+    expect(Array.from(outFile.data!)).toEqual([1, 2, 3]);
   });
 
   it("does not mutate the input when the output is edited (fresh containers)", () => {
@@ -290,12 +290,12 @@ describe("upgradeModpack (skeleton)", () => {
     expect(out.groups[0]!.options[0]!.files).not.toBe(
       input.groups[0]!.options[0]!.files,
     );
-    out.groups[0]!.options[0]!.files.push({
+    out.groups[0]!.options[0]!.files.set("x.tex", {
       gamePath: "x.tex",
       data: new Uint8Array(),
       storage: FileStorageType.RawUncompressed,
     });
-    expect(input.groups[0]!.options[0]!.files.length).toBe(1);
+    expect(input.groups[0]!.options[0]!.files.size).toBe(1);
   });
 });
 
@@ -369,7 +369,7 @@ function buildColorsetPack(
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files: [
+            files: filesMap([
               {
                 gamePath: "chara/x/mat/mt_foo.mtrl",
                 data: mtrlBytes,
@@ -380,7 +380,7 @@ function buildColorsetPack(
                 data: normalTexBytes,
                 storage: FileStorageType.RawUncompressed,
               },
-            ],
+            ]),
           },
         ],
       },
@@ -401,7 +401,7 @@ describe("upgradeModpack texture round (e2e)", () => {
     );
     const out = upgradeModpack(data);
     const files = out.groups[0]!.options[0]!.files;
-    const idx = files.find((f) => f.gamePath === "chara/x/tex/foo_id.tex");
+    const idx = files.get("chara/x/tex/foo_id.tex");
     expect(idx).toBeDefined();
     expect(Array.from(decodeToRgba(parseTex(idx!.data!)))).toEqual(
       Array.from(createIndexTexture(rgba, w, h)),

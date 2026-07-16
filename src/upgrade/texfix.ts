@@ -62,20 +62,19 @@ export function texFixRound(data: ModpackData): void {
   if (!needsTexFix(data)) return;
   for (const group of data.groups) {
     for (const option of group.options) {
-      option.files = option.files.filter((f) => {
-        if (!IS_TEX.test(f.gamePath)) return true;
-        if (IS_UI.test(f.gamePath)) return true;
+      for (const [path, f] of [...option.files]) {
+        if (!IS_TEX.test(f.gamePath)) continue;
+        if (IS_UI.test(f.gamePath)) continue;
         // Narrows `f` to the SqPackCompressed variant, whose `data` is non-optional (model/modpack.ts)
         // — absent files are PMP-only (RawUncompressed) and PMP never needs the tex fix (needsTexFix),
         // so this gate alone already guarantees `f.data` is present below.
-        if (f.storage !== FileStorageType.SqPackCompressed) return true;
+        if (f.storage !== FileStorageType.SqPackCompressed) continue;
         try {
           decodeSqPackFile(f.data);
-          return true;
         } catch {
-          return false;
+          option.files.delete(path);
         }
-      });
+      }
     }
   }
 }

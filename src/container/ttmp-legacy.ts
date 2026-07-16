@@ -27,9 +27,12 @@ export function readLegacyTtmp(bytes: Uint8Array): ModpackData {
   if (lines.length > 0 && lines[0]!.toLowerCase().includes("version"))
     lines.shift();
 
-  const files: ModpackFile[] = lines.map((line) => {
+  // Build the option's file map in line order. Map.set on a repeated FullPath overwrites the
+  // earlier entry, reproducing C#'s last-write-wins collapse (WizardData.cs:729-737).
+  const files = new Map<string, ModpackFile>();
+  for (const line of lines) {
     const m = JSON.parse(line) as OriginalModPackJson;
-    return {
+    files.set(m.FullPath, {
       gamePath: m.FullPath,
       data: mpd.slice(m.ModOffset, m.ModOffset + m.ModSize),
       storage: FileStorageType.SqPackCompressed,
@@ -39,8 +42,8 @@ export function readLegacyTtmp(bytes: Uint8Array): ModpackData {
         datFile: m.DatFile,
         isDefault: false,
       },
-    };
-  });
+    });
+  }
 
   const option: ModpackOption = {
     name: "Default",

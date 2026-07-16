@@ -8,6 +8,7 @@ import {
   type ModpackGroup,
   type ModpackOption,
 } from "../../src/model/modpack";
+import { filesMap } from "../helpers/make-packs";
 
 // Minimal builders local to this test file. `optionPrefixes` only reads name/page/selectionType/
 // options and (for HasData / IsEmptyOption purposes) files/fileSwaps/manipulations, so these
@@ -30,7 +31,7 @@ function option(
     description: "",
     image: "",
     priority: 0,
-    files: opts.files ?? [file()],
+    files: filesMap(opts.files ?? [file()]),
     fileSwaps: opts.fileSwaps ?? {},
     manipulations: [],
   };

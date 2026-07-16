@@ -34,6 +34,17 @@ function fileFromMod(m: TtmpModsJson, mpd: Uint8Array): ModpackFile {
   };
 }
 
+// Build the option's file map in ModsJsons order. Map.set on a repeated FullPath overwrites the
+// earlier entry, reproducing C#'s last-write-wins collapse (WizardData.cs:729-737).
+function filesFromMods(
+  mods: TtmpModsJson[],
+  mpd: Uint8Array,
+): Map<string, ModpackFile> {
+  const files = new Map<string, ModpackFile>();
+  for (const m of mods) files.set(m.FullPath, fileFromMod(m, mpd));
+  return files;
+}
+
 export function readTtmp2(bytes: Uint8Array): ModpackData {
   const entries = readZip(bytes);
   const mplName = [...entries.keys()].find((k) =>
@@ -69,7 +80,7 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
       priority: 0,
       fileSwaps: {},
       manipulations: [],
-      files: mpl.SimpleModsList.map((m) => fileFromMod(m, mpd)),
+      files: filesFromMods(mpl.SimpleModsList, mpd),
     };
     const group: ModpackGroup = {
       name: "Default",
@@ -109,7 +120,7 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
           priority: 0,
           fileSwaps: {},
           manipulations: [],
-          files: o.ModsJsons.map((m) => fileFromMod(m, mpd)),
+          files: filesFromMods(o.ModsJsons, mpd),
         })),
       });
     }
@@ -222,7 +233,7 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
           ImagePath: o.image,
           GroupName: g.name,
           SelectionType: selectionType,
-          ModsJsons: o.files.map(modOf),
+          ModsJsons: [...o.files.values()].map(modOf),
         })),
       });
       byPage.set(g.page, list);

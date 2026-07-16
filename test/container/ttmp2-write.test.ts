@@ -7,7 +7,11 @@ import {
   type ModpackFile,
   ModpackFormat,
 } from "../../src/model/modpack";
-import { makeTtmp2Simple, makeTtmp2Wizard } from "../helpers/make-packs";
+import {
+  filesMap,
+  makeTtmp2Simple,
+  makeTtmp2Wizard,
+} from "../helpers/make-packs";
 
 function roundTrip(bytes: Uint8Array) {
   const data = readTtmp2(bytes);
@@ -78,7 +82,7 @@ describe("writeTtmp2 round-trip", () => {
               priority: 0,
               fileSwaps: {},
               manipulations: [],
-              files: [
+              files: filesMap([
                 // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
                 // writeTtmp2's defensive runtime guard; structurally unreachable through any real
                 // reader (design spec §3.4), hence the cast.
@@ -86,7 +90,7 @@ describe("writeTtmp2 round-trip", () => {
                   gamePath: "chara/x.mtrl",
                   storage: FileStorageType.SqPackCompressed,
                 } as ModpackFile,
-              ],
+              ]),
             },
           ],
         },

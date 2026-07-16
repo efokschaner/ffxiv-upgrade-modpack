@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
 } from "../../src/model/modpack";
 import { encodeType4, texMipSizes } from "../../src/sqpack/type4";
 import { needsTexFix, texFixRound } from "../../src/upgrade/texfix";
+import { filesMap } from "../helpers/make-packs";
 
 const TEX_HEADER_SIZE = 80;
 const BC5 = 25136; // 8 bpp, min dimension 4
@@ -113,7 +115,7 @@ describe("needsTexFix", () => {
 
 function packWithFiles(
   version: string | undefined,
-  files: ModpackData["groups"][0]["options"][0]["files"],
+  files: ModpackFile[],
 ): ModpackData {
   return {
     sourceFormat: ModpackFormat.Ttmp2,
@@ -136,7 +138,7 @@ function packWithFiles(
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files,
+            files: filesMap(files),
           },
         ],
       },
@@ -171,7 +173,9 @@ describe("texFixRound", () => {
 
     texFixRound(data);
 
-    const paths = data.groups[0]!.options[0]!.files.map((f) => f.gamePath);
+    const paths = [...data.groups[0]!.options[0]!.files.values()].map(
+      (f) => f.gamePath,
+    );
     expect(paths).not.toContain("chara/x/tex/malformed_n.tex");
     expect(paths).toContain("chara/x/tex/valid_n.tex");
     expect(paths).toContain("ui/uld/malformed.tex");
@@ -189,7 +193,9 @@ describe("texFixRound", () => {
 
     texFixRound(data);
 
-    const paths = data.groups[0]!.options[0]!.files.map((f) => f.gamePath);
+    const paths = [...data.groups[0]!.options[0]!.files.values()].map(
+      (f) => f.gamePath,
+    );
     expect(paths).toContain("chara/x/tex/malformed_n.tex");
   });
 });

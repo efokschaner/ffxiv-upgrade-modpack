@@ -3,12 +3,14 @@ import { upgradeModpack } from "../../src/index";
 import {
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
   type ModpackOption,
 } from "../../src/model/modpack";
 import { updateSkinPaths } from "../../src/upgrade/upgrade";
+import { filesMap } from "../helpers/make-packs";
 
-function option(files: ModpackOption["files"]): ModpackOption {
+function option(files: ModpackFile[]): ModpackOption {
   return {
     name: "O",
     description: "",
@@ -16,7 +18,7 @@ function option(files: ModpackOption["files"]): ModpackOption {
     priority: 0,
     fileSwaps: {},
     manipulations: [],
-    files,
+    files: filesMap(files),
   };
 }
 
@@ -30,8 +32,8 @@ describe("updateSkinPaths", () => {
       { gamePath: OLD, data, storage: FileStorageType.RawUncompressed },
     ]);
     updateSkinPaths(o);
-    expect(o.files.map((f) => f.gamePath)).toEqual([OLD, NEW]);
-    const aliased = o.files.find((f) => f.gamePath === NEW)!;
+    expect([...o.files.values()].map((f) => f.gamePath)).toEqual([OLD, NEW]);
+    const aliased = o.files.get(NEW)!;
     expect(aliased.storage).toBe(FileStorageType.RawUncompressed);
     // Pointer duplication: shares the same underlying buffer reference.
     expect(aliased.data).toBe(data);
@@ -51,11 +53,9 @@ describe("updateSkinPaths", () => {
       },
     ]);
     updateSkinPaths(o);
-    expect(o.files.length).toBe(2);
+    expect(o.files.size).toBe(2);
     // Pre-existing target untouched (not overwritten by the alias).
-    expect(Array.from(o.files.find((f) => f.gamePath === NEW)!.data!)).toEqual([
-      2,
-    ]);
+    expect(Array.from(o.files.get(NEW)!.data!)).toEqual([2]);
   });
 
   it("adds one alias per matching key when several are present", () => {
@@ -72,7 +72,7 @@ describe("updateSkinPaths", () => {
       },
     ]);
     updateSkinPaths(o);
-    expect(new Set(o.files.map((f) => f.gamePath))).toEqual(
+    expect(new Set([...o.files.values()].map((f) => f.gamePath))).toEqual(
       new Set([OLD, "chara/bibo/raen_d.tex", NEW, "chara/bibo_raen_base.tex"]),
     );
   });
@@ -86,7 +86,9 @@ describe("updateSkinPaths", () => {
       },
     ]);
     updateSkinPaths(o);
-    expect(o.files.map((f) => f.gamePath)).toEqual(["chara/unrelated/foo.tex"]);
+    expect([...o.files.values()].map((f) => f.gamePath)).toEqual([
+      "chara/unrelated/foo.tex",
+    ]);
   });
 });
 
@@ -128,6 +130,6 @@ describe("upgradeModpack partials (skin repath e2e)", () => {
     const bytes = new Uint8Array([4, 2]);
     const out = upgradeModpack(packWith(OLD, bytes));
     const files = out.groups[0]!.options[0]!.files;
-    expect(files.some((f) => f.gamePath === NEW)).toBe(true);
+    expect(files.has(NEW)).toBe(true);
   });
 });

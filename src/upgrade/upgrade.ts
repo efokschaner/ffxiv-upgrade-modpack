@@ -48,7 +48,7 @@ function cloneOption(o: ModpackOption): ModpackOption {
     ...o,
     fileSwaps: { ...o.fileSwaps },
     manipulations: [...o.manipulations],
-    files: o.files.map(cloneFile),
+    files: new Map([...o.files].map(([p, f]) => [p, cloneFile(f)])),
   };
 }
 
@@ -156,7 +156,7 @@ const IS_CHARA_MTRL = /^chara\/.*\.mtrl$/;
  */
 function materialRound(option: ModpackOption): UpgradeInfo[] {
   const infos: UpgradeInfo[] = [];
-  option.files = option.files.map((f) => {
+  function upgradeOne(f: ModpackFile): ModpackFile {
     if (!IS_CHARA_MTRL.test(f.gamePath)) return f;
     // ResolveFile returned null -> UpdateEndwalkerMaterials `continue`s past this material
     // (EndwalkerUpgrade.cs:495-499), leaving the entry untouched. Hoisted ABOVE the try/catch
@@ -182,7 +182,10 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
       // try/catch in UpdateEndwalkerMaterials (EndwalkerUpgrade.cs:522-539).
       return f;
     }
-  });
+  }
+  const next = new Map<string, ModpackFile>();
+  for (const [path, f] of option.files) next.set(path, upgradeOne(f));
+  option.files = next;
   return infos;
 }
 
@@ -218,7 +221,7 @@ const IS_MDL = /\.mdl$/;
  */
 function modelRound(option: ModpackOption, gate: boolean): void {
   if (!gate) return;
-  option.files = option.files.map((f) => {
+  function fixOne(f: ModpackFile): ModpackFile {
     if (!IS_MDL.test(f.gamePath)) return f;
     const { bytes, type } = requireBytes(f);
     return restore(
@@ -226,7 +229,10 @@ function modelRound(option: ModpackOption, gate: boolean): void {
       normalizeModel(bytes, f.gamePath),
       type ?? SqPackType.Model,
     );
-  });
+  }
+  const next = new Map<string, ModpackFile>();
+  for (const [path, f] of option.files) next.set(path, fixOne(f));
+  option.files = next;
 }
 
 const IS_META = /\.meta$/;
@@ -237,7 +243,7 @@ const IS_META = /\.meta$/;
  * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
  */
 function metadataRound(option: ModpackOption): void {
-  option.files = option.files.map((f) => {
+  function fixOne(f: ModpackFile): ModpackFile {
     if (!IS_META.test(f.gamePath)) return f;
     // No absent-file analogue: PMP .meta files are materialized from manipulations
     // (PMP.cs:1141-1164), never read from a zip member, so a .meta with no bytes is unreachable.
@@ -249,7 +255,10 @@ function metadataRound(option: ModpackOption): void {
       reconstructMeta(deserializeMeta(bytes), f.gamePath),
     );
     return restore(f, out, type ?? SqPackType.Standard);
-  });
+  }
+  const next = new Map<string, ModpackFile>();
+  for (const [path, f] of option.files) next.set(path, fixOne(f));
+  option.files = next;
 }
 
 /**
@@ -259,18 +268,19 @@ function metadataRound(option: ModpackOption): void {
  *
  * C# iterates a snapshot (`clone`) of the option's files but checks the LIVE dict for the target,
  * so a target added earlier in this same pass is seen; we mirror that by snapshotting the source
- * list and checking the growing `option.files`. UpdateUnclaimedHairTextures / UpdateEyeMask
- * (the rest of the includePartials block, ModpackUpgrader.cs:158-182) remain unported — see
- * docs/backlog/2026-07-15-partials-unclaimed-hair.md and -eye-mask.md.
+ * list and checking `option.files.has(target)` directly against the growing, live Map.
+ * UpdateUnclaimedHairTextures / UpdateEyeMask (the rest of the includePartials block,
+ * ModpackUpgrader.cs:158-182) remain unported — see docs/backlog/2026-07-15-partials-unclaimed-hair.md
+ * and -eye-mask.md.
  */
 export function updateSkinPaths(option: ModpackOption): void {
-  const snapshot = [...option.files];
+  const snapshot = [...option.files.values()];
   for (const f of snapshot) {
     const target = SKIN_REPATH_DICT.get(f.gamePath);
     if (target === undefined) continue;
-    if (option.files.some((x) => x.gamePath === target)) continue;
+    if (option.files.has(target)) continue; // C# files.ContainsKey (ModpackUpgrader.cs:487)
     // Duplicate the pointer: shares f.data, carries storage + any ttmp metadata.
-    option.files.push({ ...f, gamePath: target });
+    option.files.set(target, { ...f, gamePath: target }); // C# files.Add (ModpackUpgrader.cs:497)
   }
 }
 

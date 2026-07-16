@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { FileStorageType, type ModpackOption } from "../../src/model/modpack";
+import {
+  FileStorageType,
+  type ModpackFile,
+  type ModpackOption,
+} from "../../src/model/modpack";
 import {
   createHairMaps,
   createIndexTexture,
@@ -112,6 +116,14 @@ describe("updateEndwalkerHairTextures", () => {
 function option(
   files: Array<{ gamePath: string; data: Uint8Array }>,
 ): ModpackOption {
+  const m = new Map<string, ModpackFile>();
+  for (const f of files) {
+    m.set(f.gamePath, {
+      gamePath: f.gamePath,
+      data: f.data,
+      storage: FileStorageType.RawUncompressed,
+    });
+  }
   return {
     name: "O",
     description: "",
@@ -119,11 +131,7 @@ function option(
     priority: 0,
     fileSwaps: {},
     manipulations: [],
-    files: files.map((f) => ({
-      gamePath: f.gamePath,
-      data: f.data,
-      storage: FileStorageType.RawUncompressed,
-    })),
+    files: m,
   };
 }
 
@@ -147,7 +155,7 @@ describe("upgradeRemainingTextures", () => {
       ],
     ]);
     upgradeRemainingTextures(o, targets);
-    const idxFile = o.files.find((f) => f.gamePath === indexPath);
+    const idxFile = o.files.get(indexPath);
     expect(idxFile).toBeDefined();
     const got = decodeToRgba(parseTex(idxFile!.data!));
     expect(Array.from(got)).toEqual(Array.from(createIndexTexture(rgba, w, h)));
@@ -173,9 +181,7 @@ describe("upgradeRemainingTextures", () => {
       ],
     ]);
     upgradeRemainingTextures(o, targets);
-    expect(o.files.some((f) => f.gamePath === "chara/x/tex/foo_id.tex")).toBe(
-      false,
-    );
+    expect(o.files.has("chara/x/tex/foo_id.tex")).toBe(false);
   });
 
   it("throws when hair has the normal but not the mask", () => {
@@ -215,6 +221,6 @@ describe("upgradeRemainingTextures", () => {
       ],
     ]);
     expect(() => upgradeRemainingTextures(o, targets)).not.toThrow();
-    expect(o.files.some((f) => f.gamePath === indexPath)).toBe(false);
+    expect(o.files.has(indexPath)).toBe(false);
   });
 });

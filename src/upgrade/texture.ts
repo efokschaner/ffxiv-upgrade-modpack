@@ -103,7 +103,7 @@ function findFile(
   option: ModpackOption,
   gamePath: string,
 ): ModpackFile | undefined {
-  return option.files.find((f) => f.gamePath === gamePath);
+  return option.files.get(gamePath);
 }
 
 /** Writes a generated uncompressed .tex into the option, mirroring the storage form of a
@@ -133,9 +133,9 @@ function writeGeneratedTex(
           data: encodeSqPackFile(texBytes, SqPackType.Texture),
         }
       : { gamePath, storage: FileStorageType.RawUncompressed, data: texBytes };
-  const existing = option.files.findIndex((f) => f.gamePath === gamePath);
-  if (existing >= 0) option.files[existing] = file;
-  else option.files.push(file);
+  // Map.set replaces in place at the key's existing position, or appends — matching the old
+  // findIndex-replace-or-push semantics (WriteFile's replace-or-add-by-path, EndwalkerUpgrade.cs:1795-1823).
+  option.files.set(gamePath, file);
 }
 
 /** Port of UpgradeRemainingTextures (EndwalkerUpgrade.cs:1832). For each target, generate

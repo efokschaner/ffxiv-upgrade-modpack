@@ -60,7 +60,8 @@ export interface ModpackOption {
   description: string;
   image: string;
   priority: number;
-  files: ModpackFile[];
+  files: Map<string, ModpackFile>; // keyed by gamePath, insertion order (mirrors C#'s
+  // WizardStandardOptionData.Files = Dictionary<string, FileStorageInformation>, WizardData.cs:71)
   fileSwaps: Record<string, string>; // PMP only; {} for TTMP
   manipulations: unknown[]; // PMP only; opaque JSON, [] for TTMP
   raw?: unknown; // opaque carry-through: full original PMP option JSON (Imc/Combining
@@ -124,5 +125,7 @@ export function emptyMeta(): ModpackMeta {
 }
 
 export function allFiles(data: ModpackData): ModpackFile[] {
-  return data.groups.flatMap((g) => g.options.flatMap((o) => o.files));
+  return data.groups.flatMap((g) =>
+    g.options.flatMap((o) => [...o.files.values()]),
+  );
 }

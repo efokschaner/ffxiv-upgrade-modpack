@@ -6,9 +6,11 @@ import { writeTtmp2 } from "../src/container/ttmp2";
 import {
   FileStorageType,
   type ModpackData,
+  type ModpackFile,
   ModpackFormat,
 } from "../src/model/modpack";
 import { encodeSqPackFile, SqPackType } from "../src/sqpack/sqpack";
+import { filesMap } from "./helpers/make-packs";
 import {
   compareToBaseline,
   loadBaseline,
@@ -104,16 +106,38 @@ function rawPack(files: Record<string, Uint8Array>): ModpackData {
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files: Object.entries(files).map(([gamePath, data]) => ({
-              gamePath,
-              data,
-              storage: FileStorageType.RawUncompressed,
-            })),
+            files: new Map(
+              Object.entries(files).map(([gamePath, data]) => [
+                gamePath,
+                {
+                  gamePath,
+                  data,
+                  storage: FileStorageType.RawUncompressed,
+                } satisfies ModpackFile,
+              ]),
+            ),
           },
         ],
       },
     ],
   };
+}
+
+// `byGamePath` (upgrade-diff.ts) collects the per-gamePath payload multiset across the WHOLE
+// pack via allFiles(), not within a single option's Map (which can hold at most one entry per
+// gamePath, mirroring C#'s Dictionary — see the model's collapse test). A "same gamePath appears
+// twice" fixture therefore needs a SECOND option, not a second push into the same option's Map.
+function addOption(data: ModpackData, file: ModpackFile): void {
+  const group = data.groups[0]!;
+  group.options.push({
+    name: `extra-${group.options.length}`,
+    description: "",
+    image: "",
+    priority: 0,
+    fileSwaps: {},
+    manipulations: [],
+    files: new Map([[file.gamePath, file]]),
+  });
 }
 
 const never = () => false;
@@ -162,7 +186,7 @@ describe("diffUpgrade", () => {
     const raw = new Uint8Array([7, 7, 7, 7]);
     const entry = encodeSqPackFile(raw, SqPackType.Standard);
     const ours = rawPack({}); // start empty, then inject a compressed file
-    ours.groups[0]!.options[0]!.files.push({
+    ours.groups[0]!.options[0]!.files.set("c.mtrl", {
       gamePath: "c.mtrl",
       data: entry,
       storage: FileStorageType.SqPackCompressed,
@@ -175,13 +199,13 @@ describe("diffUpgrade", () => {
 
   it("matches same gamePath with two identical payloads on each side", () => {
     const ours = rawPack({ "dup.mtrl": new Uint8Array([1]) });
-    ours.groups[0]!.options[0]!.files.push({
+    addOption(ours, {
       gamePath: "dup.mtrl",
       data: new Uint8Array([2]),
       storage: FileStorageType.RawUncompressed,
     });
     const golden = rawPack({ "dup.mtrl": new Uint8Array([1]) });
-    golden.groups[0]!.options[0]!.files.push({
+    addOption(golden, {
       gamePath: "dup.mtrl",
       data: new Uint8Array([2]),
       storage: FileStorageType.RawUncompressed,
@@ -193,7 +217,7 @@ describe("diffUpgrade", () => {
 
   it("detects extra payload when ours has two and golden has one", () => {
     const ours = rawPack({ "dup.mtrl": new Uint8Array([1]) });
-    ours.groups[0]!.options[0]!.files.push({
+    addOption(ours, {
       gamePath: "dup.mtrl",
       data: new Uint8Array([9]),
       storage: FileStorageType.RawUncompressed,
@@ -210,13 +234,13 @@ describe("diffUpgrade", () => {
     // Two distinct payloads per side, none byte-equal, so phase 1 (exact) finds nothing
     // and everything falls to the phase-2 confirm pairing.
     const ours = rawPack({ "g.tex": new Uint8Array([1]) });
-    ours.groups[0]!.options[0]!.files.push({
+    addOption(ours, {
       gamePath: "g.tex",
       data: new Uint8Array([2]),
       storage: FileStorageType.RawUncompressed,
     });
     const golden = rawPack({ "g.tex": new Uint8Array([3]) });
-    golden.groups[0]!.options[0]!.files.push({
+    addOption(golden, {
       gamePath: "g.tex",
       data: new Uint8Array([4]),
       storage: FileStorageType.RawUncompressed,
@@ -326,13 +350,13 @@ function rawPackTtmp2(): ModpackData {
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files: [
+            files: filesMap([
               {
                 gamePath: "a/b.mtrl",
                 data: new Uint8Array([1, 2, 3, 4]),
                 storage: FileStorageType.SqPackCompressed,
               },
-            ],
+            ]),
           },
         ],
       },

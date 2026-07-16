@@ -2,9 +2,17 @@ import type {
   ModPackJson,
   OriginalModPackJson,
 } from "../../src/container/manifest-types";
+import type { ModpackFile } from "../../src/model/modpack";
 import { writeZip } from "../../src/zip/zip";
 
 const enc = new TextEncoder();
+
+/** Build an option's files Map from ordered entries. Keyed by gamePath, insertion order preserved. */
+export function filesMap(files: ModpackFile[]): Map<string, ModpackFile> {
+  const m = new Map<string, ModpackFile>();
+  for (const f of files) m.set(f.gamePath, f);
+  return m;
+}
 
 export interface SyntheticPack {
   name: string;

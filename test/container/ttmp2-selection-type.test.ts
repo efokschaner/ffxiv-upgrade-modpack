@@ -7,6 +7,7 @@ import {
   ModpackFormat,
 } from "../../src/model/modpack";
 import { readZip, writeZip } from "../../src/zip/zip";
+import { filesMap } from "../helpers/make-packs";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -95,13 +96,13 @@ function dataWith(selectionType: string): ModpackData {
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files: [
+            files: filesMap([
               {
                 gamePath: PATH,
                 data: BLOB,
                 storage: FileStorageType.SqPackCompressed,
               },
-            ],
+            ]),
           },
         ],
       },
