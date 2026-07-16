@@ -33,7 +33,6 @@ export function readLegacyTtmp(bytes: Uint8Array): ModpackData {
   for (const line of lines) {
     const m = JSON.parse(line) as OriginalModPackJson;
     files.set(m.FullPath, {
-      gamePath: m.FullPath,
       data: mpd.slice(m.ModOffset, m.ModOffset + m.ModSize),
       storage: FileStorageType.SqPackCompressed,
       ttmp: {

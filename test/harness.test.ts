@@ -35,11 +35,10 @@ function oneFilePack(path: string, bytes: Uint8Array): ModpackData {
             fileSwaps: {},
             manipulations: [],
             files: filesMap([
-              {
-                gamePath: path,
-                data: bytes,
-                storage: FileStorageType.SqPackCompressed,
-              },
+              [
+                path,
+                { data: bytes, storage: FileStorageType.SqPackCompressed },
+              ],
             ]),
           },
         ],
@@ -93,11 +92,10 @@ describe("compareInnerFilesByteIdentical", () => {
                 fileSwaps: {},
                 manipulations: [],
                 files: filesMap([
-                  {
-                    gamePath: "shared.mtrl",
-                    data: bytes1,
-                    storage: FileStorageType.SqPackCompressed,
-                  },
+                  [
+                    "shared.mtrl",
+                    { data: bytes1, storage: FileStorageType.SqPackCompressed },
+                  ],
                 ]),
               },
               {
@@ -108,11 +106,10 @@ describe("compareInnerFilesByteIdentical", () => {
                 fileSwaps: {},
                 manipulations: [],
                 files: filesMap([
-                  {
-                    gamePath: "shared.mtrl",
-                    data: bytes2,
-                    storage: FileStorageType.SqPackCompressed,
-                  },
+                  [
+                    "shared.mtrl",
+                    { data: bytes2, storage: FileStorageType.SqPackCompressed },
+                  ],
                 ]),
               },
             ],

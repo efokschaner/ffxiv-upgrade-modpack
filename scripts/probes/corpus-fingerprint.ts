@@ -102,8 +102,8 @@ function fingerprint(name: string, data: ModpackData): Set<string> {
     }
   }
 
-  for (const file of allFiles(data)) {
-    const gp = file.gamePath.toLowerCase();
+  for (const { gamePath, file } of allFiles(data)) {
+    const gp = gamePath.toLowerCase();
     for (const c of pathCategories(gp)) f.add(c);
     const ext = gp.slice(gp.lastIndexOf("."));
     f.add(`ext:${ext}`);
@@ -124,7 +124,7 @@ function fingerprint(name: string, data: ModpackData): Set<string> {
 
     try {
       if (decoded.type === SqPackType.Texture) {
-        const t = parseTex(decoded.data, file.gamePath);
+        const t = parseTex(decoded.data, gamePath);
         f.add(`tex:format:0x${t.format.toString(16)}`);
         // BACKLOG T2/T3: the NPOT resize needs the ImageSharp resampler.
         if (!isPow2(t.width) || !isPow2(t.height)) f.add("tex:npot");
@@ -132,13 +132,13 @@ function fingerprint(name: string, data: ModpackData): Set<string> {
         if (t.depth > 1) f.add("tex:volume");
         if (t.mipCount === 1) f.add("tex:single-mip");
       } else if (decoded.type === SqPackType.Model) {
-        const m = parseMdl(decoded.data, file.gamePath);
+        const m = parseMdl(decoded.data, gamePath);
         f.add(`mdl:v${m.header.version}`);
         if (m.modelData.boneSetCount > 0) f.add("mdl:boneSets");
         if (m.sections.trailing.length > 0) f.add("mdl:trailingBytes");
         if (m.header.lodCount > 1) f.add("mdl:multiLod");
       } else if (decoded.type === SqPackType.Standard && gp.endsWith(".mtrl")) {
-        const mt = parseMtrl(decoded.data, file.gamePath);
+        const mt = parseMtrl(decoded.data, gamePath);
         f.add(`mtrl:shpk:${mt.shaderPackRaw}`);
         for (const k of mt.shaderKeys)
           f.add(`mtrl:key:0x${k.keyId.toString(16)}=${k.value}`);

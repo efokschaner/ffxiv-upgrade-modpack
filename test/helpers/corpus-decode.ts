@@ -39,8 +39,11 @@ export type PresentRawFile = RawUncompressedFile & { data: Uint8Array };
 
 /** One asset file a check operates on: a compressed SQPack entry (TTMP) or a present raw file (PMP).
  *  Both always carry `data`; `storage` discriminates for the /unwrap oracle, which only a
- *  SqPackCompressed payload can feed. */
-export type AssetFile = SqPackCompressedFile | PresentRawFile;
+ *  SqPackCompressed payload can feed. `gamePath` is re-attached from the `option.files` Map key
+ *  (allFiles' `{ gamePath, file }` pair) since `ModpackFile` itself carries no path. */
+export type AssetFile = (SqPackCompressedFile | PresentRawFile) & {
+  gamePath: string;
+};
 
 /** One asset file paired with its decode result. `d` is null IFF this is a tolerated Type-4
  *  (texture) SQPack decode failure (see decodeEntry) — never for a Type 2/3, and never for a
@@ -83,9 +86,11 @@ export function entryType(f: SqPackCompressedFile): number {
  *  skipped — it must not be treated as an empty payload. */
 export function assetFilesOf(data: ModpackData): AssetFile[] {
   const out: AssetFile[] = [];
-  for (const f of allFiles(data)) {
-    if (f.storage === FileStorageType.SqPackCompressed) out.push(f);
-    else if (f.data !== undefined) out.push(f as PresentRawFile);
+  for (const { gamePath, file } of allFiles(data)) {
+    if (file.storage === FileStorageType.SqPackCompressed)
+      out.push({ ...file, gamePath });
+    else if (file.data !== undefined)
+      out.push({ ...(file as PresentRawFile), gamePath });
   }
   return out;
 }

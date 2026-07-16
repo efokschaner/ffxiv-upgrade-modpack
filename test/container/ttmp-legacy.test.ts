@@ -10,7 +10,9 @@ describe("readLegacyTtmp", () => {
     const data = readLegacyTtmp(pack.bytes);
     expect(data.sourceFormat).toBe(ModpackFormat.TtmpLegacy);
     expect(data.isSimple).toBe(true);
-    const byPath = new Map(allFiles(data).map((f) => [f.gamePath, f.data]));
+    const byPath = new Map(
+      allFiles(data).map(({ gamePath, file }) => [gamePath, file.data]),
+    );
     for (const [path, bytes] of Object.entries(pack.expectedFiles)) {
       expect(byPath.get(path)).toEqual(bytes);
     }
@@ -19,7 +21,9 @@ describe("readLegacyTtmp", () => {
   it("upgrades to ttmp2 preserving inner files", () => {
     const pack = makeLegacyTtmp();
     const out = readTtmp2(writeTtmp2(readLegacyTtmp(pack.bytes)));
-    const byPath = new Map(allFiles(out).map((f) => [f.gamePath, f.data]));
+    const byPath = new Map(
+      allFiles(out).map(({ gamePath, file }) => [gamePath, file.data]),
+    );
     for (const [path, bytes] of Object.entries(pack.expectedFiles)) {
       expect(byPath.get(path)).toEqual(bytes);
     }

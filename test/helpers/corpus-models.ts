@@ -21,19 +21,19 @@ export function* corpusModels(): Generator<CorpusModel> {
       name,
       new Uint8Array(readFileSync(join(INPUTS, name))),
     );
-    for (const f of allFiles(data)) {
-      if (f.storage !== FileStorageType.SqPackCompressed) continue;
-      if (!f.gamePath.toLowerCase().endsWith(".mdl")) continue;
+    for (const { gamePath, file } of allFiles(data)) {
+      if (file.storage !== FileStorageType.SqPackCompressed) continue;
+      if (!gamePath.toLowerCase().endsWith(".mdl")) continue;
       let decoded: ReturnType<typeof decodeSqPackFile>;
       try {
         // SqPackCompressed (narrowed by the storage check above) always carries bytes; only a PMP
         // RawUncompressed entry can be absent (absent-file design spec §3.1).
-        decoded = decodeSqPackFile(f.data);
+        decoded = decodeSqPackFile(file.data);
       } catch {
         continue; // tolerated undecodable legacy model (mirrors corpus-mdl)
       }
       if (decoded.type !== SqPackType.Model) continue;
-      yield { pack: name, gamePath: f.gamePath, bytes: decoded.data };
+      yield { pack: name, gamePath, bytes: decoded.data };
     }
   }
 }

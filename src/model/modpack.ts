@@ -18,7 +18,9 @@ export interface TtmpFileMeta {
 }
 
 interface ModpackFileBase {
-  gamePath: string; // internal game path, forward slashes
+  // The game path is not a field here: it lives solely as the key in
+  // ModpackOption.files, mirroring C#'s FileStorageInformation, which carries
+  // no path (reference/.../SqPack/FileTypes/TransactionDataHandler.cs:42-47).
   ttmp?: TtmpFileMeta; // present iff sourced from a TTMP container
 }
 
@@ -124,8 +126,12 @@ export function emptyMeta(): ModpackMeta {
   };
 }
 
-export function allFiles(data: ModpackData): ModpackFile[] {
+export function allFiles(
+  data: ModpackData,
+): { gamePath: string; file: ModpackFile }[] {
   return data.groups.flatMap((g) =>
-    g.options.flatMap((o) => [...o.files.values()]),
+    g.options.flatMap((o) =>
+      [...o.files].map(([gamePath, file]) => ({ gamePath, file })),
+    ),
   );
 }

@@ -39,11 +39,13 @@ describe("model", () => {
               fileSwaps: {},
               manipulations: [],
               files: filesMap([
-                {
-                  gamePath: "a.mdl",
-                  data: new Uint8Array([1]),
-                  storage: FileStorageType.SqPackCompressed,
-                },
+                [
+                  "a.mdl",
+                  {
+                    data: new Uint8Array([1]),
+                    storage: FileStorageType.SqPackCompressed,
+                  },
+                ],
               ]),
             },
             {
@@ -54,11 +56,13 @@ describe("model", () => {
               fileSwaps: {},
               manipulations: [],
               files: filesMap([
-                {
-                  gamePath: "b.mtrl",
-                  data: new Uint8Array([2]),
-                  storage: FileStorageType.SqPackCompressed,
-                },
+                [
+                  "b.mtrl",
+                  {
+                    data: new Uint8Array([2]),
+                    storage: FileStorageType.SqPackCompressed,
+                  },
+                ],
               ]),
             },
           ],

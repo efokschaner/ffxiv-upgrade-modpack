@@ -110,7 +110,6 @@ function rawPack(files: Record<string, Uint8Array>): ModpackData {
               Object.entries(files).map(([gamePath, data]) => [
                 gamePath,
                 {
-                  gamePath,
                   data,
                   storage: FileStorageType.RawUncompressed,
                 } satisfies ModpackFile,
@@ -127,7 +126,11 @@ function rawPack(files: Record<string, Uint8Array>): ModpackData {
 // pack via allFiles(), not within a single option's Map (which can hold at most one entry per
 // gamePath, mirroring C#'s Dictionary — see the model's collapse test). A "same gamePath appears
 // twice" fixture therefore needs a SECOND option, not a second push into the same option's Map.
-function addOption(data: ModpackData, file: ModpackFile): void {
+function addOption(
+  data: ModpackData,
+  gamePath: string,
+  file: ModpackFile,
+): void {
   const group = data.groups[0]!;
   group.options.push({
     name: `extra-${group.options.length}`,
@@ -136,7 +139,7 @@ function addOption(data: ModpackData, file: ModpackFile): void {
     priority: 0,
     fileSwaps: {},
     manipulations: [],
-    files: new Map([[file.gamePath, file]]),
+    files: new Map([[gamePath, file]]),
   });
 }
 
@@ -187,7 +190,6 @@ describe("diffUpgrade", () => {
     const entry = encodeSqPackFile(raw, SqPackType.Standard);
     const ours = rawPack({}); // start empty, then inject a compressed file
     ours.groups[0]!.options[0]!.files.set("c.mtrl", {
-      gamePath: "c.mtrl",
       data: entry,
       storage: FileStorageType.SqPackCompressed,
     });
@@ -199,14 +201,12 @@ describe("diffUpgrade", () => {
 
   it("matches same gamePath with two identical payloads on each side", () => {
     const ours = rawPack({ "dup.mtrl": new Uint8Array([1]) });
-    addOption(ours, {
-      gamePath: "dup.mtrl",
+    addOption(ours, "dup.mtrl", {
       data: new Uint8Array([2]),
       storage: FileStorageType.RawUncompressed,
     });
     const golden = rawPack({ "dup.mtrl": new Uint8Array([1]) });
-    addOption(golden, {
-      gamePath: "dup.mtrl",
+    addOption(golden, "dup.mtrl", {
       data: new Uint8Array([2]),
       storage: FileStorageType.RawUncompressed,
     });
@@ -217,8 +217,7 @@ describe("diffUpgrade", () => {
 
   it("detects extra payload when ours has two and golden has one", () => {
     const ours = rawPack({ "dup.mtrl": new Uint8Array([1]) });
-    addOption(ours, {
-      gamePath: "dup.mtrl",
+    addOption(ours, "dup.mtrl", {
       data: new Uint8Array([9]),
       storage: FileStorageType.RawUncompressed,
     });
@@ -234,14 +233,12 @@ describe("diffUpgrade", () => {
     // Two distinct payloads per side, none byte-equal, so phase 1 (exact) finds nothing
     // and everything falls to the phase-2 confirm pairing.
     const ours = rawPack({ "g.tex": new Uint8Array([1]) });
-    addOption(ours, {
-      gamePath: "g.tex",
+    addOption(ours, "g.tex", {
       data: new Uint8Array([2]),
       storage: FileStorageType.RawUncompressed,
     });
     const golden = rawPack({ "g.tex": new Uint8Array([3]) });
-    addOption(golden, {
-      gamePath: "g.tex",
+    addOption(golden, "g.tex", {
       data: new Uint8Array([4]),
       storage: FileStorageType.RawUncompressed,
     });
@@ -351,11 +348,13 @@ function rawPackTtmp2(): ModpackData {
             fileSwaps: {},
             manipulations: [],
             files: filesMap([
-              {
-                gamePath: "a/b.mtrl",
-                data: new Uint8Array([1, 2, 3, 4]),
-                storage: FileStorageType.SqPackCompressed,
-              },
+              [
+                "a/b.mtrl",
+                {
+                  data: new Uint8Array([1, 2, 3, 4]),
+                  storage: FileStorageType.SqPackCompressed,
+                },
+              ],
             ]),
           },
         ],

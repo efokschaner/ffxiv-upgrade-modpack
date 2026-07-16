@@ -7,11 +7,11 @@ import { writeZip } from "../../src/zip/zip";
 
 const enc = new TextEncoder();
 
-/** Build an option's files Map from ordered entries. Keyed by gamePath, insertion order preserved. */
-export function filesMap(files: ModpackFile[]): Map<string, ModpackFile> {
-  const m = new Map<string, ModpackFile>();
-  for (const f of files) m.set(f.gamePath, f);
-  return m;
+/** Build an option's files Map from ordered [gamePath, file] entries, insertion order preserved. */
+export function filesMap(
+  entries: Array<[string, ModpackFile]>,
+): Map<string, ModpackFile> {
+  return new Map(entries);
 }
 
 export interface SyntheticPack {

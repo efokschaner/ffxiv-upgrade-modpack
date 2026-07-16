@@ -63,8 +63,8 @@ export function texFixRound(data: ModpackData): void {
   for (const group of data.groups) {
     for (const option of group.options) {
       for (const [path, f] of [...option.files]) {
-        if (!IS_TEX.test(f.gamePath)) continue;
-        if (IS_UI.test(f.gamePath)) continue;
+        if (!IS_TEX.test(path)) continue;
+        if (IS_UI.test(path)) continue;
         // Narrows `f` to the SqPackCompressed variant, whose `data` is non-optional (model/modpack.ts)
         // — absent files are PMP-only (RawUncompressed) and PMP never needs the tex fix (needsTexFix),
         // so this gate alone already guarantees `f.data` is present below.

@@ -97,11 +97,7 @@ function dataWith(selectionType: string): ModpackData {
             fileSwaps: {},
             manipulations: [],
             files: filesMap([
-              {
-                gamePath: PATH,
-                data: BLOB,
-                storage: FileStorageType.SqPackCompressed,
-              },
+              [PATH, { data: BLOB, storage: FileStorageType.SqPackCompressed }],
             ]),
           },
         ],

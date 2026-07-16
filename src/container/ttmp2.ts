@@ -22,7 +22,6 @@ import type {
 
 function fileFromMod(m: TtmpModsJson, mpd: Uint8Array): ModpackFile {
   return {
-    gamePath: m.FullPath,
     data: mpd.slice(m.ModOffset, m.ModOffset + m.ModSize),
     storage: FileStorageType.SqPackCompressed,
     ttmp: {
@@ -151,9 +150,7 @@ function buildBlob(files: ModpackFile[]): {
       // member) and /upgrade never converts formats. TTMP's own importer skips such files
       // (TTMP.cs:1067), but we have no golden for a TTMP *write* of one, so we fail loud rather
       // than guess. See the absent-file design spec §3.4.
-      throw new Error(
-        `ttmp2: cannot write a file with no bytes: ${f.gamePath}`,
-      );
+      throw new Error("ttmp2: cannot write a file with no bytes");
     }
     const data = f.data; // narrow once: TS does not retain the `!f.data` guard across the closure below
     const key = fnv1aKey(data);
@@ -182,12 +179,12 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
     );
   }
   const files = allFiles(data);
-  const { blob, place } = buildBlob(files);
+  const { blob, place } = buildBlob(files.map((e) => e.file));
 
-  const modOf = (f: ModpackFile) => ({
+  const modOf = (gamePath: string, f: ModpackFile) => ({
     Name: f.ttmp?.name ?? "",
     Category: f.ttmp?.category ?? "",
-    FullPath: f.gamePath,
+    FullPath: gamePath,
     ModOffset: place.get(f)!.off,
     ModSize: place.get(f)!.size,
     DatFile: f.ttmp?.datFile ?? "",
@@ -205,7 +202,7 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   };
 
   if (data.isSimple) {
-    mpl.SimpleModsList = files.map(modOf);
+    mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));
   } else {
     const byPage = new Map<number, TtmpModGroupJson[]>();
     for (const g of data.groups) {
@@ -233,7 +230,7 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
           ImagePath: o.image,
           GroupName: g.name,
           SelectionType: selectionType,
-          ModsJsons: [...o.files.values()].map(modOf),
+          ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
         })),
       });
       byPage.set(g.page, list);

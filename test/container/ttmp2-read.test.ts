@@ -11,7 +11,9 @@ describe("readTtmp2", () => {
     const data = readTtmp2(pack.bytes);
     expect(data.isSimple).toBe(true);
     expect(data.meta.name).toBe("Synth Simple");
-    const byPath = new Map(allFiles(data).map((f) => [f.gamePath, f]));
+    const byPath = new Map(
+      allFiles(data).map(({ gamePath, file }) => [gamePath, file]),
+    );
     for (const [path, bytes] of Object.entries(pack.expectedFiles)) {
       expect(byPath.get(path)!.data).toEqual(bytes);
       expect(byPath.get(path)!.storage).toBe(FileStorageType.SqPackCompressed);

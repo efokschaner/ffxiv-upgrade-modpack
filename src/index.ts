@@ -71,10 +71,10 @@ export function writeModpack(
     target === "ttmp2"
       ? FileStorageType.SqPackCompressed
       : FileStorageType.RawUncompressed;
-  const bad = allFiles(data).find((f) => f.storage !== needed);
+  const bad = allFiles(data).find(({ file }) => file.storage !== needed);
   if (bad) {
     throw new Error(
-      `Cross-format conversion is not supported: cannot write a ${bad.storage} file ` +
+      `Cross-format conversion is not supported: cannot write a ${bad.file.storage} file ` +
         `("${bad.gamePath}") to ${target}. Same-format re-emit only ` +
         `(ttmp2/ttmp -> ttmp2, pmp -> pmp).`,
     );

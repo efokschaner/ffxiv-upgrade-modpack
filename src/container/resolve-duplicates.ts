@@ -137,10 +137,10 @@ export function resolveDuplicates(
   // below needs every hash available up front regardless.
   const entries: Entry[] = [];
   for (const [option, prefix] of prefixes) {
-    for (const file of option.files.values()) {
+    for (const [gamePath, file] of option.files) {
       entries.push({
         file,
-        pmpPath: prefix + file.gamePath,
+        pmpPath: prefix + gamePath,
         hash: file.data === undefined ? ZERO_HASH : sha1Hex(file.data),
       });
     }

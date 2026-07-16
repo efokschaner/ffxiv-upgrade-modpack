@@ -115,7 +115,7 @@ describe("needsTexFix", () => {
 
 function packWithFiles(
   version: string | undefined,
-  files: ModpackFile[],
+  files: Array<[string, ModpackFile]>,
 ): ModpackData {
   return {
     sourceFormat: ModpackFormat.Ttmp2,
@@ -149,33 +149,36 @@ function packWithFiles(
 describe("texFixRound", () => {
   it("drops a malformed compressed .tex, keeps a valid one, keeps a malformed ui/ .tex, keeps a non-.tex file", () => {
     const data = packWithFiles(undefined, [
-      {
-        gamePath: "chara/x/tex/malformed_n.tex",
-        data: malformedTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
-      {
-        gamePath: "chara/x/tex/valid_n.tex",
-        data: validTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
-      {
-        gamePath: "ui/uld/malformed.tex",
-        data: malformedTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
-      {
-        gamePath: "chara/x/mat/foo.mtrl",
-        data: new Uint8Array([1, 2, 3]),
-        storage: FileStorageType.SqPackCompressed,
-      },
+      [
+        "chara/x/tex/malformed_n.tex",
+        {
+          data: malformedTexEntry(),
+          storage: FileStorageType.SqPackCompressed,
+        },
+      ],
+      [
+        "chara/x/tex/valid_n.tex",
+        { data: validTexEntry(), storage: FileStorageType.SqPackCompressed },
+      ],
+      [
+        "ui/uld/malformed.tex",
+        {
+          data: malformedTexEntry(),
+          storage: FileStorageType.SqPackCompressed,
+        },
+      ],
+      [
+        "chara/x/mat/foo.mtrl",
+        {
+          data: new Uint8Array([1, 2, 3]),
+          storage: FileStorageType.SqPackCompressed,
+        },
+      ],
     ]);
 
     texFixRound(data);
 
-    const paths = [...data.groups[0]!.options[0]!.files.values()].map(
-      (f) => f.gamePath,
-    );
+    const paths = [...data.groups[0]!.options[0]!.files.keys()];
     expect(paths).not.toContain("chara/x/tex/malformed_n.tex");
     expect(paths).toContain("chara/x/tex/valid_n.tex");
     expect(paths).toContain("ui/uld/malformed.tex");
@@ -184,18 +187,18 @@ describe("texFixRound", () => {
 
   it("drops nothing when needsTexFix is false, even if a compressed .tex is malformed", () => {
     const data = packWithFiles("2.1s", [
-      {
-        gamePath: "chara/x/tex/malformed_n.tex",
-        data: malformedTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
+      [
+        "chara/x/tex/malformed_n.tex",
+        {
+          data: malformedTexEntry(),
+          storage: FileStorageType.SqPackCompressed,
+        },
+      ],
     ]);
 
     texFixRound(data);
 
-    const paths = [...data.groups[0]!.options[0]!.files.values()].map(
-      (f) => f.gamePath,
-    );
+    const paths = [...data.groups[0]!.options[0]!.files.keys()];
     expect(paths).toContain("chara/x/tex/malformed_n.tex");
   });
 });

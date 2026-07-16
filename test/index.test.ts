@@ -18,7 +18,9 @@ describe("public API", () => {
       const data = loadModpack(pack.name, pack.bytes);
       const out = writeModpack(data, target);
       const reread = loadModpack(`out.${target}`, out);
-      const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
+      const byPath = new Map(
+        allFiles(reread).map(({ gamePath, file }) => [gamePath, file.data]),
+      );
       for (const [path, bytes] of Object.entries(pack.expectedFiles)) {
         expect(byPath.get(path)).toEqual(bytes);
       }

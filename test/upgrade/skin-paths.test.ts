@@ -10,7 +10,7 @@ import {
 import { updateSkinPaths } from "../../src/upgrade/upgrade";
 import { filesMap } from "../helpers/make-packs";
 
-function option(files: ModpackFile[]): ModpackOption {
+function option(files: Array<[string, ModpackFile]>): ModpackOption {
   return {
     name: "O",
     description: "",
@@ -29,10 +29,10 @@ describe("updateSkinPaths", () => {
   it("aliases a matching file to its DT path, sharing the same bytes and storage", () => {
     const data = new Uint8Array([9, 8, 7]);
     const o = option([
-      { gamePath: OLD, data, storage: FileStorageType.RawUncompressed },
+      [OLD, { data, storage: FileStorageType.RawUncompressed }],
     ]);
     updateSkinPaths(o);
-    expect([...o.files.values()].map((f) => f.gamePath)).toEqual([OLD, NEW]);
+    expect([...o.files.keys()]).toEqual([OLD, NEW]);
     const aliased = o.files.get(NEW)!;
     expect(aliased.storage).toBe(FileStorageType.RawUncompressed);
     // Pointer duplication: shares the same underlying buffer reference.
@@ -41,16 +41,14 @@ describe("updateSkinPaths", () => {
 
   it("does nothing when the target path is already present", () => {
     const o = option([
-      {
-        gamePath: OLD,
-        data: new Uint8Array([1]),
-        storage: FileStorageType.RawUncompressed,
-      },
-      {
-        gamePath: NEW,
-        data: new Uint8Array([2]),
-        storage: FileStorageType.RawUncompressed,
-      },
+      [
+        OLD,
+        { data: new Uint8Array([1]), storage: FileStorageType.RawUncompressed },
+      ],
+      [
+        NEW,
+        { data: new Uint8Array([2]), storage: FileStorageType.RawUncompressed },
+      ],
     ]);
     updateSkinPaths(o);
     expect(o.files.size).toBe(2);
@@ -60,35 +58,30 @@ describe("updateSkinPaths", () => {
 
   it("adds one alias per matching key when several are present", () => {
     const o = option([
-      {
-        gamePath: OLD,
-        data: new Uint8Array([1]),
-        storage: FileStorageType.RawUncompressed,
-      },
-      {
-        gamePath: "chara/bibo/raen_d.tex",
-        data: new Uint8Array([2]),
-        storage: FileStorageType.RawUncompressed,
-      },
+      [
+        OLD,
+        { data: new Uint8Array([1]), storage: FileStorageType.RawUncompressed },
+      ],
+      [
+        "chara/bibo/raen_d.tex",
+        { data: new Uint8Array([2]), storage: FileStorageType.RawUncompressed },
+      ],
     ]);
     updateSkinPaths(o);
-    expect(new Set([...o.files.values()].map((f) => f.gamePath))).toEqual(
+    expect(new Set(o.files.keys())).toEqual(
       new Set([OLD, "chara/bibo/raen_d.tex", NEW, "chara/bibo_raen_base.tex"]),
     );
   });
 
   it("leaves a non-matching file untouched", () => {
     const o = option([
-      {
-        gamePath: "chara/unrelated/foo.tex",
-        data: new Uint8Array([1]),
-        storage: FileStorageType.RawUncompressed,
-      },
+      [
+        "chara/unrelated/foo.tex",
+        { data: new Uint8Array([1]), storage: FileStorageType.RawUncompressed },
+      ],
     ]);
     updateSkinPaths(o);
-    expect([...o.files.values()].map((f) => f.gamePath)).toEqual([
-      "chara/unrelated/foo.tex",
-    ]);
+    expect([...o.files.keys()]).toEqual(["chara/unrelated/foo.tex"]);
   });
 });
 
@@ -117,7 +110,7 @@ function packWith(gamePath: string, data: Uint8Array): ModpackData {
         defaultSettings: 0,
         options: [
           option([
-            { gamePath, data, storage: FileStorageType.RawUncompressed },
+            [gamePath, { data, storage: FileStorageType.RawUncompressed }],
           ]),
         ],
       },

@@ -15,20 +15,13 @@ import {
 import { filesMap } from "../helpers/make-packs";
 
 /** A file the archive did not contain: present in the option, no bytes (PMP.cs:1071-1102). */
-function absent(gamePath: string): ModpackFile {
-  return {
-    gamePath,
-    storage: FileStorageType.RawUncompressed,
-  };
+function absent(gamePath: string): [string, ModpackFile] {
+  return [gamePath, { storage: FileStorageType.RawUncompressed }];
 }
-function present(gamePath: string, data: Uint8Array): ModpackFile {
-  return {
-    gamePath,
-    data,
-    storage: FileStorageType.RawUncompressed,
-  };
+function present(gamePath: string, data: Uint8Array): [string, ModpackFile] {
+  return [gamePath, { data, storage: FileStorageType.RawUncompressed }];
 }
-function optionOf(files: ModpackFile[]): ModpackOption {
+function optionOf(files: Array<[string, ModpackFile]>): ModpackOption {
   return {
     name: "On",
     description: "",
@@ -80,9 +73,6 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       "chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl",
     )!;
     expect(f.data).toBeUndefined();
-    expect(f.gamePath).toBe(
-      "chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl",
-    );
   });
 
   it("model round never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:916)", () => {
@@ -99,7 +89,6 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       "chara/equipment/e0001/model/c0101e0001_top.mdl",
     )!;
     expect(f.data).toBeUndefined();
-    expect(f.gamePath).toBe("chara/equipment/e0001/model/c0101e0001_top.mdl");
   });
 
   it("IndexMaps skips an absent normal (:1087 null -> :1843 continue)", () => {

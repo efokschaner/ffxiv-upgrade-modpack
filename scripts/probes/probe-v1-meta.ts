@@ -62,11 +62,11 @@ for (const name of packs) {
   } catch {
     continue;
   }
-  for (const f of allFiles(d)) {
-    if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(f.gamePath)) continue;
-    const m = deserializeMeta(unc(f));
+  for (const { gamePath, file } of allFiles(d)) {
+    if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(gamePath)) continue;
+    const m = deserializeMeta(unc(file));
     if (m.version === 2 && m.est && m.gmp) {
-      chosen = { pack: name, gamePath: f.gamePath };
+      chosen = { pack: name, gamePath };
       break;
     }
   }
@@ -82,12 +82,11 @@ if (!chosen) {
     } catch {
       continue;
     }
-    for (const f of allFiles(d)) {
-      if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(f.gamePath))
-        continue;
-      const m = deserializeMeta(unc(f));
+    for (const { gamePath, file } of allFiles(d)) {
+      if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(gamePath)) continue;
+      const m = deserializeMeta(unc(file));
       if (m.version === 2 && m.est) {
-        chosen = { pack: name, gamePath: f.gamePath };
+        chosen = { pack: name, gamePath };
         break;
       }
     }
@@ -108,7 +107,7 @@ for (const g of model.groups)
   for (const o of g.options) {
     const next = new Map<string, ModpackFile>();
     for (const [path, f] of o.files) {
-      if (f.gamePath !== chosen!.gamePath) {
+      if (path !== chosen!.gamePath) {
         next.set(path, f);
         continue;
       }
@@ -155,8 +154,8 @@ if (!existsSync(dest)) {
   process.exit(0);
 }
 const golden = loadModpack("g.ttmp2", new Uint8Array(readFileSync(dest)));
-for (const f of allFiles(golden)) {
-  if (f.gamePath !== chosen.gamePath) continue;
-  console.log(`\nGOLDEN meta for ${f.gamePath}: ${metaSegs(unc(f))}`);
+for (const { gamePath, file } of allFiles(golden)) {
+  if (gamePath !== chosen.gamePath) continue;
+  console.log(`\nGOLDEN meta for ${gamePath}: ${metaSegs(unc(file))}`);
 }
 rmSync(dir, { recursive: true, force: true });

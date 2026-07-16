@@ -14,17 +14,19 @@ import { filesMap } from "../helpers/make-packs";
 // options and (for HasData / IsEmptyOption purposes) files/fileSwaps/manipulations, so these
 // builders fill in only what's needed to drive those checks.
 
-function file(gamePath = "a.tex"): ModpackFile {
-  return {
+function file(gamePath = "a.tex"): [string, ModpackFile] {
+  return [
     gamePath,
-    data: new Uint8Array([1]),
-    storage: FileStorageType.RawUncompressed,
-  };
+    { data: new Uint8Array([1]), storage: FileStorageType.RawUncompressed },
+  ];
 }
 
 function option(
   name: string,
-  opts: { files?: ModpackFile[]; fileSwaps?: Record<string, string> } = {},
+  opts: {
+    files?: Array<[string, ModpackFile]>;
+    fileSwaps?: Record<string, string>;
+  } = {},
 ): ModpackOption {
   return {
     name,

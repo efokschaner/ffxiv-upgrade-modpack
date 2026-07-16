@@ -51,13 +51,13 @@ function mtrlPayloads(
   data: ReturnType<typeof loadModpack>,
 ): Map<string, Uint8Array[]> {
   const m = new Map<string, Uint8Array[]>();
-  for (const f of allFiles(data)) {
-    if (!f.gamePath.endsWith(".mtrl")) continue;
-    const bytes = uncompressed(f);
+  for (const { gamePath, file } of allFiles(data)) {
+    if (!gamePath.endsWith(".mtrl")) continue;
+    const bytes = uncompressed(file);
     if (!bytes) continue;
-    const list = m.get(f.gamePath) ?? [];
+    const list = m.get(gamePath) ?? [];
     list.push(bytes);
-    m.set(f.gamePath, list);
+    m.set(gamePath, list);
   }
   return m;
 }

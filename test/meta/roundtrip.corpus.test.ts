@@ -36,9 +36,9 @@ describe("meta codec round-trips every golden .meta", () => {
         pack,
         new Uint8Array(readFileSync(join(CACHE, goldenFile))),
       );
-      for (const f of allFiles(golden)) {
-        if (!f.gamePath.endsWith(".meta")) continue;
-        const raw = unc(f);
+      for (const { gamePath, file } of allFiles(golden)) {
+        if (!gamePath.endsWith(".meta")) continue;
+        const raw = unc(file);
         expect(serializeMeta(deserializeMeta(raw))).toEqual(raw);
         checked++;
       }

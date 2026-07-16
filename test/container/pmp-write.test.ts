@@ -49,7 +49,9 @@ describe("writePmp round-trip", () => {
     const pack = makePmpZip();
     const out = writePmp(readPmp(pack.bytes));
     const reread = readPmp(out);
-    const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
+    const byPath = new Map(
+      allFiles(reread).map(({ gamePath, file }) => [gamePath, file.data]),
+    );
     for (const [path, bytes] of Object.entries(pack.expectedFiles)) {
       expect(byPath.get(path)).toEqual(bytes);
     }
@@ -108,11 +110,10 @@ describe("writePmp model-building fallback (no raw)", () => {
               image: "",
               priority: 0,
               files: filesMap([
-                {
-                  gamePath: "chara/equipment/foo.tex",
-                  data: fooBytes,
-                  storage: FileStorageType.RawUncompressed,
-                },
+                [
+                  "chara/equipment/foo.tex",
+                  { data: fooBytes, storage: FileStorageType.RawUncompressed },
+                ],
               ]),
               fileSwaps: {},
               manipulations: [],
@@ -134,11 +135,10 @@ describe("writePmp model-building fallback (no raw)", () => {
               image: "red.png",
               priority: 2,
               files: filesMap([
-                {
-                  gamePath: "chara/equipment/red.tex",
-                  data: redBytes,
-                  storage: FileStorageType.RawUncompressed,
-                },
+                [
+                  "chara/equipment/red.tex",
+                  { data: redBytes, storage: FileStorageType.RawUncompressed },
+                ],
               ]),
               // FileSwaps must stay empty here: resolveDuplicates fails loud on a non-empty
               // FileSwaps map (this port cannot reproduce TexTools' game-index-dependent
@@ -222,7 +222,9 @@ describe("writePmp model-building fallback (no raw)", () => {
 
   it("round-trips the modeled file bytes back through readPmp", () => {
     const reread = readPmp(writePmp(modeledData()));
-    const byPath = new Map(allFiles(reread).map((f) => [f.gamePath, f.data]));
+    const byPath = new Map(
+      allFiles(reread).map(({ gamePath, file }) => [gamePath, file.data]),
+    );
     expect(byPath.get("chara/equipment/foo.tex")).toEqual(fooBytes);
     expect(byPath.get("chara/equipment/red.tex")).toEqual(redBytes);
   });
@@ -235,7 +237,6 @@ describe("writePmp model-building fallback (no raw)", () => {
     const data = modeledData();
     const redOption = data.groups[1]!.options[0]!;
     redOption.files.set("chara/equipment/missing.tex", {
-      gamePath: "chara/equipment/missing.tex",
       storage: FileStorageType.RawUncompressed,
       // no `data` -> absent (PMP.cs:883-888)
     });
@@ -340,11 +341,7 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
           image: "",
           priority: 0,
           files: filesMap([
-            {
-              gamePath,
-              data,
-              storage: FileStorageType.RawUncompressed,
-            },
+            [gamePath, { data, storage: FileStorageType.RawUncompressed }],
           ]),
           fileSwaps: {},
           manipulations: [],
@@ -556,11 +553,13 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
               image: "",
               priority: 0,
               files: filesMap([
-                {
-                  gamePath: "chara/x.tex",
-                  data: new Uint8Array([1, 2, 3]),
-                  storage: FileStorageType.RawUncompressed,
-                },
+                [
+                  "chara/x.tex",
+                  {
+                    data: new Uint8Array([1, 2, 3]),
+                    storage: FileStorageType.RawUncompressed,
+                  },
+                ],
               ]),
               fileSwaps: {},
               manipulations: [],
@@ -617,11 +616,13 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
       image: "",
       priority: 0,
       files: filesMap([
-        {
-          gamePath: `chara/${i}.tex`,
-          data: new Uint8Array([i]),
-          storage: FileStorageType.RawUncompressed as const,
-        },
+        [
+          `chara/${i}.tex`,
+          {
+            data: new Uint8Array([i]),
+            storage: FileStorageType.RawUncompressed as const,
+          },
+        ],
       ]),
       fileSwaps: {},
       manipulations: [],
@@ -747,10 +748,10 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
           image: "",
           priority: 0,
           files: filesMap(
-            files.map((f) => ({
-              ...f,
-              storage: FileStorageType.RawUncompressed,
-            })),
+            files.map((f) => [
+              f.gamePath,
+              { data: f.data, storage: FileStorageType.RawUncompressed },
+            ]),
           ),
           fileSwaps: {},
           manipulations: [],
@@ -1176,11 +1177,13 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
               image: "",
               priority: 0,
               files: filesMap([
-                {
-                  gamePath: "chara/x.tex",
-                  data: new Uint8Array([1]),
-                  storage: FileStorageType.RawUncompressed,
-                },
+                [
+                  "chara/x.tex",
+                  {
+                    data: new Uint8Array([1]),
+                    storage: FileStorageType.RawUncompressed,
+                  },
+                ],
               ]),
               fileSwaps: {},
               manipulations: [],
@@ -1260,11 +1263,13 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
               image: "",
               priority: 0,
               files: filesMap([
-                {
+                [
                   gamePath,
-                  data: new Uint8Array([1, 2]),
-                  storage: FileStorageType.RawUncompressed,
-                },
+                  {
+                    data: new Uint8Array([1, 2]),
+                    storage: FileStorageType.RawUncompressed,
+                  },
+                ],
               ]),
               fileSwaps: {},
               manipulations: [],

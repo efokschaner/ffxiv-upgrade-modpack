@@ -16,8 +16,16 @@ import { filesMap } from "../helpers/make-packs";
 // prefixes<->data cross-check (see the "mismatched data/prefixes" test below), so these builders
 // don't need option-prefix.test.ts's Default-group scaffolding.
 
+// resolveDuplicates' returned Map is keyed on ModpackFile IDENTITY, and most cases below assert
+// against it via `result.get(f1)` for an `f1` obtained from `file(...)` -- so `file` must keep
+// returning the SAME object `option` inserts into its Map, with the gamePath threaded back in
+// alongside it here rather than carried on the object itself (ModpackFile has no gamePath field).
+const fileGamePaths = new Map<ModpackFile, string>();
+
 function file(gamePath: string, data?: Uint8Array): ModpackFile {
-  return { gamePath, data, storage: FileStorageType.RawUncompressed };
+  const f: ModpackFile = { data, storage: FileStorageType.RawUncompressed };
+  fileGamePaths.set(f, gamePath);
+  return f;
 }
 
 function option(
@@ -30,7 +38,7 @@ function option(
     description: "",
     image: "",
     priority: 0,
-    files: filesMap(files),
+    files: filesMap(files.map((f) => [fileGamePaths.get(f)!, f])),
     fileSwaps,
     manipulations: [],
   };

@@ -119,7 +119,6 @@ function option(
   const m = new Map<string, ModpackFile>();
   for (const f of files) {
     m.set(f.gamePath, {
-      gamePath: f.gamePath,
       data: f.data,
       storage: FileStorageType.RawUncompressed,
     });

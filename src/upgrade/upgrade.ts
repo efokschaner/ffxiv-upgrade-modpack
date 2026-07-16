@@ -103,8 +103,8 @@ export function resolveFile(f: ModpackFile): Decoded | null {
  * failure instead of a misleading one. Use ONLY for seams that are not ResolveFile callers (see
  * the §2 table) — everything that IS a ResolveFile call site must use `resolveFile` instead.
  */
-export function requireBytes(f: ModpackFile): Decoded {
-  if (!f.data) throw new Error(`upgrade: file has no bytes: ${f.gamePath}`);
+export function requireBytes(f: ModpackFile, gamePath: string): Decoded {
+  if (!f.data) throw new Error(`upgrade: file has no bytes: ${gamePath}`);
   if (f.storage === FileStorageType.SqPackCompressed) {
     const d = decodeSqPackFile(f.data);
     return { bytes: d.data, type: d.type };
@@ -156,8 +156,8 @@ const IS_CHARA_MTRL = /^chara\/.*\.mtrl$/;
  */
 function materialRound(option: ModpackOption): UpgradeInfo[] {
   const infos: UpgradeInfo[] = [];
-  function upgradeOne(f: ModpackFile): ModpackFile {
-    if (!IS_CHARA_MTRL.test(f.gamePath)) return f;
+  function upgradeOne(path: string, f: ModpackFile): ModpackFile {
+    if (!IS_CHARA_MTRL.test(path)) return f;
     // ResolveFile returned null -> UpdateEndwalkerMaterials `continue`s past this material
     // (EndwalkerUpgrade.cs:495-499), leaving the entry untouched. Hoisted ABOVE the try/catch
     // below: C#'s `continue` (:496-499) precedes the per-material `try` (:501), so a
@@ -167,7 +167,7 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
     if (!resolved) return f;
     const { bytes, type } = resolved;
     try {
-      const mtrl = parseMtrl(bytes, f.gamePath);
+      const mtrl = parseMtrl(bytes, path);
       const got = upgradeMaterial(mtrl);
       if (got.length === 0) return f; // no update needed
       // Record the texture-upgrade targets only AFTER the rewrite is committed: a throw from
@@ -184,7 +184,7 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
     }
   }
   const next = new Map<string, ModpackFile>();
-  for (const [path, f] of option.files) next.set(path, upgradeOne(f));
+  for (const [path, f] of option.files) next.set(path, upgradeOne(path, f));
   option.files = next;
   return infos;
 }
@@ -221,17 +221,13 @@ const IS_MDL = /\.mdl$/;
  */
 function modelRound(option: ModpackOption, gate: boolean): void {
   if (!gate) return;
-  function fixOne(f: ModpackFile): ModpackFile {
-    if (!IS_MDL.test(f.gamePath)) return f;
-    const { bytes, type } = requireBytes(f);
-    return restore(
-      f,
-      normalizeModel(bytes, f.gamePath),
-      type ?? SqPackType.Model,
-    );
+  function fixOne(path: string, f: ModpackFile): ModpackFile {
+    if (!IS_MDL.test(path)) return f;
+    const { bytes, type } = requireBytes(f, path);
+    return restore(f, normalizeModel(bytes, path), type ?? SqPackType.Model);
   }
   const next = new Map<string, ModpackFile>();
-  for (const [path, f] of option.files) next.set(path, fixOne(f));
+  for (const [path, f] of option.files) next.set(path, fixOne(path, f));
   option.files = next;
 }
 
@@ -243,21 +239,19 @@ const IS_META = /\.meta$/;
  * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
  */
 function metadataRound(option: ModpackOption): void {
-  function fixOne(f: ModpackFile): ModpackFile {
-    if (!IS_META.test(f.gamePath)) return f;
+  function fixOne(path: string, f: ModpackFile): ModpackFile {
+    if (!IS_META.test(path)) return f;
     // No absent-file analogue: PMP .meta files are materialized from manipulations
     // (PMP.cs:1141-1164), never read from a zip member, so a .meta with no bytes is unreachable.
     // Write-side confirmation: TexTools' PMP writer turns any `.meta` into `Manipulations` rather
     // than a zip member (PMP.cs:891-895), so a PMP `Files` entry naming a `.meta` is not something
     // TexTools or Penumbra produce. Fail loud.
-    const { bytes, type } = requireBytes(f);
-    const out = serializeMeta(
-      reconstructMeta(deserializeMeta(bytes), f.gamePath),
-    );
+    const { bytes, type } = requireBytes(f, path);
+    const out = serializeMeta(reconstructMeta(deserializeMeta(bytes), path));
     return restore(f, out, type ?? SqPackType.Standard);
   }
   const next = new Map<string, ModpackFile>();
-  for (const [path, f] of option.files) next.set(path, fixOne(f));
+  for (const [path, f] of option.files) next.set(path, fixOne(path, f));
   option.files = next;
 }
 
@@ -274,13 +268,13 @@ function metadataRound(option: ModpackOption): void {
  * and -eye-mask.md.
  */
 export function updateSkinPaths(option: ModpackOption): void {
-  const snapshot = [...option.files.values()];
-  for (const f of snapshot) {
-    const target = SKIN_REPATH_DICT.get(f.gamePath);
+  const snapshot = [...option.files];
+  for (const [path, f] of snapshot) {
+    const target = SKIN_REPATH_DICT.get(path);
     if (target === undefined) continue;
     if (option.files.has(target)) continue; // C# files.ContainsKey (ModpackUpgrader.cs:487)
     // Duplicate the pointer: shares f.data, carries storage + any ttmp metadata.
-    option.files.set(target, { ...f, gamePath: target }); // C# files.Add (ModpackUpgrader.cs:497)
+    option.files.set(target, { ...f }); // C# files.Add (ModpackUpgrader.cs:497)
   }
 }
 

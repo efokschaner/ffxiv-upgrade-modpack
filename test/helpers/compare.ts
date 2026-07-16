@@ -46,13 +46,13 @@ export function compareInnerFilesByteIdentical(
   // full multiset of payloads per path, order-independently.
   const group = (d: ModpackData) => {
     const m = new Map<string, Uint8Array[]>();
-    for (const f of allFiles(d)) {
+    for (const { gamePath, file } of allFiles(d)) {
       // An absent PMP file (no zip member) has no payload and is not a member of the multiset on
       // either side (absent-file design spec §4.1) — not a special case, the definition of the set.
-      if (!f.data) continue;
-      const list = m.get(f.gamePath) ?? [];
-      list.push(f.data);
-      m.set(f.gamePath, list);
+      if (!file.data) continue;
+      const list = m.get(gamePath) ?? [];
+      list.push(file.data);
+      m.set(gamePath, list);
     }
     for (const list of m.values()) list.sort(compareBytesLex);
     return m;
