@@ -320,7 +320,14 @@ corpus pack is) changes, and that change is the divergence being fixed — pinne
 - **`.meta` / `.rgsp`**: untouched — our TTMP port keeps `.meta` as a file (reconstructed later by
   `metadataRound`); that seam is separate and out of scope. The `ui/`-`.tex` exclusion is preserved
   verbatim from the retired `texFixRound` (sibling `MakeFileStorageInformationDictionary`,
-  `TTMP.cs:1367`) to keep the relocation behaviour-neutral.
+  `TTMP.cs:1367`) to keep the relocation behaviour-neutral. This is a **known, latent divergence from
+  FromWizardGroup**, not a faithful port of it: `WizardData.cs:701`'s own gate has no `ui/` check, so
+  for a malformed `ui/*.tex` in a `needsTexFix` pack, FromWizardGroup would drop the file while our
+  port keeps it. It is kept anyway because our tex fix is only the minimal drop-malformed subset of
+  the real `FixOldTexData` — dropping the `ui/` guard could reject a `ui/*.tex` that the full
+  `FixOldTexData` would successfully fix and keep, which would move a golden. Gated behind the "T2"
+  backlog item (`docs/backlog/2026-07-10-fixoldtexdata-load-round.md`); revisit once full
+  `FixOldTexData` is ported.
 - **PMP**: unaffected — `needsTexFix`/`needsMdlFix` are false for PMP, and `readPmp` takes no fix.
 
 ## Coverage note — codec-fidelity helpers read raw

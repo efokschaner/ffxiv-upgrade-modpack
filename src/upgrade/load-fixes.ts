@@ -28,10 +28,17 @@ const IS_MDL = /\.mdl$/;
  *   Type-4 entry; a decode failure returns `null` to DROP the file (FixOldTexData's catch -> continue
  *   — a majorly-broken texture). A decodable `.tex` is returned UNCHANGED: our FixOldTexData subset
  *   never rewrites bytes (NPOT-resize / mip-fixup / recompress are deferred — see
- *   docs/backlog/2026-07-10-fixoldtexdata-load-round.md). The `ui/` exclusion is inherited from the
- *   sibling load function MakeFileStorageInformationDictionary (TTMP.cs:1367) and preserved verbatim
- *   from the retired `texFixRound`; FromWizardGroup itself (:701) omits it, but the difference is
- *   latent (no golden moves either way) and preserving it keeps this a behaviour-neutral relocation.
+ *   docs/backlog/2026-07-10-fixoldtexdata-load-round.md). The `ui/` exclusion here does NOT come from
+ *   FromWizardGroup itself — `WizardData.cs:701`'s gate is `needsTexFix && path.EndsWith(".tex")`,
+ *   with no `ui/` check at all. It is carried instead from a different C# symbol,
+ *   `MakeFileStorageInformationDictionary` (`TTMP.cs:1367`, `!FullPath.StartsWith("ui/")`), preserved
+ *   verbatim from the retired `texFixRound`. It is kept deliberately rather than dropped to match
+ *   FromWizardGroup, because our tex fix is only the minimal drop-malformed subset of the real
+ *   `FixOldTexData` (see the "T2" item in docs/backlog/2026-07-10-fixoldtexdata-load-round.md): our
+ *   decode-only check can reject a `ui/*.tex` that TexTools' full `FixOldTexData` would successfully
+ *   fix and keep, which WOULD move a golden. Net effect: a malformed `ui/*.tex` in a `needsTexFix`
+ *   pack is a latent divergence from FromWizardGroup (we keep it; TexTools drops it), gated behind
+ *   the T2 backlog item — revisit once full `FixOldTexData` is ported.
  *
  * - `.mdl` when `needsMdlFix` (WizardData.cs:714-727): run FixOldModel (normalizeModel) — parse,
  *   build the editable TTModel, re-serialize as a v6 uncompressed model, re-wrapped as a Model
@@ -46,7 +53,7 @@ const IS_MDL = /\.mdl$/;
 export function makeTtmpLoadFix(gates: LoadFixGates): LoadFix {
   return (gamePath, file) => {
     if (gates.needsTexFix && IS_TEX.test(gamePath)) {
-      if (IS_UI.test(gamePath)) return file; // sibling MakeFileStorageInformationDictionary (:1367)
+      if (IS_UI.test(gamePath)) return file; // MakeFileStorageInformationDictionary (:1367), not FromWizardGroup — see doc comment above
       try {
         decodeSqPackFile(file.data);
       } catch {

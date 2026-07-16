@@ -65,7 +65,8 @@ function filesFromMods(
 }
 
 // `makeLoadFix` (an upgrade-layer factory injected by loadModpack) keeps the reader independent of
-// the upgrade layer: the reader computes the tex/mdl gates from the version it parsed, builds the
+// the upgrade layer's fix logic: the reader computes the tex/mdl gates from the version it parsed
+// (via the pure gate predicates it does import, `ttmpNeedsTexFix` / `ttmpNeedsMdlFix`), builds the
 // fix, and applies it at the read seam. Omitted (a direct unit-test read) -> no load fix.
 export function readTtmp2(
   bytes: Uint8Array,

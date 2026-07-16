@@ -45,9 +45,10 @@ export { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade/upgrade-info";
 
 // `makeTtmpLoadFix` fuses TexTools' load-time fixes into the read seam: loadModpack now returns
 // already-load-fixed data, matching WizardData.FromModpack (the load path both /upgrade and /resave
-// take). The upgrade-layer factory is injected here so the container readers stay independent of the
-// upgrade layer (see container/load-fix.ts). PMP has no analogue on this path (needsTexFix/needsMdlFix
-// are false for PMP), so readPmp takes no fix.
+// take). The upgrade-layer factory (the fix logic) is injected here so the container readers stay
+// independent of it — the readers themselves only import the pure gate predicates, never the fix (see
+// container/load-fix.ts). PMP has no analogue on this path (needsTexFix/needsMdlFix are false for
+// PMP), so readPmp takes no fix.
 export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
   const fmt = detectFormat(name);
   switch (fmt) {
