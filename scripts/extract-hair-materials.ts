@@ -51,7 +51,7 @@ const RACES = [
   "9104",
   "9204",
 ];
-const ID_MAX = 500; // _SCAN_LIMIT (Character.cs:294)
+const ID_MAX = 500; // _SCAN_LIMIT (Character.cs:335)
 type Part = {
   name: "hair" | "tail" | "ear" | "accessory";
   fmt: (r: string, i: string) => string;
