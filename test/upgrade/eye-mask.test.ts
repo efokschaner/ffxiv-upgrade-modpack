@@ -13,6 +13,7 @@ import { raceCodeFromPath, updateEyeMask } from "../../src/upgrade/eye-mask";
 import { EYE_MATERIALS } from "../../src/upgrade/reference/eye-materials";
 import type { EyeMaterialTable } from "../../src/upgrade/reference/eye-materials-types";
 import { upgradeModpack } from "../../src/upgrade/upgrade";
+import { buildMinimalTex } from "../tex/make-tex";
 
 function opt(files: Record<string, Uint8Array>): ModpackOption {
   return {
@@ -39,7 +40,7 @@ const empty: EyeMaterialTable = new Map();
 
 describe("updateEyeMask", () => {
   it("throws the documented gap when the mask clears every guard (iris exists)", () => {
-    const o = opt({ [MASK]: new Uint8Array([1]) });
+    const o = opt({ [MASK]: buildMinimalTex() });
     expect(() => updateEyeMask(o, MASK, table)).toThrow(/unported/i);
   });
 
@@ -51,7 +52,7 @@ describe("updateEyeMask", () => {
   });
 
   it("skips (no throw) when the iris material is absent — FileExists false (EndwalkerUpgrade.cs:2049)", () => {
-    const o = opt({ [MASK]: new Uint8Array([1]) });
+    const o = opt({ [MASK]: buildMinimalTex() });
     expect(() => updateEyeMask(o, MASK, empty)).not.toThrow();
   });
 
@@ -60,8 +61,17 @@ describe("updateEyeMask", () => {
     // iris path mt_c0000f... -> table miss -> faithful skip (spec §3.3).
     const bogus =
       "chara/human/c9998/obj/face/f0002/texture/--c9998f0002_iri_s.tex";
-    const o = opt({ [bogus]: new Uint8Array([1]) });
+    const o = opt({ [bogus]: buildMinimalTex() });
     expect(() => updateEyeMask(o, bogus, table)).not.toThrow();
+  });
+
+  it("throws on a malformed mask (unparseable header) before the iris gate — EndwalkerUpgrade.cs:2030-2032", () => {
+    // A 1-byte mask cannot parse as an uncompressed tex; C# throws at FromUncompressedTex (:2032),
+    // before the FileExists gate, regardless of whether the iris material exists. Iris IS in-table
+    // here, yet the parse throw must fire first (not the /unported/ pixel-gap throw).
+    const o = opt({ [MASK]: new Uint8Array([1]) });
+    expect(() => updateEyeMask(o, MASK, table)).toThrow();
+    expect(() => updateEyeMask(o, MASK, table)).not.toThrow(/unported/i);
   });
 });
 
@@ -119,14 +129,14 @@ const realMask = `chara/human/c${rc[1]}/obj/face/f${rc[2]}/texture/--c${rc[1]}f$
 describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () => {
   it("throws the documented gap on an unclaimed iri_s.tex whose iris material exists", () => {
     expect(() =>
-      upgradeModpack(pack({ [realMask]: new Uint8Array([1]) })),
+      upgradeModpack(pack({ [realMask]: buildMinimalTex() })),
     ).toThrow(/unported/i);
   });
 
   it("does not throw when the iris material is absent (bogus face f9999)", () => {
     const absent = `chara/human/c${rc[1]}/obj/face/f9999/texture/--c${rc[1]}f9999_iri_s.tex`;
     expect(() =>
-      upgradeModpack(pack({ [absent]: new Uint8Array([1]) })),
+      upgradeModpack(pack({ [absent]: buildMinimalTex() })),
     ).not.toThrow();
   });
 });

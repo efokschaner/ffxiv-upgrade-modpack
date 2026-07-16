@@ -4,7 +4,9 @@
 // ConvertEyeMaskToDiffuse (:1910-2003) + the write tail (:2056-2077) are deferred and fail loud.
 // See docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md and the backlog item cited below.
 import type { ModpackOption } from "../model/modpack";
+import { parseTex } from "../tex/tex";
 import type { EyeMaterialTable } from "./reference/eye-materials-types";
+import { resolveFile } from "./upgrade";
 
 // EndwalkerUpgrade.cs:2005 (EyeMaskPathRegex), verbatim: note the C# uses an UNESCAPED `.` before
 // `tex` (matches any char) — mirrored here, not narrowed to `\.`, to reproduce the oracle exactly.
@@ -83,7 +85,22 @@ export function updateEyeMask(
   if (!EYE_MASK_PATH_REGEX.test(maskPath)) return;
   // :2019 — Exists(maskPath, files). `contained ⊆ option.files` by construction (the caller filters
   // `unused` by `option.files.has`), so this is always true here; mirrored for fidelity.
-  if (!option.files.has(maskPath)) return;
+  const file = option.files.get(maskPath);
+  if (!file) return;
+  // :2030-2032 — ResolveFile + XivTex.FromUncompressedTex, run BEFORE the face regex and the iris
+  // FileExists gate. A byte-less or undecodable mask makes ResolveFile null -> FromUncompressedTex
+  // throws (ArgumentNullException, XivTex.cs:96); a decodable-but-malformed mask throws in the header
+  // parse (EndOfStreamException). Reproduce that seam so an unparseable mask fails loud here instead of
+  // being silently skipped by the iris gate below. (The parsed tex is consumed by the deferred pixel
+  // half; here we invoke the parse for its throw behaviour, matching the C# ordering.)
+  const resolved = resolveFile(file); // ResolveFile (:2030) — a ResolveFile call site (decode error -> null)
+  if (!resolved) {
+    throw new Error(
+      `upgrade: eye-mask mask did not resolve (absent or undecodable) — ` +
+        `XivTex.FromUncompressedTex throws on null (EndwalkerUpgrade.cs:2032): ${maskPath}`,
+    );
+  }
+  parseTex(resolved.bytes); // FromUncompressedTex (:2032) — throws on a malformed header
   // :2024 — _ConvertedTextures dedup. The caller passes it as null (ModpackUpgrader.cs:176), so C#
   // allocates a fresh empty set per call; with one path per call the guard can never fire. Not modeled.
   // :2034-2039 — face id from the filename.
