@@ -38,10 +38,17 @@ port `ConvertEyeMaskToDiffuse` (`EndwalkerUpgrade.cs:1910-2003`) and the tail of
    non-exact matching (`test/helpers/upgrade-compare.ts`). Scope the pixel port as "close-enough,
    blessed against a golden," not "byte-exact."
 
-**Coverage.** A synthetic **unit** test pins the shipped gate today (a golden is not viable while the
-port throws — expected-failure `/upgrade` goldens are unmodeled,
-`docs/backlog/2026-07-11-expected-failure-golden.md`). The pixel port should land with a **golden**:
-a synthetic (or real) eye mod that ships a loose `iri_s.tex`, run through `/upgrade` and compared
-under the close-enough rule — which is also what removes the throw.
+**Coverage — add the golden as part of the pixel port (same work removes the throw).** A synthetic
+**unit** test pins the shipped gate today; a golden is not viable *yet* because **our** port throws at
+the unported pixel step. Note the blocker is our side, not the harness: ConsoleTools **succeeds** on an
+eye mod (it emits a converted diffuse, a perfectly cacheable golden) — so this is **not** the
+`docs/backlog/2026-07-11-expected-failure-golden.md` case (that item is about packs *ConsoleTools*
+errors on). Porting the pixel pipeline is exactly what stops our throw, at which point a normal golden
+just works. **So when the pixel port lands, it MUST land with a golden** — a synthetic (or real) eye
+mod that ships a loose `iri_s.tex`, run through `/upgrade` and compared under the close-enough
+`DIVERGENCE_RULES` tolerance above. The golden proving the conversion and the removal of the throw are
+the same deliverable; do not consider the pixel port done without it. (Locking the *current* throw
+behaviour via an expected-failure golden is possible but low-value — the unit/e2e tests already assert
+it — and would need the separate expected-failure capability, so it is not planned here.)
 
 Reference: `reference/.../Mods/EndwalkerUpgrade.cs:1910-2003, 2056-2077`, `.../ModpackUpgrader.cs:174-177`.
