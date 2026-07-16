@@ -36,14 +36,22 @@ Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port �
 pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
 `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [Round 6 partials — UpdateUnclaimedHairTextures](backlog/2026-07-15-partials-unclaimed-hair.md)
+1. [Make `option.files` a `Map<string, ModpackFile>` (mirror the C# `Dictionary`)](backlog/2026-07-15-option-files-map.md)
+   — our model represents an option's files as a `ModpackFile[]`, where C#'s
+   `WizardStandardOptionData.Files` is a `Dictionary<string, FileStorageInformation>`. A `Map` is the
+   faithful structural mirror (every `ContainsKey`/indexer/`Add` transcribes 1:1, O(1) lookups) and
+   would force correct duplicate-game-path handling. Deferred pending one gating question: does any
+   real load path (TTMP `ModsList`) produce a duplicate game path our array keeps but C#'s dict
+   collapses? Settle that — with a synthetic golden if it is a real divergence — before churning
+   green, byte-parity-passing code across every reader/writer/round.
+2. [Round 6 partials — UpdateUnclaimedHairTextures](backlog/2026-07-15-partials-unclaimed-hair.md)
    — the hair/tail/ear/accessory texture-only heuristics. Needs a bundled canonical-material table
    (normal/mask sampler paths, shaderpack, flags) + a FileExists path-set from a live DT install;
    reuses the ported `updateEndwalkerHairTextures` pixel path. No corpus coverage yet.
-2. [Round 6 partials — UpdateEyeMask](backlog/2026-07-15-partials-eye-mask.md) — iris mask→diffuse.
+3. [Round 6 partials — UpdateEyeMask](backlog/2026-07-15-partials-eye-mask.md) — iris mask→diffuse.
    Needs a bundled iris `(race,face)→diffuse path` table + FileExists gate, plus the mask→diffuse
    pixel/DDS helpers. No corpus coverage yet.
-3. [Port the `ResolveHighlightOptionsAndMashupHair` pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
+4. [Port the `ResolveHighlightOptionsAndMashupHair` pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
    — `upgradeModpack` (`src/upgrade/upgrade.ts`) has no pre-round, but TexTools runs this
    Hair-shader highlight/mashup resolver unconditionally before round 1 (`ModpackUpgrader.cs:83`).
    The highlight-resolution half (cross-option pointer stapling + a fail-loud throw) is portable
