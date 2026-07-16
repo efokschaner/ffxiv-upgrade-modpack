@@ -11,3 +11,4 @@ import "./build-synthetic-absent-file";
 import "./build-synthetic-absent-file-upgraded";
 import "./build-synthetic-selection-type";
 import "./build-synthetic-selection-type-absent";
+import "./build-synthetic-unclaimed-hair";
