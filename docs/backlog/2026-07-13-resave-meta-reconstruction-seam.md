@@ -18,4 +18,6 @@ path = 182 bytes, **unchanged**; ours on the upgrade path = 192 bytes, sha `3342
 **byte-identical to the golden**. So `reconstructMeta` is *correct*; only its seam is wrong.
 
 Same shape as the `.mdl` v6-bump finding (`2026-07-13-resave-mdl-v6-bump-seam.md`): decide whether
-`metadataRound` belongs in `applyLoadFixes`, and keep the `/upgrade` goldens byte-exact.
+`metadataRound` belongs on the load seam (where FixOldTexData/FixOldModel now run — `loadModpack` /
+`makeTtmpLoadFix`, `src/upgrade/load-fixes.ts`) rather than in `upgradeModpack`, and keep the
+`/upgrade` goldens byte-exact.

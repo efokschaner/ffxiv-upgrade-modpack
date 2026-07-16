@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadModpack, ModpackFormat, writeModpack } from "../../src/index";
+import { ModpackFormat, writeModpack } from "../../src/index";
 import { compareInnerFilesByteIdentical } from "./compare";
+import { loadRawModpack } from "./load-raw";
 
 // Layer-1 corpus check (moved from the former golden.test.ts).
 //
@@ -25,12 +26,16 @@ export function registerGoldenCheck(pack: string): void {
   describe(`golden round-trip: ${basename(pack)}`, () => {
     it("our reader→writer→reader preserves every inner file byte-for-byte", () => {
       const name = basename(pack);
-      const data = loadModpack(name, readFileSync(pack));
+      // Raw (no load-fix) read on BOTH sides: this asserts the container reader/writer preserve the
+      // pack's ORIGINAL inner files. loadModpack's fused FixOldModel/FixOldTexData would rewrite/drop
+      // files for the 49 old corpus packs, turning this into a round-trip of post-fix data — a
+      // different, weaker assertion. See loadRawModpack.
+      const data = loadRawModpack(name, readFileSync(pack));
       const target = data.sourceFormat === ModpackFormat.Pmp ? "pmp" : "ttmp2";
       // store: this is a reader->writer->reader round-trip; the archive is written only to be read
       // back, and the assertion is on the inner files, not the container's compressed bytes.
       const rewritten = writeModpack(data, target, { store: true });
-      const reread = loadModpack(
+      const reread = loadRawModpack(
         target === "pmp" ? "x.pmp" : "x.ttmp2",
         rewritten,
       );

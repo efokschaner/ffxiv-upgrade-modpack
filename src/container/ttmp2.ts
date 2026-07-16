@@ -11,8 +11,11 @@ import {
   type ModpackGroup,
   type ModpackOption,
 } from "../model/modpack";
+import { ttmpNeedsMdlFix } from "../upgrade/model";
+import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { concatBytes, fnv1aKey } from "../util/binary";
 import { readZip, writeZip } from "../zip/zip";
+import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
   ModPackJson,
   TtmpModGroupJson,
@@ -20,7 +23,10 @@ import type {
   TtmpModsJson,
 } from "./manifest-types";
 
-function fileFromMod(m: TtmpModsJson, mpd: Uint8Array): ModpackFile {
+function fileFromMod(
+  m: TtmpModsJson,
+  mpd: Uint8Array,
+): ModpackFile & { storage: FileStorageType.SqPackCompressed } {
   return {
     data: mpd.slice(m.ModOffset, m.ModOffset + m.ModSize),
     storage: FileStorageType.SqPackCompressed,
@@ -33,18 +39,38 @@ function fileFromMod(m: TtmpModsJson, mpd: Uint8Array): ModpackFile {
   };
 }
 
-// Build the option's file map in ModsJsons order. Map.set on a repeated FullPath overwrites the
-// earlier entry, reproducing C#'s last-write-wins collapse (WizardData.cs:729-737).
+// Build the option's file map in ModsJsons order, reproducing WizardData.FromWizardGroup's inner
+// loop (WizardData.cs:672-737): per entry, apply the load fix FIRST, then collapse. `loadFix`
+// returning null DROPS the file (the C# `catch { continue }`), so it never reaches the collapse
+// `.set` and a dropped later duplicate cannot overwrite an earlier survivor. `.set` on a repeated
+// FullPath is C#'s last-write-wins collapse (:729-737). With no `loadFix` (a unit test reading
+// directly), the reader collapses naively with no fix.
 function filesFromMods(
   mods: TtmpModsJson[],
   mpd: Uint8Array,
+  loadFix?: LoadFix,
 ): Map<string, ModpackFile> {
   const files = new Map<string, ModpackFile>();
-  for (const m of mods) files.set(m.FullPath, fileFromMod(m, mpd));
+  for (const m of mods) {
+    const built = fileFromMod(m, mpd);
+    if (!loadFix) {
+      files.set(m.FullPath, built);
+      continue;
+    }
+    const fixed = loadFix(m.FullPath, built);
+    if (fixed === null) continue; // dropped — never reaches the collapse `.set`
+    files.set(m.FullPath, fixed);
+  }
   return files;
 }
 
-export function readTtmp2(bytes: Uint8Array): ModpackData {
+// `makeLoadFix` (an upgrade-layer factory injected by loadModpack) keeps the reader independent of
+// the upgrade layer: the reader computes the tex/mdl gates from the version it parsed, builds the
+// fix, and applies it at the read seam. Omitted (a direct unit-test read) -> no load fix.
+export function readTtmp2(
+  bytes: Uint8Array,
+  makeLoadFix?: LoadFixFactory,
+): ModpackData {
   const entries = readZip(bytes);
   const mplName = [...entries.keys()].find((k) =>
     k.toLowerCase().endsWith(".mpl"),
@@ -58,6 +84,13 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
     new TextDecoder().decode(entries.get(mplName)!),
   ) as ModPackJson;
   const mpd = entries.get(mpdName)!;
+
+  // FromWizardGroup computes the tex/mdl gates once, just before its per-option loop
+  // (WizardData.cs:656-657), from the same version we just parsed. `makeLoadFix` omitted -> no fix.
+  const loadFix = makeLoadFix?.({
+    needsTexFix: ttmpNeedsTexFix(mpl.TTMPVersion),
+    needsMdlFix: ttmpNeedsMdlFix(mpl.TTMPVersion),
+  });
 
   const meta = {
     name: mpl.Name ?? "",
@@ -79,7 +112,7 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
       priority: 0,
       fileSwaps: {},
       manipulations: [],
-      files: filesFromMods(mpl.SimpleModsList, mpd),
+      files: filesFromMods(mpl.SimpleModsList, mpd, loadFix),
     };
     const group: ModpackGroup = {
       name: "Default",
@@ -119,7 +152,7 @@ export function readTtmp2(bytes: Uint8Array): ModpackData {
           priority: 0,
           fileSwaps: {},
           manipulations: [],
-          files: filesFromMods(o.ModsJsons, mpd),
+          files: filesFromMods(o.ModsJsons, mpd, loadFix),
         })),
       });
     }

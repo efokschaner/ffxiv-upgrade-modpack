@@ -75,12 +75,12 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
     expect(f.data).toBeUndefined();
   });
 
-  it("model round never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:916)", () => {
-    // FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file unguarded, unlike the
-    // different, unrelated UpdateEndwalkerModel (:250-256). The model round only runs when
-    // needsMdlFix is true, which is never the case for PMP — and absent files are a PMP-only
-    // phenomenon — so an absent .mdl can only ever pass through upgradeModpack untouched
-    // because the round is gated off, not because of any null-skip inside it.
+  it("model fix never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:916)", () => {
+    // FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file unguarded, unlike the different,
+    // unrelated UpdateEndwalkerModel (:250-256). The model fix (makeTtmpLoadFix's .mdl branch, run at
+    // LOAD) only fires when needsMdlFix is true, which is never the case for PMP — and absent files
+    // are a PMP-only phenomenon. upgradeModpack no longer runs a model round at all (the fix moved to
+    // the load seam), so an absent .mdl passes through untouched here regardless.
     const data = packOf(
       optionOf([absent("chara/equipment/e0001/model/c0101e0001_top.mdl")]),
     );

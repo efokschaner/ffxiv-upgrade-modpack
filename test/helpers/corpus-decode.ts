@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { loadModpack } from "../../src/index";
 import {
   allFiles,
   FileStorageType,
@@ -14,6 +13,7 @@ import {
   detectTypeFromGamePath,
   SqPackType,
 } from "../../src/sqpack/sqpack";
+import { loadRawModpack } from "./load-raw";
 
 /**
  * The ONE load + decode of a corpus pack, shared by every asset-level check.
@@ -121,9 +121,10 @@ function decodeEntry(f: AssetFile, legacyTex: string[]): DecodedFile | null {
   }
 }
 
-/** Load `ctx.pack` and decode every asset file into `ctx`. Called once, in beforeAll. */
+/** Load `ctx.pack` and decode every asset file into `ctx`. Called once, in beforeAll. Uses the raw
+ *  (no load-fix) reader so the codec checks see the pack's ORIGINAL bytes — see loadRawModpack. */
 export function decodePack(ctx: PackContext): void {
-  const data = loadModpack(ctx.name, new Uint8Array(readFileSync(ctx.pack)));
+  const data = loadRawModpack(ctx.name, new Uint8Array(readFileSync(ctx.pack)));
   ctx.entries = assetFilesOf(data).map((f) => ({
     f,
     d: decodeEntry(f, ctx.legacyTex),

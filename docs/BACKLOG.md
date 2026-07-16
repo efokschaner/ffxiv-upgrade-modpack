@@ -141,9 +141,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Other ported code
 
-- [`modelRound` propagates a normalizer throw and kills the whole pack](backlog/2026-07-12-model-round-throw-drops-pack.md)
-  — TexTools catches and drops just the file. Deliberate for now: fail-loud is what exposes an
-  unported model structure during development. Revisit when coverage is broad.
 - [Port IBM437 (CP437) zip entry-name decoding](backlog/2026-07-12-cp437-zip-entry-names.md) —
   `readZip` throws on a non-UTF-8-flagged high-byte entry name rather than guessing; `Ionic.Zip`
   falls back to CP437, empirically confirmed via a hand-assembled zip run through ConsoleTools. No

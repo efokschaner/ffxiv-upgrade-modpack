@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadModpack } from "../../src/index";
 import { allFiles, FileStorageType } from "../../src/model/modpack";
 import { decodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
+import { loadRawModpack } from "./load-raw";
 
 const INPUTS = "test/corpus/real";
 
@@ -17,7 +17,9 @@ export interface CorpusModel {
 export function* corpusModels(): Generator<CorpusModel> {
   for (const name of readdirSync(INPUTS)) {
     if (!/\.(ttmp2|ttmp|pmp)$/i.test(name)) continue;
-    const data = loadModpack(
+    // Raw (no load-fix) read: these are the pack's ORIGINAL models to test our normalizer/serializer
+    // against, not loadModpack's already-FixOldModel-normalized output — see loadRawModpack.
+    const data = loadRawModpack(
       name,
       new Uint8Array(readFileSync(join(INPUTS, name))),
     );

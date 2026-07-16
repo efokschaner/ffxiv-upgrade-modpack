@@ -253,3 +253,81 @@ drops the redundant key from the value (the C# value has none); EST keeps it (th
 An audit subagent produced a full working draft of this Part-2 change, then it was **discarded**
 (dispatched read-only, it overran its mandate; unrequested and unreviewed). Its outline informed this
 design, but the implementation is re-derived and re-verified — nothing from that run is trusted verbatim.
+
+---
+
+# Part 3 — Fuse read + load-fix + collapse at the read seam
+
+## Why (the divergence Part 1's Map reshape surfaced)
+
+Part 1 made `ModpackOption.files` a `Map`, so the TTMP reader now collapses a repeated `FullPath`
+last-write-wins for free (`WizardData.cs:729-737`). But that exposed an **ordering** divergence.
+C#'s `WizardData.FromWizardGroup` (`WizardData.cs:659-740`) builds each option's `Files` in ONE
+per-entry loop that **fuses** three steps: read the entry → apply the load-time fix
+(`FixOldTexData` on `.tex`, `FixOldModel` on `.mdl`, when `DoesModpackNeedFix`) → collapse. The fix
+runs **before** the collapse (`:701-737`), and a fix that throws hits `catch { continue }` (`:711`,
+`:726`) — so a later duplicate `FullPath` whose fix fails **never overwrites the earlier survivor**.
+
+Our port split these into two phases: the reader collapsed unconditionally (last-write-wins), and
+`applyLoadFixes` (`texFixRound` + `modelRound`) ran afterward inside `upgradeModpack`. Two latent
+divergences resulted (no corpus pack has a duplicate `FullPath` in one option, and the fixes only run
+for old packs):
+
+- **`.tex`:** a duplicate whose later copy is malformed collapsed to the malformed one, then
+  `texFixRound` dropped it → the file **vanished** (C# keeps the earlier valid copy).
+- **`.mdl`:** same shape, but `modelRound` **threw** on the collapsed-in corrupt copy, killing the
+  whole pack — the pre-existing `model-round-throw` divergence (C# `catch { continue }` drops just
+  the file).
+
+## Decision — move the fix to the read seam via an injected hook
+
+Reproduce `FromWizardGroup`'s fix-then-collapse by applying the load fix **inside the reader's
+per-entry loop, before the collapse `.set`**. Layering stays clean via dependency injection — the
+container reader never imports the upgrade layer:
+
+- **Seam types in the container** (`src/container/load-fix.ts`): `LoadFix`
+  (`(gamePath, SqPackCompressedFile) => SqPackCompressedFile | null`, where `null` = DROP, the C#
+  `continue`), `LoadFixGates`, and the `LoadFixFactory`. They live where they are *consumed* (the
+  reader parameter), so the upgrade layer depends downward on the container to implement one — never
+  the reverse. (The brief suggested `load-fixes.ts` as the type's home; hosting it in the container
+  is the stricter choice that keeps the reader from importing the upgrade layer at all.)
+- **Factory in the upgrade layer** (`src/upgrade/load-fixes.ts`): `makeTtmpLoadFix(gates)` ports the
+  `FromWizardGroup` fix step (`WizardData.cs:700-737`) — `.tex` decode-validity drop and `.mdl`
+  `FixOldModel`-or-drop. `.mdl` DROP-on-throw is what **closes `model-round-throw`**.
+- **Readers** (`ttmp2.ts`, `ttmp-legacy.ts`) take an optional `makeLoadFix` factory, compute the gates
+  from the version they parsed (pure helpers `ttmpNeedsTexFix` / `ttmpNeedsMdlFix`, extracted from
+  `texfix.ts` / `model.ts` with the `ModpackData` gates delegating to them — one source of truth),
+  build the hook, and apply it per entry before `.set`. Omitted factory ⇒ naive collapse, no fix.
+- **`loadModpack`** injects `makeTtmpLoadFix`, so it now returns **already-load-fixed** data —
+  matching `WizardData.FromModpack`, the load path both `/upgrade` (`ModpackUpgrader.cs:58`) and
+  `/resave` (`Program.cs:204`) take. `applyLoadFixes` / `texFixRound` / `modelRound` are retired;
+  `upgradeModpack` no longer applies load fixes.
+
+## Why it's zero-movement
+
+For every **non-duplicate** pack (the entire corpus) the final state is unchanged: the same fixes
+run, at the read seam instead of a separate step. `/upgrade` clones then transforms the (now
+already-fixed) source, and `/resave` writes it — both net-identical to applying the fix a step later,
+so **no golden or baseline moves**. Only a duplicate-`FullPath`-with-failing-later-fix pack (which no
+corpus pack is) changes, and that change is the divergence being fixed — pinned by two new synthetic
+`loadModpack` tests (`test/upgrade/load-fix-collapse.test.ts`, `.tex` + `.mdl`).
+
+## Seams explicitly preserved
+
+- **mdl-v6-bump** (`docs/backlog/2026-07-13-resave-mdl-v6-bump-seam.md`): the model fix still bumps
+  to v6, still on the **load** side — moving it from `applyLoadFixes` to the reader keeps it there, so
+  `/resave` is unchanged. Not addressed here.
+- **`.meta` / `.rgsp`**: untouched — our TTMP port keeps `.meta` as a file (reconstructed later by
+  `metadataRound`); that seam is separate and out of scope. The `ui/`-`.tex` exclusion is preserved
+  verbatim from the retired `texFixRound` (sibling `MakeFileStorageInformationDictionary`,
+  `TTMP.cs:1367`) to keep the relocation behaviour-neutral.
+- **PMP**: unaffected — `needsTexFix`/`needsMdlFix` are false for PMP, and `readPmp` takes no fix.
+
+## Coverage note — codec-fidelity helpers read raw
+
+`loadModpack` now fixes old packs (49 of 57 corpus packs are TTMP major < 2), which would change what
+the **codec-fidelity** corpus checks see (normalized-v6 models, dropped textures) if they loaded
+through it. They must inspect the pack's **original** bytes, so `corpus-decode`, `corpus-models`, and
+`corpus-golden` load via a new `test/helpers/load-raw.ts` (readers with no fix factory — the readers'
+documented "no fix" path), keeping them exactly as before the fusion. The `/upgrade` and `/resave`
+harnesses keep using `loadModpack` (they model the real, fixed pipeline).

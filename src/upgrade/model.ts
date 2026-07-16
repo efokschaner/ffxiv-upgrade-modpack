@@ -15,6 +15,16 @@ function ttmpMajor(v: string | undefined): number {
   return m ? Number(m[1]) : 1;
 }
 
+/**
+ * Pure version gate: true when a TTMP pack of TTMPVersion `version` gets FixOldModel at load —
+ * major < 2 (an absent version is legacy .ttmp, which predates 2.x → needs the fix). This is the
+ * TTMP-only half of `needsMdlFix` (PMP is gated out by the caller), so a reader that only has the
+ * parsed version string can call it directly. Mirrors DoesModpackNeedFix (TTMP.cs:916).
+ */
+export function ttmpNeedsMdlFix(version: string | undefined): boolean {
+  return ttmpMajor(version) < 2;
+}
+
 /** True when the pack's models get FixOldModel: TTMP (any legacy/v1) with major < 2. PMP never does. */
 export function needsMdlFix(data: ModpackData): boolean {
   if (
@@ -23,7 +33,7 @@ export function needsMdlFix(data: ModpackData): boolean {
   ) {
     return false;
   }
-  return ttmpMajor(data.meta.sourceTtmpVersion) < 2;
+  return ttmpNeedsMdlFix(data.meta.sourceTtmpVersion);
 }
 
 /**
