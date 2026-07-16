@@ -9,11 +9,7 @@
 // (UpdateUnclaimedHairAccessory, EndwalkerUpgrade.cs:1522-1716, Task 6).
 import type { ModpackFile, ModpackOption } from "../model/modpack";
 import type { HairMaterialTable } from "./reference/hair-materials-types";
-import {
-  TextureResizeUnsupported,
-  updateEndwalkerHairTextures,
-  writeGeneratedTex,
-} from "./texture";
+import { updateEndwalkerHairTextures, writeGeneratedTex } from "./texture";
 import { resolveFile } from "./upgrade";
 
 type TexType = "normal" | "specular" | "diffuse";
@@ -134,12 +130,15 @@ export function updateUnclaimedHairTextures(
       const maskDest = entry.maskDx11Path;
       if (!normDest || !maskDest) continue; // (EndwalkerUpgrade.cs:1447)
       // Already-converted guard (EndwalkerUpgrade.cs:1460-1476): any destination already
-      // present in the option ⇒ skip the whole (race,id).
+      // present in the option ⇒ skip the whole (race,id). The C# checks a `.ToList()` snapshot
+      // of the file list taken once at :1347 (`fileList`), not re-read mid-loop; we check the
+      // live `option.files` instead. Unobservable: destination paths are unique per (race,id)
+      // (derived from that group's own race/id), so no earlier iteration of this loop can have
+      // added a dest this check would then (dis)agree with the snapshot about.
       const destFor = (t: TexType) => (t === "normal" ? normDest : maskDest);
       if (g.texs.some((t) => option.files.has(destFor(t.texType)))) continue;
-      // Copy raw first (EndwalkerUpgrade.cs:1478-1492), THEN transform (:1495-1502). On
-      // TextureResizeUnsupported or any transform error, `continue` — leaving the raw copies
-      // in place; this is the C# catch-all behaviour (:1498-1501), do not delete the copies.
+      // Copy raw first (EndwalkerUpgrade.cs:1478-1492), THEN transform (:1495-1502). On any
+      // transform error, `continue` — leaving the raw copies in place.
       const srcNorm = option.files.get(
         g.texs.find((t) => t.texType === "normal")!.path,
       )!;
@@ -165,9 +164,14 @@ export function updateUnclaimedHairTextures(
           res.mask,
           option.files.get(maskDest)!,
         );
-      } catch (e) {
-        if (e instanceof TextureResizeUnsupported) continue; // baselined resampler gap; raw copies remain
-        throw e;
+      } catch {
+        // Bare catch-all, faithfully reproducing EndwalkerUpgrade.cs:1498-1501
+        // (`catch (Exception ex) { Trace.WriteLine(ex); continue; }`): it swallows ANY transform
+        // failure — both our modeled resize gap (TextureResizeUnsupported) and any genuine
+        // corrupt-input parse failure — leaving the raw copies already written above in place.
+        // See docs/TEXTOOLS_BUGS.md #12 for why this catch-all is itself a TexTools defect we
+        // reproduce rather than narrow.
+        continue;
       }
       if (isTail) {
         // Tail rewrite (EndwalkerUpgrade.cs:1504-1516) — added in Task 5.

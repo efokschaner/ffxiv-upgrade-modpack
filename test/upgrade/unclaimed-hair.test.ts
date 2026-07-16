@@ -7,9 +7,10 @@ import {
   type ModpackFile,
   type ModpackOption,
 } from "../../src/model/modpack";
+import { parseTex } from "../../src/tex/tex";
 import type { HairMaterialTable } from "../../src/upgrade/reference/hair-materials-types";
 import { updateUnclaimedHairTextures } from "../../src/upgrade/unclaimed-hair";
-import { buildMinimalTex } from "../tex/make-tex";
+import { buildMinimalTex, buildMinimalTexSized } from "../tex/make-tex";
 
 function opt(files: Record<string, Uint8Array>): ModpackOption {
   return {
@@ -83,22 +84,28 @@ describe("updateUnclaimedHairTextures (hair)", () => {
   });
 
   it("Dx11-prefixed (--) source wins the tie-break over a non-Dx11 one for the same texType", () => {
-    // Both a non-Dx11 and a Dx11 normal are present; the Dx11 one should be the one copied.
+    // Both a non-Dx11 and a Dx11 normal are present, distinguishable by SIZE so the test is not
+    // vacuous: the non-Dx11 normal is 4x4, the Dx11 normal and the mask are both 2x2. If the
+    // tie-break wrongly picked the non-Dx11 (4x4) source, it would mismatch the 2x2 mask, the
+    // transform would throw, and the raw 4x4 copy would remain at the destination (width 4).
+    // Only the Dx11 (2x2) source winning lets the transform succeed, producing a 2x2 destination.
     const nOldPlain =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
     const nOldDx11 =
       "chara/human/c0101/obj/hair/h0001/texture/--c0101h0001_hir_n.tex";
     const sOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
-    const dx11Bytes = buildMinimalTex();
     const o = opt({
-      [nOldPlain]: buildMinimalTex(),
-      [nOldDx11]: dx11Bytes,
-      [sOld]: buildMinimalTex(),
+      [nOldPlain]: buildMinimalTexSized(4, 4),
+      [nOldDx11]: buildMinimalTexSized(2, 2),
+      [sOld]: buildMinimalTexSized(2, 2),
     });
     updateUnclaimedHairTextures(o, new Set([nOldPlain, nOldDx11, sOld]), table);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
+    const normFile = o.files.get(HAIR_NORM_DEST)!;
+    const parsed = parseTex(normFile.data!);
+    expect(parsed.width).toBe(2);
   });
 
   it("does not match textures that are outside `contained` even if present in option.files", () => {
@@ -166,5 +173,29 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table);
     // The mask destination must NOT have been written either -- the whole (race,id) is skipped.
     expect(o.files.has(HAIR_MASK_DEST)).toBe(false);
+  });
+
+  it("leaves the raw copies untransformed when the transform throws (bare catch-all, EndwalkerUpgrade.cs:1498-1501)", () => {
+    // Normal 2x2 vs mask 4x4: a genuine size mismatch, so updateEndwalkerHairTextures throws
+    // TextureResizeUnsupported (EndwalkerUpgrade.cs:1205). The function must not propagate that
+    // (or any other transform error) -- it must swallow it, leaving the raw copies already
+    // written by the copy-first step untouched at both destinations.
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
+    const sOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
+    const normBytes = buildMinimalTexSized(2, 2);
+    const maskBytes = buildMinimalTexSized(4, 4);
+    const o = opt({ [nOld]: normBytes, [sOld]: maskBytes });
+
+    expect(() =>
+      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table),
+    ).not.toThrow();
+
+    expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
+    expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
+    // Bytes at the destinations equal the raw source bytes verbatim -- untransformed.
+    expect(o.files.get(HAIR_NORM_DEST)!.data).toEqual(normBytes);
+    expect(o.files.get(HAIR_MASK_DEST)!.data).toEqual(maskBytes);
   });
 });
