@@ -119,7 +119,7 @@ function findFile(
  *  valid reference), and the choice is parity-neutral: the golden harness compares
  *  DECOMPRESSED content, so the container form cannot affect the diff, and encode/decode
  *  round-trips (tested). */
-function writeGeneratedTex(
+export function writeGeneratedTex(
   option: ModpackOption,
   gamePath: string,
   texBytes: Uint8Array,
