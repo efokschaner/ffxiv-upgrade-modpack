@@ -288,7 +288,14 @@ export function updateUnclaimedHairAccessory(
     if (!entry.normalDx11Path) continue; // normTex == null (EndwalkerUpgrade.cs:1633-1637)
 
     // Already-converted guard with early break on a missing spec/diffuse sampler
-    // (EndwalkerUpgrade.cs:1646-1683).
+    // (EndwalkerUpgrade.cs:1646-1683). Unlike the hair guard above (which checks
+    // `option.files`, standing in for the C#'s `fileList = fileInfos.Keys.ToList()` -- ALL
+    // option files, :1466), the accessory guard checks `files.Contains(newPath)` (:1672) where
+    // `files` is the SAME list bound to our `contained` param, not `fileInfos`/`option.files` --
+    // a real asymmetry, so we check `contained` here, not `option.files`. (The C#'s
+    // `files.Add(newPath)` at :1712 would grow that list as groups are processed, but that's
+    // unobservable here: distinct (race,id) groups resolve to distinct destinations, so we don't
+    // need to mirror the growth by re-adding copied dests to `contained`.)
     let skip = false;
     for (const t of g.texs) {
       const dest = accessoryDestFor(entry, t.texType);
@@ -296,7 +303,7 @@ export function updateUnclaimedHairAccessory(
         skip = true;
         break; // missing spec/diffuse sampler aborts the whole (race,id) (:1656-1660/:1664-1668)
       }
-      if (option.files.has(dest)) skip = true; // already converted (:1672-1677, `continue` not `break`)
+      if (contained.has(dest)) skip = true; // already converted (:1672-1677, `continue` not `break`)
     }
     if (skip) continue;
 

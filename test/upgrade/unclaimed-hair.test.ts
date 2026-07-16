@@ -470,7 +470,12 @@ describe("updateUnclaimedHairAccessory", () => {
     expect(o.files.has(ACC_DIFF_DEST)).toBe(false);
   });
 
-  it("skips when a destination is already present (already-converted guard)", () => {
+  it("skips when a destination is already present in `contained` (already-converted guard, EndwalkerUpgrade.cs:1672)", () => {
+    // Unlike hair (which checks ALL option files, :1466), the accessory guard checks the SAME
+    // `files` list bound to `contained` (:1672), not `fileInfos`/option.files. So the pre-existing
+    // destination must be reflected in `contained` for the guard to fire -- matching how the real
+    // `partials()` glue builds it (`contained = unusedTextures ∩ option.files.keys()`, so
+    // `contained` is always a subset of `option.files`, never the other way around).
     const nOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
     const dOld =
@@ -481,10 +486,33 @@ describe("updateUnclaimedHairAccessory", () => {
       [ACC_DIFF_DEST]: buildMinimalTex(), // already converted
     });
 
-    updateUnclaimedHairAccessory(o, new Set([nOld, dOld]), accTable);
+    updateUnclaimedHairAccessory(
+      o,
+      new Set([nOld, dOld, ACC_DIFF_DEST]),
+      accTable,
+    );
 
     // The whole (race,id) is skipped -- the normal destination must NOT be written either.
     expect(o.files.has(ACC_NORM_DEST)).toBe(false);
+  });
+
+  it("does NOT skip when the destination exists only in option.files but not in `contained` (proves the guard checks `contained`, not all option files)", () => {
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const o = opt({
+      [nOld]: buildMinimalTex(),
+      [dOld]: buildMinimalTex(),
+      [ACC_DIFF_DEST]: buildMinimalTex(), // present in the option, but NOT passed via `contained`
+    });
+
+    updateUnclaimedHairAccessory(o, new Set([nOld, dOld]), accTable);
+
+    // The guard only consults `contained`, so this is NOT treated as already-converted; the
+    // normal destination gets written (the diffuse copy overwrites the pre-existing file, as the
+    // C# does).
+    expect(o.files.has(ACC_NORM_DEST)).toBe(true);
   });
 
   it("performs a pure raw copy -- no pixel transform -- even for mismatched normal/diffuse sizes", () => {
