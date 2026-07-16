@@ -131,11 +131,12 @@ Per AGENTS.md's preference order (real golden > synthetic golden > synthetic uni
 - Retire the old umbrella partials item and split it into the two focused, pickup-cold items
   below (done in this change).
 - File `docs/backlog/2026-07-15-partials-unclaimed-hair.md` — `UpdateUnclaimedHairTextures`
-  (+ `UpdateUnclaimedHairAccessory`). Needs a bundled canonical hair/tail/ear/accessory material
-  table (per material: normal/mask Dx11 sampler paths, shaderpack, material flags) extracted from
-  a live DT install, plus a `FileExists` path-set; reuses the already-ported
+  (+ `UpdateUnclaimedHairAccessory`). **Shipped 2026-07-16** (see
+  `docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md`): a bundled canonical
+  hair/tail/ear/accessory material table (per material: normal/mask Dx11 sampler paths, shaderpack,
+  flags) extracted from a live DT install doubles as the `FileExists` oracle, reusing the ported
   `updateEndwalkerHairTextures` pixel path and the `_SampleHair` constant source for the tail
-  backface special-case.
+  backface special-case. Backlog item retired.
 - File `docs/backlog/2026-07-15-partials-eye-mask.md` — `UpdateEyeMask`. Needs a bundled iris
   `(race, face) → diffuse texture path` table (via the iris material) and the
   `ConvertEyeMaskToDiffuse` / `SwizzleRB` / DDS-conversion helpers (confirm which are unported).

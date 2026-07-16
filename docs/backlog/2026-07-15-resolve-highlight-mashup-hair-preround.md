@@ -30,9 +30,10 @@ pack it would have mutated diverges from the `/upgrade` golden.
 ## Why it is deferred, not done in the skin-paths slice
 
 Out of scope for the partials round: it is a distinct pre-round, and its `RepathHairMashups` half
-shares the "bundled DT reference path-set" dependency with the hair/eye partials
-(`docs/backlog/2026-07-15-partials-unclaimed-hair.md`, `…-eye-mask.md`). The highlight-resolution
-half (stapling + the fail-loud throw) *is* portable today with no new assets.
+shares the "bundled DT reference path-set" dependency with the eye partials
+(`…-eye-mask.md`) — the same kind of dependency the now-shipped hair partials resolved with a bundled
+canonical-material table (see `docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md`).
+The highlight-resolution half (stapling + the fail-loud throw) *is* portable today with no new assets.
 
 ## First steps
 

@@ -4,8 +4,8 @@
 **Status:** Design signed off; implementation in progress.
 **Foundation:** extends the roadmap design
 (`docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md`, §5 bundled reference
-assets, §8 burndown) and closes backlog item
-`docs/backlog/2026-07-15-partials-unclaimed-hair.md`.
+assets, §8 burndown). This shipped the work formerly tracked as the Round-6 unclaimed-hair backlog
+item (now retired).
 
 **Goal:** Port the round-6 "partial texture-only" heuristics that rescue an **incomplete mod** — one
 that ships pre-Dawntrail hair/tail/ear/accessory *textures* without the *material* that references
