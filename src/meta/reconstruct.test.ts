@@ -8,25 +8,25 @@ import type { EstEntry, ItemMeta } from "./types";
 describe("reconstructMeta EQDP expansion", () => {
   it("expands EQDP to canonical 18 races, mod value or 0, dropping mod order", () => {
     // Mod meta: 17 races missing 1601, with Viera in old order (1801 before 1701).
-    const eqdp = [
-      { race: 101, value: 3 },
-      { race: 201, value: 2 },
-      { race: 301, value: 0 },
-      { race: 401, value: 0 },
-      { race: 501, value: 0 },
-      { race: 601, value: 0 },
-      { race: 701, value: 0 },
-      { race: 801, value: 0 },
-      { race: 901, value: 2 },
-      { race: 1001, value: 0 },
-      { race: 1101, value: 2 },
-      { race: 1201, value: 3 },
-      { race: 1301, value: 0 },
-      { race: 1401, value: 0 },
-      { race: 1501, value: 0 },
-      { race: 1801, value: 0 },
-      { race: 1701, value: 0 },
-    ];
+    const eqdp = new Map([
+      [101, 3],
+      [201, 2],
+      [301, 0],
+      [401, 0],
+      [501, 0],
+      [601, 0],
+      [701, 0],
+      [801, 0],
+      [901, 2],
+      [1001, 0],
+      [1101, 2],
+      [1201, 3],
+      [1301, 0],
+      [1401, 0],
+      [1501, 0],
+      [1801, 0],
+      [1701, 0],
+    ]);
     const mod: ItemMeta = {
       version: 2,
       path: "chara/equipment/e0256/e0256_top.meta",
@@ -37,15 +37,12 @@ describe("reconstructMeta EQDP expansion", () => {
       gmp: null,
     };
     const out = reconstructMeta(mod, mod.path);
-    expect(out.eqdp!.map((e) => e.race)).toEqual([
+    expect([...out.eqdp!.keys()]).toEqual([
       101, 201, 301, 401, 501, 601, 701, 801, 901, 1001, 1101, 1201, 1301, 1401,
       1501, 1601, 1701, 1801,
     ]);
-    expect(out.eqdp!.find((e) => e.race === 1601)).toEqual({
-      race: 1601,
-      value: 0,
-    });
-    expect(out.eqdp!.find((e) => e.race === 101)!.value).toBe(3);
+    expect(out.eqdp!.get(1601)).toBe(0);
+    expect(out.eqdp!.get(101)).toBe(3);
   });
 
   it("leaves a meta with no EQDP segment untouched in EQDP", () => {
@@ -55,17 +52,17 @@ describe("reconstructMeta EQDP expansion", () => {
       imc: null,
       eqp: null,
       eqdp: null,
-      est: [{ race: 201, setId: 135, skelId: 136 }],
+      est: new Map([[201, { race: 201, setId: 135, skelId: 136 }]]),
       gmp: null,
     };
     expect(reconstructMeta(mod, mod.path).eqdp).toBeNull();
   });
 
   it("fails loud on an EQDP entry for a non-playable race (C# retains it, ItemMetadata.cs:773; unsupported here)", () => {
-    const eqdp = [
-      { race: 101, value: 1 },
-      { race: 9999, value: 2 }, // not in PLAYABLE_RACES
-    ];
+    const eqdp = new Map([
+      [101, 1],
+      [9999, 2], // not in PLAYABLE_RACES
+    ]);
     const mod: ItemMeta = {
       version: 2,
       path: "chara/equipment/e0256/e0256_top.meta",
@@ -90,12 +87,13 @@ describe("reconstructMeta EST reconstruction", () => {
   function preDawntrailEst(
     setId: number,
     skelIdFor: (race: number) => number,
-  ): EstEntry[] {
-    return PLAYABLE_RACES.filter((race) => race !== 1601).map((race) => ({
-      race,
-      setId,
-      skelId: skelIdFor(race),
-    }));
+  ): Map<number, EstEntry> {
+    return new Map(
+      PLAYABLE_RACES.filter((race) => race !== 1601).map((race) => [
+        race,
+        { race, setId, skelId: skelIdFor(race) },
+      ]),
+    );
   }
 
   it("adds a race missing from the mod using the base table's skelId (Est.GetExtraSkeletonEntries port)", () => {
@@ -111,13 +109,13 @@ describe("reconstructMeta EST reconstruction", () => {
       gmp: null,
     };
     const out = reconstructMeta(mod, mod.path);
-    expect(out.est!.map((e) => e.race)).toEqual(PLAYABLE_RACES);
+    expect([...out.est!.keys()]).toEqual(PLAYABLE_RACES);
     // Every mod-supplied race is untouched.
-    for (const e of est) {
-      expect(out.est!.find((x) => x.race === e.race)).toEqual(e);
+    for (const e of est.values()) {
+      expect(out.est!.get(e.race)).toEqual(e);
     }
     // The race the mod never covered is filled from the base table, not defaulted to 0.
-    expect(out.est!.find((e) => e.race === 1601)).toEqual({
+    expect(out.est!.get(1601)).toEqual({
       race: 1601,
       setId: HEAD_SET_ID,
       skelId: HEAD_BASE_SKEL_ID,
@@ -125,10 +123,8 @@ describe("reconstructMeta EST reconstruction", () => {
   });
 
   it("a mod EST value for a present race overrides the base seed", () => {
-    const est = [
-      ...preDawntrailEst(HEAD_SET_ID, (race) => race),
-      { race: 1601, setId: HEAD_SET_ID, skelId: 42 },
-    ];
+    const est = preDawntrailEst(HEAD_SET_ID, (race) => race);
+    est.set(1601, { race: 1601, setId: HEAD_SET_ID, skelId: 42 });
     const mod: ItemMeta = {
       version: 2,
       path: "chara/equipment/e5035/e5035_met.meta",
@@ -140,7 +136,7 @@ describe("reconstructMeta EST reconstruction", () => {
     };
     const out = reconstructMeta(mod, mod.path);
     // Mod's explicit 1601 entry wins over the base table's skelId (5035).
-    expect(out.est!.find((e) => e.race === 1601)).toEqual({
+    expect(out.est!.get(1601)).toEqual({
       race: 1601,
       setId: HEAD_SET_ID,
       skelId: 42,
@@ -151,10 +147,8 @@ describe("reconstructMeta EST reconstruction", () => {
     // Deliberately mismatched setId (9999) on the mod's 1601 entry: only skelId should win, setId
     // must stay HEAD_SET_ID (the seed's, i.e. root.primaryId parsed from e5035_met.meta) rather
     // than being taken from the mod entry.
-    const est = [
-      ...preDawntrailEst(HEAD_SET_ID, (race) => race),
-      { race: 1601, setId: 9999, skelId: 42 },
-    ];
+    const est = preDawntrailEst(HEAD_SET_ID, (race) => race);
+    est.set(1601, { race: 1601, setId: 9999, skelId: 42 });
     const mod: ItemMeta = {
       version: 2,
       path: "chara/equipment/e5035/e5035_met.meta",
@@ -165,7 +159,7 @@ describe("reconstructMeta EST reconstruction", () => {
       gmp: null,
     };
     const out = reconstructMeta(mod, mod.path);
-    expect(out.est!.find((e) => e.race === 1601)).toEqual({
+    expect(out.est!.get(1601)).toEqual({
       race: 1601,
       setId: HEAD_SET_ID,
       skelId: 42,
@@ -180,7 +174,9 @@ describe("reconstructMeta EST reconstruction", () => {
     // (Est.cs:268-288) rather than an itemType heuristic.
     const hairId = 170;
     expect(EST_TABLE.Hair[1601]?.[hairId]).toBe(171); // sibling races' base data must NOT leak in
-    const est: EstEntry[] = [{ race: 201, setId: hairId, skelId: 113 }];
+    const est: Map<number, EstEntry> = new Map([
+      [201, { race: 201, setId: hairId, skelId: 113 }],
+    ]);
     const mod: ItemMeta = {
       version: 2,
       path: "chara/human/c0201/obj/hair/h0170/c0201h0170_hir.meta",
@@ -198,7 +194,9 @@ describe("reconstructMeta EST reconstruction", () => {
     // mod's own entry for the same race (1601) must win over that base value.
     const hairId = 170;
     expect(EST_TABLE.Hair[1601]?.[hairId]).toBe(171);
-    const est: EstEntry[] = [{ race: 1601, setId: hairId, skelId: 999 }];
+    const est: Map<number, EstEntry> = new Map([
+      [1601, { race: 1601, setId: hairId, skelId: 999 }],
+    ]);
     const mod: ItemMeta = {
       version: 2,
       path: "chara/human/c1601/obj/hair/h0170/c1601h0170_hir.meta",
@@ -209,14 +207,18 @@ describe("reconstructMeta EST reconstruction", () => {
       gmp: null,
     };
     const out = reconstructMeta(mod, mod.path);
-    expect(out.est).toEqual([{ race: 1601, setId: hairId, skelId: 999 }]);
+    expect(out.est).toEqual(
+      new Map([[1601, { race: 1601, setId: hairId, skelId: 999 }]]),
+    );
   });
 
   it("hair EST with a mismatched setId only overrides skelId; setId stays the seed's hairId (PmpManipulation.cs:275-279 SkelId-only assignment)", () => {
     // Deliberately mismatched setId (777) on the mod's matching-race entry: only skelId should
     // win, setId must stay hairId (the seed's, i.e. root.primaryId parsed from h0170).
     const hairId = 170;
-    const est: EstEntry[] = [{ race: 1601, setId: 777, skelId: 999 }];
+    const est: Map<number, EstEntry> = new Map([
+      [1601, { race: 1601, setId: 777, skelId: 999 }],
+    ]);
     const mod: ItemMeta = {
       version: 2,
       path: "chara/human/c1601/obj/hair/h0170/c1601h0170_hir.meta",
@@ -227,14 +229,18 @@ describe("reconstructMeta EST reconstruction", () => {
       gmp: null,
     };
     const out = reconstructMeta(mod, mod.path);
-    expect(out.est).toEqual([{ race: 1601, setId: hairId, skelId: 999 }]);
+    expect(out.est).toEqual(
+      new Map([[1601, { race: 1601, setId: hairId, skelId: 999 }]]),
+    );
   });
 
   it("hair EST for a root race absent from the mod's entries fails loud (KeyNotFoundException equivalent, PmpManipulation.cs:275)", () => {
     // Root is race 201 (c0201), but the .meta's EST entry is for a different race (301) — mirrors
     // applying a manipulation to a dict keyed only on the seeded root race.
     const hairId = 170;
-    const est: EstEntry[] = [{ race: 301, setId: hairId, skelId: 113 }];
+    const est: Map<number, EstEntry> = new Map([
+      [301, { race: 301, setId: hairId, skelId: 113 }],
+    ]);
     const mod: ItemMeta = {
       version: 2,
       path: "chara/human/c0201/obj/hair/h0170/c0201h0170_hir.meta",
@@ -259,7 +265,9 @@ describe("reconstructMeta EST reconstruction", () => {
     delete (EST_TABLE.Body as Record<number, unknown>)[race];
     try {
       const setId = 256;
-      const est: EstEntry[] = [{ race, setId, skelId: 13 }];
+      const est: Map<number, EstEntry> = new Map([
+        [race, { race, setId, skelId: 13 }],
+      ]);
       const mod: ItemMeta = {
         version: 2,
         path: "chara/equipment/e0256/e0256_top.meta",
@@ -276,10 +284,8 @@ describe("reconstructMeta EST reconstruction", () => {
   });
 
   it("fails loud on an equipment EST entry for a non-playable race (KeyNotFoundException equivalent, PmpManipulation.cs:275; unsupported here)", () => {
-    const est: EstEntry[] = [
-      ...preDawntrailEst(HEAD_SET_ID, (race) => race),
-      { race: 9999, setId: HEAD_SET_ID, skelId: 42 }, // not in PLAYABLE_RACES
-    ];
+    const est = preDawntrailEst(HEAD_SET_ID, (race) => race);
+    est.set(9999, { race: 9999, setId: HEAD_SET_ID, skelId: 42 }); // not in PLAYABLE_RACES
     const mod: ItemMeta = {
       version: 2,
       path: "chara/equipment/e5035/e5035_met.meta",
@@ -293,7 +299,7 @@ describe("reconstructMeta EST reconstruction", () => {
   });
 
   it("leaves a meta with no EST segment untouched in EST", () => {
-    const eqdp = [{ race: 101, value: 1 }];
+    const eqdp = new Map([[101, 1]]);
     const mod: ItemMeta = {
       version: 2,
       path: "chara/equipment/e0256/e0256_top.meta",

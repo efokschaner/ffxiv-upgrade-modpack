@@ -31,20 +31,19 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
     // docs/backlog/2026-07-10-eqdp-non-playable-races.md), so fail loud instead of dropping it
     // silently — matching the fail-loud posture of the hair/face EST branch below. The faithful fix
     // (if ever needed) is to keep the mod's extra rows verbatim, per ItemMetadata.cs:773.
-    for (const e of eqdp) {
-      if (!PLAYABLE_RACES.includes(e.race)) {
+    for (const race of eqdp.keys()) {
+      if (!PLAYABLE_RACES.includes(race)) {
         throw new Error(
-          `meta: ${gamePath} has an EQDP entry for non-playable race ${e.race} ` +
+          `meta: ${gamePath} has an EQDP entry for non-playable race ${race} ` +
             "(C# retains it, ItemMetadata.cs:773; unsupported here — see " +
             "docs/backlog/2026-07-10-eqdp-non-playable-races.md)",
         );
       }
     }
-    const byRace = new Map(eqdp.map((e) => [e.race, e.value]));
-    eqdp = PLAYABLE_RACES.map((race) => ({
-      race,
-      value: byRace.get(race) ?? 0,
-    }));
+    const modEqdp = eqdp; // Map<number, number>
+    eqdp = new Map(
+      PLAYABLE_RACES.map((race) => [race, modEqdp.get(race) ?? 0]),
+    );
   }
 
   let est = mod.est;
@@ -77,17 +76,17 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       // manipulation for one (PmpManipulation.cs:275, same mechanism as the race-gap throw above).
       // Unreachable across the corpus (game EST files are playable-race-scoped); fail loud rather
       // than drop, matching the hair/face branch's posture below.
-      for (const e of est) {
-        if (!PLAYABLE_RACES.includes(e.race)) {
+      for (const race of est.keys()) {
+        if (!PLAYABLE_RACES.includes(race)) {
           throw new Error(
-            `meta: ${gamePath} has an EST entry for non-playable race ${e.race} ` +
+            `meta: ${gamePath} has an EST entry for non-playable race ${race} ` +
               "(KeyNotFoundException equivalent, PmpManipulation.cs:275; unsupported here)",
           );
         }
       }
-      const byRace = new Map(est.map((e) => [e.race, e]));
+      const modEst = est; // Map<number, EstEntry>
       const baseByRace = EST_TABLE[estType];
-      const seed: EstEntry[] = [];
+      const seed = new Map<number, EstEntry>();
       for (const race of PLAYABLE_RACES) {
         const raceTable = baseByRace[race];
         if (raceTable === undefined) {
@@ -97,7 +96,7 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
           // silently dropped (it would vanish with no trace instead of failing like TexTools
           // does); a mod entry the base doesn't cover for a race the base DOES carry is fine
           // (handled by the raceTable[setId] ?? 0 default below).
-          if (byRace.has(race)) {
+          if (modEst.has(race)) {
             throw new Error(
               `meta: ${gamePath} has an EST entry for race ${race}, but the base est file ` +
                 `has no ${estType} table for that race (KeyNotFoundException equivalent, ` +
@@ -106,12 +105,12 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
           }
           continue;
         }
-        const override = byRace.get(race);
-        if (override) {
-          seed.push({ race, setId, skelId: override.skelId });
-        } else {
-          seed.push({ race, setId, skelId: raceTable[setId] ?? 0 });
-        }
+        const override = modEst.get(race);
+        seed.set(race, {
+          race,
+          setId,
+          skelId: override ? override.skelId : (raceTable[setId] ?? 0),
+        });
       }
       est = seed;
     } else {
@@ -128,7 +127,7 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       const race = root.race;
       const baseSkelId = EST_TABLE[estType][race]?.[setId] ?? 0;
       let entry: EstEntry = { race, setId, skelId: baseSkelId };
-      for (const modEntry of est) {
+      for (const modEntry of est.values()) {
         // PmpManipulation.cs:275 `metadata.EstEntries[race]` is a dict keyed on the single seeded
         // race above; applying a manipulation for any other race is a C# KeyNotFoundException.
         // Fail loud instead of silently emitting a race the game seed never had.
@@ -142,7 +141,7 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
         // SetId/race are carried from the seed (setId here), never taken from the mod entry.
         entry = { race, setId, skelId: modEntry.skelId };
       }
-      est = [entry];
+      est = new Map([[entry.race, entry]]);
     }
   }
 

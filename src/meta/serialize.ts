@@ -14,19 +14,19 @@ const TYPE_EST = 4;
 const TYPE_GMP = 5;
 
 function eqdpBytes(m: ItemMeta): Uint8Array {
-  const e = m.eqdp!;
   const b = new ByteBuilder();
-  for (const x of e) {
-    b.u32(x.race);
-    b.u8(x.value);
+  for (const [race, value] of m.eqdp!) {
+    // key IS the race (ItemMetadata.cs:743 writes kv.Key)
+    b.u32(race);
+    b.u8(value);
   }
   return b.toUint8Array();
 }
 
 function estBytes(m: ItemMeta): Uint8Array {
-  const e = m.est!;
   const b = new ByteBuilder();
-  for (const x of e) {
+  for (const x of m.est!.values()) {
+    // value's race (ItemMetadata.cs:678 writes kv.Value.Race)
     b.u16(x.race);
     b.u16(x.setId);
     b.u16(x.skelId);

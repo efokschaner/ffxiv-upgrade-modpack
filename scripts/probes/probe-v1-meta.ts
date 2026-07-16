@@ -46,7 +46,7 @@ function unc(f: { storage: FileStorageType; data?: Uint8Array }) {
 }
 function metaSegs(b: Uint8Array) {
   const m = deserializeMeta(b);
-  return `v${m.version} imc=${m.imc ? m.imc.length : "-"} eqp=${m.eqp ? m.eqp.length : "-"} eqdp=${m.eqdp ? m.eqdp.length : "-"} est=${m.est ? m.est.length : "-"} gmp=${m.gmp ? m.gmp.length : "-"}`;
+  return `v${m.version} imc=${m.imc ? m.imc.length : "-"} eqp=${m.eqp ? m.eqp.length : "-"} eqdp=${m.eqdp ? m.eqdp.size : "-"} est=${m.est ? m.est.size : "-"} gmp=${m.gmp ? m.gmp.length : "-"}`;
 }
 
 // find a ttmp2 corpus pack with an equipment .meta that has EST (and ideally GMP)
