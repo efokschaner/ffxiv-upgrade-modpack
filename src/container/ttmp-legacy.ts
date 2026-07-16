@@ -8,10 +8,16 @@ import {
   type ModpackGroup,
   type ModpackOption,
 } from "../model/modpack";
+import { ttmpNeedsMdlFix } from "../upgrade/model";
+import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { readZip } from "../zip/zip";
+import type { LoadFixFactory } from "./load-fix";
 import type { OriginalModPackJson } from "./manifest-types";
 
-export function readLegacyTtmp(bytes: Uint8Array): ModpackData {
+export function readLegacyTtmp(
+  bytes: Uint8Array,
+  makeLoadFix?: LoadFixFactory,
+): ModpackData {
   const entries = readZip(bytes);
   const mplName = [...entries.keys()].find((k) =>
     k.toLowerCase().endsWith(".mpl"),
@@ -27,10 +33,23 @@ export function readLegacyTtmp(bytes: Uint8Array): ModpackData {
   if (lines.length > 0 && lines[0]!.toLowerCase().includes("version"))
     lines.shift();
 
-  const files: ModpackFile[] = lines.map((line) => {
+  // A legacy .ttmp carries no TTMPVersion; DoesModpackNeedFix treats that as pre-2.x, so both gates
+  // fire (major < 2). `makeLoadFix` omitted -> no fix.
+  const loadFix = makeLoadFix?.({
+    needsTexFix: ttmpNeedsTexFix(undefined),
+    needsMdlFix: ttmpNeedsMdlFix(undefined),
+  });
+
+  // Build the option's file map in line order, reproducing FromWizardGroup's fix-then-collapse
+  // (WizardData.cs:700-737): apply the load fix FIRST, then `.set`. A dropped file (loadFix -> null,
+  // the C# `catch { continue }`) never reaches the collapse, so it cannot overwrite an earlier
+  // duplicate; `.set` on a repeated FullPath is C#'s last-write-wins collapse (:729-737).
+  const files = new Map<string, ModpackFile>();
+  for (const line of lines) {
     const m = JSON.parse(line) as OriginalModPackJson;
-    return {
-      gamePath: m.FullPath,
+    const built: ModpackFile & {
+      storage: FileStorageType.SqPackCompressed;
+    } = {
       data: mpd.slice(m.ModOffset, m.ModOffset + m.ModSize),
       storage: FileStorageType.SqPackCompressed,
       ttmp: {
@@ -40,7 +59,14 @@ export function readLegacyTtmp(bytes: Uint8Array): ModpackData {
         isDefault: false,
       },
     };
-  });
+    if (!loadFix) {
+      files.set(m.FullPath, built);
+      continue;
+    }
+    const fixed = loadFix(m.FullPath, built);
+    if (fixed === null) continue; // dropped — never reaches the collapse `.set`
+    files.set(m.FullPath, fixed);
+  }
 
   const option: ModpackOption = {
     name: "Default",

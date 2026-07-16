@@ -16,7 +16,9 @@ describe("readPmp", () => {
     const data = readPmp(pack.bytes);
     expect(data.sourceFormat).toBe(ModpackFormat.Pmp);
     expect(data.meta.name).toBe("Synth PMP");
-    const byPath = new Map(allFiles(data).map((f) => [f.gamePath, f]));
+    const byPath = new Map(
+      allFiles(data).map(({ gamePath, file }) => [gamePath, file]),
+    );
     for (const [path, bytes] of Object.entries(pack.expectedFiles)) {
       expect(byPath.get(path)!.data).toEqual(bytes);
       expect(byPath.get(path)!.storage).toBe(FileStorageType.RawUncompressed);
@@ -78,8 +80,8 @@ describe("readPmp case-insensitive Files resolution", () => {
     const data = readPmp(writeZip(entries));
     const f = allFiles(data).find((x) => x.gamePath === gamePath);
     expect(f).toBeDefined();
-    expect(f!.storage).toBe(FileStorageType.RawUncompressed);
-    expect(f!.data).toEqual(payload);
+    expect(f!.file.storage).toBe(FileStorageType.RawUncompressed);
+    expect(f!.file.data).toEqual(payload);
     expect(data.sourceFormat).toBe(ModpackFormat.Pmp);
   });
 
@@ -116,8 +118,8 @@ describe("readPmp case-insensitive Files resolution", () => {
     const data = readPmp(writeZip(entries));
     const f = allFiles(data).find((x) => x.gamePath === gamePath);
     expect(f).toBeDefined();
-    expect(f!.data).toBeUndefined();
-    expect(f!.storage).toBe(FileStorageType.RawUncompressed);
+    expect(f!.file.data).toBeUndefined();
+    expect(f!.file.storage).toBe(FileStorageType.RawUncompressed);
   });
 });
 
@@ -186,7 +188,7 @@ describe("readPmp Windows path-normalization (trailing dots/spaces)", () => {
     );
     const f = allFiles(data).find((x) => x.gamePath === gamePath);
     expect(f).toBeDefined();
-    expect(f!.data).toEqual(payload);
+    expect(f!.file.data).toEqual(payload);
   });
 
   it("resolves a trailing-space Files value against a stripped zip entry", () => {
@@ -199,7 +201,7 @@ describe("readPmp Windows path-normalization (trailing dots/spaces)", () => {
     );
     const f = allFiles(data).find((x) => x.gamePath === gamePath);
     expect(f).toBeDefined();
-    expect(f!.data).toEqual(payload);
+    expect(f!.file.data).toEqual(payload);
   });
 });
 
@@ -319,7 +321,7 @@ describe("readPmp ExtraFiles (PMP.cs:213-215)", () => {
     const data = readPmp(writeZip(entries));
     // Resolved as a payload...
     const f = allFiles(data).find((x) => x.gamePath === gamePath);
-    expect(f?.data).toEqual(extraPayload);
+    expect(f?.file.data).toEqual(extraPayload);
     // ...AND also captured as an ExtraFile, per the untrimmed PMP.cs:214 comparison. The archive
     // member name here has no trailing dot/space of its own, so windowsPathKey reduces to a plain
     // case-fold (matching the extraFiles map key, src/container/pmp.ts).

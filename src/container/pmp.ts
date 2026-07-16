@@ -114,7 +114,7 @@ function optionFromJson(
   referencedKeys: Set<string>,
 ): ModpackOption {
   const o = parsePmpOption(raw);
-  const modFiles: ModpackFile[] = [];
+  const modFiles = new Map<string, ModpackFile>();
   for (const [gamePath, zipPathRaw] of Object.entries(o.Files)) {
     const zipPath = zipPathRaw.replace(/\\/g, "/");
     // PMP.cs:196/:209 build the ExtraFiles "referenced" set from the RAW Files value directly,
@@ -134,8 +134,7 @@ function optionFromJson(
     // — and defers the consequences to each read seam (ResolveFile, EndwalkerUpgrade.cs:1758) and
     // to the writer, which drops it (PMP.cs:883-888). So we emit the file with NO bytes.
     const data = filesByKey.get(windowsPathKey(zipPath));
-    modFiles.push({
-      gamePath,
+    modFiles.set(gamePath, {
       data,
       storage: FileStorageType.RawUncompressed,
     });
@@ -429,10 +428,10 @@ function optionToJson(
 
   if (hasStandardFields) {
     const Files: Record<string, string> = {};
-    for (const f of o.files) {
+    for (const [gamePath, f] of o.files) {
       const zip = zipPaths.get(f);
       if (zip === undefined) continue; // absent: no member, no key (PMP.cs:883-888)
-      Files[f.gamePath] = zip.replace(/\//g, "\\"); // PMP.cs:914
+      Files[gamePath] = zip.replace(/\//g, "\\"); // PMP.cs:914
     }
     base.Files = Files;
     base.FileSwaps = o.fileSwaps;
@@ -515,6 +514,15 @@ export function writePmp(
 
   const zipPaths = resolveDuplicates(data, prefixes);
 
+  // zipPaths is keyed on file IDENTITY (mirroring C#'s FileIdentifier, which pairs Path+Info as one
+  // unit -- PmpExtensions.cs:603-608); the two guards below need the gamePath half back. Walk the
+  // same `prefixes` options resolveDuplicates itself walked (PmpExtensions.cs:476-566) to rebuild
+  // that pairing rather than re-deriving it differently.
+  const gamePathOf = new Map<ModpackFile, string>();
+  for (const option of prefixes.keys()) {
+    for (const [gamePath, f] of option.files) gamePathOf.set(f, gamePath);
+  }
+
   // PopulatePmpStandardOption turns a .meta into Manipulations and a .rgsp into Manipulations
   // (PMP.cs:891-900 -> PMPExtensions.MetadataToManipulations / RgspToManipulations,
   // PmpExtensions.cs:417) rather than writing either as a zip member. We do NOT port that: a
@@ -525,10 +533,11 @@ export function writePmp(
   // writeModpack already rejects outright (src/index.ts). Fail loud instead of silently emitting a
   // member TexTools would never write. See docs/backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md.
   for (const f of zipPaths.keys()) {
-    if (/\.(meta|rgsp)$/.test(f.gamePath)) {
+    const gamePath = gamePathOf.get(f)!;
+    if (/\.(meta|rgsp)$/.test(gamePath)) {
       throw new Error(
-        `pmp: writing a ${f.gamePath.endsWith(".meta") ? ".meta" : ".rgsp"} file into a PMP is ` +
-          `unported (PMP.cs:891-900 converts it to Manipulations): ${f.gamePath}`,
+        `pmp: writing a ${gamePath.endsWith(".meta") ? ".meta" : ".rgsp"} file into a PMP is ` +
+          `unported (PMP.cs:891-900 converts it to Manipulations): ${gamePath}`,
       );
     }
   }
@@ -557,7 +566,7 @@ export function writePmp(
     return META_INTERNAL_EXTENSIONS.has(base.slice(dot).toLowerCase());
   }
   for (const f of [...zipPaths.keys()]) {
-    if (isMetaInternalFile(f.gamePath)) zipPaths.delete(f);
+    if (isMetaInternalFile(gamePathOf.get(f)!)) zipPaths.delete(f);
   }
 
   // meta.json is always regenerated from the model: PMPMetaJson (PMP.cs:1369-1381) is a flat, fully

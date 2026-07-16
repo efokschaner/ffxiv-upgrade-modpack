@@ -42,10 +42,10 @@ So this fixup must land before member-name parity can be claimed complete — it
 
 ## Neither half is ported
 
-`applyLoadFixes` (`src/upgrade/upgrade.ts`) has no PMP branch at all today —
-`docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md` §4.3.1 claimed "PMP has no
-load-time fixes at all (both are TTMP-gated)", which this finding shows is false; the spec text has
-been corrected in place, but `applyLoadFixes` itself has NOT been extended.
+Our TTMP load fix (`makeTtmpLoadFix`, `src/upgrade/load-fixes.ts`, fused into the read seam) has no
+PMP branch at all today — `docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md`
+§4.3.1 claimed "PMP has no load-time fixes at all (both are TTMP-gated)", which this finding shows is
+false; the spec text has been corrected in place, but the load fix itself has NOT been extended to PMP.
 
 **Consequence:** any PMP `.tex` carrying either broken mip offsets or trailing null padding diverges
 from the `/resave` golden (and, by the same load-time reasoning, potentially from the `/upgrade`

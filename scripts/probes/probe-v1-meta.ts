@@ -21,7 +21,11 @@ import { join } from "node:path";
 import { loadModpack, writeModpack } from "../../src/index";
 import { deserializeMeta } from "../../src/meta/deserialize";
 import { serializeMeta } from "../../src/meta/serialize";
-import { allFiles, FileStorageType } from "../../src/model/modpack";
+import {
+  allFiles,
+  FileStorageType,
+  type ModpackFile,
+} from "../../src/model/modpack";
 import {
   decodeSqPackFile,
   encodeSqPackFile,
@@ -42,7 +46,7 @@ function unc(f: { storage: FileStorageType; data?: Uint8Array }) {
 }
 function metaSegs(b: Uint8Array) {
   const m = deserializeMeta(b);
-  return `v${m.version} imc=${m.imc ? m.imc.length : "-"} eqp=${m.eqp ? m.eqp.length : "-"} eqdp=${m.eqdp ? m.eqdp.length : "-"} est=${m.est ? m.est.length : "-"} gmp=${m.gmp ? m.gmp.length : "-"}`;
+  return `v${m.version} imc=${m.imc ? m.imc.length : "-"} eqp=${m.eqp ? m.eqp.length : "-"} eqdp=${m.eqdp ? m.eqdp.size : "-"} est=${m.est ? m.est.size : "-"} gmp=${m.gmp ? m.gmp.length : "-"}`;
 }
 
 // find a ttmp2 corpus pack with an equipment .meta that has EST (and ideally GMP)
@@ -58,11 +62,11 @@ for (const name of packs) {
   } catch {
     continue;
   }
-  for (const f of allFiles(d)) {
-    if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(f.gamePath)) continue;
-    const m = deserializeMeta(unc(f));
+  for (const { gamePath, file } of allFiles(d)) {
+    if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(gamePath)) continue;
+    const m = deserializeMeta(unc(file));
     if (m.version === 2 && m.est && m.gmp) {
-      chosen = { pack: name, gamePath: f.gamePath };
+      chosen = { pack: name, gamePath };
       break;
     }
   }
@@ -78,12 +82,11 @@ if (!chosen) {
     } catch {
       continue;
     }
-    for (const f of allFiles(d)) {
-      if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(f.gamePath))
-        continue;
-      const m = deserializeMeta(unc(f));
+    for (const { gamePath, file } of allFiles(d)) {
+      if (!/^chara\/equipment\/e\d+\/e\d+_\w+\.meta$/.test(gamePath)) continue;
+      const m = deserializeMeta(unc(file));
       if (m.version === 2 && m.est) {
-        chosen = { pack: name, gamePath: f.gamePath };
+        chosen = { pack: name, gamePath };
         break;
       }
     }
@@ -102,8 +105,12 @@ const model = loadModpack(chosen.pack, bytes);
 let before = "";
 for (const g of model.groups)
   for (const o of g.options) {
-    o.files = o.files.map((f) => {
-      if (f.gamePath !== chosen!.gamePath) return f;
+    const next = new Map<string, ModpackFile>();
+    for (const [path, f] of o.files) {
+      if (path !== chosen!.gamePath) {
+        next.set(path, f);
+        continue;
+      }
       const orig = unc(f);
       before = metaSegs(orig);
       const m = deserializeMeta(orig);
@@ -115,8 +122,9 @@ for (const g of model.groups)
         f.storage === FileStorageType.SqPackCompressed
           ? encodeSqPackFile(v1bytes, SqPackType.Standard)
           : v1bytes;
-      return { ...f, data };
-    });
+      next.set(path, { ...f, data });
+    }
+    o.files = next;
   }
 console.log(`input meta (downgraded to v1): ${before}  ->  v1 form`);
 
@@ -146,8 +154,8 @@ if (!existsSync(dest)) {
   process.exit(0);
 }
 const golden = loadModpack("g.ttmp2", new Uint8Array(readFileSync(dest)));
-for (const f of allFiles(golden)) {
-  if (f.gamePath !== chosen.gamePath) continue;
-  console.log(`\nGOLDEN meta for ${f.gamePath}: ${metaSegs(unc(f))}`);
+for (const { gamePath, file } of allFiles(golden)) {
+  if (gamePath !== chosen.gamePath) continue;
+  console.log(`\nGOLDEN meta for ${gamePath}: ${metaSegs(unc(file))}`);
 }
 rmSync(dir, { recursive: true, force: true });

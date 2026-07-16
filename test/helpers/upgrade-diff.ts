@@ -31,14 +31,14 @@ function uncompressed(f: ModpackFile): Uint8Array | undefined {
 
 function byGamePath(d: ModpackData): Map<string, Uint8Array[]> {
   const m = new Map<string, Uint8Array[]>();
-  for (const f of allFiles(d)) {
-    const bytes = uncompressed(f);
+  for (const { gamePath, file } of allFiles(d)) {
+    const bytes = uncompressed(file);
     // An absent file has no payload and so is not a member of the per-gamePath multiset on either
     // side of the diff — that is the definition of the set, not a special case (design spec §4.1).
     if (!bytes) continue;
-    const list = m.get(f.gamePath) ?? [];
+    const list = m.get(gamePath) ?? [];
     list.push(bytes);
-    m.set(f.gamePath, list);
+    m.set(gamePath, list);
   }
   return m;
 }

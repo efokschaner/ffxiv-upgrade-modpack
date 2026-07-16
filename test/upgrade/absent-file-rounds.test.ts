@@ -12,28 +12,22 @@ import {
   EUpgradeTextureUsage,
   type UpgradeInfo,
 } from "../../src/upgrade/upgrade-info";
+import { filesMap } from "../helpers/make-packs";
 
 /** A file the archive did not contain: present in the option, no bytes (PMP.cs:1071-1102). */
-function absent(gamePath: string): ModpackFile {
-  return {
-    gamePath,
-    storage: FileStorageType.RawUncompressed,
-  };
+function absent(gamePath: string): [string, ModpackFile] {
+  return [gamePath, { storage: FileStorageType.RawUncompressed }];
 }
-function present(gamePath: string, data: Uint8Array): ModpackFile {
-  return {
-    gamePath,
-    data,
-    storage: FileStorageType.RawUncompressed,
-  };
+function present(gamePath: string, data: Uint8Array): [string, ModpackFile] {
+  return [gamePath, { data, storage: FileStorageType.RawUncompressed }];
 }
-function optionOf(files: ModpackOption["files"]): ModpackOption {
+function optionOf(files: Array<[string, ModpackFile]>): ModpackOption {
   return {
     name: "On",
     description: "",
     image: "",
     priority: 0,
-    files,
+    files: filesMap(files),
     fileSwaps: {},
     manipulations: [],
   };
@@ -75,26 +69,26 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       ]),
     );
     const out = upgradeModpack(data);
-    const f = out.groups[0]!.options[0]!.files[0]!;
-    expect(f.data).toBeUndefined();
-    expect(f.gamePath).toBe(
+    const f = out.groups[0]!.options[0]!.files.get(
       "chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl",
-    );
+    )!;
+    expect(f.data).toBeUndefined();
   });
 
-  it("model round never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:916)", () => {
-    // FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file unguarded, unlike the
-    // different, unrelated UpdateEndwalkerModel (:250-256). The model round only runs when
-    // needsMdlFix is true, which is never the case for PMP — and absent files are a PMP-only
-    // phenomenon — so an absent .mdl can only ever pass through upgradeModpack untouched
-    // because the round is gated off, not because of any null-skip inside it.
+  it("model fix never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:916)", () => {
+    // FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file unguarded, unlike the different,
+    // unrelated UpdateEndwalkerModel (:250-256). The model fix (makeTtmpLoadFix's .mdl branch, run at
+    // LOAD) only fires when needsMdlFix is true, which is never the case for PMP — and absent files
+    // are a PMP-only phenomenon. upgradeModpack no longer runs a model round at all (the fix moved to
+    // the load seam), so an absent .mdl passes through untouched here regardless.
     const data = packOf(
       optionOf([absent("chara/equipment/e0001/model/c0101e0001_top.mdl")]),
     );
     const out = upgradeModpack(data);
-    const f = out.groups[0]!.options[0]!.files[0]!;
+    const f = out.groups[0]!.options[0]!.files.get(
+      "chara/equipment/e0001/model/c0101e0001_top.mdl",
+    )!;
     expect(f.data).toBeUndefined();
-    expect(f.gamePath).toBe("chara/equipment/e0001/model/c0101e0001_top.mdl");
   });
 
   it("IndexMaps skips an absent normal (:1087 null -> :1843 continue)", () => {
@@ -111,8 +105,8 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       ],
     ]);
     upgradeRemainingTextures(option, targets);
-    expect(option.files).toHaveLength(1);
-    expect(option.files[0]!.data).toBeUndefined();
+    expect(option.files.size).toBe(1);
+    expect(option.files.get(normal)!.data).toBeUndefined();
   });
 
   it("GearMaskLegacy skips an absent mask (:1883 null-checked)", () => {
@@ -129,7 +123,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       ],
     ]);
     upgradeRemainingTextures(option, targets);
-    expect(option.files).toHaveLength(1);
+    expect(option.files.size).toBe(1);
   });
 
   it("GearMaskNew THROWS on an absent mask — C# derefs null (:1870, TEXTOOLS_BUGS §1)", () => {

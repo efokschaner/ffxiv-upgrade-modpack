@@ -22,7 +22,7 @@ bytes out of 56184, and **byte 0 is `0x05` in `/resave` vs `0x06` in `/upgrade`*
 the remaining 56 being the v5-vs-v6 bone-set encoding.
 
 So TexTools' *load* runs `FixOldModel` **without** the v6 bump, and `/upgrade` applies it afterwards.
-Our `applyLoadFixes` therefore over-reaches.
+Our load-fix seam (`makeTtmpLoadFix`'s `.mdl` branch, `src/upgrade/load-fixes.ts`) therefore over-reaches.
 
 **Fix:** move the v6 bump out of the load seam into the upgrade caller — and keep the `/upgrade`
 goldens byte-exact while doing it.

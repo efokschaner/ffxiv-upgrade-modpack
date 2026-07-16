@@ -7,7 +7,11 @@ import {
   type ModpackFile,
   ModpackFormat,
 } from "../../src/model/modpack";
-import { makeTtmp2Simple, makeTtmp2Wizard } from "../helpers/make-packs";
+import {
+  filesMap,
+  makeTtmp2Simple,
+  makeTtmp2Wizard,
+} from "../helpers/make-packs";
 
 function roundTrip(bytes: Uint8Array) {
   const data = readTtmp2(bytes);
@@ -18,7 +22,9 @@ describe("writeTtmp2 round-trip", () => {
   it("preserves every inner file byte-for-byte (simple)", () => {
     const pack = makeTtmp2Simple();
     const out = roundTrip(pack.bytes);
-    const byPath = new Map(allFiles(out).map((f) => [f.gamePath, f.data]));
+    const byPath = new Map(
+      allFiles(out).map(({ gamePath, file }) => [gamePath, file.data]),
+    );
     for (const [path, bytes] of Object.entries(pack.expectedFiles)) {
       expect(byPath.get(path)).toEqual(bytes);
     }
@@ -29,7 +35,9 @@ describe("writeTtmp2 round-trip", () => {
     const out = roundTrip(pack.bytes);
     expect(out.isSimple).toBe(false);
     expect(out.groups[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
-    const byPath = new Map(allFiles(out).map((f) => [f.gamePath, f.data]));
+    const byPath = new Map(
+      allFiles(out).map(({ gamePath, file }) => [gamePath, file.data]),
+    );
     expect(byPath.get(Object.keys(pack.expectedFiles)[0]!)).toEqual(
       Object.values(pack.expectedFiles)[0],
     );
@@ -41,10 +49,10 @@ describe("writeTtmp2 round-trip", () => {
     const files = allFiles(data);
     // TTMP files always carry bytes (fileFromMod slices them from the .mpd blob); only a PMP
     // Files entry can be absent (absent-file design spec §3.1).
-    files[1]!.data = files[0]!.data!.slice();
+    files[1]!.file.data = files[0]!.file.data!.slice();
     const reread = readTtmp2(writeTtmp2(data));
     const rf = allFiles(reread);
-    expect(rf[0]!.data).toEqual(rf[1]!.data);
+    expect(rf[0]!.file.data).toEqual(rf[1]!.file.data);
   });
 
   it("throws when a file has no bytes (structurally PMP-only; unreachable in practice — design spec §3.4)", () => {
@@ -78,15 +86,15 @@ describe("writeTtmp2 round-trip", () => {
               priority: 0,
               fileSwaps: {},
               manipulations: [],
-              files: [
+              files: filesMap([
                 // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
                 // writeTtmp2's defensive runtime guard; structurally unreachable through any real
                 // reader (design spec §3.4), hence the cast.
-                {
-                  gamePath: "chara/x.mtrl",
-                  storage: FileStorageType.SqPackCompressed,
-                } as ModpackFile,
-              ],
+                [
+                  "chara/x.mtrl",
+                  { storage: FileStorageType.SqPackCompressed } as ModpackFile,
+                ],
+              ]),
             },
           ],
         },

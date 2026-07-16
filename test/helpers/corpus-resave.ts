@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyLoadFixes, loadModpack, writeModpack } from "../../src/index";
+import { loadModpack, writeModpack } from "../../src/index";
 import { oracleKey } from "./oracle";
 import { DEFAULT_RESAVE_BASELINE, resaveGoldenCached } from "./resave-golden";
 import { diffArchives } from "./upgrade-archive-diff";
@@ -29,8 +29,10 @@ export function registerResaveCheck(pack: string): void {
   describe(`resave golden: ${name}`, () => {
     it("matches ConsoleTools /resave within the ratchet baseline", (ctx) => {
       const bytes = new Uint8Array(readFileSync(pack));
+      // loadModpack now returns already-load-fixed data (FixOldTexData/FixOldModel fused into the
+      // read seam, matching WizardData.FromModpack) — the same fixes this line used to apply via
+      // applyLoadFixes(), now upstream. TexTools' load is not inert for old packs.
       const ours = loadModpack(name, bytes);
-      applyLoadFixes(ours); // TexTools' load is not inert for old packs — see applyLoadFixes
       const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
       // store: only the archive's member names and DECOMPRESSED content are diffed against the
       // golden (diffArchives / diffUpgrade), never its deflated bytes. See writePmp's doc comment.

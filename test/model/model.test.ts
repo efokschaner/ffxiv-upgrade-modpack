@@ -6,6 +6,7 @@ import {
   type ModpackData,
   ModpackFormat,
 } from "../../src/model/modpack";
+import { filesMap } from "../helpers/make-packs";
 
 describe("model", () => {
   it("emptyMeta has all string fields blank and tags empty", () => {
@@ -37,13 +38,15 @@ describe("model", () => {
               priority: 0,
               fileSwaps: {},
               manipulations: [],
-              files: [
-                {
-                  gamePath: "a.mdl",
-                  data: new Uint8Array([1]),
-                  storage: FileStorageType.SqPackCompressed,
-                },
-              ],
+              files: filesMap([
+                [
+                  "a.mdl",
+                  {
+                    data: new Uint8Array([1]),
+                    storage: FileStorageType.SqPackCompressed,
+                  },
+                ],
+              ]),
             },
             {
               name: "o2",
@@ -52,13 +55,15 @@ describe("model", () => {
               priority: 0,
               fileSwaps: {},
               manipulations: [],
-              files: [
-                {
-                  gamePath: "b.mtrl",
-                  data: new Uint8Array([2]),
-                  storage: FileStorageType.SqPackCompressed,
-                },
-              ],
+              files: filesMap([
+                [
+                  "b.mtrl",
+                  {
+                    data: new Uint8Array([2]),
+                    storage: FileStorageType.SqPackCompressed,
+                  },
+                ],
+              ]),
             },
           ],
         },

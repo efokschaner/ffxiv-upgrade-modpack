@@ -3,9 +3,11 @@ import {
   FileStorageType,
   type ModpackData,
   ModpackFormat,
+  type SqPackCompressedFile,
 } from "../../src/model/modpack";
 import { encodeType4, texMipSizes } from "../../src/sqpack/type4";
-import { needsTexFix, texFixRound } from "../../src/upgrade/texfix";
+import { makeTtmpLoadFix } from "../../src/upgrade/load-fixes";
+import { needsTexFix, ttmpNeedsTexFix } from "../../src/upgrade/texfix";
 
 const TEX_HEADER_SIZE = 80;
 const BC5 = 25136; // 8 bpp, min dimension 4
@@ -50,6 +52,10 @@ function malformedTexEntry(): Uint8Array {
   return entry;
 }
 
+function sqpackFile(data: Uint8Array): SqPackCompressedFile {
+  return { data, storage: FileStorageType.SqPackCompressed };
+}
+
 function baseMeta(version: string | undefined) {
   return {
     name: "M",
@@ -75,6 +81,16 @@ function packWithVersion(
     groups: [],
   };
 }
+
+describe("ttmpNeedsTexFix (pure version gate)", () => {
+  it("is true for major < 2 and for exactly 2.0; false above", () => {
+    expect(ttmpNeedsTexFix("1.3w")).toBe(true);
+    expect(ttmpNeedsTexFix(undefined)).toBe(true); // treated as 0.0
+    expect(ttmpNeedsTexFix("2.0")).toBe(true);
+    expect(ttmpNeedsTexFix("2.1s")).toBe(false);
+    expect(ttmpNeedsTexFix("3.0")).toBe(false);
+  });
+});
 
 describe("needsTexFix", () => {
   it("is true for a TTMP pack with sourceTtmpVersion '1.3w' (major < 2)", () => {
@@ -111,85 +127,39 @@ describe("needsTexFix", () => {
   });
 });
 
-function packWithFiles(
-  version: string | undefined,
-  files: ModpackData["groups"][0]["options"][0]["files"],
-): ModpackData {
-  return {
-    sourceFormat: ModpackFormat.Ttmp2,
-    isSimple: false,
-    meta: baseMeta(version),
-    groups: [
-      {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
-          {
-            name: "O",
-            description: "",
-            image: "",
-            priority: 0,
-            fileSwaps: {},
-            manipulations: [],
-            files,
-          },
-        ],
-      },
-    ],
-  };
-}
+// The per-.tex validity-check DROP that used to be `texFixRound` now lives in makeTtmpLoadFix's
+// `.tex` branch (FromWizardGroup fix-before-collapse, WizardData.cs:701-712). Drive it directly.
+describe("makeTtmpLoadFix (.tex validity-check drop)", () => {
+  const fix = makeTtmpLoadFix({ needsTexFix: true, needsMdlFix: false });
 
-describe("texFixRound", () => {
-  it("drops a malformed compressed .tex, keeps a valid one, keeps a malformed ui/ .tex, keeps a non-.tex file", () => {
-    const data = packWithFiles(undefined, [
-      {
-        gamePath: "chara/x/tex/malformed_n.tex",
-        data: malformedTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
-      {
-        gamePath: "chara/x/tex/valid_n.tex",
-        data: validTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
-      {
-        gamePath: "ui/uld/malformed.tex",
-        data: malformedTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
-      {
-        gamePath: "chara/x/mat/foo.mtrl",
-        data: new Uint8Array([1, 2, 3]),
-        storage: FileStorageType.SqPackCompressed,
-      },
-    ]);
-
-    texFixRound(data);
-
-    const paths = data.groups[0]!.options[0]!.files.map((f) => f.gamePath);
-    expect(paths).not.toContain("chara/x/tex/malformed_n.tex");
-    expect(paths).toContain("chara/x/tex/valid_n.tex");
-    expect(paths).toContain("ui/uld/malformed.tex");
-    expect(paths).toContain("chara/x/mat/foo.mtrl");
+  it("drops a malformed compressed .tex (returns null)", () => {
+    expect(
+      fix("chara/x/tex/malformed_n.tex", sqpackFile(malformedTexEntry())),
+    ).toBeNull();
   });
 
-  it("drops nothing when needsTexFix is false, even if a compressed .tex is malformed", () => {
-    const data = packWithFiles("2.1s", [
-      {
-        gamePath: "chara/x/tex/malformed_n.tex",
-        data: malformedTexEntry(),
-        storage: FileStorageType.SqPackCompressed,
-      },
-    ]);
+  it("keeps a valid .tex, bytes unchanged (validity check only)", () => {
+    const valid = validTexEntry();
+    const kept = fix("chara/x/tex/valid_n.tex", sqpackFile(valid));
+    expect(kept).not.toBeNull();
+    expect(Array.from(kept!.data)).toEqual(Array.from(valid));
+  });
 
-    texFixRound(data);
+  it("keeps a malformed ui/ .tex (ui/ excluded, MakeFileStorageInformationDictionary TTMP.cs:1367)", () => {
+    const malformed = malformedTexEntry();
+    const kept = fix("ui/uld/malformed.tex", sqpackFile(malformed));
+    expect(kept).not.toBeNull();
+    expect(Array.from(kept!.data)).toEqual(Array.from(malformed));
+  });
 
-    const paths = data.groups[0]!.options[0]!.files.map((f) => f.gamePath);
-    expect(paths).toContain("chara/x/tex/malformed_n.tex");
+  it("leaves a non-.tex file untouched", () => {
+    const f = sqpackFile(new Uint8Array([1, 2, 3]));
+    expect(fix("chara/x/mat/foo.mtrl", f)).toBe(f);
+  });
+
+  it("does not drop anything when needsTexFix is false, even a malformed .tex", () => {
+    const noFix = makeTtmpLoadFix({ needsTexFix: false, needsMdlFix: false });
+    const f = sqpackFile(malformedTexEntry());
+    expect(noFix("chara/x/tex/malformed_n.tex", f)).toBe(f);
   });
 });

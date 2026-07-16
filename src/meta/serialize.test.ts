@@ -10,11 +10,11 @@ describe("serializeMeta", () => {
       path: "chara/equipment/e0001/e0001_top.meta",
       imc: null,
       eqp: null,
-      eqdp: [
-        { race: 101, value: 3 },
-        { race: 201, value: 0 },
-      ],
-      est: [{ race: 101, setId: 1, skelId: 0 }],
+      eqdp: new Map([
+        [101, 3],
+        [201, 0],
+      ]),
+      est: new Map([[101, { race: 101, setId: 1, skelId: 0 }]]),
       gmp: null,
     };
     const bytes = serializeMeta(m);

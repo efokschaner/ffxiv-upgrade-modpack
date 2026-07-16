@@ -103,7 +103,7 @@ function findFile(
   option: ModpackOption,
   gamePath: string,
 ): ModpackFile | undefined {
-  return option.files.find((f) => f.gamePath === gamePath);
+  return option.files.get(gamePath);
 }
 
 /** Writes a generated uncompressed .tex into the option, mirroring the storage form of a
@@ -128,14 +128,13 @@ function writeGeneratedTex(
   const file: ModpackFile =
     reference.storage === FileStorageType.SqPackCompressed
       ? {
-          gamePath,
           storage: FileStorageType.SqPackCompressed,
           data: encodeSqPackFile(texBytes, SqPackType.Texture),
         }
-      : { gamePath, storage: FileStorageType.RawUncompressed, data: texBytes };
-  const existing = option.files.findIndex((f) => f.gamePath === gamePath);
-  if (existing >= 0) option.files[existing] = file;
-  else option.files.push(file);
+      : { storage: FileStorageType.RawUncompressed, data: texBytes };
+  // Map.set replaces in place at the key's existing position, or appends — matching the old
+  // findIndex-replace-or-push semantics (WriteFile's replace-or-add-by-path, EndwalkerUpgrade.cs:1795-1823).
+  option.files.set(gamePath, file);
 }
 
 /** Port of UpgradeRemainingTextures (EndwalkerUpgrade.cs:1832). For each target, generate
@@ -205,7 +204,7 @@ export function upgradeRemainingTextures(
         if (!src) {
           if (legacy) continue;
           throw new Error(
-            `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 throws ArgumentNullException on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${old.gamePath}`,
+            `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 throws ArgumentNullException on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${info.files.mask_old}`,
           );
         }
         const data = upgradeMaskTex(src.bytes, legacy);

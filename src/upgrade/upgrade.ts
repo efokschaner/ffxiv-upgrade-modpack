@@ -17,9 +17,7 @@ import {
   SqPackType,
 } from "../sqpack/sqpack";
 import { upgradeMaterial } from "./material";
-import { needsMdlFix, normalizeModel } from "./model";
 import { SKIN_REPATH_DICT } from "./skin-repath-dict";
-import { texFixRound } from "./texfix";
 import { upgradeRemainingTextures } from "./texture";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
@@ -48,7 +46,7 @@ function cloneOption(o: ModpackOption): ModpackOption {
     ...o,
     fileSwaps: { ...o.fileSwaps },
     manipulations: [...o.manipulations],
-    files: o.files.map(cloneFile),
+    files: new Map([...o.files].map(([p, f]) => [p, cloneFile(f)])),
   };
 }
 
@@ -103,8 +101,8 @@ export function resolveFile(f: ModpackFile): Decoded | null {
  * failure instead of a misleading one. Use ONLY for seams that are not ResolveFile callers (see
  * the §2 table) — everything that IS a ResolveFile call site must use `resolveFile` instead.
  */
-export function requireBytes(f: ModpackFile): Decoded {
-  if (!f.data) throw new Error(`upgrade: file has no bytes: ${f.gamePath}`);
+export function requireBytes(f: ModpackFile, gamePath: string): Decoded {
+  if (!f.data) throw new Error(`upgrade: file has no bytes: ${gamePath}`);
   if (f.storage === FileStorageType.SqPackCompressed) {
     const d = decodeSqPackFile(f.data);
     return { bytes: d.data, type: d.type };
@@ -156,8 +154,8 @@ const IS_CHARA_MTRL = /^chara\/.*\.mtrl$/;
  */
 function materialRound(option: ModpackOption): UpgradeInfo[] {
   const infos: UpgradeInfo[] = [];
-  option.files = option.files.map((f) => {
-    if (!IS_CHARA_MTRL.test(f.gamePath)) return f;
+  function upgradeOne(path: string, f: ModpackFile): ModpackFile {
+    if (!IS_CHARA_MTRL.test(path)) return f;
     // ResolveFile returned null -> UpdateEndwalkerMaterials `continue`s past this material
     // (EndwalkerUpgrade.cs:495-499), leaving the entry untouched. Hoisted ABOVE the try/catch
     // below: C#'s `continue` (:496-499) precedes the per-material `try` (:501), so a
@@ -167,7 +165,7 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
     if (!resolved) return f;
     const { bytes, type } = resolved;
     try {
-      const mtrl = parseMtrl(bytes, f.gamePath);
+      const mtrl = parseMtrl(bytes, path);
       const got = upgradeMaterial(mtrl);
       if (got.length === 0) return f; // no update needed
       // Record the texture-upgrade targets only AFTER the rewrite is committed: a throw from
@@ -182,51 +180,11 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
       // try/catch in UpdateEndwalkerMaterials (EndwalkerUpgrade.cs:522-539).
       return f;
     }
-  });
+  }
+  const next = new Map<string, ModpackFile>();
+  for (const [path, f] of option.files) next.set(path, upgradeOne(path, f));
+  option.files = next;
   return infos;
-}
-
-const IS_MDL = /\.mdl$/;
-
-/**
- * Round 1 (model half of UpdateEndwalkerFiles): normalize every `.mdl` via FixOldModel
- * when the pack needs the fix (TTMP major < 2). Re-wrapped as a Model (Type-3) entry.
- *
- * FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file via
- * `TransactionDataHandler.GetUncompressedFile(file)` with NO null/existence guard — unlike
- * the different, unrelated `UpdateEndwalkerModel` (:250-256), which calls `ResolveFile` and
- * returns on null. This round is TTMP-only (gated by `needsMdlFix`, mirroring
- * `DoesModpackNeedFix`, TTMP.cs:916), and absent files are a PMP-only phenomenon (a PMP
- * `Files` entry with no zip member; TTMP resolves payloads by offset into the .mpd, so it
- * has none). An absent file can therefore never reach this round via `requireBytes`'s
- * no-bytes throw.
- *
- * That said, TexTools DOES have a skip on this path — just one level up the call stack,
- * not inside FixOldModel itself. Every caller on the /upgrade path (WizardData.cs:716-727,
- * the one ModpackUpgrader.cs:58 -> WizardData.FromModpack actually takes; also TTMP.cs:741-754
- * and :1380-1393, same shape) wraps the FixOldModel call in
- * `try { … } catch (Exception ex) { Trace.WriteLine(ex); continue; }` — the `continue` skips
- * the `data.Files.Add`/`[...] =` a few lines below (WizardData.cs:729-737), so a model
- * FixOldModel chokes on is DROPPED from the option, not fatal to the whole pack.
- *
- * We do NOT reproduce that: `normalizeModel` throws propagate all the way out of
- * `upgradeModpack`, killing the pack. That is a real, PRE-EXISTING divergence from TexTools
- * (unrelated to absent-file tolerance — it was true before this change too), kept
- * deliberately fail-loud so an unported model structure surfaces loudly during development
- * instead of silently shipping a pack missing a model. See
- * docs/backlog/2026-07-12-model-round-throw-drops-pack.md.
- */
-function modelRound(option: ModpackOption, gate: boolean): void {
-  if (!gate) return;
-  option.files = option.files.map((f) => {
-    if (!IS_MDL.test(f.gamePath)) return f;
-    const { bytes, type } = requireBytes(f);
-    return restore(
-      f,
-      normalizeModel(bytes, f.gamePath),
-      type ?? SqPackType.Model,
-    );
-  });
 }
 
 const IS_META = /\.meta$/;
@@ -237,19 +195,20 @@ const IS_META = /\.meta$/;
  * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
  */
 function metadataRound(option: ModpackOption): void {
-  option.files = option.files.map((f) => {
-    if (!IS_META.test(f.gamePath)) return f;
+  function fixOne(path: string, f: ModpackFile): ModpackFile {
+    if (!IS_META.test(path)) return f;
     // No absent-file analogue: PMP .meta files are materialized from manipulations
     // (PMP.cs:1141-1164), never read from a zip member, so a .meta with no bytes is unreachable.
     // Write-side confirmation: TexTools' PMP writer turns any `.meta` into `Manipulations` rather
     // than a zip member (PMP.cs:891-895), so a PMP `Files` entry naming a `.meta` is not something
     // TexTools or Penumbra produce. Fail loud.
-    const { bytes, type } = requireBytes(f);
-    const out = serializeMeta(
-      reconstructMeta(deserializeMeta(bytes), f.gamePath),
-    );
+    const { bytes, type } = requireBytes(f, path);
+    const out = serializeMeta(reconstructMeta(deserializeMeta(bytes), path));
     return restore(f, out, type ?? SqPackType.Standard);
-  });
+  }
+  const next = new Map<string, ModpackFile>();
+  for (const [path, f] of option.files) next.set(path, fixOne(path, f));
+  option.files = next;
 }
 
 /**
@@ -259,18 +218,19 @@ function metadataRound(option: ModpackOption): void {
  *
  * C# iterates a snapshot (`clone`) of the option's files but checks the LIVE dict for the target,
  * so a target added earlier in this same pass is seen; we mirror that by snapshotting the source
- * list and checking the growing `option.files`. UpdateUnclaimedHairTextures / UpdateEyeMask
- * (the rest of the includePartials block, ModpackUpgrader.cs:158-182) remain unported — see
- * docs/backlog/2026-07-15-partials-unclaimed-hair.md and -eye-mask.md.
+ * list and checking `option.files.has(target)` directly against the growing, live Map.
+ * UpdateUnclaimedHairTextures / UpdateEyeMask (the rest of the includePartials block,
+ * ModpackUpgrader.cs:158-182) remain unported — see docs/backlog/2026-07-15-partials-unclaimed-hair.md
+ * and -eye-mask.md.
  */
 export function updateSkinPaths(option: ModpackOption): void {
   const snapshot = [...option.files];
-  for (const f of snapshot) {
-    const target = SKIN_REPATH_DICT.get(f.gamePath);
+  for (const [path, f] of snapshot) {
+    const target = SKIN_REPATH_DICT.get(path);
     if (target === undefined) continue;
-    if (option.files.some((x) => x.gamePath === target)) continue;
+    if (option.files.has(target)) continue; // C# files.ContainsKey (ModpackUpgrader.cs:487)
     // Duplicate the pointer: shares f.data, carries storage + any ttmp metadata.
-    option.files.push({ ...f, gamePath: target });
+    option.files.set(target, { ...f }); // C# files.Add (ModpackUpgrader.cs:497)
   }
 }
 
@@ -301,46 +261,24 @@ function targetKey(info: UpgradeInfo): string {
 }
 
 /**
- * TexTools' LOAD-time fixes, as a named seam.
- *
- * `WizardData.FromModpack` does not hand back the pack as it sits on disk: for an old pack
- * (DoesModpackNeedFix, TTMP.cs:916-930) it runs every `.tex` through FixOldTexData
- * (TTMP.cs:1367-1379) and every `.mdl` through FixOldModel (WizardData.cs:716-727) BEFORE any
- * caller sees it. Both `/upgrade` (ModpackUpgrader.cs:58) and `/resave` (Program.cs:204) take that
- * same load path, so these fixes are part of "load", not part of "upgrade".
- *
- * We used to run them inside upgradeModpack, which conflated the two. Naming the seam lets the
- * /resave oracle compare like with like (test/helpers/corpus-resave.ts) and makes the port's shape
- * match the C#'s. `texFixRound`/`modelRound` are gated on `DoesModpackNeedFix` (TTMP.cs:916), a
- * TTMP-only check, so THESE TWO fixes are a no-op for a PMP-sourced pack. That is NOT the same as
- * "PMP has no load-time fixes at all" — PMP has its own, separate load-time `.tex` fixup
- * (`EndwalkerUpgrade.FastValidateTexFile`, run from `ResolvePMPBasePath`/`UnpackPmpOption`,
- * PMP.cs:86/1084-1091) that this function does not run and that we have not ported (see
- * docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md and
- * docs/superpowers/specs/2026-07-12-pmp-writer-regeneration-design.md §4.3.1's correction).
- */
-export function applyLoadFixes(data: ModpackData): void {
-  texFixRound(data);
-  const gate = needsMdlFix(data);
-  for (const group of data.groups) {
-    for (const option of group.options) {
-      modelRound(option, gate);
-    }
-  }
-}
-
-/**
  * Upgrade a pre-Dawntrail modpack to Dawntrail (ModpackUpgrader.cs:88-144).
- * Pass 1 runs the material round per option and collects the texture-upgrade
- * targets it records into a single first-wins-deduped map; pass 2 applies
- * those targets to every option's textures (round 2,
- * UpgradeRemainingTextures). The partial round runs UpdateSkinPaths (skin path
- * aliasing); UpdateUnclaimedHairTextures and UpdateEyeMask remain unported.
- * Always returns a fresh ModpackData (never mutates `data`).
+ *
+ * TexTools' LOAD-time fixes (FixOldTexData on `.tex`, FixOldModel on `.mdl`, for an old pack per
+ * DoesModpackNeedFix, TTMP.cs:916-930) are NOT run here: they are fused into the read seam and so
+ * ran already inside `loadModpack`, exactly as `WizardData.FromModpack`/`FromWizardGroup` hands the
+ * caller already-fixed data (WizardData.cs:700-737). Both `/upgrade` (ModpackUpgrader.cs:58) and
+ * `/resave` (Program.cs:204) take that same fixed load path, so `data` reaching here is already
+ * load-fixed — see src/upgrade/load-fixes.ts. (PMP has its own, separate, still-unported load-time
+ * `.tex` fixup, FastValidateTexFile — docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md.)
+ *
+ * Pass 1 runs the material round per option and collects the texture-upgrade targets it records into
+ * a single first-wins-deduped map; pass 2 applies those targets to every option's textures (round 2,
+ * UpgradeRemainingTextures). The partial round runs UpdateSkinPaths (skin path aliasing);
+ * UpdateUnclaimedHairTextures and UpdateEyeMask remain unported. Always returns a fresh ModpackData
+ * (never mutates `data`).
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
-  applyLoadFixes(out);
   // Pass 1 (ModpackUpgrader.cs:88-120): material + metadata per option; collect
   // texture-upgrade targets into a single first-wins-deduped map.
   const targets = new Map<string, UpgradeInfo>();

@@ -1,5 +1,5 @@
 import { BinaryReader } from "../util/binary";
-import type { EqdpEntry, EstEntry, ItemMeta } from "./types";
+import type { EstEntry, ItemMeta } from "./types";
 
 // Port of ItemMetadata.Deserialize (ItemMetadata.cs:869-967). Reads the header table then each
 // present segment. EQP/GMP/IMC kept as opaque bytes; EQDP/EST structured (ItemMetadata.cs:715-859).
@@ -72,27 +72,37 @@ export function deserializeMeta(data: Uint8Array): ItemMeta {
   const eqp = eqpSeg ? reader.slice(eqpSeg.offset, eqpSeg.size) : null;
 
   const eqdpSeg = firstOfType(TYPE_EQDP);
-  let eqdp: EqdpEntry[] | null = null;
+  let eqdp: Map<number, number> | null = null;
   if (eqdpSeg) {
-    eqdp = [];
+    eqdp = new Map();
     for (let o = 0; o < eqdpSeg.size; o += 5) {
       reader.seek(eqdpSeg.offset + o);
       const race = reader.readUint32();
       const value = reader.readUint8();
-      eqdp.push({ race, value });
+      // C# ret.Add(race, entry) throws on a repeat (ItemMetadata.cs:773); the array silently kept both.
+      if (eqdp.has(race))
+        throw new Error(
+          `meta: duplicate EQDP race ${race} (ItemMetadata.cs:773)`,
+        );
+      eqdp.set(race, value);
     }
   }
 
   const estSeg = firstOfType(TYPE_EST);
-  let est: EstEntry[] | null = null;
+  let est: Map<number, EstEntry> | null = null;
   if (estSeg) {
-    est = [];
+    est = new Map();
     for (let o = 0; o < estSeg.size; o += 6) {
       reader.seek(estSeg.offset + o);
       const race = reader.readUint16();
       const setId = reader.readUint16();
       const skelId = reader.readUint16();
-      est.push({ race, setId, skelId });
+      // C# ret.Add(race, entry) throws on a repeat (ItemMetadata.cs:843); the array silently kept both.
+      if (est.has(race))
+        throw new Error(
+          `meta: duplicate EST race ${race} (ItemMetadata.cs:843)`,
+        );
+      est.set(race, { race, setId, skelId });
     }
   }
 

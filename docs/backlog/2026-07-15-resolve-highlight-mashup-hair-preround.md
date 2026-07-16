@@ -6,8 +6,9 @@ Filed: 2026-07-15 · Status: open · Priority: prioritized · Surfaced while por
 `ModpackUpgrader.UpgradeModpack` runs `ResolveHighlightOptionsAndMashupHair(data)` at
 `ModpackUpgrader.cs:83` — **before** round 1 (material/model), run **unconditionally** (it is *not*
 gated by `includePartials`). Our `upgradeModpack` (`src/upgrade/upgrade.ts`) has **no pre-round**:
-it goes straight into `applyLoadFixes` → the material/metadata pass. So this transform is entirely
-unported, and any pack it would have mutated diverges from the `/upgrade` golden.
+it goes straight into the material/metadata pass (the load-time FixOldTexData/FixOldModel fixes now
+run at the read seam inside `loadModpack`, not here). So this transform is entirely unported, and any
+pack it would have mutated diverges from the `/upgrade` golden.
 
 ## What it does (`ModpackUpgrader.cs:267-482`)
 

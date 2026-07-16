@@ -565,8 +565,8 @@ for (const target of VALIDATION_TARGETS) {
     if (!goldenMetaFile) continue;
 
     found = true;
-    const modMeta = deserializeMeta(uncompress(modFile));
-    const goldenMeta = deserializeMeta(uncompress(goldenMetaFile));
+    const modMeta = deserializeMeta(uncompress(modFile.file));
+    const goldenMeta = deserializeMeta(uncompress(goldenMetaFile.file));
     if (!modMeta.imc || !goldenMeta.imc) {
       console.error(
         `VALIDATION FAILED: ${target.gamePath} in ${pack}: mod or golden .meta has no IMC segment`,

@@ -9,6 +9,7 @@ import {
   compareInnerFilesByteIdentical,
   structurallyEqual,
 } from "./helpers/compare";
+import { filesMap } from "./helpers/make-packs";
 import { corpusInputs, oracleAvailable } from "./helpers/oracle";
 
 function oneFilePack(path: string, bytes: Uint8Array): ModpackData {
@@ -33,13 +34,12 @@ function oneFilePack(path: string, bytes: Uint8Array): ModpackData {
             priority: 0,
             fileSwaps: {},
             manipulations: [],
-            files: [
-              {
-                gamePath: path,
-                data: bytes,
-                storage: FileStorageType.SqPackCompressed,
-              },
-            ],
+            files: filesMap([
+              [
+                path,
+                { data: bytes, storage: FileStorageType.SqPackCompressed },
+              ],
+            ]),
           },
         ],
       },
@@ -91,13 +91,12 @@ describe("compareInnerFilesByteIdentical", () => {
                 priority: 0,
                 fileSwaps: {},
                 manipulations: [],
-                files: [
-                  {
-                    gamePath: "shared.mtrl",
-                    data: bytes1,
-                    storage: FileStorageType.SqPackCompressed,
-                  },
-                ],
+                files: filesMap([
+                  [
+                    "shared.mtrl",
+                    { data: bytes1, storage: FileStorageType.SqPackCompressed },
+                  ],
+                ]),
               },
               {
                 name: "opt2",
@@ -106,13 +105,12 @@ describe("compareInnerFilesByteIdentical", () => {
                 priority: 0,
                 fileSwaps: {},
                 manipulations: [],
-                files: [
-                  {
-                    gamePath: "shared.mtrl",
-                    data: bytes2,
-                    storage: FileStorageType.SqPackCompressed,
-                  },
-                ],
+                files: filesMap([
+                  [
+                    "shared.mtrl",
+                    { data: bytes2, storage: FileStorageType.SqPackCompressed },
+                  ],
+                ]),
               },
             ],
           },

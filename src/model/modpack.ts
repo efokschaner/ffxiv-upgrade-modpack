@@ -18,7 +18,9 @@ export interface TtmpFileMeta {
 }
 
 interface ModpackFileBase {
-  gamePath: string; // internal game path, forward slashes
+  // The game path is not a field here: it lives solely as the key in
+  // ModpackOption.files, mirroring C#'s FileStorageInformation, which carries
+  // no path (reference/.../SqPack/FileTypes/TransactionDataHandler.cs:42-47).
   ttmp?: TtmpFileMeta; // present iff sourced from a TTMP container
 }
 
@@ -60,7 +62,8 @@ export interface ModpackOption {
   description: string;
   image: string;
   priority: number;
-  files: ModpackFile[];
+  files: Map<string, ModpackFile>; // keyed by gamePath, insertion order (mirrors C#'s
+  // WizardStandardOptionData.Files = Dictionary<string, FileStorageInformation>, WizardData.cs:71)
   fileSwaps: Record<string, string>; // PMP only; {} for TTMP
   manipulations: unknown[]; // PMP only; opaque JSON, [] for TTMP
   raw?: unknown; // opaque carry-through: full original PMP option JSON (Imc/Combining
@@ -123,6 +126,12 @@ export function emptyMeta(): ModpackMeta {
   };
 }
 
-export function allFiles(data: ModpackData): ModpackFile[] {
-  return data.groups.flatMap((g) => g.options.flatMap((o) => o.files));
+export function allFiles(
+  data: ModpackData,
+): { gamePath: string; file: ModpackFile }[] {
+  return data.groups.flatMap((g) =>
+    g.options.flatMap((o) =>
+      [...o.files].map(([gamePath, file]) => ({ gamePath, file })),
+    ),
+  );
 }

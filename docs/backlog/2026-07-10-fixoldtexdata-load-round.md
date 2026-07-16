@@ -7,9 +7,11 @@ or exactly 2.0) through `FixOldTexData` at **load** time (`TTMP.cs:1413-1460`, c
 `MakeFileStorageInformationDictionary` `TTMP.cs:1367-1379`), gated by `DoesModpackNeedFix`
 (`TTMP.cs:916-930`).
 
-We ported **only the drop-on-decode-failure slice** (`src/upgrade/texfix.ts` `needsTexFix` +
-`texFixRound`, mirroring the `try { FixOldTexData } catch { continue }` that drops malformed
-placeholder textures — the fix for the 8 `hd_bunny_sluts` index regressions).
+We ported **only the drop-on-decode-failure slice** (the `.tex` branch of `makeTtmpLoadFix`,
+`src/upgrade/load-fixes.ts`, gated by `ttmpNeedsTexFix`/`needsTexFix` in `src/upgrade/texfix.ts`),
+mirroring the `try { FixOldTexData } catch { continue }` that drops malformed placeholder textures —
+the fix for the 8 `hd_bunny_sluts` index regressions. It runs at the read seam, fused with the
+duplicate-collapse (WizardData.FromWizardGroup, `WizardData.cs:700-737`).
 
 The **remaining** `FixOldTexData` behaviour is unported:
 

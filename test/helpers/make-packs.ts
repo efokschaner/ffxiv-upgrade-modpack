@@ -2,9 +2,17 @@ import type {
   ModPackJson,
   OriginalModPackJson,
 } from "../../src/container/manifest-types";
+import type { ModpackFile } from "../../src/model/modpack";
 import { writeZip } from "../../src/zip/zip";
 
 const enc = new TextEncoder();
+
+/** Build an option's files Map from ordered [gamePath, file] entries, insertion order preserved. */
+export function filesMap(
+  entries: Array<[string, ModpackFile]>,
+): Map<string, ModpackFile> {
+  return new Map(entries);
+}
 
 export interface SyntheticPack {
   name: string;
@@ -150,20 +158,31 @@ export function makeTtmp2Wizard(): SyntheticPack {
   };
 }
 
+// A legacy .ttmp carries no TTMPVersion, so DoesModpackNeedFix treats it as pre-2.x and loadModpack
+// now runs FixOldModel/FixOldTexData on its files at load. FILE_A/FILE_B are opaque garbage blobs
+// (deliberately not real SQPack payloads), so a `.mdl`/`.tex` path here would be DROPPED by the fix
+// (FixOldModel/FixOldTexData throw on garbage -> C# catch { continue }) — correct behaviour, but it
+// would defeat this container round-trip fixture. Two material paths keep the fix a no-op so the
+// reader->writer->reader round-trip still exercises every file.
+const LEGACY_PATH_A =
+  "chara/human/c0101/obj/body/b0001/material/v0001/mt_c0101b0001_top_a.mtrl";
+const LEGACY_PATH_B =
+  "chara/human/c0101/obj/body/b0001/material/v0001/mt_c0101b0001_top_b.mtrl";
+
 export function makeLegacyTtmp(): SyntheticPack {
   const { blob, offsets, sizes } = mpd(FILE_A, FILE_B);
   const line1: OriginalModPackJson = {
-    Name: "Body",
-    Category: "Body",
-    FullPath: PATH_A,
+    Name: "MatA",
+    Category: "Material",
+    FullPath: LEGACY_PATH_A,
     ModOffset: offsets[0]!,
     ModSize: sizes[0]!,
     DatFile: "040000.win32.dat0",
   };
   const line2: OriginalModPackJson = {
-    Name: "Mat",
+    Name: "MatB",
     Category: "Material",
-    FullPath: PATH_B,
+    FullPath: LEGACY_PATH_B,
     ModOffset: offsets[1]!,
     ModSize: sizes[1]!,
     DatFile: "040000.win32.dat0",
@@ -176,7 +195,7 @@ export function makeLegacyTtmp(): SyntheticPack {
   return {
     name: "synth.ttmp",
     bytes: writeZip(entries),
-    expectedFiles: { [PATH_A]: FILE_A, [PATH_B]: FILE_B },
+    expectedFiles: { [LEGACY_PATH_A]: FILE_A, [LEGACY_PATH_B]: FILE_B },
   };
 }
 

@@ -41,9 +41,11 @@
 //    that exact page-bucketed walk to compute each option's prefix, and a `Map`'s iteration order IS
 //    its insertion order -- so `prefixes.keys()` reproduces the C#'s option visiting order without
 //    us re-deriving `DataPages` a second time here (which would blend option-prefix.ts's private
-//    `buildPages` into this module). Within an option, `option.files` is already in `Files`-map
-//    insertion order (the reader builds it that way, src/container/pmp.ts:81). Get either order
-//    wrong and the `common/N` numbers come out different from TexTools'.
+//    `buildPages` into this module). Within an option, `option.files` is now literally a `Map`
+//    (mirroring C#'s `Dictionary<string, FileStorageInformation>`, WizardData.cs:71), so its
+//    iteration order IS the `Files`-map insertion order the reader builds it in
+//    (src/container/pmp.ts). Get either order wrong and the `common/N` numbers come out different
+//    from TexTools'.
 //
 // Absent files get no zip path in the RETURNED map at all -- that is a different guard,
 // `PopulatePmpStandardOption`'s `!File.Exists` skip (PMP.cs:883-888), which drops the file's
@@ -135,10 +137,10 @@ export function resolveDuplicates(
   // below needs every hash available up front regardless.
   const entries: Entry[] = [];
   for (const [option, prefix] of prefixes) {
-    for (const file of option.files) {
+    for (const [gamePath, file] of option.files) {
       entries.push({
         file,
-        pmpPath: prefix + file.gamePath,
+        pmpPath: prefix + gamePath,
         hash: file.data === undefined ? ZERO_HASH : sha1Hex(file.data),
       });
     }
