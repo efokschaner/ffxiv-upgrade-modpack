@@ -18,6 +18,7 @@ import {
 } from "../sqpack/sqpack";
 import { upgradeMaterial } from "./material";
 import { needsMdlFix, normalizeModel } from "./model";
+import { SKIN_REPATH_DICT } from "./skin-repath-dict";
 import { texFixRound } from "./texfix";
 import { upgradeRemainingTextures } from "./texture";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
@@ -251,9 +252,39 @@ function metadataRound(option: ModpackOption): void {
   });
 }
 
-/** Round 3: UpdateUnclaimedHairTextures / UpdateEyeMask / UpdateSkinPaths. */
-function partials(): void {
-  // round N: ported later
+/**
+ * Round 6 partials, slice 1: UpdateSkinPaths (ModpackUpgrader.cs:484-500). For each file whose
+ * game path is a key in SKIN_REPATH_DICT, add a byte-identical alias at the target path unless the
+ * option already contains it — pure pointer duplication, no content change. Mutates option.files.
+ *
+ * C# iterates a snapshot (`clone`) of the option's files but checks the LIVE dict for the target,
+ * so a target added earlier in this same pass is seen; we mirror that by snapshotting the source
+ * list and checking the growing `option.files`. UpdateUnclaimedHairTextures / UpdateEyeMask
+ * (the rest of the includePartials block, ModpackUpgrader.cs:158-182) remain unported — see
+ * docs/backlog/2026-07-15-partials-unclaimed-hair.md and -eye-mask.md.
+ */
+export function updateSkinPaths(option: ModpackOption): void {
+  const snapshot = [...option.files];
+  for (const f of snapshot) {
+    const target = SKIN_REPATH_DICT.get(f.gamePath);
+    if (target === undefined) continue;
+    if (option.files.some((x) => x.gamePath === target)) continue;
+    // Duplicate the pointer: shares f.data, carries storage + any ttmp metadata.
+    option.files.push({ ...f, gamePath: target });
+  }
+}
+
+/**
+ * Round 6 partials (ModpackUpgrader.cs:148-183, the includePartials block). Runs UpdateSkinPaths
+ * over every option first (ForAllOptions, :158); the unclaimed-hair / eye-mask third round (:162-182)
+ * is not yet ported.
+ */
+function partials(data: ModpackData): void {
+  for (const group of data.groups) {
+    for (const option of group.options) {
+      updateSkinPaths(option);
+    }
+  }
 }
 
 /**
@@ -303,9 +334,9 @@ export function applyLoadFixes(data: ModpackData): void {
  * Pass 1 runs the material round per option and collects the texture-upgrade
  * targets it records into a single first-wins-deduped map; pass 2 applies
  * those targets to every option's textures (round 2,
- * UpgradeRemainingTextures). The partial round remains a structural stub
- * pending a later task. Always returns a fresh ModpackData (never mutates
- * `data`).
+ * UpgradeRemainingTextures). The partial round runs UpdateSkinPaths (skin path
+ * aliasing); UpdateUnclaimedHairTextures and UpdateEyeMask remain unported.
+ * Always returns a fresh ModpackData (never mutates `data`).
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
@@ -328,6 +359,6 @@ export function upgradeModpack(data: ModpackData): ModpackData {
       upgradeRemainingTextures(option, targets);
     }
   }
-  partials();
+  partials(out);
   return out;
 }
