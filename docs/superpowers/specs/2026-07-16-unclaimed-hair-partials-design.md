@@ -93,7 +93,7 @@ Two phases in `scripts/extract-hair-materials.ts`, following the `extract-index-
 
 1. **Enumerate (in-process, ~zero cost).** TexTools never blind-probes: existence is a CRC32 hash of
    the path tested against the game's `040000` `.index`/`.index2`, read once and cached
-   (`SqPack/FileTypes/HashGenerator.cs:154-205`; `SqPack/DataContainers/IndexFile.cs · GetRawDataOffset · 516-621`;
+   (`Helpers/HashGenerator.cs:154-205`; `SqPack/DataContainers/IndexFile.cs · GetRawDataOffset · 516-621`;
    the real upgrade uses `rtx.FileExists(matPath, true)`, `EndwalkerUpgrade.cs:1430`). Port
    `HashGenerator` CRC32 + a minimal `040000` index reader into the script and test each grid
    candidate's **specific material-file** hash (matching the upgrade's `FileExists(matPath)`, not the
