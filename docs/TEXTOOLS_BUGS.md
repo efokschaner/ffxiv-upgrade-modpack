@@ -292,3 +292,27 @@ self-round-trip check tolerates the resulting +68 growth on un-padded (PMP) mode
 **Upstream fix:** allocate `new byte[decompressedSize]` — the field already includes the header, so the
 extra `baseHeaderLength` term is the whole bug. Purely a buffer-sizing correction: it removes the stray
 zeros without altering any real model bytes.
+
+---
+
+## 12. `UpdateUnclaimedHairTextures` swallows every transform exception (bare catch)
+
+**Status:** reproduced · **Where:** `EndwalkerUpgrade.cs:1498-1501` (see
+`src/upgrade/unclaimed-hair.ts`, the transform `try`/`catch` after the raw-copy step)
+
+After copying a rescued hair/tail/ear texture pair to its canonical Dx11 destinations
+(`:1478-1492`), the function calls `UpdateEndwalkerHairTextures` inside a bare
+`catch (Exception ex) { Trace.WriteLine(ex); continue; }` (`:1495-1502`). That catch-all masks
+not just the one condition we model explicitly (a resize/resample the C# would need — our
+`TextureResizeUnsupported`) but **any** exception the transform can throw, including a genuinely
+corrupt or malformed loose texture that fails to parse. Either way the failure is logged (or, in
+our port, simply dropped) and the loop moves on, leaving the untransformed **raw** copies already
+written in place — silently shipping a pixel-untransformed pair with the new Dawntrail paths.
+
+**Us:** reproduced verbatim — a bare `catch { continue; }` around the transform, so any transform
+failure (the modeled resize gap or an unmodeled corrupt-input failure) leaves the raw copies
+already written above untouched, matching the C#'s "log and move on" outcome.
+
+**Upstream fix:** catch only the specific expected condition (e.g. a resize-required signal), and
+either log-and-skip explicitly for that case or let a genuinely unexpected exception (a corrupt
+input) surface instead of silently swallowing it.

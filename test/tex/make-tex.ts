@@ -2,11 +2,22 @@ import { buildCanonicalTexHeader } from "../../src/tex/header";
 import { A8R8G8B8 } from "../../src/tex/types";
 import { concatBytes } from "../../src/util/binary";
 
+/** A hand-built canonical A8R8G8B8 single-mip .tex of arbitrary pow2 `width`x`height`: 80-byte
+ *  canonical header + `width*height*4` pixel bytes. */
+export function buildMinimalTexSized(
+  width: number,
+  height: number,
+): Uint8Array {
+  const header = buildCanonicalTexHeader(A8R8G8B8, width, height, 1);
+  const pixels = new Uint8Array(width * height * 4).map(
+    (_, i) => (i * 11 + 3) & 0xff,
+  );
+  return concatBytes([header, pixels]);
+}
+
 /** A hand-built canonical A8R8G8B8 2x2 single-mip .tex: 80-byte canonical header + 16 pixel bytes. */
 export function buildMinimalTex(): Uint8Array {
-  const header = buildCanonicalTexHeader(A8R8G8B8, 2, 2, 1);
-  const pixels = new Uint8Array(2 * 2 * 4).map((_, i) => (i * 11 + 3) & 0xff);
-  return concatBytes([header, pixels]);
+  return buildMinimalTexSized(2, 2);
 }
 
 /**

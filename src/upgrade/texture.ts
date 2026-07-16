@@ -119,7 +119,7 @@ function findFile(
  *  valid reference), and the choice is parity-neutral: the golden harness compares
  *  DECOMPRESSED content, so the container form cannot affect the diff, and encode/decode
  *  round-trips (tested). */
-function writeGeneratedTex(
+export function writeGeneratedTex(
   option: ModpackOption,
   gamePath: string,
   texBytes: Uint8Array,
@@ -134,6 +134,27 @@ function writeGeneratedTex(
       : { storage: FileStorageType.RawUncompressed, data: texBytes };
   // Map.set replaces in place at the key's existing position, or appends — matching the old
   // findIndex-replace-or-push semantics (WriteFile's replace-or-add-by-path, EndwalkerUpgrade.cs:1795-1823).
+  option.files.set(gamePath, file);
+}
+
+/** Writes a generated raw .mtrl into the option, mirroring the storage form of a reference
+ *  source file in the same option — same storage-mirroring rationale as writeGeneratedTex, but
+ *  encoding as a Type-2 Standard SqPack entry (a .mtrl, not a .tex) when mirroring a
+ *  SqPackCompressed sibling. Used by the tail constant-swap rewrite
+ *  (EndwalkerUpgrade.cs:1504-1516, WriteFile at :1515). */
+export function writeGeneratedMtrl(
+  option: ModpackOption,
+  gamePath: string,
+  mtrlBytes: Uint8Array,
+  reference: ModpackFile,
+): void {
+  const file: ModpackFile =
+    reference.storage === FileStorageType.SqPackCompressed
+      ? {
+          storage: FileStorageType.SqPackCompressed,
+          data: encodeSqPackFile(mtrlBytes, SqPackType.Standard),
+        }
+      : { storage: FileStorageType.RawUncompressed, data: mtrlBytes };
   option.files.set(gamePath, file);
 }
 
