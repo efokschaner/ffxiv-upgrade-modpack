@@ -205,11 +205,12 @@ The C# source is the map we navigate by, so keep the port traceable back to it.
   - **Specs are durable; plans are transient.** A spec captures *why* and *what*
     (decisions, invariants, trade-offs) and is kept indefinitely — other docs and
     source READMEs link to it. A plan is an execution checklist for a spec: commit it
-    when written (so it lives in history), then **delete it on the branch as the final
-    step before merge** — so a completed plan never lands on the default branch, while
-    still living in the branch's history from when it was committed. The shipped code,
-    tests, and git history are the record of what was done; a plan on the main line is
-    just bloat.
+    when written (so it lives in history), then **delete it on the branch before opening
+    the pull request** — so the PR under review is already clean (reviewers and the merge
+    see only the durable spec and the shipped work, never the transient checklist), and a
+    completed plan never lands on the default branch, while still living in the branch's
+    history from when it was committed. The shipped code, tests, and git history are the
+    record of what was done; a plan on the main line is just bloat.
 - **Deferred work is recorded in the backlog.** When we decide to defer something —
   a feature known to be unported, hardening parked behind a decision, cleanup that
   outlives the current change — record it in `docs/BACKLOG.md` rather than leaving a
