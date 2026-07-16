@@ -16,9 +16,30 @@ import {
   updateUnclaimedHairAccessory,
   updateUnclaimedHairTextures,
 } from "../../src/upgrade/unclaimed-hair";
-import { resolveFile } from "../../src/upgrade/upgrade";
+import { computeUnusedTextures, resolveFile } from "../../src/upgrade/upgrade";
+import {
+  EUpgradeTextureUsage,
+  type UpgradeInfo,
+} from "../../src/upgrade/upgrade-info";
 import { buildMinimalMtrl } from "../mtrl/make-mtrl";
 import { buildMinimalTex, buildMinimalTexSized } from "../tex/make-tex";
+
+describe("computeUnusedTextures", () => {
+  it("drops textures that are any target VALUE (ModpackUpgrader.cs:151-155)", () => {
+    const all = new Set(["a/x_n.tex", "a/x_id.tex", "a/y_d.tex"]);
+    const targets = new Map<string, UpgradeInfo>([
+      [
+        "k",
+        {
+          usage: EUpgradeTextureUsage.IndexMaps,
+          files: { normal: "a/x_n.tex", index: "a/x_id.tex" },
+        },
+      ],
+    ]);
+    // x_n.tex (normal value) and x_id.tex (index value) are both USED -> only y_d.tex is unused.
+    expect([...computeUnusedTextures(all, targets)]).toEqual(["a/y_d.tex"]);
+  });
+});
 
 function opt(files: Record<string, Uint8Array>): ModpackOption {
   return {
