@@ -8,7 +8,7 @@ import {
   type ModpackOption,
 } from "../../src/model/modpack";
 import { dx11Path } from "../../src/mtrl/dx11-path";
-import { parseMtrl } from "../../src/mtrl/mtrl";
+import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import { ESamplerId } from "../../src/mtrl/shader";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "../../src/upgrade/reference/hair-materials";
 import { resolveHighlightOptionsAndMashupHair } from "../../src/upgrade/resolve-highlight";
@@ -30,6 +30,26 @@ const M = dx11Path(
     (t) => t.sampler?.samplerIdRaw === ESamplerId.g_SamplerMask,
   )!,
 );
+
+// A second hair material with a DISTINCT normal/mask pair, built by repathing the sample's samplers.
+const N2_PATH = "chara/human/c0801/obj/hair/h0116/texture/c0801h0116_hir_n.tex";
+const M2_PATH = "chara/human/c0801/obj/hair/h0116/texture/c0801h0116_hir_m.tex";
+const MTRL2 = (() => {
+  const m = parseMtrl(HAIR_MTRL_BYTES, HAIR_MTRL_PATH);
+  const norm = m.textures.find(
+    (t) => t.sampler?.samplerIdRaw === ESamplerId.g_SamplerNormal,
+  )!;
+  const mask = m.textures.find(
+    (t) => t.sampler?.samplerIdRaw === ESamplerId.g_SamplerMask,
+  )!;
+  norm.texturePath = N2_PATH;
+  norm.flags &= ~0x8000; // clear DX9 flag so dx11Path == texturePath
+  mask.texturePath = M2_PATH;
+  mask.flags &= ~0x8000;
+  return serializeMtrl(m);
+})();
+const MTRL2_PATH =
+  "chara/human/c0801/obj/hair/h0116/material/v0001/mt_c0801h0116_hir_a.mtrl";
 
 function raw(bytes: Uint8Array): ModpackFile {
   return { data: bytes, storage: FileStorageType.RawUncompressed };
@@ -156,5 +176,68 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
     ]);
     resolveHighlightOptionsAndMashupHair(data);
     expect(data.groups[0]!.options[0]!.files.has(N)).toBe(true);
+  });
+
+  it("stage 3 has no both/neither guard: a badOption is probed against an UNRELATED pair", () => {
+    // Option A is bad for pair 1 (has N, not M) and holds NEITHER of pair 2 (N2/M2).
+    // Option C carries material 2 and both its textures (so pair 2 is collected and M2 has a
+    // sole container). A guarded stage-3 loop would `continue` past pair 2 for A (it holds
+    // neither texture of that pair); the faithful NO-guard loop processes it anyway.
+    //
+    // missingTex = hasMask ? pair.normal : pair.mask (ModpackUpgrader.cs:365) depends ONLY on
+    // hasMask, not hasNorm. For pair 2 against A: hasMask = A.files.has(M2) = false (A has
+    // neither), so missingTex resolves to pair2.mask (M2) regardless of hasNorm — the formula
+    // never even inspects whether A already "has" N2. So the cross-pair staple lands on M2, not
+    // N2: the faithful no-guard bug still fires (contamination from an unrelated pair reaches an
+    // option that holds neither of its textures), it just always targets the *mask* side when
+    // the probed option is mask-less, which A always is for an unrelated pair it has no part of.
+    const a = option("A", [
+      [HAIR_MTRL_PATH, raw(HAIR_MTRL_BYTES)],
+      [N, tex(1)],
+    ]);
+    const b = option("B", [[M, tex(2)]]); // sole container for M (resolves A's pair-1 miss)
+    const c = option("C", [
+      [MTRL2_PATH, raw(MTRL2)],
+      [N2_PATH, tex(3)],
+      [M2_PATH, tex(4)],
+    ]);
+    const data = pack([a, b, c]);
+    resolveHighlightOptionsAndMashupHair(data);
+    // A gained M (its own pair) AND M2 (the unrelated pair — only reachable without the guard).
+    expect(a.files.has(M)).toBe(true);
+    expect(a.files.has(M2_PATH)).toBe(true);
+    expect(a.files.has(N2_PATH)).toBe(false);
+  });
+
+  it("skips a .mtrl whose file resolves to no bytes (resolve-miss)", () => {
+    const data = pack([
+      option("O", [
+        [
+          HAIR_MTRL_PATH,
+          { storage: FileStorageType.RawUncompressed, data: undefined },
+        ],
+        [N, tex(1)],
+      ]),
+    ]);
+    resolveHighlightOptionsAndMashupHair(data);
+    expect(data.groups[0]!.options[0]!.files.has(N)).toBe(true);
+    expect(data.groups[0]!.options[0]!.files.has(M)).toBe(false);
+  });
+
+  it("skips a non-Hair-shaderpack .mtrl (no pair collected)", () => {
+    const nonHairMtrlBytes = (() => {
+      const m = parseMtrl(HAIR_MTRL_BYTES, HAIR_MTRL_PATH);
+      m.shaderPackRaw = "character.shpk";
+      return serializeMtrl(m);
+    })();
+    const data = pack([
+      option("O", [
+        [HAIR_MTRL_PATH, raw(nonHairMtrlBytes)],
+        [N, tex(1)],
+      ]),
+    ]);
+    resolveHighlightOptionsAndMashupHair(data);
+    expect(data.groups[0]!.options[0]!.files.has(N)).toBe(true);
+    expect(data.groups[0]!.options[0]!.files.has(M)).toBe(false);
   });
 });
