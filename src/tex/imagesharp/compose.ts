@@ -14,8 +14,8 @@
 // ImageSharp golden is therefore not guaranteed bit-for-bit; a documented tolerance is expected
 // (see DIVERGENCE_RULES / Task 8).
 
-// Constants.cs · Epsilon
-const EPSILON = 1e-7;
+// Constants.cs · Epsilon (`public static readonly float Epsilon = 0.001F;`)
+const EPSILON = 0.001;
 
 function clamp01(v: number): number {
   if (v < 0) return 0;

@@ -24,6 +24,12 @@ describe("drawImageSrcOver", () => {
     expect([...dst.slice(0, 4)]).toEqual([0, 0, 0, 0]);
     expect([...dst.slice(4, 8)]).toEqual([50, 60, 70, 255]);
   });
+  it("weighted-averages color for a fractional source alpha over an opaque backdrop", () => {
+    const dst = new Uint8Array([200, 0, 0, 255]); // opaque red
+    const src = new Uint8Array([0, 0, 200, 128]); // blue at ~half alpha
+    drawImageSrcOver(dst, 1, 1, src, 1, 1, 0, 0, 1);
+    expect([...dst]).toEqual([100, 0, 100, 255]);
+  });
 });
 
 describe("drawImageSrcAtop", () => {
