@@ -119,3 +119,51 @@ export function createHairMaps(
     maskRgba[offset + 2] = 49; // Mask Blue <- SSS thickness constant
   });
 }
+
+/** Port of TextureHelpers.ExpandChannel (TextureHelpers.cs:191): greyscales `channel` across the
+ *  first 3 (or 4, if includeAlpha) channels of every texel, in place. */
+export function expandChannel(
+  data: Uint8Array,
+  channel: number,
+  width: number,
+  height: number,
+  includeAlpha = false,
+): void {
+  const max = includeAlpha ? 4 : 3;
+  modifyPixels(data, width, height, (o) => {
+    const v = data[o + channel]!;
+    for (let z = 0; z < max; z++) data[o + z] = v;
+  });
+}
+
+/** Port of TextureHelpers.MaskImage (TextureHelpers.cs:88): copies the mask's alpha into base's
+ *  alpha. Reproduces the size-mismatch InvalidDataException (:90-95). */
+export function maskImage(
+  base: Uint8Array,
+  mask: Uint8Array,
+  width: number,
+  height: number,
+): void {
+  const expected = width * height * 4;
+  if (base.length !== expected || mask.length !== expected) {
+    throw new Error(
+      "tex: maskImage — images were not the expected size (TextureHelpers.cs:90)",
+    );
+  }
+  modifyPixels(base, width, height, (o) => {
+    base[o + 3] = mask[o + 3]!;
+  });
+}
+
+/** Port of TextureHelpers.SwizzleRB (TextureHelpers.cs:172): swap R/B (bytes 0 and 2) per texel. */
+export function swizzleRB(
+  data: Uint8Array,
+  width: number,
+  height: number,
+): void {
+  modifyPixels(data, width, height, (o) => {
+    const r = data[o]!;
+    data[o] = data[o + 2]!;
+    data[o + 2] = r;
+  });
+}
