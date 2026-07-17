@@ -37,7 +37,7 @@ function bicubicWeight(x: number): number {
 interface KernelMap {
   /** Per-output-index source start (left bound, inclusive). */
   starts: Int32Array;
-  /** Per-output-index normalized weights, flattened; use `starts`/`lengths` to slice. */
+  /** Per-output-index normalized weight row; `weights[i][k]` is the weight for source index `starts[i] + k`. */
   weights: Float64Array[];
 }
 
@@ -46,7 +46,7 @@ interface KernelMap {
 function buildBicubicKernelMap(srcLen: number, dstLen: number): KernelMap {
   const ratio = srcLen / dstLen;
   const scale = Math.max(ratio, 1);
-  const radius = Math.ceil(scale * 2);
+  const radius = tolerantCeil(scale * 2);
   const starts = new Int32Array(dstLen);
   const weights: Float64Array[] = new Array(dstLen);
   for (let i = 0; i < dstLen; i++) {
@@ -62,8 +62,10 @@ function buildBicubicKernelMap(srcLen: number, dstLen: number): KernelMap {
       sum += w;
     }
     // Normalize: edge windows are truncated (fewer source samples than the full kernel support),
-    // so ImageSharp renormalizes each row's weights to sum to 1.
-    if (sum !== 0) {
+    // so ImageSharp renormalizes each row's weights to sum to 1. Guard is `sum > 0` (not `!== 0`)
+    // matching BuildKernel: bicubic side-lobes are negative, so a truncated window can in principle
+    // sum to <= 0, and ImageSharp skips normalization in that case rather than dividing by it.
+    if (sum > 0) {
       for (let k = 0; k < len; k++) {
         row[k] /= sum;
       }
