@@ -14,13 +14,22 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { corpusPacks } from "./corpus-roots";
 
 const CONSOLE_TOOLS =
   "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
+const CONSOLE_TOOLS_DIR = dirname(CONSOLE_TOOLS);
 const GOLDEN_UPGRADE = join(__dirname, "..", "corpus", "golden-upgrade");
+
+/** Absolute home-dir file ConsoleTools' TextWriterTraceListener writes its Trace output to. The
+ *  /upgrade oracle reads this to see errors HandleUpgrade sends to Trace (Program.cs:185), not
+ *  Console. See the manual setup in docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md. */
+export const UPGRADE_TRACE_LOG = join(
+  homedir(),
+  ".ffxiv-consoletools-trace.log",
+);
 
 /** Content-addressed cache of ConsoleTools /unwrap outputs. Lives inside the gitignored
  * test/corpus/ tree (see .gitignore) so it is never committed. Keyed by sha256(entry). */
@@ -271,8 +280,13 @@ export function withConsoleToolsLock<T>(
 function run(args: string[]): void {
   // execFileSync throws on non-zero exit; ConsoleTools returns -1 on error (Program.cs:94-138).
   // Serialized across processes: ConsoleTools is not concurrency-safe (see withConsoleToolsLock).
+  // Run at the install dir: /upgrade output is CWD-independent (empirically verified), and this is
+  // where ConsoleTools' TextWriterTraceListener is configured to write (see UPGRADE_TRACE_LOG).
   withConsoleToolsLock(() => {
-    execFileSync(CONSOLE_TOOLS, args, { stdio: "pipe" });
+    execFileSync(CONSOLE_TOOLS, args, {
+      cwd: CONSOLE_TOOLS_DIR,
+      stdio: "pipe",
+    });
   });
 }
 
@@ -281,6 +295,81 @@ export function resave(src: string, dest: string): void {
 }
 export function upgrade(src: string, dest: string): void {
   run(["/upgrade", src, dest]);
+}
+
+/** True iff `cfgText` (a ConsoleTools.exe.config) registers a TextWriterTraceListener writing to
+ *  `expectedPath`. Pure, for testing. */
+export function traceListenerConfigured(
+  cfgText: string,
+  expectedPath: string,
+): boolean {
+  return (
+    cfgText.includes("TextWriterTraceListener") &&
+    cfgText.toLowerCase().includes(expectedPath.toLowerCase())
+  );
+}
+
+let traceConfigChecked = false;
+/** Ensure ConsoleTools is configured to write its Trace output to UPGRADE_TRACE_LOG (HandleUpgrade,
+ *  Program.cs:185, reports /upgrade errors via Trace.WriteLine, not Console — otherwise invisible).
+ *  Throws a loud setup error otherwise. Checked once per process. */
+export function assertUpgradeTraceListenerConfigured(): void {
+  if (traceConfigChecked) return;
+  const cfgPath = `${CONSOLE_TOOLS}.config`;
+  let cfg = "";
+  try {
+    cfg = readFileSync(cfgPath, "utf8");
+  } catch {
+    // missing/unreadable -> falls through to the throw below
+  }
+  if (!traceListenerConfigured(cfg, UPGRADE_TRACE_LOG)) {
+    throw new Error(
+      `ConsoleTools trace listener not configured. The /upgrade oracle needs ConsoleTools to write ` +
+        `its Trace output to ${UPGRADE_TRACE_LOG} — HandleUpgrade (Program.cs:185) reports /upgrade ` +
+        `errors via Trace.WriteLine, not Console, so they are otherwise invisible. Add a ` +
+        `TextWriterTraceListener with initializeData="${UPGRADE_TRACE_LOG}" to ${cfgPath} (elevated), ` +
+        `then retry. See docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md.`,
+    );
+  }
+  traceConfigChecked = true;
+}
+
+/** Thrown when ConsoleTools /upgrade genuinely errored (its HandleUpgrade catch Trace'd an
+ *  exception). Carries the captured trace text as the message. Distinct from a lock-race / other
+ *  non-zero exit, which propagates as the raw execFileSync error. */
+export class OracleUpgradeError extends Error {}
+
+/** The trace of a GENUINE /upgrade failure contains HandleUpgrade's caught-exception frame; the
+ *  non-fatal async LoadShaderInfo SQLite noise does not. Exported for testing. */
+export function isGenuineUpgradeError(trace: string): boolean {
+  return /ConsoleTools\.ConsoleTools\.<HandleUpgrade>/.test(trace);
+}
+
+/** Run ConsoleTools /upgrade at its install dir, capturing the Trace channel so a genuine upgrade
+ *  exception (invisible on stdout/stderr) surfaces as an OracleUpgradeError. Truncate + run + read
+ *  are all inside the ConsoleTools lock so the trace read is this run's. A no-write (no dest file)
+ *  is left for the caller to interpret as a no-op. */
+export function upgradeWithTraceCapture(src: string, dest: string): void {
+  assertUpgradeTraceListenerConfigured();
+  withConsoleToolsLock(() => {
+    writeFileSync(UPGRADE_TRACE_LOG, ""); // isolate this run's trace
+    try {
+      execFileSync(CONSOLE_TOOLS, ["/upgrade", src, dest], {
+        cwd: CONSOLE_TOOLS_DIR,
+        stdio: "pipe",
+      });
+    } catch (e) {
+      let trace = "";
+      try {
+        trace = readFileSync(UPGRADE_TRACE_LOG, "utf8");
+      } catch {
+        // no trace captured -> not classifiable as a genuine upgrade error; propagate below
+      }
+      if (isGenuineUpgradeError(trace))
+        throw new OracleUpgradeError(trace.trim());
+      throw e; // lock-race / unexplained non-zero exit — propagate, let a re-run clear it
+    }
+  });
 }
 
 /** Runs /upgrade into test/corpus/golden-upgrade/ and returns the golden path. */
