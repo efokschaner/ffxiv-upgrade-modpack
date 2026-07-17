@@ -1,12 +1,17 @@
-// Ported from SixLabors.ImageSharp v2.1.11:
-//   - BoxBlurProcessor.cs · OnFrameApply (uniform 1/(2r+1) 1-D kernel, radius from the processor's
-//     Radius option)
-//   - Convolution2PassProcessor.cs · OnFrameApply / ApplyConvolution (2-pass separable convolution:
-//     horizontal pass into an intermediate buffer, then a vertical pass; premultiplied-alpha working
-//     space; un-premultiply after the second pass)
-//   - KernelSamplingMap.cs · GetSampleRow / Clamp (edge-clamp border handling: sample coordinates are
-//     clamped to `[0, dim-1]`, i.e. the nearest edge pixel is replicated, not truncated+renormalized
-//     the way the bicubic resampler's kernel windows are — see resample.ts for the contrasting case)
+// Ported from SixLabors.ImageSharp v2.1.11 (verified against the v2.1.11 tag source):
+//   - BoxBlurProcessor.cs · Radius / BoxBlurProcessor{TPixel}.cs · OnFrameApply, CreateBoxKernel
+//     (uniform 1/(2r+1) 1-D kernel of length `(radius*2)+1`; OnFrameApply constructs it and hands
+//     off to Convolution2PassProcessor with `preserveAlpha: false`)
+//   - Convolution2PassProcessor{TPixel}.cs · OnFrameApply (2-pass separable convolution: builds one
+//     KernelSamplingMap, runs the horizontal pass into an intermediate buffer, then the vertical
+//     pass) and its nested HorizontalConvolutionRowOperation / VerticalConvolutionRowOperation ·
+//     Convolve4 (the `preserveAlpha == false` path: premultiply via Numerics.Premultiply, convolve,
+//     un-premultiply via Numerics.UnPremultiply — the path BoxBlur always takes)
+//   - KernelSamplingMap.cs · BuildSamplingOffsetMap (precomputes, per axis, sample offsets clamped
+//     to `[bounds.min, bounds.max]` via Numerics.Clamp — edge-clamp border handling: the nearest
+//     edge pixel is replicated, not truncated+renormalized the way the bicubic resampler's kernel
+//     windows are — see resample.ts for the contrasting case) and GetRowOffsetSpan /
+//     GetColumnOffsetSpan (accessors the row operations read the precomputed offsets from)
 //
 // ImageSharp's convolution is float32 (Vector4) throughout; this port uses JS float64. Byte-parity vs
 // the real ImageSharp golden is therefore not guaranteed bit-for-bit; a documented tolerance is
@@ -18,8 +23,9 @@ function clamp(v: number, lo: number, hi: number): number {
   return v;
 }
 
-// Convolution2PassProcessor.cs: convolution runs in premultiplied-alpha space. Premultiply RGB by
-// alpha (all channels normalized to 0..1 float) before either pass.
+// Convolution2PassProcessor{TPixel}.cs · HorizontalConvolutionRowOperation/VerticalConvolutionRowOperation
+// · Convolve4 (via Numerics.Premultiply): convolution runs in premultiplied-alpha space. Premultiply
+// RGB by alpha (all channels normalized to 0..1 float) before either pass.
 function toPremultipliedFloat(rgba: Uint8Array, count: number): Float64Array {
   const out = new Float64Array(count * 4);
   for (let i = 0; i < count; i++) {
@@ -33,7 +39,8 @@ function toPremultipliedFloat(rgba: Uint8Array, count: number): Float64Array {
   return out;
 }
 
-// Convolution2PassProcessor.cs: after the vertical pass, un-premultiply (divide RGB by alpha, guarded
+// Convolution2PassProcessor{TPixel}.cs · VerticalConvolutionRowOperation · Convolve4 (via
+// Numerics.UnPremultiply): after the vertical pass, un-premultiply (divide RGB by alpha, guarded
 // by alpha > 0) and convert back to bytes via clamp-then-round.
 function toUnpremultipliedBytes(
   premul: Float64Array,
@@ -59,8 +66,9 @@ function toUnpremultipliedBytes(
   return out;
 }
 
-// BoxBlurProcessor.cs (uniform kernel) + KernelSamplingMap.cs (edge-clamp): horizontal 1-D box
-// convolution over premultiplied float samples. `weight` is `1/(2*radius+1)`.
+// BoxBlurProcessor{TPixel}.cs · CreateBoxKernel (uniform kernel) + KernelSamplingMap.cs ·
+// BuildSamplingOffsetMap (edge-clamp): horizontal 1-D box convolution over premultiplied float
+// samples. `weight` is `1/(2*radius+1)`.
 function convolveHorizontal(
   src: Float64Array,
   w: number,
@@ -94,8 +102,9 @@ function convolveHorizontal(
   return out;
 }
 
-// BoxBlurProcessor.cs (uniform kernel) + KernelSamplingMap.cs (edge-clamp): vertical 1-D box
-// convolution over premultiplied float samples, mirroring convolveHorizontal along the Y axis.
+// BoxBlurProcessor{TPixel}.cs · CreateBoxKernel (uniform kernel) + KernelSamplingMap.cs ·
+// BuildSamplingOffsetMap (edge-clamp): vertical 1-D box convolution over premultiplied float
+// samples, mirroring convolveHorizontal along the Y axis.
 function convolveVertical(
   src: Float64Array,
   w: number,
@@ -129,9 +138,9 @@ function convolveVertical(
   return out;
 }
 
-// BoxBlurProcessor.cs · OnFrameApply / Convolution2PassProcessor.cs · OnFrameApply: 2-pass separable
-// box blur (horizontal then vertical) with a uniform `1/(2*radius+1)` kernel, computed in
-// premultiplied-alpha space with edge-clamp borders. `radius <= 0` is a no-op copy.
+// BoxBlurProcessor{TPixel}.cs · OnFrameApply / Convolution2PassProcessor{TPixel}.cs · OnFrameApply:
+// 2-pass separable box blur (horizontal then vertical) with a uniform `1/(2*radius+1)` kernel,
+// computed in premultiplied-alpha space with edge-clamp borders. `radius <= 0` is a no-op copy.
 export function boxBlur(
   rgba: Uint8Array,
   width: number,

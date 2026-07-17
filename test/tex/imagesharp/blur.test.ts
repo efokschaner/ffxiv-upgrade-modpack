@@ -29,4 +29,33 @@ describe("boxBlur", () => {
     expect(out[4]).toBe(85); // center pixel R
     expect(out[8]).toBe(85); // right pixel R
   });
+  it("premultiplies before convolving so a transparent pixel's garbage RGB does not bleed in", () => {
+    // 2x1, radius 1: p0 opaque red, p1 fully transparent with garbage RGB (99,99,99).
+    // Premultiplied: p0=(1,0,0,a=1); p1's 99s are scaled by a=0 -> (0,0,0,a=0).
+    // Horizontal (edge-clamp, weight=1/3):
+    //   out0 taps {clamp(-1)=p0, p0, p1}: premR=(1+1+0)/3=2/3, a=(1+1+0)/3=2/3
+    //     -> unpremul R=(2/3)/(2/3)=1->255, a=round(2/3*255)=170
+    //   out1 taps {p0, p1, clamp(2)=p1}: premR=1/3, a=1/3
+    //     -> unpremul R=(1/3)/(1/3)=1->255, a=round(1/3*255)=85
+    // height=1 so the vertical pass is a no-op (every tap clamps to the same row).
+    // If premultiply were missing/wrong, p1's 99 green/blue would leak into out0/out1.
+    const src = new Uint8Array([255, 0, 0, 255, 99, 99, 99, 0]);
+    const out = boxBlur(src, 2, 1, 1);
+    expect([...out]).toEqual([255, 0, 0, 170, 255, 0, 0, 85]);
+  });
+  it("blurs a 1-D opaque step down a column (radius 1) — exercises the vertical pass", () => {
+    // 1x3 opaque column: R = [0, 255, 0], radius 1, edge-clamp.
+    // Width=1 so the horizontal pass is a no-op (every tap clamps to the same column);
+    // the vertical pass does the actual blending, mirroring the existing 3x1 row test transposed.
+    // row0 taps {clamp(-1)=p0, p0, p1}: mean(0,0,255)=85
+    // row1 taps {p0, p1, p2}: mean(0,255,0)=85
+    // row2 taps {p1, p2, clamp(3)=p2}: mean(255,0,0)=85
+    const src = new Uint8Array([
+      0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255,
+    ]);
+    const out = boxBlur(src, 1, 3, 1);
+    expect(out[0]).toBe(85); // row 0 R
+    expect(out[4]).toBe(85); // row 1 R
+    expect(out[8]).toBe(85); // row 2 R
+  });
 });
