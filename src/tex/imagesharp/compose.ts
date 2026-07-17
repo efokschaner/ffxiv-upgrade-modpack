@@ -25,8 +25,11 @@ function clamp01(v: number): number {
 
 // PorterDuffFunctions.cs · Over(Vector4 backdrop, Vector4 source, Vector4 blend): straight-alpha
 // SrcOver compositing. `blend` is `Normal(backdrop, source)`, i.e. `source` unchanged — inlined
-// here since this port only ever composes with the Normal color blend.
+// here since this port only ever composes with the Normal color blend. Writes the clamped,
+// byte-scaled result directly into `dst` at `dIdx` (no per-pixel array allocation).
 function over(
+  dst: Uint8Array,
+  dIdx: number,
   dR: number,
   dG: number,
   dB: number,
@@ -35,7 +38,7 @@ function over(
   sG: number,
   sB: number,
   sA: number,
-): [number, number, number, number] {
+): void {
   const blendW = dA * sA;
   const dstW = dA - blendW;
   const srcW = sA - blendW;
@@ -44,13 +47,19 @@ function over(
   const r = (dR * dstW + sR * srcW + sR * blendW) / divisor;
   const g = (dG * dstW + sG * srcW + sG * blendW) / divisor;
   const b = (dB * dstW + sB * srcW + sB * blendW) / divisor;
-  return [r, g, b, alpha];
+  dst[dIdx] = Math.round(clamp01(r) * 255);
+  dst[dIdx + 1] = Math.round(clamp01(g) * 255);
+  dst[dIdx + 2] = Math.round(clamp01(b) * 255);
+  dst[dIdx + 3] = Math.round(clamp01(alpha) * 255);
 }
 
 // PorterDuffFunctions.cs · Atop(Vector4 backdrop, Vector4 source, Vector4 blend): straight-alpha
 // SrcAtop compositing. `blend` is `Normal(backdrop, source)`, i.e. `source` unchanged — inlined
-// here since this port only ever composes with the Normal color blend.
+// here since this port only ever composes with the Normal color blend. Writes the clamped,
+// byte-scaled result directly into `dst` at `dIdx` (no per-pixel array allocation).
 function atop(
+  dst: Uint8Array,
+  dIdx: number,
   dR: number,
   dG: number,
   dB: number,
@@ -59,7 +68,7 @@ function atop(
   sG: number,
   sB: number,
   sA: number,
-): [number, number, number, number] {
+): void {
   const blendW = dA * sA;
   const dstW = dA - blendW;
   const alpha = dA;
@@ -67,7 +76,10 @@ function atop(
   const r = (dR * dstW + sR * blendW) / divisor;
   const g = (dG * dstW + sG * blendW) / divisor;
   const b = (dB * dstW + sB * blendW) / divisor;
-  return [r, g, b, alpha];
+  dst[dIdx] = Math.round(clamp01(r) * 255);
+  dst[dIdx + 1] = Math.round(clamp01(g) * 255);
+  dst[dIdx + 2] = Math.round(clamp01(b) * 255);
+  dst[dIdx + 3] = Math.round(clamp01(alpha) * 255);
 }
 
 // DrawImageProcessor{TPixelBg,TPixelFg}.cs · OnFrameApply: blends `src` (placed at
@@ -105,11 +117,7 @@ export function drawImageSrcOver(
       const sG = src[sIdx + 1]! / 255;
       const sB = src[sIdx + 2]! / 255;
       const sA = (src[sIdx + 3]! / 255) * opacity;
-      const [r, g, b, a] = over(dR, dG, dB, dA, sR, sG, sB, sA);
-      dst[dIdx] = Math.round(clamp01(r) * 255);
-      dst[dIdx + 1] = Math.round(clamp01(g) * 255);
-      dst[dIdx + 2] = Math.round(clamp01(b) * 255);
-      dst[dIdx + 3] = Math.round(clamp01(a) * 255);
+      over(dst, dIdx, dR, dG, dB, dA, sR, sG, sB, sA);
     }
   }
 }
@@ -136,10 +144,6 @@ export function drawImageSrcAtop(
     const sG = src[idx + 1]! / 255;
     const sB = src[idx + 2]! / 255;
     const sA = (src[idx + 3]! / 255) * opacity;
-    const [r, g, b, a] = atop(dR, dG, dB, dA, sR, sG, sB, sA);
-    dst[idx] = Math.round(clamp01(r) * 255);
-    dst[idx + 1] = Math.round(clamp01(g) * 255);
-    dst[idx + 2] = Math.round(clamp01(b) * 255);
-    dst[idx + 3] = Math.round(clamp01(a) * 255);
+    atop(dst, idx, dR, dG, dB, dA, sR, sG, sB, sA);
   }
 }
