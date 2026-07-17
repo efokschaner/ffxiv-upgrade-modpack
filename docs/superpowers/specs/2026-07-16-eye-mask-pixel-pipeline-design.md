@@ -148,13 +148,26 @@ Provenance: `NearestNeighborResampler.cs`, `ResizeProcessor{TPixel}.ApplyNNResiz
   for a full-canvas Stretch (origins 0). **Truncation, no `+0.5`.** Copy pixels directly (no blend).
 
 ### 5.3 BoxBlur — `blur.ts`
-Provenance: `BoxBlurProcessor{TPixel}.CreateBoxKernel`, `Convolution2PassProcessor{TPixel}.cs`,
-`KernelSamplingMap.cs`.
+Provenance: `BoxBlurProcessor{TPixel}.CreateBoxKernel`, `Convolution2PassProcessor{TPixel}.cs`
+(`OnFrameApply`, nested `HorizontalConvolutionRowOperation`/`VerticalConvolutionRowOperation ·
+Convolve4`), `KernelSamplingMap.cs`.
 
-- 1-D kernel length `2r+1`, every weight `1f/(2r+1)`. **2-pass separable** (horizontal then vertical),
-  computed in **premultiplied** space (`Premultiply` before, `UnPremultiply` after). **Borders
-  clamp** sample coordinates to the nearest edge (replicate) — *note the contrast with resize, which
-  truncates the window and renormalizes.*
+- 1-D kernel length `2r+1`, every weight `1f/(2r+1)`. **2-pass separable** (horizontal then
+  vertical). **Borders clamp** sample coordinates to the nearest edge (replicate) — *note the
+  contrast with resize, which truncates the window and renormalizes.*
+- **Premultiplied, per-pass — not once across both passes.** `Convolution2PassProcessor{TPixel}`
+  allocates an **8-bit** `Buffer2D<TPixel>` (not a float buffer) as the inter-pass intermediate:
+  the horizontal pass reads source `TPixel`s, does `ToVector4 → Premultiply → convolve →
+  UnPremultiply → FromVector4Destructive` and writes that intermediate as 8-bit bytes; the vertical
+  pass then independently repeats the exact same `ToVector4 → Premultiply → convolve →
+  UnPremultiply → FromVector4Destructive` sequence *starting from those bytes*. Port this shape
+  literally — premultiply, convolve, un-premultiply, and **round to 8-bit bytes after each pass**,
+  feeding the rounded bytes into the next pass — rather than carrying one continuous float
+  accumulation across both passes. An all-float single-premultiply/single-unpremultiply
+  implementation is *more precise* than ImageSharp, which is itself a divergence: it silently omits
+  the per-pass quantization loss the golden actually contains. (Contrast: the bicubic *resize* path,
+  §5.1, genuinely keeps a float `Buffer2D<Vector4>` between its two passes — the two processors are
+  not symmetric.)
 - Radius here is `w/128` (C# int division). For `r=0` (tiny masks: `w<128`, i.e. `ow<32`) the kernel
   is length 1 (identity) — reproduce, don't special-case away.
 
@@ -235,10 +248,12 @@ authors a minimal pack carrying a loose `--c{race}f{face}_iri_s.tex` for a `(rac
 in `eye-materials.ts`, with meaningful **red-channel** data (only Mask.Red survives the conversion).
 Built pack is gitignored; `npm run synthetics` regenerates it. Run through `/upgrade`, cached, and
 compared under a new **`DIVERGENCE_RULES`** entry (`test/helpers/upgrade-compare.ts`) that confirms
-the converted diffuse matches the golden within a documented per-pixel tolerance (float64-vs-float32),
-citing this spec. Files matched by no rule must stay byte-identical. Bless the tolerance empirically,
-as tight as the port allows; if it must be loose, that is a signal to investigate, not to widen
-silently.
+the converted diffuse matches the golden within a documented per-pixel tolerance. With BoxBlur's
+inter-pass quantization matching ImageSharp (§5.3 — 8-bit `Buffer2D<TPixel>` intermediate, not an
+all-float shortcut), that residual tolerance is genuinely just float64-vs-float32, not a mismatched
+blur algorithm hiding behind the same label. Citing this spec. Files matched by no rule must stay
+byte-identical. Bless the tolerance empirically, as tight as the port allows; if it must be loose,
+that is a signal to investigate, not to widen silently.
 
 ### 7.2 Resampler proof against real corpus (scope: operator-chosen)
 Beyond the eye synthetic, wire `resizeBicubic` into the two round-2/round-6 hair resize skips that

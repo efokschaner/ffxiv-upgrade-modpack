@@ -68,23 +68,35 @@ export const DIVERGENCE_RULES: DivergenceRule[] = [
   },
   // Eye-mask round-6 diffuse (EndwalkerUpgrade.cs ConvertEyeMaskToDiffuse, :1910-2003): a multi-stage
   // ImageSharp float pipeline (Bicubic/NearestNeighbor resize, BoxBlur, SrcOver/SrcAtop composite)
-  // that we port in float64 vs C#'s float32 Vector4 math, so the resulting A8R8G8B8 diffuse differs
-  // by a small amount per pixel while header/dims/length match exactly. Measured against the
-  // synthetic eye-mask.pmp golden (test/corpus/synthetic, built by
-  // scripts/generate-synthetics/build-synthetic-eye-mask.ts): header and length byte-identical over
-  // all 349520 post-header bytes, max |ours-golden| = 2 (histogram: 318602 bytes @0, 30905 @1, 13
-  // @2, 0 bytes > 2). EYE_DIFFUSE_TOLERANCE is that measured max plus a 1-unit margin, not a
-  // loosely-picked bound. Path-scoped to the base-game eye diffuse destination
-  // (chara/common/texture/eye/..._base.tex) so it never loosens the global `.tex` rule above.
+  // ported faithfully at the algorithm/quantization level — including BoxBlur's per-pass 8-bit
+  // Buffer2D<TPixel> inter-pass intermediate (src/tex/imagesharp/blur.ts requantizes to bytes
+  // between its horizontal and vertical passes, matching Convolution2PassProcessor{TPixel}, rather
+  // than an all-float "more precise" implementation that would itself be a divergence) — but in
+  // float64 vs C#'s float32 Vector4 math throughout. With the quantization shape now matching,
+  // the residual per-pixel delta is genuinely just that float-width difference, not a mismatched
+  // blur algorithm. Measured against the synthetic eye-mask.pmp golden (test/corpus/synthetic,
+  // built by scripts/generate-synthetics/build-synthetic-eye-mask.ts): header and length
+  // byte-identical over all 349520 post-header bytes, max |ours-golden| = 2 (histogram: 318602
+  // bytes @0, 30905 @1, 13 @2, 0 bytes > 2). EYE_DIFFUSE_TOLERANCE is that measured max plus a
+  // 1-unit margin, not a loosely-picked bound. NOTE: this measurement predates the BoxBlur
+  // inter-pass-requantization fix (test(tex): cover blur premultiply+vertical paths / fix(tex):
+  // requantize BoxBlur inter-pass intermediate) — re-measure against a fresh synthetic golden
+  // after that fix lands; the delta is expected to stay within tolerance and likely tighten, since
+  // the blur no longer contributes an extra (non-float-width) source of error. Path-scoped to the
+  // base-game eye diffuse destination (chara/common/texture/eye/..._base.tex) so it never loosens
+  // the global `.tex` rule above.
   // `predicate` receives a bare gamePath from `diffUpgrade`'s per-gamePath payload diff, but a PMP
   // ARCHIVE MEMBER NAME (`<optionPrefix>chara/...`, see upgrade-archive-diff.ts's `diffPayloadMembers`
   // doc comment) from `diffArchives`' matched-pair content check — `.includes`/`.endsWith` match a
   // suffix in both shapes; `.startsWith` would silently never fire from the second call site.
   {
     reason:
-      "Round-6 eye-mask diffuse (ConvertEyeMaskToDiffuse) — float64-vs-float32 ImageSharp pipeline; " +
-      "A8R8G8B8 header/dims/length identical, every post-header pixel within " +
-      `+/-${EYE_DIFFUSE_TOLERANCE} (measured max delta 2 on the synthetic eye-mask.pmp golden).`,
+      "Round-6 eye-mask diffuse (ConvertEyeMaskToDiffuse) — float64-vs-float32 ImageSharp pipeline " +
+      "(BoxBlur's 8-bit inter-pass quantization now matches Convolution2PassProcessor, so the " +
+      "residual is genuinely float-width-only); A8R8G8B8 header/dims/length identical, every " +
+      "post-header pixel within " +
+      `+/-${EYE_DIFFUSE_TOLERANCE} (measured max delta 2 on the synthetic eye-mask.pmp golden, ` +
+      "pending re-measurement post-blur-fix — see comment above).",
     predicate: (gamePath) =>
       gamePath.includes("chara/common/texture/eye/") &&
       gamePath.endsWith("_base.tex"),
