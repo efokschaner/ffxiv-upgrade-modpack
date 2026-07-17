@@ -3,12 +3,18 @@
 //   - ResizeKernelMap.cs · BuildKernel (per-axis kernel construction, normalization)
 //   - ResizeKernelMap.cs · TolerantMath (epsilon-tolerant ceil/floor used by BuildKernel)
 //   - ResizeProcessor{,Helpers}.cs · ApplyNNResizeFrameTransform (NearestNeighbor mapping)
-//   - PixelOperations<Rgba32> / Rgba32.FromScaledVector4 (float -> byte conversion between passes)
+//   - ResizeWorker.cs · CalculateFirstPassValues / FillDestinationPixels (separable H-then-V
+//     convolution; the horizontal pass writes into `transposedFirstPassBuffer`, a
+//     `Buffer2D<Vector4>` — i.e. the intermediate between passes stays float. Only
+//     `FillDestinationPixels`, after the *vertical* pass, converts to the pixel type via
+//     `PixelOperations<TPixel>.Instance.FromVector4Destructive` — confirmed by reading
+//     ResizeWorker.cs at the v2.1.11 tag; there is no byte conversion between the two passes.)
 //
 // ImageSharp's resize is float32 (Vector4) throughout; this port uses JS float64. Byte-parity vs the
 // real ImageSharp golden is therefore not guaranteed bit-for-bit and a documented tolerance is expected
 // (see DIVERGENCE_RULES / Task 8). The kernel-map math and separable H-then-V structure are ported
-// faithfully; only the float width differs.
+// faithfully, including keeping the inter-pass intermediate in float (see resizeAxisX/resizeAxisY
+// below); only the float width (32-bit vs JS's 64-bit) differs.
 
 // TolerantMath (ResizeKernelMap.cs, nested `TolerantMath` static class): ImageSharp uses an
 // epsilon-tolerant ceil/floor when building kernel windows so that values that are mathematically
@@ -77,35 +83,32 @@ function buildBicubicKernelMap(srcLen: number, dstLen: number): KernelMap {
 }
 
 // Convert a float channel value (conceptually 0..1 scaled) already carried here in 0..255 space to a
-// byte, matching Rgba32.FromScaledVector4's clamp-then-round-half-away-from-zero. We keep intermediate
-// math in 0..255 space (rather than normalizing to 0..1 and back) since it's equivalent and avoids
-// extra float round-trips; only the clamp+round semantics need to match ImageSharp's.
+// byte, matching PixelOperations<TPixel>.FromVector4Destructive's clamp-then-round-half-away-from-zero.
+// We keep intermediate math in 0..255 space (rather than normalizing to 0..1 and back) since it's
+// equivalent and avoids extra float round-trips; only the clamp+round semantics need to match
+// ImageSharp's.
 //
-// SEAM: ImageSharp converts float -> Rgba32 (rounding to a byte) at the end of *each* pass, because
-// the horizontal pass produces an intermediate `ImageFrame<Rgba32>` before the vertical pass consumes
-// it. We reproduce that: resizeAxis clamps+rounds to a byte at the end of every call. Whether this
-// (vs. deferring rounding to a single float accumulation across both passes) matches the real
-// ImageSharp golden bit-for-bit is the one open seam called out in the task brief; Task 8's real
-// ImageSharp golden is the authoritative check, and this comment is the anchor to revisit if it shows
-// a systematic delta.
+// This is called exactly once per output pixel, at the very end of the vertical pass — matching
+// ResizeWorker.cs's FillDestinationPixels, the only place ImageSharp converts float -> pixel type (see
+// the module header). The horizontal pass (resizeAxisX) does NOT round; it writes a float intermediate,
+// mirroring `transposedFirstPassBuffer : Buffer2D<Vector4>`.
 function clampRoundByte(v: number): number {
   if (v <= 0) return 0;
   if (v >= 255) return 255;
   return Math.round(v);
 }
 
-// Apply a 1-axis kernel map. `getPixel(srcIndex, channel)` reads a source sample; `srcExtent` is the
-// number of samples along the resized axis; `dstExtent` is the output count along that axis;
-// `otherExtent` is the fixed size of the perpendicular axis. Writes a new Uint8Array sized
-// `(axis === "x" ? dstExtent * otherExtent : otherExtent * dstExtent) * 4`.
+// Horizontal pass: convolve each row of byte source pixels with the X kernel map, producing a FLOAT
+// intermediate (dstW * h * 4 float64s, one Buffer2D<Vector4>-equivalent) — no rounding here, matching
+// ResizeWorker.cs · CalculateFirstPassValues writing into `transposedFirstPassBuffer : Buffer2D<Vector4>`.
 function resizeAxisX(
   src: Uint8Array,
   srcW: number,
   h: number,
   dstW: number,
   kernelMap: KernelMap,
-): Uint8Array {
-  const out = new Uint8Array(dstW * h * 4);
+): Float64Array {
+  const out = new Float64Array(dstW * h * 4);
   for (let y = 0; y < h; y++) {
     const rowBase = y * srcW * 4;
     const outRowBase = y * dstW * 4;
@@ -125,17 +128,21 @@ function resizeAxisX(
         a += w * src[idx + 3]!;
       }
       const outIdx = outRowBase + x * 4;
-      out[outIdx] = clampRoundByte(r);
-      out[outIdx + 1] = clampRoundByte(g);
-      out[outIdx + 2] = clampRoundByte(b);
-      out[outIdx + 3] = clampRoundByte(a);
+      out[outIdx] = r;
+      out[outIdx + 1] = g;
+      out[outIdx + 2] = b;
+      out[outIdx + 3] = a;
     }
   }
   return out;
 }
 
+// Vertical pass: convolve the FLOAT intermediate from resizeAxisX with the Y kernel map. This is the
+// final pass, so — matching ResizeWorker.cs · FillDestinationPixels, the sole float -> byte conversion
+// point (PixelOperations<TPixel>.FromVector4Destructive) — clamp+round to a byte happens here, once,
+// at the final write.
 function resizeAxisY(
-  src: Uint8Array,
+  src: Float64Array,
   w: number,
   dstH: number,
   kernelMap: KernelMap,
