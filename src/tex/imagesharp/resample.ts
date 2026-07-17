@@ -207,6 +207,10 @@ export function resizeNearestNeighbor(
   if (srcW === dstW && srcH === dstH) {
     return rgba.slice();
   }
+  // ApplyNNResizeFrameTransform computes widthFactor/heightFactor in float32; we use float64 here —
+  // a theoretical boundary-truncation edge, unreachable for the pow2 eye-frame path
+  // (src/upgrade/eye-mask.ts): a pow2 factor is exactly representable in both widths, and the
+  // equal-dims case already short-circuits above.
   const factorX = srcW / dstW;
   const factorY = srcH / dstH;
   const out = new Uint8Array(dstW * dstH * 4);

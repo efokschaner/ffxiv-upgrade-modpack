@@ -177,6 +177,7 @@ export function updateEyeMask(
   // half actually consumes the parsed tex's format/mips; not worth perturbing the shared parser now.
   const resolved = resolveFile(file); // ResolveFile (:2030) — a ResolveFile call site (decode error -> null)
   if (!resolved) {
+    // Genuine C# defect, not a transcribed quirk — docs/TEXTOOLS_BUGS.md §13.
     throw new Error(
       `upgrade: eye-mask mask did not resolve (absent or undecodable) — ` +
         `XivTex.FromUncompressedTex throws on null (EndwalkerUpgrade.cs:2032): ${maskPath}`,
@@ -201,6 +202,7 @@ export function updateEyeMask(
   // a null dereference — the deferred NRE case.
   const diffusePath = table.get(irisPath)!.diffusePath;
   if (diffusePath === undefined) {
+    // Genuine C# defect, not a transcribed quirk — docs/TEXTOOLS_BUGS.md §14.
     throw new Error(
       `upgrade: eye-mask iris material binds no g_SamplerDiffuse texture — TexturePath is null ` +
         `(EndwalkerUpgrade.cs:2059 NullReferenceException): ${irisPath}`,

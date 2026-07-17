@@ -316,3 +316,47 @@ already written above untouched, matching the C#'s "log and move on" outcome.
 **Upstream fix:** catch only the specific expected condition (e.g. a resize-required signal), and
 either log-and-skip explicitly for that case or let a genuinely unexpected exception (a corrupt
 input) surface instead of silently swallowing it.
+
+---
+
+## 13. `UpdateEyeMask` passes a possibly-null `ResolveFile` result straight into `FromUncompressedTex`
+
+**Status:** reproduced · **Where:** `EndwalkerUpgrade.cs:2030-2032` (see `src/upgrade/eye-mask.ts`,
+`updateEyeMask`)
+
+`ResolveFile` returns null whenever the mask file's bytes cannot be resolved or decoded
+(`EndwalkerUpgrade.cs:1761-1774` — an absent `RealPath`, or a decode failure caught and folded to
+null). `UpdateEyeMask` takes that result and passes it directly into
+`XivTex.FromUncompressedTex(data)` with no null check (`:2032`), which throws an
+`ArgumentNullException` from `new MemoryStream(texData)` (`XivTex.cs:96`) — the same class of
+unguarded-null-into-constructor defect as entry 1 (`GearMaskNew`), at a different call site with a
+different exception type (`ArgumentNullException`, not NRE, since the null is passed as a
+constructor argument rather than dereferenced directly).
+
+**Us:** `updateEyeMask` throws when `resolveFile` returns null for the mask, citing this entry and
+`XivTex.cs:96` at the throw site — fail-loud is faithful here, matching TexTools' own crash.
+
+**Upstream fix:** null-check `ResolveFile`'s result before calling `FromUncompressedTex`, matching
+the guard the sibling `GearMaskLegacy` branch (entry 1) already has.
+
+---
+
+## 14. `UpdateEyeMask` dereferences a `FirstOrDefault` that can return null for `TexturePath`
+
+**Status:** reproduced · **Where:** `EndwalkerUpgrade.cs:2056-2059` (see `src/upgrade/eye-mask.ts`,
+`updateEyeMask`)
+
+`baseMaterial.Textures.FirstOrDefault(x => x.Sampler?.SamplerId == ... g_SamplerDiffuse)` can
+legitimately return null when the iris material binds no diffuse sampler; the very next line
+dereferences `mtrlTex.TexturePath` unconditionally (`:2059`), throwing a
+`NullReferenceException`. Unlike entry 3 (an unguarded *scan predicate*), this is an unguarded
+*result* dereference after a `FirstOrDefault` whose null case is the whole point of that LINQ
+method — the same shape as entry 2's `normalTex.Dx11Path`, at a different call site.
+
+**Us:** our eye-material lookup table (`EyeMaterialTable`, `src/upgrade/reference/eye-materials-types.ts`)
+records that case as `diffusePath === undefined`, and `updateEyeMask` throws citing this entry
+when it sees it — fail-loud in place of the NRE, since there is no cross-material fallback to
+substitute.
+
+**Upstream fix:** null-check `mtrlTex` before dereferencing `TexturePath`, and either skip the
+material or surface a clearer error naming the missing sampler.
