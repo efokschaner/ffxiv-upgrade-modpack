@@ -14,9 +14,10 @@ the hair pixel transform). This ports `EndwalkerUpgrade.UpdateUnclaimedHairTextu
 `UpdateUnclaimedHairAccessory` (`EndwalkerUpgrade.cs:1324-1716`) plus the orchestration glue that
 feeds them (`ModpackUpgrader.cs:148-183`).
 
-`UpdateEyeMask` (backlog item `2026-07-15-partials-eye-mask.md`) is called from the *same* glue block
-but stays **deferred** — this landing wires the shared `unusedTextures`/`contained` filter and calls
-only the hair pass; the eye call remains an unported, already-baselined gap.
+`UpdateEyeMask` is called from the *same* glue block but stays **deferred in this landing** — it
+wires the shared `unusedTextures`/`contained` filter and calls only the hair pass; the eye call
+remains an unported, already-baselined gap here (closed by a later follow-up, see
+`docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md`).
 
 ---
 
@@ -217,9 +218,9 @@ synthetics/units; any line reachable by neither must be a fail-loud guard.
 
 ## 6. Fidelity notes / known gaps
 
-- **Eye mask stays deferred** (backlog `2026-07-15-partials-eye-mask.md`): the glue computes
-  `contained` and calls the hair pass only; the eye call is not added, preserving the existing
-  baselined gap rather than half-porting it.
+- **Eye mask stays deferred in this landing**: the glue computes `contained` and calls the hair pass
+  only; the eye call is not added, preserving the existing baselined gap rather than half-porting it.
+  (Closed by a later follow-up, see `docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md`.)
 - **Resampler gap** (backlog `2026-07-10-imagesharp-resampler.md`): NPOT / size-mismatch hair inputs
   degrade to the raw-copy diff described in §4.4 (baselined), matching how `texture.ts` already
   handles the resampler gap.

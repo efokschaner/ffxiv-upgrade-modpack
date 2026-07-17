@@ -4,9 +4,9 @@
 **Status:** Design proposed; implementation pending.
 **Foundation:** completes the sibling control-flow spec
 (`docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md`), which shipped the `UpdateEyeMask`
-gate + iris table and left a **fail-loud throw** at the pixel step. Advances / closes the backlog
-item `docs/backlog/2026-07-15-partials-eye-mask.md`, and ports (verifies, not closes) the resampler
-half of `docs/backlog/2026-07-10-imagesharp-resampler.md` (T3). Extends the roadmap design
+gate + iris table and left a **fail-loud throw** at the pixel step. Closes the round-6 eye-mask
+partial backlog item, and ports (verifies, not closes) the resampler half of
+`docs/backlog/2026-07-10-imagesharp-resampler.md` (T3). Extends the roadmap design
 (`docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md`, §5 bundled assets, §8
 burndown).
 

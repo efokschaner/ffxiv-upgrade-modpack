@@ -36,12 +36,7 @@ Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port �
 pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
 `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [Round 6 partials — UpdateEyeMask pixel pipeline](backlog/2026-07-15-partials-eye-mask.md) — iris
-   mask→diffuse. The control-flow gate + bundled iris `(race,face)→diffuse` FileExists oracle now
-   ship (a fail-loud throw replaces the old silent pass-through); what remains is the ImageSharp pixel
-   pipeline (subsumes T3), the bundled base-game eye textures, and a "close-enough" golden. No corpus
-   coverage yet.
-2. [Port the `ResolveHighlightOptionsAndMashupHair` pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
+1. [Port the `ResolveHighlightOptionsAndMashupHair` pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
    — `upgradeModpack` (`src/upgrade/upgrade.ts`) has no pre-round, but TexTools runs this
    Hair-shader highlight/mashup resolver unconditionally before round 1 (`ModpackUpgrader.cs:83`).
    The highlight-resolution half (cross-option pointer stapling + a fail-loud throw) is portable
@@ -184,3 +179,8 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   sites never remove their directory; the two worst run on every `npm test`.
 - [Vet page-load and upgrade-operation performance](backlog/2026-07-11-webapp-performance-vetting.md)
   — once a real webpage exists. Profile before presuming a culprit.
+- [`diffArchives`' payload-member `confirmDivergence` call passes a prefixed name, not the bare
+  gamePath](backlog/2026-07-16-archive-diff-prefixed-gamepath.md) — a future path-scoped
+  `DIVERGENCE_RULES` predicate written as `.startsWith("chara/...")` would silently never fire from
+  this call site. Document/guard, not fix — recovering the true gamePath at that layer isn't
+  feasible without threading the option structure through.

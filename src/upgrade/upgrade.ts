@@ -227,9 +227,8 @@ function metadataRound(option: ModpackOption): void {
  * so a target added earlier in this same pass is seen; we mirror that by snapshotting the source
  * list and checking `option.files.has(target)` directly against the growing, live Map.
  * UpdateUnclaimedHairTextures (the rest of the includePartials block, ModpackUpgrader.cs:158-182) is
- * ported in `partials`; UpdateEyeMask now runs as a fail-loud control-flow gate
- * (`src/upgrade/eye-mask.ts`) — only its pixel conversion is deferred, see
- * docs/backlog/2026-07-15-partials-eye-mask.md.
+ * ported in `partials`; UpdateEyeMask (`src/upgrade/eye-mask.ts`) ports the full control flow
+ * including the ImageSharp pixel conversion (`convertEyeMaskToDiffuse`).
  */
 export function updateSkinPaths(option: ModpackOption): void {
   const snapshot = [...option.files];
@@ -249,9 +248,8 @@ export function updateSkinPaths(option: ModpackOption): void {
  * with that option's own files (:171, `o.StandardData.Files.ContainsKey(x)`), fed to the
  * hair/tail/ear rescue and the accessory rescue (both `EndwalkerUpgrade.UpdateUnclaimedHairTextures`
  * calls fused into the C#'s single wrapper, :172/:1324-1330 — see src/upgrade/unclaimed-hair.ts), then
- * `UpdateEyeMask` (:174-177), which now runs as a fail-loud control-flow gate
- * (`src/upgrade/eye-mask.ts`) — only its pixel conversion is deferred, see
- * docs/backlog/2026-07-15-partials-eye-mask.md.
+ * `UpdateEyeMask` (:174-177), which ports the full control flow including the ImageSharp pixel
+ * conversion (`src/upgrade/eye-mask.ts`, `convertEyeMaskToDiffuse`).
  */
 function partials(data: ModpackData, unused: Set<string>): void {
   for (const group of data.groups) {

@@ -137,9 +137,13 @@ Per AGENTS.md's preference order (real golden > synthetic golden > synthetic uni
   flags) extracted from a live DT install doubles as the `FileExists` oracle, reusing the ported
   `updateEndwalkerHairTextures` pixel path and the `_SampleHair` constant source for the tail
   backface special-case. Backlog item retired.
-- File `docs/backlog/2026-07-15-partials-eye-mask.md` — `UpdateEyeMask`. Needs a bundled iris
+- File the round-6 eye-mask partial backlog item — `UpdateEyeMask`. Needs a bundled iris
   `(race, face) → diffuse texture path` table (via the iris material) and the
   `ConvertEyeMaskToDiffuse` / `SwizzleRB` / DDS-conversion helpers (confirm which are unported).
+  **Shipped** (see `docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md` for the
+  control-flow gate + iris table, and `docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md`
+  for the ImageSharp pixel pipeline that closed it, proven against a real ConsoleTools `/upgrade`
+  golden). Backlog item retired.
 
 ## 8. Discovered, out of scope
 

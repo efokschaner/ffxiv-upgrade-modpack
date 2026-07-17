@@ -1,6 +1,6 @@
-// Tests for the round-6 eye-mask control-flow gate (EndwalkerUpgrade.cs:2007-2079), see
-// src/upgrade/eye-mask.ts. The pixel conversion (ConvertEyeMaskToDiffuse) is deferred
-// (docs/backlog/2026-07-15-partials-eye-mask.md); this file pins the guards and the fail-loud throw.
+// Tests for the round-6 eye-mask pipeline (EndwalkerUpgrade.cs:2007-2079), see
+// src/upgrade/eye-mask.ts. Covers both the control-flow gates/fail-loud throws AND the pixel
+// conversion (ConvertEyeMaskToDiffuse) that runs once every gate clears.
 import { describe, expect, it } from "vitest";
 import {
   emptyMeta,

@@ -7,7 +7,8 @@
 assets, §8 burndown) and is the direct sibling of the unclaimed-hair partials
 (`docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md`) — the *same* round-6 glue
 block (`ModpackUpgrader.cs:148-183`) that landing wired but deliberately left the eye call unported.
-This advances the backlog item `docs/backlog/2026-07-15-partials-eye-mask.md`.
+This advances the round-6 eye-mask partial backlog item (closed by the pixel-pipeline follow-up,
+`docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md`).
 
 **Goal:** Port `EndwalkerUpgrade.UpdateEyeMask` (`EndwalkerUpgrade.cs:2007-2079`) — the round-6
 heuristic that rescues a loose Endwalker iris **mask** (`--c{race}f{face}_iri_s.tex`) shipped without
@@ -122,8 +123,9 @@ identity, so the edge behaves as TexTools does.
 6. `IRIS_TABLE.has(irisPath)` — the `FileExists` gate (`:2049`); **miss ⇒ return** (faithful skip,
    matching the `// Hmmm...` branch).
 7. **Hit ⇒ throw** a fail-loud `Error` — this is where TexTools reads the iris material and runs the
-   pixel pipeline (`:2056-2077`). The throw cites `docs/backlog/2026-07-15-partials-eye-mask.md` and
-   names the blocked step.
+   pixel pipeline (`:2056-2077`). The throw cites the round-6 eye-mask partial backlog item and
+   names the blocked step. (This throw was later removed once the pixel pipeline shipped — see
+   `docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md`.)
 
 **Throw vs. catch.** `partials()` calls `updateEyeMask` directly (not inside the texture round's
 `try`), so the throw propagates and fails the whole upgrade — deliberately. Unlike the hair pass's

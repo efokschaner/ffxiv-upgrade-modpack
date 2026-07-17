@@ -136,10 +136,10 @@ function extractTgaRgba(gamePath: string): {
     const s = (height - 1 - y) * width * 4;
     const d = y * width * 4;
     for (let x = 0; x < width; x++) {
-      rgba[d + x * 4] = px[s + x * 4 + 2]!; // R<-B
-      rgba[d + x * 4 + 1] = px[s + x * 4 + 1]!; // G
-      rgba[d + x * 4 + 2] = px[s + x * 4]!; // B<-R
-      rgba[d + x * 4 + 3] = px[s + x * 4 + 3]!; // A
+      rgba[d + x * 4] = px[s + x * 4 + 2]!; // R (BGRA-in index 2 is already R)
+      rgba[d + x * 4 + 1] = px[s + x * 4 + 1]!; // G (BGRA-in index 1)
+      rgba[d + x * 4 + 2] = px[s + x * 4]!; // B (BGRA-in index 0 is already B)
+      rgba[d + x * 4 + 3] = px[s + x * 4 + 3]!; // A (BGRA-in index 3)
     }
   }
   return { width, height, rgba };
