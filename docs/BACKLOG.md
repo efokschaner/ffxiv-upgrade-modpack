@@ -108,6 +108,13 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Textures
 
+- [Our BCn decoder differs from TexTools' by ±1 (interpolation rounding)](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
+  — our block decoders are ported from bc7enc_rdo/DirectXTex; TexTools decodes via FNA `DxtUtil`, which
+  rounds the reconstructed interpolated colors differently, so `decodeToRgba` drifts ±1 from
+  `GetRawPixels` (measured: 9099/65536 bytes on `eye01_base`). Latent — the round-2 decode path has so
+  far seen only uncompressed sources — but a BC-compressed mod normal/mask would carry the ±1 into a
+  golden diff. Investigate which decoder TexTools uses per format, scan the corpus for reachability,
+  then match `DxtUtil`'s rounding (preferred) or add a scoped tolerance.
 - [T2 — full `FixOldTexData` load-time round](backlog/2026-07-10-fixoldtexdata-load-round.md) — we
   ported only the drop-malformed slice. Unported: the NPOT resize (needs T3's resampler) and the
   mip-offset-table fixup, which `/resave` now empirically forces (same format, same length, differing
