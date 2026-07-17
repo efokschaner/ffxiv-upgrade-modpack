@@ -93,6 +93,17 @@ export const DIVERGENCE_RULES: DivergenceRule[] = [
         return false;
       for (let i = 0; i < A8R8G8B8_HEADER_LEN; i++)
         if (ours[i] !== golden[i]) return false;
+      // Explicit format guard, mirroring the BC-rule check above: a +/-N per-byte tolerance is only
+      // meaningful on uncompressed pixel bytes (bytes >= 80 as raw BGRA), so require A8R8G8B8 rather
+      // than relying on the header-equality check above to imply it. Defense-in-depth — the eye
+      // diffuse is always uncompressed A8R8G8B8 (encodeUncompressedTex, src/upgrade/eye-mask.ts) — not
+      // a live fix.
+      const format = new DataView(
+        golden.buffer,
+        golden.byteOffset,
+        golden.byteLength,
+      ).getUint32(A8R8G8B8_FORMAT_OFFSET, true);
+      if (format !== A8R8G8B8) return false;
       for (let i = A8R8G8B8_HEADER_LEN; i < golden.length; i++)
         if (Math.abs(ours[i]! - golden[i]!) > EYE_DIFFUSE_TOLERANCE)
           return false;
