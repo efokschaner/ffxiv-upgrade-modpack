@@ -109,8 +109,8 @@ header comment (ImageSharp files cited as `SixLabors.ImageSharp v2.1.11 · <File
 | `src/tex/imagesharp/compose.ts` (new) | ImageSharp 2.1.11 | `drawImage` with Porter-Duff `Normal+SrcOver` (positioned, opacity) and `Normal+SrcAtop` (full-canvas) |
 | `src/tex/helpers.ts` (extend) | `TextureHelpers.cs` | `expandChannel`, `maskImage`, `swizzleRB` (trivial per-texel, byte-exact) |
 | `src/upgrade/eye-mask.ts` (extend) | `EndwalkerUpgrade.cs` | `convertEyeMaskToDiffuse` orchestration + the `UpdateEyeMask` tail; **remove the throw** |
-| `scripts/extract-eye-materials.ts` (extend) | `Tex.GetXivTex`/`GetRawPixels` | also emit the bundled base eye textures (§5) |
-| `src/upgrade/reference/eye-base-textures.ts` (new, generated) | base game | original `.tex` bytes of `eye01_base.tex`, `eye01_mask.tex` (128×128 DXT1, ~22 KiB), decoded at load |
+| `scripts/extract-eye-materials.ts` (extend) | `Tex.GetXivTex`/`GetRawPixels` | also emit the bundled base eye textures via `/extract` `.tga` (§5.6) |
+| `src/upgrade/reference/eye-base-textures.ts` (new, generated) | base game | decoded 128×128 RGBA constants for `eye01_base`/`eye01_mask` (from TexTools' own `.tga` decode), base64-embedded |
 | `src/upgrade/texture.ts` (edit) | `EndwalkerUpgrade.cs` | replace the two `TextureResizeUnsupported` throws with `resizeBicubic` calls (§7 scope) |
 
 A new `src/tex/imagesharp/` subsystem is the honest home for the ImageSharp ports: a distinct
@@ -184,23 +184,28 @@ Provenance: `TextureHelpers.cs`. All byte-exact integer/copy ops, matching the e
 
 ### 5.6 Bundled base-game eye textures — `eye-base-textures.ts`
 `ConvertEyeMaskToDiffuse` reads `chara/common/texture/eye/eye01_base.tex` and `eye01_mask.tex` via
-`GetXivTex(...).GetRawPixels()` (`:1928-1932`). **Measured (2026-07-16, extracted from the live
-game):** both are **128×128 DXT1 (BC1), 8 mips, ~11 KiB each** — ~22 KiB total as `.tex`, or 64 KiB
-each (128 KiB total, 23 KiB deflated) decoded to RGBA. Storage is negligible at any of these sizes,
-so the choice is driven by simplicity/faithfulness, not size.
+`GetXivTex(...).GetRawPixels()` (`:1928-1932`). **Measured (2026-07-16, live game):** both are
+**128×128 DXT1 (BC1), 8 mips**; the pipeline consumes each as decoded **128×128 RGBA** (64 KiB).
 
-- **Storage decision:** bundle the **original `.tex` bytes** (~22 KiB total) in a generated
-  `src/upgrade/reference/eye-base-textures.ts`, and decode with our existing `decodeToRgba` at load.
-  Smallest source, the bundled asset is exactly the verifiable game bytes, and it reuses the tested
-  decode path — no `fflate`, no pre-decode. (Pre-decoding to raw RGBA was considered to avoid a
-  runtime BC decoder, but we already ship one via `src/tex/decode.ts`/`bc7.ts`, so it buys nothing.)
-  Extend `extract-eye-materials.ts` (runs on the game machine; both game + ConsoleTools are present
-  here) to emit these bytes.
-- **Risk to confirm:** these being DXT1 means the pipeline leans on `decodeToRgba`'s BC1 path matching
-  TexTools' `GetRawPixels` for these two textures — a *systematic* (not float-noise) source of
-  divergence if wrong. The eye golden validates the whole chain end-to-end; if the base-texture decode
-  diverges it will show as a structured, non-tolerance-shaped diff and must be fixed at the decoder,
-  not absorbed into the tolerance.
+- **Form — embed the decoded RGBA as constants, not raw `.tex`.** Every other generated reference
+  table (`hair-materials.ts`, `index-path-overrides.ts`, …) stores the **pre-resolved consumed form**
+  — the fields/values the ported logic reads — never raw file bytes needing a runtime parse.
+  `eye-base-textures.ts` follows suit: it exports the **decoded RGBA + dims** (e.g.
+  `{ width: 128, height: 128, rgba: Uint8Array }` per texture), the exact `GetRawPixels` output
+  `convertEyeMaskToDiffuse` uses directly. No runtime `.tex` parse, no BC decode on the hot path.
+- **Source encoding.** There is no comma-array binary precedent in the repo; embed each 64 KiB
+  payload as a **base64 string decoded once at module load** (via a small shared util — reuse one in
+  `src/util` if present), keeping the generated file ~⅓ the size of a numeric-array literal. (A plain
+  `new Uint8Array([...])` literal is the alternative if we prefer zero decode ceremony; base64 chosen
+  for size.)
+- **Decode source — zero BC-parity risk.** Obtain the pixels from **TexTools' own decode**, not ours:
+  `ConsoleTools /extract <path> <dest>.tga` emits an uncompressed 32-bit TGA (measured: `imageType=2`,
+  `bpp=32`, 18-byte header + 128×128×4, **no** footer, descriptor `0x08` ⇒ 8 alpha bits, **bottom-left
+  origin**). `extract-eye-materials.ts` parses that TGA — **flip rows to top-down and swap BGRA→RGBA**
+  — reconstructing exactly `GetRawPixels`. So the bundled constants are precisely what the C# pipeline
+  consumes; nothing leans on `decodeToRgba`'s BC1 path for these, and the systematic BC-decode-parity
+  risk is designed out rather than deferred to the golden. (Confirm the row flip against the golden —
+  a vertical flip would be a glaring structured diff.)
 
 ---
 
