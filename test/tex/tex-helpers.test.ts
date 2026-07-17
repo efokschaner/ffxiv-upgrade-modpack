@@ -87,3 +87,41 @@ describe("createHairMaps", () => {
     expect(mask[1]).toBe(106);
   });
 });
+
+import { expandChannel, maskImage, swizzleRB } from "../../src/tex/helpers";
+
+describe("expandChannel (TextureHelpers.cs:191)", () => {
+  it("copies one channel across RGB, leaving alpha, by default", () => {
+    // one 1x1 pixel R=10 G=20 B=30 A=40; expand channel 0 (red)
+    const px = new Uint8Array([10, 20, 30, 40]);
+    expandChannel(px, 0, 1, 1);
+    expect([...px]).toEqual([10, 10, 10, 40]);
+  });
+  it("includes alpha when includeAlpha=true", () => {
+    const px = new Uint8Array([10, 20, 30, 40]);
+    expandChannel(px, 2, 1, 1, true); // expand blue across RGBA
+    expect([...px]).toEqual([30, 30, 30, 30]);
+  });
+});
+
+describe("maskImage (TextureHelpers.cs:88)", () => {
+  it("copies the mask's alpha into the base's alpha, leaving RGB", () => {
+    const base = new Uint8Array([1, 2, 3, 4]);
+    const mask = new Uint8Array([9, 9, 9, 250]);
+    maskImage(base, mask, 1, 1);
+    expect([...base]).toEqual([1, 2, 3, 250]);
+  });
+  it("throws when sizes disagree (InvalidDataException, :90-95)", () => {
+    expect(() =>
+      maskImage(new Uint8Array(4), new Uint8Array(8), 1, 1),
+    ).toThrow();
+  });
+});
+
+describe("swizzleRB (TextureHelpers.cs:172)", () => {
+  it("swaps bytes 0 and 2 per texel", () => {
+    const px = new Uint8Array([10, 20, 30, 40]);
+    swizzleRB(px, 1, 1);
+    expect([...px]).toEqual([30, 20, 10, 40]);
+  });
+});

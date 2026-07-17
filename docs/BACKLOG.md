@@ -36,12 +36,7 @@ Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port �
 pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
 `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [Round 6 partials — UpdateEyeMask pixel pipeline](backlog/2026-07-15-partials-eye-mask.md) — iris
-   mask→diffuse. The control-flow gate + bundled iris `(race,face)→diffuse` FileExists oracle now
-   ship (a fail-loud throw replaces the old silent pass-through); what remains is the ImageSharp pixel
-   pipeline (subsumes T3), the bundled base-game eye textures, and a "close-enough" golden. No corpus
-   coverage yet.
-2. [Port the `ResolveHighlightOptionsAndMashupHair` pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
+1. [Port the `ResolveHighlightOptionsAndMashupHair` pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
    — `upgradeModpack` (`src/upgrade/upgrade.ts`) has no pre-round, but TexTools runs this
    Hair-shader highlight/mashup resolver unconditionally before round 1 (`ModpackUpgrader.cs:83`).
    The highlight-resolution half (cross-option pointer stapling + a fail-loud throw) is portable
@@ -108,6 +103,14 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Textures
 
+- [Deepen / re-evaluate the known ±1 BCn decoder divergence vs TexTools](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
+  — the ±1 BCn value-rounding gap (our bc7enc_rdo port vs TexTools' FNA `DxtUtil`) is already
+  documented (`decodeBc5`) and already absorbed by the `.tex` ±1 `DIVERGENCE_RULES` tolerance, so it
+  does not fail the suite. New here: a measurement vs TexTools' actual decoder (9099/65536 bytes on
+  `eye01_base`, all ±1) confirming it extends to **DXT1**, and the re-evaluation — the tex-codec spec
+  §7 justified the bc7enc choice on "any spec-conformant decoder matches byte-for-byte," which this
+  falsifies. Decide: keep accepting the tolerance, or eliminate it via a clean-room match of
+  `DxtUtil`'s rounding (validated against its output, not transcribed — it is Ms-PL).
 - [T2 — full `FixOldTexData` load-time round](backlog/2026-07-10-fixoldtexdata-load-round.md) — we
   ported only the drop-malformed slice. Unported: the NPOT resize (needs T3's resampler) and the
   mip-offset-table fixup, which `/resave` now empirically forces (same format, same length, differing
@@ -116,9 +119,10 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — a *different* gap from T2 (PMP-load-gated, not TTMP): shares `FixUpBrokenMipOffsets` but also
   truncates trailing null padding. Blast radius is bigger than a byte diff — dedup keys on loaded
   content, so it changes `common/N` **member names**. Must land before member-name parity is complete.
-- [T3 — ImageSharp Bicubic/NearestNeighbor resampler](backlog/2026-07-10-imagesharp-resampler.md) —
-  the shared dependency for the texture round's baselined resize skips (`Misty_Hairstyle_Female`) and
-  T2's NPOT resize. Byte-parity against ImageSharp's float math may need a `DIVERGENCE_RULES` entry.
+- [T3 — ImageSharp Bicubic resampler: T2's NPOT resize still unported](backlog/2026-07-10-imagesharp-resampler.md)
+  — the resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
+  `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
+  NPOT-normalize and T2's NPOT resize still throw `TextureResizeUnsupported` and remain open.
 - [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
   — we emit at the convention path instead of the canonical override. Fix is mechanical: re-run
   `scripts/extract-index-overrides.ts` against a game install.
@@ -175,3 +179,8 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   sites never remove their directory; the two worst run on every `npm test`.
 - [Vet page-load and upgrade-operation performance](backlog/2026-07-11-webapp-performance-vetting.md)
   — once a real webpage exists. Profile before presuming a culprit.
+- [`diffArchives`' payload-member `confirmDivergence` call passes a prefixed name, not the bare
+  gamePath](backlog/2026-07-16-archive-diff-prefixed-gamepath.md) — a future path-scoped
+  `DIVERGENCE_RULES` predicate written as `.startsWith("chara/...")` would silently never fire from
+  this call site. Document/guard, not fix — recovering the true gamePath at that layer isn't
+  feasible without threading the option structure through.

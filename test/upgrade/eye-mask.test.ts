@@ -1,6 +1,6 @@
-// Tests for the round-6 eye-mask control-flow gate (EndwalkerUpgrade.cs:2007-2079), see
-// src/upgrade/eye-mask.ts. The pixel conversion (ConvertEyeMaskToDiffuse) is deferred
-// (docs/backlog/2026-07-15-partials-eye-mask.md); this file pins the guards and the fail-loud throw.
+// Tests for the round-6 eye-mask pipeline (EndwalkerUpgrade.cs:2007-2079), see
+// src/upgrade/eye-mask.ts. Covers both the control-flow gates/fail-loud throws AND the pixel
+// conversion (ConvertEyeMaskToDiffuse) that runs once every gate clears.
 import { describe, expect, it } from "vitest";
 import {
   emptyMeta,
@@ -39,9 +39,14 @@ const table: EyeMaterialTable = new Map([[IRIS_MAT, { diffusePath: "d" }]]);
 const empty: EyeMaterialTable = new Map();
 
 describe("updateEyeMask", () => {
-  it("throws the documented gap when the mask clears every guard (iris exists)", () => {
+  it("converts the mask to a diffuse when it clears every guard (iris exists)", () => {
     const o = opt({ [MASK]: buildMinimalTex() });
-    expect(() => updateEyeMask(o, MASK, table)).toThrow(/unported/i);
+    // stub table entry points diffuse at a known path; a valid A8R8G8B8 mask decodes+converts.
+    const t: EyeMaterialTable = new Map([
+      [IRIS_MAT, { diffusePath: "chara/common/texture/eye/eyeX_base.tex" }],
+    ]);
+    updateEyeMask(o, MASK, t);
+    expect(o.files.has("chara/common/texture/eye/eyeX_base.tex")).toBe(true);
   });
 
   it("skips (no throw) a non-eye texture — regex miss (EndwalkerUpgrade.cs:2009)", () => {
@@ -146,10 +151,15 @@ const rc = /c([0-9]{4}).*?f([0-9]{4})/.exec(firstIris)!;
 const realMask = `chara/human/c${rc[1]}/obj/face/f${rc[2]}/texture/--c${rc[1]}f${rc[2]}_iri_s.tex`;
 
 describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () => {
-  it("throws the documented gap on an unclaimed iri_s.tex whose iris material exists", () => {
-    expect(() =>
-      upgradeModpack(pack({ [realMask]: buildMinimalTex() })),
-    ).toThrow(/unported/i);
+  it("writes a converted diffuse for an unclaimed iri_s.tex whose iris material exists", () => {
+    const out = upgradeModpack(pack({ [realMask]: buildMinimalTex() }));
+    const diffuse = EYE_MATERIALS.get(
+      `chara/human/c${rc[1]}/obj/face/f${rc[2]}/material/mt_c${rc[1]}f${rc[2]}_iri_a.mtrl`,
+    )!.diffusePath!;
+    const wrote = out.groups.some((g) =>
+      g.options.some((o) => o.files.has(diffuse)),
+    );
+    expect(wrote).toBe(true);
   });
 
   it("does not throw when the iris material is absent (bogus face f9999)", () => {

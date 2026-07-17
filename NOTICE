@@ -48,3 +48,14 @@ decoders ported from richgel999/bc7enc_rdo (rgbcx.h, bc7decomp.cpp):
 
 The block-compression algorithms (S3TC/DXT, RGTC, BPTC) are unpatented
 public standards.
+
+----------------------------------------------------------------------
+
+src/tex/imagesharp/ contains image resampling, blur, and compositing
+ported from SixLabors.ImageSharp (v2.1.11):
+
+  Copyright (c) Six Labors.
+  Licensed under the Apache License, Version 2.0.
+
+Apache-2.0 is one-way compatible with GPL-3.0-or-later, so the combined
+work remains under GPL-3.0-or-later.

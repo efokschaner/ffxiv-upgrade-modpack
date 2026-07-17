@@ -175,10 +175,26 @@ function payloadNames(members: Map<string, Uint8Array>): string[] {
  *  Reported as `structure` diffs, same as a missing/extra manifest member above, except a
  *  content-mismatched matched pair, reported as `mismatch` (Minor 4: content was previously
  *  unchecked here — a corrupted or swapped extra, which has no `gamePath` for `diffUpgrade` to
- *  catch it under, was invisible). */
+ *  catch it under, was invisible).
+ *
+ *  `confirmDivergence`, when supplied, is consulted on a raw content mismatch before it is
+ *  reported: a matched pair whose only difference is an INTENDED one (a DIVERGENCE_RULES entry)
+ *  is treated as matched here too, same as it already is in `diffUpgrade`'s gamePath-keyed payload
+ *  diff. Without this, a real, confirmed divergence (e.g. the eye-mask diffuse's float64-vs-float32
+ *  pixel tolerance) would pass `diffUpgrade` but still be flagged here as a structural mismatch —
+ *  this function's only other consumer of file identity is the archive MEMBER NAME (`<option
+ *  prefix><gamePath>` for a PMP, per `src/container/option-prefix.ts`), not the bare gamePath, so
+ *  it is passed to `confirmDivergence` as-is: a path-scoped rule's predicate must therefore match a
+ *  gamePath *suffix* of an arbitrary prefixed string (e.g. `.includes(...)`/`.endsWith(...)`, not
+ *  `.startsWith(...)`) to fire in both places. */
 function diffPayloadMembers(
   ours: Map<string, Uint8Array>,
   golden: Map<string, Uint8Array>,
+  confirmDivergence?: (
+    gamePath: string,
+    ours: Uint8Array,
+    golden: Uint8Array,
+  ) => boolean,
 ): FileDiff[] {
   const bucket = (names: string[]): Map<string, string[]> => {
     const m = new Map<string, string[]>();
@@ -204,6 +220,7 @@ function diffPayloadMembers(
       const oBytes = ours.get(os[i]!)!;
       const gBytes = golden.get(gs[i]!)!;
       if (!bytesEqual(oBytes, gBytes)) {
+        if (confirmDivergence?.(gs[i]!, oBytes, gBytes)) continue; // confirmed intentional divergence
         diffs.push({
           kind: "structure",
           gamePath: gs[i]!,
@@ -244,20 +261,29 @@ function diffPayloadMembers(
  * "removed"; shared+unequal => "mismatch".
  * See docs/superpowers/specs/2026-07-08-modpack-serialization-parity-design.md §3.
  *
- * `checkPayloadMembers` additionally compares the *names* of non-manifest members (see
- * `diffPayloadMembers`). Callers should only pass `true` for PMP — `isManifest` counts `.mpl` but
- * not `.mpd`, so a TTMP's single opaque `TTMPD.mpd` blob is not a PMP-shaped "payload member" (a
- * per-gamePath zip entry) at all — turning this on for TTMP would compare the wrong thing (and any
- * OTHER member in a source `.ttmp2`/`.ttmp` archive, which `writeTtmp2` has no analogue for, would
- * produce a spurious diff). It used to be further scoped to the no-op branch only, because our
- * writer reused the source pack's own zip member names where a real golden regenerates every name
- * as `<optionPrefix><gamePath>`; now that `writePmp` regenerates names the same way (see
- * `src/container/option-prefix.ts` / `resolve-duplicates.ts`), that restriction is gone and this
- * runs on every PMP golden, no-op or not. */
+ * `checkPayloadMembers` additionally compares the *names* (and, for matched pairs, bytes) of
+ * non-manifest members (see `diffPayloadMembers`). Callers should only pass `true` for PMP —
+ * `isManifest` counts `.mpl` but not `.mpd`, so a TTMP's single opaque `TTMPD.mpd` blob is not a
+ * PMP-shaped "payload member" (a per-gamePath zip entry) at all — turning this on for TTMP would
+ * compare the wrong thing (and any OTHER member in a source `.ttmp2`/`.ttmp` archive, which
+ * `writeTtmp2` has no analogue for, would produce a spurious diff). It used to be further scoped to
+ * the no-op branch only, because our writer reused the source pack's own zip member names where a
+ * real golden regenerates every name as `<optionPrefix><gamePath>`; now that `writePmp` regenerates
+ * names the same way (see `src/container/option-prefix.ts` / `resolve-duplicates.ts`), that
+ * restriction is gone and this runs on every PMP golden, no-op or not.
+ *
+ * `confirmDivergence`, when supplied, is forwarded to `diffPayloadMembers`' matched-pair content
+ * check (see its doc comment) so a confirmed DIVERGENCE_RULES entry is not double-reported here
+ * after `diffUpgrade` already accepted it. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
   checkPayloadMembers = false,
+  confirmDivergence?: (
+    gamePath: string,
+    ours: Uint8Array,
+    golden: Uint8Array,
+  ) => boolean,
 ): FileDiff[] {
   const om = readZip(ours);
   const gm = readZip(golden);
@@ -302,6 +328,7 @@ export function diffArchives(
       }
     }
   }
-  if (checkPayloadMembers) diffs.push(...diffPayloadMembers(om, gm));
+  if (checkPayloadMembers)
+    diffs.push(...diffPayloadMembers(om, gm, confirmDivergence));
   return diffs;
 }

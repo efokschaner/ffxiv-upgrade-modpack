@@ -10,8 +10,8 @@ export interface EyeMaterialEntry {
   /**
    * g_SamplerDiffuse texture path (EndwalkerUpgrade.cs:2058-2059, `mtrlTex.TexturePath`).
    * Recorded RAW — UpdateEyeMask uses the material's stored TexturePath directly, NOT the
-   * `--`-prefixed Dx11 path the hair extractor derives via dx11Path(). Read only by the deferred
-   * pixel half (docs/backlog/2026-07-15-partials-eye-mask.md); undefined if the material binds no
+   * `--`-prefixed Dx11 path the hair extractor derives via dx11Path(). Read by the pixel half
+   * (`convertEyeMaskToDiffuse`, `src/upgrade/eye-mask.ts`); undefined if the material binds no
    * g_SamplerDiffuse sampler (in which case C#'s :2059 would NRE at pixel time — deferred).
    */
   diffusePath?: string;
