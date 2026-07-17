@@ -1,4 +1,4 @@
-import { corpusPacks } from "./corpus-roots";
+import { corpusPacks, isUpgradeErrorPack } from "./corpus-roots";
 
 // Pure enumeration of corpus work units. Depends ONLY on node:fs/node:path (via corpus-roots) and
 // runs NO test registration on import, so the Node-API runner can import it outside any test
@@ -25,6 +25,11 @@ export interface Unit {
  * ConsoleTools oracles rather than the shared decode, and keeping them apart preserves the
  * scheduling granularity the forks pool needs to fill all cores.
  *
+ * Packs in the `upgrade-error` corpus root (see corpus-roots.ts `isUpgradeErrorPack`) are scoped to
+ * ONLY the `upgrade` check: they exist to prove our port throws exactly where ConsoleTools /upgrade
+ * throws (a matched-failure test), not to exercise the writer/codec, so they skip
+ * assets/golden/resave, which would otherwise surface unrelated writer/codec gaps on their content.
+ *
  * There used to be a ninth, PMP-only "pmp" check (`registerPmpManifestChecks`, formerly
  * corpus-pmp.ts) that compared `writePmp(readPmp(x))` structurally against the SOURCE `x`. Retired
  * (2026-07-13, PMP writer regeneration): its whole premise was that our writer round-trips the
@@ -40,6 +45,11 @@ export interface Unit {
 export function enumerateUnits(): Unit[] {
   const units: Unit[] = [];
   for (const pack of corpusPacks()) {
+    if (isUpgradeErrorPack(pack)) {
+      // Expected-failure /upgrade pack: only the upgrade check (matched-failure test). See corpus-roots.
+      units.push({ pack, check: "upgrade" });
+      continue;
+    }
     units.push({ pack, check: "assets" });
     units.push({ pack, check: "golden" });
     units.push({ pack, check: "upgrade" });

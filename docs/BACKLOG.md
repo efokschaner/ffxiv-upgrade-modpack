@@ -103,6 +103,11 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Textures
 
+- [`[Inako] Lilith Wish.pmp` — `/resave` diverges on ~30 eye/face `.tex` payloads](backlog/2026-07-17-lilith-wish-resave-tex-divergence.md)
+  — every mismatch is `ours.length === golden.length + 80`, a constant excess regardless of texture
+  size (not the known ±1 BC-decode tolerance). Pre-existing writer/codec gap, unrelated to this
+  branch; the pack is scoped to the `upgrade` expected-failure check only (`upgrade-error` corpus
+  root), so `/resave` is UNVERIFIED for it.
 - [Deepen / re-evaluate the known ±1 BCn decoder divergence vs TexTools](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
   — the ±1 BCn value-rounding gap (our bc7enc_rdo port vs TexTools' FNA `DxtUtil`) is already
   documented (`decodeBc5`) and already absorbed by the `.tex` ±1 `DIVERGENCE_RULES` tolerance, so it
