@@ -7,6 +7,7 @@ import {
   OracleUpgradeError,
   oracleKey,
   traceListenerConfigured,
+  UPGRADE_TRACE_LOG,
 } from "./oracle";
 import { upgradeGoldenCached } from "./upgrade-golden";
 
@@ -36,7 +37,10 @@ describe("isGenuineUpgradeError", () => {
 });
 
 describe("traceListenerConfigured", () => {
-  const path = "C:\\Users\\user\\.ffxiv-consoletools-trace.log";
+  // The real expected path (homedir-derived); the value is arbitrary to the pure predicate — it
+  // just has to match between the config fixture and the expected arg — so use the actual constant
+  // rather than a machine-specific literal.
+  const path = UPGRADE_TRACE_LOG;
   it("is true when a TextWriterTraceListener writes to the expected path", () => {
     const cfg = `<add name="x" type="System.Diagnostics.TextWriterTraceListener" initializeData="${path}" />`;
     expect(traceListenerConfigured(cfg, path)).toBe(true);
@@ -45,7 +49,8 @@ describe("traceListenerConfigured", () => {
     expect(traceListenerConfigured("<configuration/>", path)).toBe(false);
   });
   it("is false when it points at a different path", () => {
-    const cfg = `<add type="System.Diagnostics.TextWriterTraceListener" initializeData="C:\\other.log" />`;
+    // A path that does NOT contain `path` as a substring (the predicate is a substring check).
+    const cfg = `<add type="System.Diagnostics.TextWriterTraceListener" initializeData="/some/other/trace.log" />`;
     expect(traceListenerConfigured(cfg, path)).toBe(false);
   });
 });
