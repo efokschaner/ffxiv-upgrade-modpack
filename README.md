@@ -51,7 +51,7 @@ match it exactly:
 | `bc7enc_rdo/` | [bc7enc_rdo](https://github.com/richgel999/bc7enc_rdo) (BC7 codec reference) | `dbe416d28a5530b4e8cc45b14bf034dc6b96bbde` | — |
 | *(not vendored)* | [SixLabors/ImageSharp](https://github.com/SixLabors/ImageSharp) (resampler/blur/compositing reference) | tag `v2.1.11` | — |
 
-Unlike the other two rows, ImageSharp is **not vendored under `reference/`** — it's a NuGet
+Unlike the three vendored rows above, ImageSharp is **not vendored under `reference/`** — it's a NuGet
 dependency of xivModdingFramework (`SixLabors.ImageSharp` v2.1.11, pinned in
 `xivModdingFramework.csproj:37`), so its source isn't part of the submodule pin above. We read it
 directly from the `SixLabors/ImageSharp` GitHub repo at tag `v2.1.11` (the version the pinned
