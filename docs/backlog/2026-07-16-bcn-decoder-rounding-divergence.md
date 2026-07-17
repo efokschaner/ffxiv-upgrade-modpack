@@ -1,8 +1,16 @@
-# Our BCn decoder differs from TexTools' by ±1 (interpolation rounding)
+# Deepen / re-evaluate the known ±1 BCn decoder divergence vs TexTools
 
 Filed: 2026-07-16 · Status: open · Priority: unprioritized · Surfaced while sourcing the bundled
 base eye textures for the eye-mask pixel pipeline
 (`docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md` §5.6).
+
+**This divergence is already known and accepted — this item is to look deeper and re-decide, not a
+fresh discovery.** The ±1 BCn value-rounding gap is documented in `src/tex/decode.ts` (`decodeBc5`
+header, ~:396-398, "S3TC/RGTC implementation-defined value rounding") and already **absorbed by a
+tolerance**: `test/helpers/upgrade-compare.ts`'s first `DIVERGENCE_RULES` entry confirms any generated
+A8R8G8B8 `.tex` differing from the golden by ≤±1 per post-header byte. So today the port *accepts* the
+gap rather than eliminating it. What this item adds is (a) a concrete measurement against TexTools'
+*actual* decoder, (b) confirmation it extends beyond BC5 to **DXT1**, and (c) the re-evaluation below.
 
 Our block-texture decoders (`src/tex/decode.ts` for BC1/DXT1, DXT3, DXT5, BC4, BC5; `src/tex/bc7.ts`
 for BC7) are ported from **richgel999/bc7enc_rdo** (`rgbcx.h` / `bc7decomp.cpp`) and BC7 is
@@ -22,16 +30,19 @@ TexTools' by **±1 LSB** on any texel landing on an interpolated color.
 | `chara/common/texture/eye/eye01_base.tex` (128×128 DXT1) | 9099 (~14%) | 1 |
 | `chara/common/texture/eye/eye01_mask.tex` (128×128 DXT1) | 1094 (~1.7%) | 1 |
 
-**Why it matters / reachability.** `decodeToRgba` is on the round-2 texture path
+**Why it matters / how it's currently handled.** `decodeToRgba` is on the round-2 texture path
 (`src/upgrade/texture.ts:42/62/91-92`), which decodes a mod's **source** normal/mask before
 transforming and re-encoding. A corpus mod shipping a **BC-compressed** normal/mask that reaches
-`createIndexFromNormal` / `upgradeMaskTex` / `updateEndwalkerHairTextures` would carry this ±1 into
-the re-encoded output and diff against the `/upgrade` golden. It has not been isolated because those
-paths have so far seen uncompressed `A8R8G8B8` sources — so this is **latent**, but it is a genuine
-"found divergence = test-coverage gap" (AGENTS.md): no test currently decodes a BC block and asserts
-byte-parity against TexTools, so the drift is invisible until an edge input hits it. (BC7 may be
-exempt if TexTools decodes BC7 via a DirectXTex-equivalent path rather than `DxtUtil`, which handles
-only DXT1/3/5 — confirm which decoder TexTools actually uses per format before assuming BC7 matches.)
+`createIndexFromNormal` / `upgradeMaskTex` / `updateEndwalkerHairTextures` carries this ±1 into the
+re-encoded output — and the golden harness **already tolerates it**: the `.tex` ±1 `DIVERGENCE_RULES`
+entry confirms it as an intended divergence (phenomenon-scoped, not path-scoped), so it does *not*
+fail the suite. The gap is therefore not "uncaught" but "papered over by a tolerance the port would
+rather not need" — plus there is no *direct* unit test decoding a BC block and asserting byte-parity
+against **TexTools' `DxtUtil`** specifically (the `decodeBc5` corroboration is against `texconv`, a
+*third* decoder, not the one TexTools runs). (BC7 may be exempt: TexTools decodes BC5/BC7 via
+`JeremyAnsel.BcnSharp` → the same `bc7enc_rdo` native we ported, per tex-codec spec §3, while `DxtUtil`
+handles only DXT1/3/5 + BC4 — so the drift likely affects only the `DxtUtil` formats. Confirm per
+format; the DXT1 repro above only proves the `DxtUtil` case.)
 
 **Re-evaluate the original decoder-source choice.** The decision to port from `bc7enc_rdo` rather
 than TexTools' actual decoder is documented in the tex-codec spec

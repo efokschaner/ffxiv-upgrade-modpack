@@ -108,13 +108,14 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Textures
 
-- [Our BCn decoder differs from TexTools' by ±1 (interpolation rounding)](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
-  — our block decoders are ported from bc7enc_rdo/DirectXTex; TexTools decodes via FNA `DxtUtil`, which
-  rounds the reconstructed interpolated colors differently, so `decodeToRgba` drifts ±1 from
-  `GetRawPixels` (measured: 9099/65536 bytes on `eye01_base`). Latent — the round-2 decode path has so
-  far seen only uncompressed sources — but a BC-compressed mod normal/mask would carry the ±1 into a
-  golden diff. Investigate which decoder TexTools uses per format, scan the corpus for reachability,
-  then match `DxtUtil`'s rounding (preferred) or add a scoped tolerance.
+- [Deepen / re-evaluate the known ±1 BCn decoder divergence vs TexTools](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
+  — the ±1 BCn value-rounding gap (our bc7enc_rdo port vs TexTools' FNA `DxtUtil`) is already
+  documented (`decodeBc5`) and already absorbed by the `.tex` ±1 `DIVERGENCE_RULES` tolerance, so it
+  does not fail the suite. New here: a measurement vs TexTools' actual decoder (9099/65536 bytes on
+  `eye01_base`, all ±1) confirming it extends to **DXT1**, and the re-evaluation — the tex-codec spec
+  §7 justified the bc7enc choice on "any spec-conformant decoder matches byte-for-byte," which this
+  falsifies. Decide: keep accepting the tolerance, or eliminate it via a clean-room match of
+  `DxtUtil`'s rounding (validated against its output, not transcribed — it is Ms-PL).
 - [T2 — full `FixOldTexData` load-time round](backlog/2026-07-10-fixoldtexdata-load-round.md) — we
   ported only the drop-malformed slice. Unported: the NPOT resize (needs T3's resampler) and the
   mip-offset-table fixup, which `/resave` now empirically forces (same format, same length, differing
