@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { upgradeModpack } from "../../src/index";
 import {
   FileStorageType,
   type ModpackData,
@@ -239,5 +240,18 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
     resolveHighlightOptionsAndMashupHair(data);
     expect(data.groups[0]!.options[0]!.files.has(N)).toBe(true);
     expect(data.groups[0]!.options[0]!.files.has(M)).toBe(false);
+  });
+});
+
+describe("upgradeModpack pre-round wiring", () => {
+  it("staples split hair textures during the pre-round before other rounds run", () => {
+    const a = option("Has Normal", [
+      [HAIR_MTRL_PATH, raw(HAIR_MTRL_BYTES)],
+      [N, tex(1)],
+    ]);
+    const b = option("Has Mask", [[M, tex(2)]]);
+    const out = upgradeModpack(pack([a, b]));
+    expect(out.groups[0]!.options[0]!.files.has(M)).toBe(true);
+    expect(out.groups[0]!.options[1]!.files.has(N)).toBe(true);
   });
 });

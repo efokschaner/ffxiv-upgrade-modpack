@@ -20,6 +20,7 @@ import { updateEyeMask } from "./eye-mask";
 import { upgradeMaterial } from "./material";
 import { EYE_MATERIALS } from "./reference/eye-materials";
 import { HAIR_MATERIALS } from "./reference/hair-materials";
+import { resolveHighlightOptionsAndMashupHair } from "./resolve-highlight";
 import { SKIN_REPATH_DICT } from "./skin-repath-dict";
 import { upgradeRemainingTextures } from "./texture";
 import {
@@ -327,6 +328,10 @@ function targetKey(info: UpgradeInfo): string {
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
+  // Pre-round (ModpackUpgrader.cs:83): resolve split Hair-shader highlight/visibility options
+  // BEFORE round 1, ungated by includePartials. Its throws propagate out of upgradeModpack — the
+  // C# pre-round sits outside the per-option try/catch that wraps round 1 (:97-116).
+  resolveHighlightOptionsAndMashupHair(out);
   // Pass 1 (ModpackUpgrader.cs:88-120): material + metadata per option; collect
   // texture-upgrade targets into a single first-wins-deduped map, and every option's `.tex`
   // keys into `allTextures` (:108-109).
