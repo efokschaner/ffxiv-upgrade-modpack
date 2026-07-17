@@ -36,6 +36,9 @@ export interface DivergenceRule {
 // (docs/superpowers/specs/2026-07-09-texture-round-design.md).
 const A8R8G8B8_HEADER_LEN = 80;
 const A8R8G8B8_FORMAT_OFFSET = 4;
+// Measured max |ours-golden| on the synthetic eye-mask.pmp golden was 2 (see the rule below); +1
+// margin for a tolerance that is a measurement, not a guess.
+const EYE_DIFFUSE_TOLERANCE = 3;
 export const DIVERGENCE_RULES: DivergenceRule[] = [
   {
     reason:
@@ -60,6 +63,39 @@ export const DIVERGENCE_RULES: DivergenceRule[] = [
       for (let i = A8R8G8B8_HEADER_LEN; i < golden.length; i++) {
         if (Math.abs(ours[i]! - golden[i]!) > 1) return false;
       }
+      return true;
+    },
+  },
+  // Eye-mask round-6 diffuse (EndwalkerUpgrade.cs ConvertEyeMaskToDiffuse, :1910-2003): a multi-stage
+  // ImageSharp float pipeline (Bicubic/NearestNeighbor resize, BoxBlur, SrcOver/SrcAtop composite)
+  // that we port in float64 vs C#'s float32 Vector4 math, so the resulting A8R8G8B8 diffuse differs
+  // by a small amount per pixel while header/dims/length match exactly. Measured against the
+  // synthetic eye-mask.pmp golden (test/corpus/synthetic, built by
+  // scripts/generate-synthetics/build-synthetic-eye-mask.ts): header and length byte-identical over
+  // all 349520 post-header bytes, max |ours-golden| = 2 (histogram: 318602 bytes @0, 30905 @1, 13
+  // @2, 0 bytes > 2). EYE_DIFFUSE_TOLERANCE is that measured max plus a 1-unit margin, not a
+  // loosely-picked bound. Path-scoped to the base-game eye diffuse destination
+  // (chara/common/texture/eye/..._base.tex) so it never loosens the global `.tex` rule above.
+  // `predicate` receives a bare gamePath from `diffUpgrade`'s per-gamePath payload diff, but a PMP
+  // ARCHIVE MEMBER NAME (`<optionPrefix>chara/...`, see upgrade-archive-diff.ts's `diffPayloadMembers`
+  // doc comment) from `diffArchives`' matched-pair content check — `.includes`/`.endsWith` match a
+  // suffix in both shapes; `.startsWith` would silently never fire from the second call site.
+  {
+    reason:
+      "Round-6 eye-mask diffuse (ConvertEyeMaskToDiffuse) — float64-vs-float32 ImageSharp pipeline; " +
+      "A8R8G8B8 header/dims/length identical, every post-header pixel within " +
+      `+/-${EYE_DIFFUSE_TOLERANCE} (measured max delta 2 on the synthetic eye-mask.pmp golden).`,
+    predicate: (gamePath) =>
+      gamePath.includes("chara/common/texture/eye/") &&
+      gamePath.endsWith("_base.tex"),
+    confirm: (ours, golden) => {
+      if (ours.length !== golden.length || ours.length < A8R8G8B8_HEADER_LEN)
+        return false;
+      for (let i = 0; i < A8R8G8B8_HEADER_LEN; i++)
+        if (ours[i] !== golden[i]) return false;
+      for (let i = A8R8G8B8_HEADER_LEN; i < golden.length; i++)
+        if (Math.abs(ours[i]! - golden[i]!) > EYE_DIFFUSE_TOLERANCE)
+          return false;
       return true;
     },
   },

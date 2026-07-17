@@ -72,7 +72,12 @@ export function registerUpgradeCheck(pack: string): void {
       // diffUpgrade's whole-pack, gamePath-keyed multiset flattens away entirely. Scoped to PMP
       // only: a TTMP's single opaque "TTMPD.mpd" blob is not a PMP-shaped payload member (see
       // diffArchives' doc comment).
-      const archive = diffArchives(oursArchive, goldenBytes, target === "pmp");
+      const archive = diffArchives(
+        oursArchive,
+        goldenBytes,
+        target === "pmp",
+        confirmDivergence,
+      );
       // Oracle-free invariant on OUR OWN artifact: no dangling `Files` key, no orphan member.
       // Independent of the golden, so it still guards a pack ConsoleTools cannot upgrade or that
       // has no golden at all. PMP-only: a TTMP has no per-file zip members to orphan.
