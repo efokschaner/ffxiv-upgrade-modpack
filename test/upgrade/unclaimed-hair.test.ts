@@ -9,7 +9,9 @@ import {
   type ModpackOption,
 } from "../../src/model/modpack";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
+import { buildCanonicalTexHeader } from "../../src/tex/header";
 import { parseTex } from "../../src/tex/tex";
+import { A8R8G8B8 } from "../../src/tex/types";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "../../src/upgrade/reference/hair-materials";
 import type { HairMaterialTable } from "../../src/upgrade/reference/hair-materials-types";
 import {
@@ -205,16 +207,21 @@ describe("updateUnclaimedHairTextures (hair)", () => {
   });
 
   it("leaves the raw copies untransformed when the transform throws (bare catch-all, EndwalkerUpgrade.cs:1498-1501)", () => {
-    // Normal 2x2 vs mask 4x4: a genuine size mismatch, so updateEndwalkerHairTextures throws
-    // TextureResizeUnsupported (EndwalkerUpgrade.cs:1205). The function must not propagate that
-    // (or any other transform error) -- it must swallow it, leaving the raw copies already
-    // written by the copy-first step untouched at both destinations.
+    // Normal claims 2x2 A8R8G8B8 (needs 16 bytes of pixel data) but only carries 4 -- decodeToRgba
+    // genuinely throws ("truncated mip data") inside updateEndwalkerHairTextures. Since the
+    // resampler (Task 8) now resolves the pow2/size-mismatch cases that used to model this gap via
+    // TextureResizeUnsupported, a real corrupt-input parse failure is what still exercises this
+    // catch-all; the function must not propagate it (or any other transform error) -- it must
+    // swallow it, leaving the raw copies already written by the copy-first step untouched at both
+    // destinations.
     const nOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
     const sOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
-    const normBytes = buildMinimalTexSized(2, 2);
-    const maskBytes = buildMinimalTexSized(4, 4);
+    const truncatedHeader = buildCanonicalTexHeader(A8R8G8B8, 2, 2, 1);
+    const normBytes = new Uint8Array(80 + 4);
+    normBytes.set(truncatedHeader, 0);
+    const maskBytes = buildMinimalTexSized(2, 2);
     const o = opt({ [nOld]: normBytes, [sOld]: maskBytes });
 
     expect(() =>

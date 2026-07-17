@@ -9,6 +9,7 @@ import {
   createIndexTexture,
   upgradeGearMask,
 } from "../../src/tex/helpers";
+import { resizeBicubic } from "../../src/tex/imagesharp/resample";
 import {
   decodeToRgba,
   encodeUncompressedTex,
@@ -104,11 +105,56 @@ describe("updateEndwalkerHairTextures", () => {
       Array.from(expM),
     );
   });
-  it("throws TextureResizeUnsupported when normal and mask differ in size", () => {
-    const n = a8r8g8b8Tex(4, 4, new Uint8Array(4 * 4 * 4));
-    const m = a8r8g8b8Tex(2, 2, new Uint8Array(2 * 2 * 4));
-    expect(() => updateEndwalkerHairTextures(n, m)).toThrow(
-      TextureResizeUnsupported,
+  it("resizes the smaller mask up to the normal's size via Bicubic before createHairMaps (EndwalkerUpgrade.cs:1205, ResizeImages)", () => {
+    const nW = 4,
+      nH = 4;
+    const mW = 2,
+      mH = 2;
+    const nRgba = new Uint8Array(nW * nH * 4).map((_, i) => (i * 7 + 3) & 0xff);
+    const mRgba = new Uint8Array(mW * mH * 4).map(
+      (_, i) => (i * 13 + 5) & 0xff,
+    );
+    const res = updateEndwalkerHairTextures(
+      a8r8g8b8Tex(nW, nH, nRgba),
+      a8r8g8b8Tex(mW, mH, mRgba),
+    );
+    const expN = nRgba.slice();
+    const expM = resizeBicubic(mRgba, mW, mH, nW, nH);
+    createHairMaps(expN, expM, nW, nH);
+    const parsedN = parseTex(res.normal);
+    const parsedM = parseTex(res.mask);
+    expect(parsedN.width).toBe(nW);
+    expect(parsedN.height).toBe(nH);
+    expect(parsedM.width).toBe(nW);
+    expect(parsedM.height).toBe(nH);
+    expect(Array.from(decodeToRgba(parsedN))).toEqual(Array.from(expN));
+    expect(Array.from(decodeToRgba(parsedM))).toEqual(Array.from(expM));
+  });
+
+  it("resizes an NPOT normal to its nearest pow2 size before createHairMaps (EndwalkerUpgrade.cs:1195-1197, RoundToPowerOfTwo)", () => {
+    // 3 -> RoundToPowerOfTwo ties between floor=2 and ceil=4 (both distance 1) and resolves to
+    // the floor (IOUtil.cs:905-911: `max - x < x - min ? max : min`, false on a tie).
+    const nW = 3,
+      nH = 3;
+    const mW = 2,
+      mH = 2;
+    const nRgba = new Uint8Array(nW * nH * 4).map((_, i) => (i * 7 + 3) & 0xff);
+    const mRgba = new Uint8Array(mW * mH * 4).map(
+      (_, i) => (i * 13 + 5) & 0xff,
+    );
+    const res = updateEndwalkerHairTextures(
+      a8r8g8b8Tex(nW, nH, nRgba),
+      a8r8g8b8Tex(mW, mH, mRgba),
+    );
+    const expN = resizeBicubic(nRgba, nW, nH, 2, 2);
+    const expM = mRgba.slice();
+    createHairMaps(expN, expM, 2, 2);
+    const parsedN = parseTex(res.normal);
+    expect(parsedN.width).toBe(2);
+    expect(parsedN.height).toBe(2);
+    expect(Array.from(decodeToRgba(parsedN))).toEqual(Array.from(expN));
+    expect(Array.from(decodeToRgba(parseTex(res.mask)))).toEqual(
+      Array.from(expM),
     );
   });
 });

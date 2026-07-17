@@ -124,9 +124,10 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — a *different* gap from T2 (PMP-load-gated, not TTMP): shares `FixUpBrokenMipOffsets` but also
   truncates trailing null padding. Blast radius is bigger than a byte diff — dedup keys on loaded
   content, so it changes `common/N` **member names**. Must land before member-name parity is complete.
-- [T3 — ImageSharp Bicubic/NearestNeighbor resampler](backlog/2026-07-10-imagesharp-resampler.md) —
-  the shared dependency for the texture round's baselined resize skips (`Misty_Hairstyle_Female`) and
-  T2's NPOT resize. Byte-parity against ImageSharp's float math may need a `DIVERGENCE_RULES` entry.
+- [T3 — ImageSharp Bicubic resampler: T2's NPOT resize still unported](backlog/2026-07-10-imagesharp-resampler.md)
+  — the resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
+  `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
+  NPOT-normalize and T2's NPOT resize still throw `TextureResizeUnsupported` and remain open.
 - [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
   — we emit at the convention path instead of the canonical override. Fix is mechanical: re-run
   `scripts/extract-index-overrides.ts` against a game install.

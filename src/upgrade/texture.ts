@@ -15,18 +15,41 @@ import {
   createIndexTexture,
   upgradeGearMask,
 } from "../tex/helpers";
+import { resizeBicubic } from "../tex/imagesharp/resample";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
 import { resolveFile } from "./upgrade";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
-/** Thrown when a source texture would require an ImageSharp resize (NPOT normalize or
- *  hair normal/mask size mismatch) that this round does not yet port. Caught+skipped at
- *  the dispatch boundary so one un-generatable target degrades to a ratchet-baselined
- *  diff rather than crashing the whole pack. See spec §4.4/§5. */
+/** Thrown when a source texture would require an ImageSharp resize that this path does not yet
+ *  port: NPOT normalize for `createIndexFromNormal` / `upgradeMaskTex` (the hair path below now
+ *  ports its own NPOT + common-size resizes via `resizeBicubic`). Caught+skipped at the dispatch
+ *  boundary so one un-generatable target degrades to a ratchet-baselined diff rather than crashing
+ *  the whole pack. See spec §4.4/§5. */
 export class TextureResizeUnsupported extends Error {}
 
 function isPowerOfTwo(n: number): boolean {
   return n > 0 && (n & (n - 1)) === 0;
+}
+
+// IOUtil.cs:905-930 (RoundToPowerOfTwo / CeilPower2 / FloorPower2). NOT a "round up to next
+// power of two": RoundToPowerOfTwo picks whichever of floor/ceil power-of-two is numerically
+// closer to x, ties going to the floor (`max - x < x - min ? max : min` is false on a tie).
+// Natural-log division (`Math.log(x) / Math.log(2)`), not the `Math.log2` intrinsic, mirrors
+// C#'s `Math.Log(a, newBase)` implementation (`Log(a) / Log(newBase)`) — the two can disagree
+// by an ULP right at an exact power of two, which matters here since CeilPower2 evaluates
+// `Math.Log(x - 1, 2)` and `x - 1` is often itself an exact power of two.
+function floorPow2(x: number): number {
+  if (x < 1) return 1;
+  return 2 ** Math.trunc(Math.log(x) / Math.log(2));
+}
+function ceilPow2(x: number): number {
+  if (x < 2) return 1;
+  return 2 ** Math.trunc(Math.log(x - 1) / Math.log(2) + 1);
+}
+function roundToPowerOfTwo(x: number): number {
+  const min = floorPow2(x);
+  const max = ceilPow2(x);
+  return max - x < x - min ? max : min;
 }
 
 /** Port of CreateIndexFromNormal (EndwalkerUpgrade.cs:1083). Decodes the normal, builds
@@ -64,38 +87,53 @@ export function upgradeMaskTex(
   return encodeUncompressedTex(rgba, tex.width, tex.height, { mips: true });
 }
 
-/** Port of UpdateEndwalkerHairTextures (EndwalkerUpgrade.cs:1175). Decodes normal + mask,
- *  applies CreateHairMaps, re-encodes both A8R8G8B8 with mips. C# resizes each to pow2
- *  (:1195) then to their common max size (ResizeImages, :1205, Bicubic); we do not port
- *  that resampler, so any NPOT input or size mismatch throws the resize sentinel. When
- *  sizes already match and are pow2 (the common case), ResizeImages is a no-op (early
- *  return, TextureHelpers.cs:368) and the result is byte-exact. */
+/** Port of UpdateEndwalkerHairTextures (EndwalkerUpgrade.cs:1175). Decodes normal + mask, resizes
+ *  each NPOT input to its nearest pow2 size (:1195-1202, `Tex.ResizeXivTx` -> `TextureHelpers.
+ *  ResizeImage` with `nearestNeighbor=false`, i.e. Bicubic), then resizes both to their common max
+ *  size (`ResizeImages`, :1205, also Bicubic — `TextureHelpers.cs:331-355`), applies CreateHairMaps,
+ *  and re-encodes both A8R8G8B8 with mips. `resizeBicubic` (src/tex/imagesharp/resample.ts) is a
+ *  no-op when target dims already equal source dims, mirroring `ResizeImage`'s early return
+ *  (`TextureHelpers.cs:368`) — so the common case (both inputs already pow2 and equal-sized) stays
+ *  byte-exact. */
 export function updateEndwalkerHairTextures(
   normalTexBytes: Uint8Array,
   maskTexBytes: Uint8Array,
 ): { normal: Uint8Array; mask: Uint8Array } {
   const nTex = parseTex(normalTexBytes);
   const mTex = parseTex(maskTexBytes);
-  for (const t of [nTex, mTex]) {
-    if (!isPowerOfTwo(t.width) || !isPowerOfTwo(t.height)) {
-      throw new TextureResizeUnsupported(
-        `hair: NPOT texture ${t.width}x${t.height} needs a resize (EndwalkerUpgrade.cs:1195)`,
-      );
-    }
+
+  let nRgba = decodeToRgba(nTex);
+  let nW = nTex.width;
+  let nH = nTex.height;
+  if (!isPowerOfTwo(nW) || !isPowerOfTwo(nH)) {
+    const tW = roundToPowerOfTwo(nW);
+    const tH = roundToPowerOfTwo(nH);
+    nRgba = resizeBicubic(nRgba, nW, nH, tW, tH);
+    nW = tW;
+    nH = tH;
   }
-  if (nTex.width !== mTex.width || nTex.height !== mTex.height) {
-    throw new TextureResizeUnsupported(
-      `hair: normal ${nTex.width}x${nTex.height} != mask ${mTex.width}x${mTex.height} needs a resize (EndwalkerUpgrade.cs:1205)`,
-    );
+
+  let mRgba = decodeToRgba(mTex);
+  let mW = mTex.width;
+  let mH = mTex.height;
+  if (!isPowerOfTwo(mW) || !isPowerOfTwo(mH)) {
+    const tW = roundToPowerOfTwo(mW);
+    const tH = roundToPowerOfTwo(mH);
+    mRgba = resizeBicubic(mRgba, mW, mH, tW, tH);
+    mW = tW;
+    mH = tH;
   }
-  const nRgba = decodeToRgba(nTex);
-  const mRgba = decodeToRgba(mTex);
-  createHairMaps(nRgba, mRgba, nTex.width, nTex.height);
+
+  // ResizeImages (TextureHelpers.cs:331-342): resize both to the max of the two (now pow2) sizes.
+  const maxW = Math.max(nW, mW);
+  const maxH = Math.max(nH, mH);
+  nRgba = resizeBicubic(nRgba, nW, nH, maxW, maxH);
+  mRgba = resizeBicubic(mRgba, mW, mH, maxW, maxH);
+
+  createHairMaps(nRgba, mRgba, maxW, maxH);
   return {
-    normal: encodeUncompressedTex(nRgba, nTex.width, nTex.height, {
-      mips: true,
-    }),
-    mask: encodeUncompressedTex(mRgba, mTex.width, mTex.height, { mips: true }),
+    normal: encodeUncompressedTex(nRgba, maxW, maxH, { mips: true }),
+    mask: encodeUncompressedTex(mRgba, maxW, maxH, { mips: true }),
   };
 }
 
@@ -118,7 +156,13 @@ function findFile(
  *  single-storage-form invariant (all files in a pack share one form, so any source is a
  *  valid reference), and the choice is parity-neutral: the golden harness compares
  *  DECOMPRESSED content, so the container form cannot affect the diff, and encode/decode
- *  round-trips (tested). */
+ *  round-trips (tested).
+ *
+ *  KNOWN GAP: the returned `ModpackFile` carries no `ttmp` (Name/Category/DatFile) metadata, so a
+ *  TTMP source's regenerated entry loses that metadata outright rather than TexTools' behaviour of
+ *  re-deriving it from the game path — see docs/backlog/2026-07-13-resave-ttmp2-name-category.md
+ *  (now confirmed to reach a bare `/upgrade`, e.g. `Misty_Hairstyle_Female.ttmp2`'s regenerated hair
+ *  textures, not just `/resave`). */
 export function writeGeneratedTex(
   option: ModpackOption,
   gamePath: string,
