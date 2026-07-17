@@ -122,33 +122,61 @@ round 1 (`:97-116`), so a pre-round failure aborts the whole upgrade (ConsoleToo
 
 The `/upgrade` harness models only `pack | noop`; a pack ConsoleTools errors on hard-fails uncached
 every run. The 18 throwing hair mods make this real on the `/upgrade` side for the first time, so we
-finish the deferred half of `docs/backlog/2026-07-11-expected-failure-golden.md`, reusing the
-caching machinery of the **already-shipped `/resave` implementation** (`test/helpers/resave-golden.ts`)
-but with **different pass/fail semantics** (see below):
+finish the deferred half of `docs/backlog/2026-07-11-expected-failure-golden.md`.
 
-- `test/helpers/upgrade-golden.ts`: add `{ kind: "error"; message }` to `GoldenResult`; catch a
-  `produce()` throw; cache a content-addressed `<sha>.error` marker (analogous to `<sha>.noop`) so
-  ConsoleTools is spawned at most once.
-- `test/helpers/corpus-upgrade.ts`: on `{ kind: "error" }`, run our `upgradeModpack` on the source
-  and compare the *outcome*:
-  - **our upgrade also throws → PASS.** A matched failure is a verified match: we refuse exactly the
-    packs TexTools refuses. This is the point of adding a real throwing mod.
-  - **our upgrade succeeds → FAIL (loud).** We diverge from the oracle — produced output where
-    TexTools errored. `console.error` the pack + the oracle's error text so the divergence is legible.
+**Design correction (found during implementation — the crux).** The first cut mirrored the shipped
+`/resave` error handling, which reads ConsoleTools' error text from **stdout/stderr**. That does not
+work for `/upgrade`: `ConsoleTools.HandleUpgrade` reports a failure via **`Trace.WriteLine(ex)`, not
+`Console.WriteLine`** (`Program.cs:185`; `/resave` uses `Console.WriteLine`, `:217`). So a genuine
+`/upgrade` error produces exit −1 with **empty stdout/stderr** — invisible to a stdout-based
+classifier, which would (safely but uselessly) propagate every real error as a lock-race and never
+record it. We therefore capture the **Trace channel** instead. This was proven by attaching to the
+Trace output and observing ConsoleTools throw the **identical** `System.IO.InvalidDataException`
+("Highlight/Visibility options are unresolveable…") from `ModpackUpgrader.ResolveHighlightOptionsAndMashupHair`
+— a real semantic match with our port, not a coincidence.
 
-  This deliberately **departs from the `/resave` precedent**, which treats an oracle error as a loud
-  *skip*. That was right there because `/resave`'s only oracle error is *environmental* (a TexTools
-  CMP-layout crash in the game-data read, unrelated to our port — backlog `2026-07-11` §Update). On
-  the `/upgrade` side an error is attributable to **transform logic our port is expected to
-  reproduce**, so a mismatch is a real divergence to fail on, and matched-failure-is-pass makes the
-  added mod a live red/green regression guard rather than a permanently-yellow skip. (If a future
-  `/upgrade` pack ever errors for an *unreproducible* environmental reason, that surfaces as a loud
-  FAIL prompting either a port or an explicit allow — fail-loud, never silent.)
-- Unit test via the `opts.produce` injection seam (no real ConsoleTools spawn), matching
-  `test/helpers/resave-golden.test.ts`, plus a corpus-upgrade-level test of the match→pass /
-  mismatch→fail branching with an injected error golden and a stub upgrade.
+**One-time manual setup (documented, checked, fail-loud).** ConsoleTools' `.NET Framework 4.8`
+`ConsoleTools.exe.config` has no trace listener (Trace → `DefaultTraceListener` → `OutputDebugString`
+only, no file). There is no external/env way to redirect a .NET Framework app's config, so the
+maintainer adds a `TextWriterTraceListener` to `ConsoleTools.exe.config` (elevated, one-time) that
+writes Trace to `%USERPROFILE%\.ffxiv-consoletools-trace.log`. The harness **validates** this config
+before spawning `/upgrade` (`assertUpgradeTraceListenerConfigured`, `test/helpers/oracle.ts`) and
+throws an actionable setup error if it is missing — a loud, documented dependency, never a silent one.
 
-Then the backlog item `2026-07-11` is deleted (both halves done) and its index entry removed.
+**Capture + classification** (`test/helpers/oracle.ts`, `upgrade-golden.ts`):
+- Run ConsoleTools at its **install dir** (`cwd`). Empirically, `/upgrade` output is **byte-identical**
+  regardless of CWD (verified on material packs; the transform never reads the CWD-relative shader DB,
+  `EndwalkerUpgrade.cs` uses only the material's own `ShaderConstants` — and our DB-less port already
+  matches byte-exact), so this changes no golden; it just resolves ConsoleTools' resources cleanly and
+  keeps the trace free of `LoadShaderInfo` SQLite noise.
+- `upgradeWithTraceCapture(src, dest)`: truncate the trace log, run, read it back — all **inside the
+  ConsoleTools lock** so the trace read is this run's. A genuine failure's trace carries the
+  `ConsoleTools.ConsoleTools.<HandleUpgrade>` frame (`isGenuineUpgradeError`); the non-fatal async
+  `LoadShaderInfo` SQLite noise does not. On a genuine failure it throws `OracleUpgradeError(trace)`;
+  any other non-zero exit (lock-race / harness bug) propagates raw.
+- `upgrade-golden.ts`: `GoldenResult` gains `{ kind: "error"; message }`; the catch caches an
+  `OracleUpgradeError` as a content-addressed `<sha>.error` marker and returns `{kind:"error"}`. This
+  **replaces** the stdout-based classifier (its three helpers, copied from `resave-golden.ts`, are
+  removed — `/resave` keeps its own).
+- `test/helpers/corpus-upgrade.ts`: on `{ kind: "error" }`, run our `upgradeModpack` and compare the
+  *outcome* (`assertMatchedUpgradeFailure`):
+  - **our upgrade also throws → PASS** — a verified match: we refuse exactly the packs TexTools refuses.
+  - **our upgrade succeeds → FAIL (loud)** — a divergence (output where TexTools errored).
+
+  This deliberately **departs from the `/resave` precedent** (loud *skip*), which was right there
+  because `/resave`'s only oracle error is *environmental* (a TexTools CMP-layout crash unrelated to
+  our port). A `/upgrade` error is transform logic our port is expected to reproduce, so a mismatch is
+  a real divergence to fail on, and matched-failure-is-pass makes the added mod a live regression guard.
+
+**Tests:** `isGenuineUpgradeError` / `traceListenerConfigured` (pure, with a real captured-trace
+fixture) and the `OracleUpgradeError → {kind:"error"}` vs propagate classification, all via the
+`opts.produce` injection seam (no real spawn); plus the `assertMatchedUpgradeFailure` match→pass /
+mismatch→fail unit test.
+
+The backlog item `2026-07-11` is marked **done** (both halves) but **kept** (not deleted): it has
+become the cited design-rationale doc for the whole expected-failure design (referenced by
+`resave-golden.ts`, `corpus-resave.ts`, `corpus-upgrade.ts`, the eye-mask spec, and a synthetic
+builder), so deleting it would dangle all of those.
 
 ---
 
@@ -167,17 +195,27 @@ Ordered strongest-first per AGENTS.md; §1.1 dictates the mix (no real staple da
    `.mtrl` is **already-Dawntrail** (`hair.shpk` with a normal+mask sampler but no pre-DT shader
    constants, so `doesMtrlNeedDawntrailUpdate` is false and no later round touches the stapled
    files), split across two options so each holds exactly one texture of the pair. The pre-round
-   staples cleanly; ConsoleTools `/upgrade` produces a golden that is the input plus the stapled
-   pointers — **byte-exact** target, the only AB-test of the happy path. Uses the shared
-   `pmp-builder.ts` (pinned zip mtime → byte-reproducible → stable cached golden).
-3. **Real corpus add** — `[Inako] Lilith Wish.pmp` (9.8 MB, smallest of the 18) into
-   `test/corpus/real/`. Via Part B: ConsoleTools errors (`InvalidDataException`), our port throws the
-   same, the harness caches the `<sha>.error` marker and the check **passes** (matched failure).
-   **Implementation must first verify ConsoleTools actually errors on it** as the replication
-   predicts; a mismatch is itself a finding (the replication is wrong) and reshapes the port.
+   staples cleanly; the stapled **content is byte-exact** vs the ConsoleTools `/upgrade` golden — the
+   only AB-test of the happy path. The residual diff is purely the **known container-manifest orphan
+   gap** (§8.3): ConsoleTools retains the now-unreferenced original source zip members, our writer
+   drops them (same class already baselined on real packs and `synthetic-f1`). So the pack is
+   baselined with exactly those orphan-member entries — not a re-bless of the whole corpus, and its
+   staple correctness is proven by the baseline being **content-free of any payload/manifest diff**.
+   Uses the shared `pmp-builder.ts` (pinned zip mtime → byte-reproducible → stable cached golden).
+3. **Real corpus add** — `[Inako] Lilith Wish.pmp` (9.8 MB, smallest of the 18) into a new
+   `test/corpus/upgrade-error/` root (gitignored) that is **scoped to the `upgrade` check only**
+   (`corpus-roots.ts` `isUpgradeErrorPack` → `corpus-units.ts`). Via Part B: ConsoleTools errors
+   (`InvalidDataException`, captured off the Trace channel), our port throws the same, the check
+   **passes** (matched failure). The pack is scoped out of `/resave`/`assets`/`golden` because it was
+   added only to exercise the `/upgrade` throw; it *also* trips an **unrelated pre-existing** `/resave`
+   tex divergence (a constant +80 bytes on ~30 eye/face `.tex`, distinct from the ±1 BC-decode
+   tolerance — this branch never touches tex writing, and the rest of the corpus passes `/resave`),
+   which is **backlogged** (`docs/backlog/2026-07-17-lilith-wish-resave-tex-divergence.md`), not
+   baselined. *(Verified against the real oracle: ConsoleTools genuinely throws the highlight
+   `InvalidDataException` from `ResolveHighlightOptionsAndMashupHair` — the replication was correct.)*
 4. **Corpus no-regression** — the 3 existing corpus hair packs (`Misty_Hairstyle_Female`,
    `[DVNO] Desert Years`, `[Jaque] Marcellus`) stay no-op through the pre-round; full `npm test`
-   green; re-bless baselines (expected: no new diffs).
+   green, no new diffs on any existing pack.
 
 ---
 
@@ -187,17 +225,32 @@ Ordered strongest-first per AGENTS.md; §1.1 dictates the mix (no real staple da
 - **The other 17 throwing mods** — not added; one real expected-failure mod is enough to prove the
   path. They stay available locally if broader coverage is ever wanted.
 - **`includePartials = false`** — not modelled; our pipeline always runs partials, unchanged here.
+- **Lilith Wish `/resave` +80-byte tex divergence** — backlogged
+  (`docs/backlog/2026-07-17-lilith-wish-resave-tex-divergence.md`); pre-existing, unrelated to the
+  pre-round.
+- **Container-manifest orphan-member gap** — the synthetic's residual diff (and a corpus-wide known
+  gap, §8.3); backlogged (`docs/backlog/2026-07-17-pmp-writer-orphan-member-retention.md`).
 
 ---
 
 ## 6. File-change summary
 
 **New:** `src/mtrl/dx11-path.ts`, `src/upgrade/resolve-highlight.ts`,
-`scripts/generate-synthetics/build-synthetic-highlight.ts`, `test/upgrade/resolve-highlight.test.ts`.
+`scripts/generate-synthetics/build-synthetic-highlight.ts`, `test/upgrade/resolve-highlight.test.ts`,
+`test/mtrl/dx11-path.test.ts`, `test/helpers/upgrade-golden.test.ts`,
+`test/helpers/corpus-upgrade.test.ts`, `test/helpers/corpus-roots.test.ts`.
 **Edited:** `src/upgrade/material.ts` (import extracted `dx11Path`), `src/upgrade/upgrade.ts`
 (wire the pre-round), `test/helpers/upgrade-golden.ts` + `test/helpers/corpus-upgrade.ts` +
-`test/helpers/upgrade-golden.test.ts` (Part B), `scripts/generate-synthetics/build-all.ts` (register
-the new synthetic), `docs/backlog/2026-07-15-…-preround.md` (narrow to `RepathHairMashups`),
-`docs/BACKLOG.md` (re-word #1; drop the `2026-07-11` entry). **Deleted:**
-`docs/backlog/2026-07-11-expected-failure-golden.md`. **Corpus (gitignored):** add
-`test/corpus/real/[Inako] Lilith Wish.pmp`.
+`test/helpers/corpus-geometry.ts` (Part B error kind + consumers),
+`test/helpers/oracle.ts` (`/upgrade` Trace-channel capture + install-dir CWD + config check),
+`test/helpers/corpus-roots.ts` + `test/helpers/corpus-units.ts` + `test/corpus-units.test.ts`
+(upgrade-error root scoping), `scripts/generate-synthetics/build-all.ts` (register the new synthetic),
+`docs/backlog/2026-07-15-…-preround.md` (narrow to `RepathHairMashups`),
+`docs/backlog/2026-07-11-expected-failure-golden.md` (mark done, kept as the cited design reference),
+`docs/BACKLOG.md`. **New backlog:** `docs/backlog/2026-07-17-lilith-wish-resave-tex-divergence.md`,
+`docs/backlog/2026-07-17-pmp-writer-orphan-member-retention.md`. **Corpus (gitignored):**
+`test/corpus/upgrade-error/[Inako] Lilith Wish.pmp`, plus the synthetic `highlight.pmp` builder output.
+
+**Manual, machine-local setup (not in the repo):** the `TextWriterTraceListener` added to
+`ConsoleTools.exe.config` (see Part B) — required on any machine that regenerates `/upgrade` goldens
+for a pack ConsoleTools errors on; the harness fails loud with the exact fix if it is absent.

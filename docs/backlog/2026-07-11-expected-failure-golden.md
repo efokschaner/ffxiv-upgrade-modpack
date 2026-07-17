@@ -1,7 +1,21 @@
 # Expected-failure golden capability for the `/upgrade` harness
 
-Filed: 2026-07-11 · Status: **partially done** — the `/resave` half landed 2026-07-13; the
-`/upgrade` half is still open
+Filed: 2026-07-11 · Status: **done** — the `/resave` half landed 2026-07-13, the `/upgrade` half
+2026-07-17. Kept (not deleted) as the durable design-rationale reference several shipped modules and
+specs cite (the Milktruck `/resave` CMP case; why `/upgrade` never sees write-side oracle errors).
+
+**Update (2026-07-17) — the `/upgrade` half is DONE, with a correction.** Modelling only `pack|noop`
+was extended with `{kind:"error"}` + a `<sha>.error` marker, mirroring the `/resave` half — but the
+`/resave` classifier reads the oracle error from **stdout/stderr**, and that does NOT work for
+`/upgrade`: `ConsoleTools.HandleUpgrade` reports failures via `Trace.WriteLine(ex)`, not `Console`
+(`Program.cs:185` vs `/resave`'s `:217`), so a genuine `/upgrade` error has empty stdout/stderr. The
+shipped fix captures the **Trace channel** instead: ConsoleTools is configured (one-time, manual) to
+write Trace to a home-dir log via a `TextWriterTraceListener`; the harness validates that config
+(fail-loud), runs ConsoleTools at its install dir, and classifies a genuine `HandleUpgrade` exception
+into `{kind:"error"}` (`test/helpers/oracle.ts` `upgradeWithTraceCapture`/`OracleUpgradeError`,
+`upgrade-golden.ts`). Pass/fail differs from `/resave`'s loud-skip: a matched failure (oracle errors
+AND our port throws) is a PASS, a mismatch a loud FAIL. See
+`docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md` Part B.
 
 The `/upgrade` golden harness models only two ConsoleTools outcomes: a produced **pack** or a
 **noop** marker (`GoldenResult = { kind: "pack" } | { kind: "noop" }`,
