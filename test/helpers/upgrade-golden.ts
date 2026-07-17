@@ -28,7 +28,8 @@ export const DEFAULT_UPGRADE_CACHE = join(
 
 export type GoldenResult =
   | { kind: "pack"; data: ModpackData; bytes: Uint8Array }
-  | { kind: "noop" };
+  | { kind: "noop" }
+  | { kind: "error"; message: string };
 
 /** Golden container extension implied by the source name. Format is preserved: pmp->pmp; every
  * TTMP-family input (.ttmp2 AND legacy .ttmp) folds to ttmp2 because ConsoleTools /upgrade always
@@ -41,6 +42,67 @@ function goldenExt(name: string): "pmp" | "ttmp2" {
 /** Marker file recording that /upgrade produced no output (a no-op upgrade). */
 function noopMarker(key: string, dir: string): string {
   return join(dir, `${key}.noop`);
+}
+
+/** Marker recording that ConsoleTools /upgrade ERRORED on this input (content-addressed, like the
+ * `.noop` marker). Stores the error text for later loud reporting. Mirrors resave-golden.ts. */
+function errorMarker(key: string, dir: string): string {
+  return join(dir, `${key}.error`);
+}
+
+function describeProduceError(err: unknown): string {
+  if (err && typeof err === "object") {
+    const e = err as {
+      message?: unknown;
+      stdout?: Uint8Array | string;
+      stderr?: Uint8Array | string;
+    };
+    const parts: string[] = [];
+    if (typeof e.message === "string") parts.push(e.message);
+    if (e.stdout && e.stdout.length > 0) parts.push(String(e.stdout));
+    if (e.stderr && e.stderr.length > 0) parts.push(String(e.stderr));
+    if (parts.length > 0) return parts.join("\n");
+  }
+  return String(err);
+}
+
+/** The captured child-process OUTPUT only (stdout+stderr) — deliberately excluding `.message`,
+ * which execFileSync always populates with a generic "Command failed: ..." even when the process
+ * printed nothing at all. Used to distinguish a genuine ConsoleTools failure (which always prints
+ * something describing what went wrong, e.g. the Milktruck "CMP Format Changed" stack trace) from
+ * a bare non-zero exit with no diagnostic output — see `resaveGoldenCached`'s catch block. */
+function processOutputText(err: unknown): string {
+  if (!err || typeof err !== "object") return "";
+  const e = err as {
+    stdout?: Uint8Array | string;
+    stderr?: Uint8Array | string;
+  };
+  const parts: string[] = [];
+  if (e.stdout && e.stdout.length > 0) parts.push(String(e.stdout));
+  if (e.stderr && e.stderr.length > 0) parts.push(String(e.stderr));
+  return parts.join("\n");
+}
+
+/**
+ * True only for a throw shaped like `execFileSync`'s non-zero-exit / signal-kill error (see
+ * oracle.ts's `run()`): Node sets BOTH `status` (the exit code, or `null` if killed by signal)
+ * and `signal` (the signal name, or `null` if exited normally) on that error object. A throw
+ * that reaches here without either field did NOT come from the ConsoleTools child process — it
+ * is a bug in our own harness code (a path typo, a permissions error, a missing temp dir) and
+ * must never be classified as "the oracle errors on this pack" (see Finding 1: caching an
+ * arbitrary throw here masqueraded a harness bug as a permanent TexTools limitation, forever,
+ * with no retry).
+ */
+function isConsoleToolsProcessError(
+  err: unknown,
+): err is { status: number | null; signal: string | null } {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { status?: unknown; signal?: unknown };
+  const statusShapeOk = typeof e.status === "number" || e.status === null;
+  const signalShapeOk = typeof e.signal === "string" || e.signal === null;
+  if (!statusShapeOk || !signalShapeOk) return false;
+  // Both fields present-but-null would mean neither actually carries process-exit info.
+  return typeof e.status === "number" || typeof e.signal === "string";
 }
 
 let UPGRADE_TMP: string | null = null;
@@ -88,6 +150,10 @@ export function upgradeGoldenCached(
   const dir = opts.dir ?? DEFAULT_UPGRADE_CACHE;
   const key = oracleKey(bytes);
 
+  const errPath = errorMarker(key, dir);
+  if (existsSync(errPath)) {
+    return { kind: "error", message: readFileSync(errPath, "utf8") };
+  }
   if (existsSync(noopMarker(key, dir))) return { kind: "noop" };
   const hit = oracleCacheGet(key, dir);
   if (hit !== null) {
@@ -102,7 +168,22 @@ export function upgradeGoldenCached(
   if (!available) return null;
 
   const produce = opts.produce ?? upgradeViaConsoleTools;
-  const out = produce(name, bytes);
+  let out: Uint8Array | null;
+  try {
+    out = produce(name, bytes);
+  } catch (err) {
+    // Only a genuine ConsoleTools PROCESS failure (execFileSync's non-zero-exit / signal-kill
+    // error) may be cached as "the oracle errors on this pack" — see isConsoleToolsProcessError.
+    // Anything else is a bug in THIS harness and must propagate. An empty-output process error is
+    // oracle.ts's residual lock-race signature; propagate and let a re-run clear it. (Mirrors
+    // resave-golden.ts.)
+    if (!isConsoleToolsProcessError(err)) throw err;
+    if (processOutputText(err).trim().length === 0) throw err;
+    const message = describeProduceError(err);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(errPath, message);
+    return { kind: "error", message };
+  }
   if (out === null) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(noopMarker(key, dir), new Uint8Array(0));

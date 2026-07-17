@@ -29,7 +29,6 @@ export function registerUpgradeCheck(pack: string): void {
       // source ExtraFiles key set). Safe because upgradeModpack cloneModpack()s and never mutates
       // its argument (src/upgrade/upgrade.ts). Re-loading cost ~3s per big PMP, three times over.
       const source = loadModpack(name, bytes);
-      const oursModel = upgradeModpack(source);
       const golden = upgradeGoldenCached(name, bytes);
       if (golden === null) {
         throw new Error(
@@ -37,6 +36,31 @@ export function registerUpgradeCheck(pack: string): void {
             `Run with ConsoleTools installed to populate test/corpus/.upgrade-cache.`,
         );
       }
+      // The oracle itself errored on this pack (e.g. ModpackUpgrader's Highlight/Visibility
+      // "unresolveable" throw). A MATCHED failure is a PASS: our port must refuse exactly the packs
+      // TexTools refuses. Our upgrade SUCCEEDING here is a divergence -> loud fail. (Deliberately
+      // unlike corpus-resave.ts's loud-skip: a /resave oracle error is environmental — a TexTools
+      // CMP-read crash unrelated to our port — whereas a /upgrade oracle error is transform logic
+      // our port is expected to reproduce. See spec §3 + docs/backlog/2026-07-11-....)
+      if (golden.kind === "error") {
+        let ourError: unknown;
+        try {
+          upgradeModpack(source);
+        } catch (e) {
+          ourError = e;
+        }
+        if (ourError === undefined) {
+          expect.fail(
+            `${name}: ConsoleTools /upgrade errored but our upgrade SUCCEEDED — divergence.\n` +
+              `Oracle error was:\n${golden.message}`,
+          );
+        }
+        console.log(
+          `[upgrade] ${name}: matched expected failure (oracle + our port both error).`,
+        );
+        return;
+      }
+      const oursModel = upgradeModpack(source);
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
       const reference = golden.kind === "noop" ? source : golden.data;
