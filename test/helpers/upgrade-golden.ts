@@ -135,8 +135,10 @@ function upgradeViaConsoleTools(
 
 /**
  * Cached /upgrade golden for `bytes`, spawning ConsoleTools at most once per distinct input.
- * Returns { kind: "pack" } (golden parsed) or { kind: "noop" } (upgrade changed nothing), or
- * null only when uncached AND no oracle is available (caller fails per policy).
+ * Returns { kind: "pack" } (golden parsed), { kind: "noop" } (upgrade changed nothing), or
+ * { kind: "error" } (the oracle itself errored on this input — cached as a `.error` marker,
+ * mirroring resave-golden.ts's ResaveGoldenResult), or null only when uncached AND no oracle is
+ * available (caller fails per policy).
  */
 export function upgradeGoldenCached(
   name: string,
