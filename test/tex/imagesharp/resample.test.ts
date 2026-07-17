@@ -58,4 +58,46 @@ describe("resizeBicubic", () => {
     const out = resizeBicubic(src, 3, 3, 3, 3);
     expect([...out]).toEqual([...src]);
   });
+
+  it("guards the float inter-pass intermediate on a non-uniform resize (regression)", () => {
+    // A solid-color fixture rounds identically whether the byte conversion happens once
+    // (correct, per ResizeWorker.cs · CalculateFirstPassValues / FillDestinationPixels — the
+    // horizontal pass writes a float Vector4 intermediate, the vertical pass reads it as float
+    // and only the *final* write converts to bytes) or twice (once per pass — a regression this
+    // test exists to catch). It cannot distinguish the two, so it can't guard against
+    // reintroducing per-pass rounding. This fixture uses a non-uniform 4x4 source (every pixel a
+    // distinct RGBA value) upscaled to 6x6, so the horizontal pass produces fractional
+    // intermediates that differ depending on whether they get rounded to a byte before the
+    // vertical pass consumes them.
+    //
+    // Expected output was captured from the current, corpus-validated resizeBicubic (verified
+    // against real ImageSharp goldens: eye 2->1 px delta, Eliza 11->1 px delta, after commit
+    // cdf91db "keep resize intermediate in float between passes"). This is a
+    // characterization/regression guard, not an independently-derived expected value — it would
+    // fail if per-pass byte rounding were reintroduced into resizeAxisX (confirmed by
+    // temporarily reintroducing such rounding locally and observing this test fail; see
+    // task-2-report.md).
+    const srcW = 4;
+    const srcH = 4;
+    const src = new Uint8Array(srcW * srcH * 4);
+    for (let i = 0; i < srcW * srcH; i++) {
+      const r = (i * 17 + 3) % 256;
+      const g = (i * 29 + 11) % 256;
+      const b = (250 - i * 13 + 256) % 256;
+      const a = (i * 7 + 100) % 256;
+      src.set([r, g, b, a], i * 4);
+    }
+    const out = resizeBicubic(src, srcW, srcH, 6, 6);
+    // biome-ignore format: one row per output pixel would be noisy; keep the captured array compact.
+    expect([...out]).toEqual([
+      0, 1, 254, 98, 6, 15, 248, 101, 18, 37, 238, 106, 30, 57, 230, 111, 43, 78, 220, 116, 51, 92,
+      214, 120, 30, 56, 229, 111, 38, 78, 223, 114, 51, 109, 213, 120, 62, 127, 205, 124, 75, 149,
+      195, 130, 83, 163, 189, 133, 81, 150, 190, 132, 89, 145, 184, 136, 102, 147, 174, 141, 113,
+      168, 166, 146, 128, 191, 156, 151, 138, 204, 149, 154, 127, 252, 156, 151, 135, 137, 149, 154,
+      147, 18, 140, 160, 158, 49, 131, 164, 180, 74, 121, 169, 196, 87, 115, 173, 178, 183, 116, 172,
+      186, 124, 110, 175, 200, 66, 100, 181, 218, 92, 92, 185, 151, 115, 82, 191, 87, 129, 76, 194,
+      210, 91, 91, 185, 218, 114, 85, 189, 234, 145, 75, 194, 255, 164, 67, 199, 111, 186, 57, 204,
+      0, 200, 51, 207,
+    ]);
+  });
 });
