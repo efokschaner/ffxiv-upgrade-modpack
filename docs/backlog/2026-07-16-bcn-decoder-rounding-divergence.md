@@ -33,15 +33,32 @@ byte-parity against TexTools, so the drift is invisible until an edge input hits
 exempt if TexTools decodes BC7 via a DirectXTex-equivalent path rather than `DxtUtil`, which handles
 only DXT1/3/5 — confirm which decoder TexTools actually uses per format before assuming BC7 matches.)
 
+**Re-evaluate the original decoder-source choice.** The decision to port from `bc7enc_rdo` rather
+than TexTools' actual decoder is documented in the tex-codec spec
+(`docs/superpowers/specs/2026-07-03-tex-codec-design.md`): §3's *"Licensing note"* (`DxtUtil` is
+**Ms-PL**, GPL-incompatible per the FSF, so we do **not** transcribe it; `bc7enc_rdo` is MIT/Unlicense,
+GPL-compatible), and §7's justification that *"a spec-conformant decoder **matches** any other …, so
+byte-exact parity is achievable."* **That §7 assumption is what this finding falsifies:** BC1 decode
+is *not* uniquely determined by the S3TC standard — the interpolation and RGB565→888 rounding are
+implementation-defined, so `bc7enc_rdo` and `DxtUtil` are both conformant yet disagree by ±1. The
+license reasoning still stands (we cannot copy Ms-PL `DxtUtil` code into a GPL-3.0 project), but the
+parity conclusion built on top of it does not. A fix here should also correct that §7 claim.
+
 **What to investigate.**
 1. Trace `DDS.ConvertPixelData` (`DDS.cs`) to confirm exactly which decoder handles each block format
-   (FNA `DxtUtil` for DXT1/3/5? something else for BC4/5/7?) and capture its precise rounding.
+   (FNA `DxtUtil` for DXT1/3/5 + BC4; `JeremyAnsel.BcnSharp` → `bc7enc_rdo` native for BC5/BC7 per the
+   spec §3) and capture each one's precise rounding. **BC5/BC7 may already be byte-exact** — if
+   TexTools' BC5/BC7 path is the same `bc7enc_rdo` we ported, only the `DxtUtil`-decoded formats
+   (DXT1/3/5, BC4) would drift. Confirm; the eye DXT1 repro only proves the `DxtUtil` case.
 2. Scan the corpus for BC-compressed source textures reaching the round-2 decode path — does any real
-   pack actually exercise it? If none, this stays latent and the throw/parity gap is theoretical.
-3. Decide the fix: either **match FNA `DxtUtil`'s rounding** in our decoder (reproduce its exact
-   integer math so `decodeToRgba` == `GetRawPixels` byte-for-byte), or, if a corpus case makes it
-   reachable, add a scoped `DIVERGENCE_RULES` per-pixel tolerance for BC-sourced re-encodes and cite
-   this item. Prefer the former (byte-parity is the bar).
+   pack actually exercise it? If none, this stays latent and the parity gap is theoretical.
+3. Decide the fix: **match `DxtUtil`'s rounding** so `decodeToRgba` == `GetRawPixels` byte-for-byte.
+   Because `DxtUtil` is Ms-PL, do this as a **clean-room reimplementation** — reproduce the observable
+   rounding from the S3TC standard, tuned/validated against TexTools' *output* (e.g. the `.tga`
+   decode), **not** by transcribing `DxtUtil`'s source. The algorithm/rounding behaviour is not
+   copyrightable; only `DxtUtil`'s specific code is, and we never read it into the port. (Fallback, if
+   a corpus case makes it reachable before this lands: a scoped `DIVERGENCE_RULES` per-pixel tolerance
+   for BC-sourced re-encodes, citing this item — but byte-parity is the bar, so prefer the fix.)
 
 **Already mitigated where it would have bitten.** The eye-mask pixel pipeline sidesteps this by
 sourcing its bundled base textures from TexTools' own `.tga` decode (`GetRawPixels`-exact) rather than
