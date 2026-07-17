@@ -110,7 +110,7 @@ header comment (ImageSharp files cited as `SixLabors.ImageSharp v2.1.11 · <File
 | `src/tex/helpers.ts` (extend) | `TextureHelpers.cs` | `expandChannel`, `maskImage`, `swizzleRB` (trivial per-texel, byte-exact) |
 | `src/upgrade/eye-mask.ts` (extend) | `EndwalkerUpgrade.cs` | `convertEyeMaskToDiffuse` orchestration + the `UpdateEyeMask` tail; **remove the throw** |
 | `scripts/extract-eye-materials.ts` (extend) | `Tex.GetXivTex`/`GetRawPixels` | also emit the bundled base eye textures (§5) |
-| `src/upgrade/reference/eye-base-textures.ts` (new, generated) | base game | decoded raw RGBA of `eye01_base.tex`, `eye01_mask.tex` |
+| `src/upgrade/reference/eye-base-textures.ts` (new, generated) | base game | original `.tex` bytes of `eye01_base.tex`, `eye01_mask.tex` (128×128 DXT1, ~22 KiB), decoded at load |
 | `src/upgrade/texture.ts` (edit) | `EndwalkerUpgrade.cs` | replace the two `TextureResizeUnsupported` throws with `resizeBicubic` calls (§7 scope) |
 
 A new `src/tex/imagesharp/` subsystem is the honest home for the ImageSharp ports: a distinct
@@ -184,19 +184,23 @@ Provenance: `TextureHelpers.cs`. All byte-exact integer/copy ops, matching the e
 
 ### 5.6 Bundled base-game eye textures — `eye-base-textures.ts`
 `ConvertEyeMaskToDiffuse` reads `chara/common/texture/eye/eye01_base.tex` and `eye01_mask.tex` via
-`GetXivTex(...).GetRawPixels()` (`:1928-1932`). Extend `extract-eye-materials.ts` (runs on the game
-machine, both game + ConsoleTools present here) to emit their **decoded raw RGBA** into a generated
-`src/upgrade/reference/eye-base-textures.ts` (dims + pixels). Decode via our `decodeToRgba` at
-extraction time so the bundled pixels equal what the runtime pipeline consumes.
+`GetXivTex(...).GetRawPixels()` (`:1928-1932`). **Measured (2026-07-16, extracted from the live
+game):** both are **128×128 DXT1 (BC1), 8 mips, ~11 KiB each** — ~22 KiB total as `.tex`, or 64 KiB
+each (128 KiB total, 23 KiB deflated) decoded to RGBA. Storage is negligible at any of these sizes,
+so the choice is driven by simplicity/faithfulness, not size.
 
-- **Storage:** raw RGBA, **deflate-compressed with `fflate`** (already a dependency) if the size
-  warrants, inflated at load — report the actual dimensions/sizes when extracted and decide on that
-  measurement.
-- **Risk to confirm:** if `eye01_*.tex` are BC-compressed, this leans on `decodeToRgba`'s BC path
-  (`src/tex/decode.ts`/`bc7.ts`) matching `GetRawPixels` for these specific textures — a *systematic*
-  (not float-noise) source of divergence if wrong. The eye golden validates the whole chain
-  end-to-end; if the base-texture decode diverges it will show as a structured, non-tolerance-shaped
-  diff and must be fixed at the decoder, not absorbed into the tolerance.
+- **Storage decision:** bundle the **original `.tex` bytes** (~22 KiB total) in a generated
+  `src/upgrade/reference/eye-base-textures.ts`, and decode with our existing `decodeToRgba` at load.
+  Smallest source, the bundled asset is exactly the verifiable game bytes, and it reuses the tested
+  decode path — no `fflate`, no pre-decode. (Pre-decoding to raw RGBA was considered to avoid a
+  runtime BC decoder, but we already ship one via `src/tex/decode.ts`/`bc7.ts`, so it buys nothing.)
+  Extend `extract-eye-materials.ts` (runs on the game machine; both game + ConsoleTools are present
+  here) to emit these bytes.
+- **Risk to confirm:** these being DXT1 means the pipeline leans on `decodeToRgba`'s BC1 path matching
+  TexTools' `GetRawPixels` for these two textures — a *systematic* (not float-noise) source of
+  divergence if wrong. The eye golden validates the whole chain end-to-end; if the base-texture decode
+  diverges it will show as a structured, non-tolerance-shaped diff and must be fixed at the decoder,
+  not absorbed into the tolerance.
 
 ---
 
