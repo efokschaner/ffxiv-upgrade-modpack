@@ -12,7 +12,10 @@ import { dx11Path } from "../../src/mtrl/dx11-path";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import { ESamplerId } from "../../src/mtrl/shader";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "../../src/upgrade/reference/hair-materials";
-import { resolveHighlightOptionsAndMashupHair } from "../../src/upgrade/resolve-highlight";
+import {
+  findSamplerUnguarded,
+  resolveHighlightOptionsAndMashupHair,
+} from "../../src/upgrade/resolve-highlight";
 
 const HAIR_MTRL_BYTES = new Uint8Array(
   Buffer.from(SAMPLE_HAIR_MTRL_BASE64, "base64"),
@@ -99,6 +102,42 @@ function pack(options: ModpackOption[]): ModpackData {
     groups: [group],
   };
 }
+
+describe("findSamplerUnguarded", () => {
+  it("throws when a sampler-less texture is reached before the match (reproduces C#'s NRE)", () => {
+    const mtrl = {
+      textures: [
+        { texturePath: "a.tex", flags: 0 }, // no `sampler` -> NRE in C#
+        {
+          texturePath: "n.tex",
+          flags: 0,
+          sampler: {
+            samplerIdRaw: ESamplerId.g_SamplerNormal,
+            samplerSettingsRaw: 0,
+          },
+        },
+      ],
+    } as unknown as import("../../src/mtrl/types").XivMtrl;
+    expect(() =>
+      findSamplerUnguarded(mtrl, ESamplerId.g_SamplerNormal),
+    ).toThrow(/bound no sampler/);
+  });
+
+  it("returns the match when it precedes any sampler-less texture", () => {
+    const tex = {
+      texturePath: "n.tex",
+      flags: 0,
+      sampler: {
+        samplerIdRaw: ESamplerId.g_SamplerNormal,
+        samplerSettingsRaw: 0,
+      },
+    };
+    const mtrl = {
+      textures: [tex, { texturePath: "x.tex", flags: 0 }],
+    } as unknown as import("../../src/mtrl/types").XivMtrl;
+    expect(findSamplerUnguarded(mtrl, ESamplerId.g_SamplerNormal)).toBe(tex);
+  });
+});
 
 describe("resolveHighlightOptionsAndMashupHair", () => {
   it("no-ops when there are no hair materials", () => {

@@ -16,7 +16,7 @@ import { resolveFile } from "./upgrade";
  * which the caller's try/catch (:301-304) turns into "skip this .mtrl". Array.find stops at the
  * first match or first throw, matching FirstOrDefault's enumeration order (same pattern as
  * material.ts's findSpecDiffuse). */
-function findSamplerUnguarded(
+export function findSamplerUnguarded(
   mtrl: XivMtrl,
   samplerId: number,
 ): MtrlTexture | undefined {

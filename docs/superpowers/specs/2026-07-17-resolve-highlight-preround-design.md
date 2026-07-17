@@ -81,9 +81,12 @@ then if it has both or neither, `continue`; else append the option to `badOption
 - `badOptions` empty: if `containers` empty → `repathHairMashups(data)` (**deferred throw**, §2.3),
   else **return**.
 - Otherwise, for each `o` in `badOptions`, for each `pair` in `mData` (reading `o.files` **live**):
-  recompute `hasMask`/`hasNorm`; both/neither → `continue`; else `missingTex = hasMask ? normal :
-  mask`; look up `containers[missingTex]`; staple `o.files.set(missingTex, { …src })` from the sole
-  container. Throws are faithful to the C# `Dictionary` indexer + `Dictionary.Add` (§2.4).
+  process the pair **unconditionally** — there is **no** both/neither guard in stage 3 (that guard is
+  stage 2 only, `:340-341`); recompute `hasMask` and set `missingTex = hasMask ? normal : mask`; look
+  up `containers[missingTex]`; staple `o.files.set(missingTex, { …src })` from the sole container.
+  Every `(badOption, pair)` combination is probed, including pairs unrelated to why `o` is bad —
+  which is why real multi-pair mods throw. Throws are faithful to the C# `Dictionary` indexer +
+  `Dictionary.Add` (§2.4).
 
 ### 2.3 Deferred `RepathHairMashups`
 
@@ -139,9 +142,13 @@ Trace output and observing ConsoleTools throw the **identical** `System.IO.Inval
 `ConsoleTools.exe.config` has no trace listener (Trace → `DefaultTraceListener` → `OutputDebugString`
 only, no file). There is no external/env way to redirect a .NET Framework app's config, so the
 maintainer adds a `TextWriterTraceListener` to `ConsoleTools.exe.config` (elevated, one-time) that
-writes Trace to `%USERPROFILE%\.ffxiv-consoletools-trace.log`. The harness **validates** this config
-before spawning `/upgrade` (`assertUpgradeTraceListenerConfigured`, `test/helpers/oracle.ts`) and
-throws an actionable setup error if it is missing — a loud, documented dependency, never a silent one.
+writes Trace to `%USERPROFILE%\.ffxiv-consoletools-trace.log`. `upgradeWithTraceCapture` — the one
+function every uncached `/upgrade` spawn goes through, success or error alike — **validates** this
+config first (`assertUpgradeTraceListenerConfigured`, `test/helpers/oracle.ts`) and throws an
+actionable setup error if it is missing. So the listener is required to regenerate **any** `/upgrade`
+golden cold, not only an erroring pack's — it just happens to matter most there, since a genuine
+`/upgrade` error's only observable signal is the Trace channel (see above). A loud, documented
+dependency, never a silent one.
 
 **Capture + classification** (`test/helpers/oracle.ts`, `upgrade-golden.ts`):
 - Run ConsoleTools at its **install dir** (`cwd`). Empirically, `/upgrade` output is **byte-identical**
@@ -252,5 +259,6 @@ Ordered strongest-first per AGENTS.md; §1.1 dictates the mix (no real staple da
 `test/corpus/upgrade-error/[Inako] Lilith Wish.pmp`, plus the synthetic `highlight.pmp` builder output.
 
 **Manual, machine-local setup (not in the repo):** the `TextWriterTraceListener` added to
-`ConsoleTools.exe.config` (see Part B) — required on any machine that regenerates `/upgrade` goldens
-for a pack ConsoleTools errors on; the harness fails loud with the exact fix if it is absent.
+`ConsoleTools.exe.config` (see Part B) — required on any machine that regenerates **any** `/upgrade`
+golden cold (every uncached run goes through `upgradeWithTraceCapture`, not only packs ConsoleTools
+errors on); the harness fails loud with the exact fix if it is absent.

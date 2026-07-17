@@ -38,6 +38,21 @@ export function assertMatchedUpgradeFailure(
         `Oracle error was:\n${oracleMessage}`,
     );
   }
+  // Verify a MATCHED REASON, not just "both threw": our port reproduces ConsoleTools' exact error
+  // strings, so our thrown message must appear within the oracle's captured trace. A compound
+  // regression that throws a DIFFERENT error on this pack (e.g. the pre-round stops throwing and a
+  // later round throws for another reason) fails here instead of passing silently.
+  const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
+  const ourMessage =
+    ourError instanceof Error ? ourError.message : String(ourError);
+  const ourNorm = norm(ourMessage);
+  if (ourNorm.length === 0 || !norm(oracleMessage).includes(ourNorm)) {
+    expect.fail(
+      `${name}: our upgrade threw, but its error does not match the oracle's — a matched failure ` +
+        `must be the SAME error our port reproduces from TexTools.\nOur error:\n${ourMessage}\n\n` +
+        `Oracle error:\n${oracleMessage}`,
+    );
+  }
   console.log(
     `[upgrade] ${name}: matched expected failure (oracle + our port both error).`,
   );
