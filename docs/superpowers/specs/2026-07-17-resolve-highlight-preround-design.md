@@ -1,10 +1,12 @@
 # Resolve-Highlight pre-round + expected-failure `/upgrade` goldens
 
 **Date:** 2026-07-17
-**Status:** Design signed off; ready for plan.
-**Backlog item:** `docs/backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md`
-(prioritized #1). This spec ships the **highlight-resolution half**; the item is narrowed
-in place to the still-deferred `RepathHairMashups` half.
+**Status:** Shipped. The **highlight-resolution half** shipped 2026-07-17 (this spec); the
+**`RepathHairMashups`** half shipped 2026-07-18 — see
+`docs/superpowers/specs/2026-07-18-repath-hair-mashups-design.md`. Backlog item
+`2026-07-15-resolve-highlight-mashup-hair-preround` is now **closed** (deleted). The sections below
+describe the state at the time this spec was written, when `RepathHairMashups` was still deferred;
+read the 2026-07-18 spec for the shipped design of that half.
 **Roadmap:** foundation design `2026-06-30-dawntrail-modpack-upgrader-design.md` §8 — this is a
 missing pre-round of the `ModpackUpgrader` orchestration, run before round 1.
 
@@ -22,8 +24,9 @@ The transform (`ModpackUpgrader.cs:267-377`) has two halves:
 - **Highlight resolution** — pure cross-option pointer stapling plus a fail-loud throw. Needs **no**
   game index. **Ported here.**
 - **`RepathHairMashups`** (`:379-482`) — repaths hair/zear/tail material sampler suffixes gated on
-  `rtx.FileExists` against the **live Dawntrail game index** we have no runtime access to. **Deferred**
-  (fail-loud throw), same bundled-DT-path-set dependency as the eye partials.
+  `rtx.FileExists` against the **live Dawntrail game index** we have no runtime access to. **Deferred
+  at the time of this spec; shipped 2026-07-18** (`docs/superpowers/specs/2026-07-18-repath-hair-mashups-design.md`)
+  via a bundled, namespace-scoped hair/zear/tail texture index oracle.
 
 ### 1.1 Reachability — measured against the real library
 
@@ -88,12 +91,14 @@ then if it has both or neither, `continue`; else append the option to `badOption
   which is why real multi-pair mods throw. Throws are faithful to the C# `Dictionary` indexer +
   `Dictionary.Add` (§2.4).
 
-### 2.3 Deferred `RepathHairMashups`
+### 2.3 `RepathHairMashups` (deferred at the time of this spec; shipped 2026-07-18)
 
-`repathHairMashups(data)` throws immediately, citing
-`docs/backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md` (narrowed to this half). It needs
-the live DT `FileExists` path-set — the same bundled-reference dependency the eye partials still
-await. Zero corpus/library mods reach it, so it is latent and fail-loud is safe.
+As written, this spec deferred the material-only-mashup branch: `repathHairMashups(data)` threw
+immediately, because it needs the live DT `FileExists` path-set — the same bundled-reference
+dependency the eye partials awaited. Zero corpus/library mods reach it, so it was latent and
+fail-loud was safe. **It shipped 2026-07-18** — the branch now calls the ported
+`src/upgrade/repath-hair-mashups.ts`, backed by a bundled namespace-scoped texture index oracle. See
+`docs/superpowers/specs/2026-07-18-repath-hair-mashups-design.md` for that design.
 
 ### 2.4 Fidelity points reproduced (not smoothed over)
 
@@ -194,9 +199,10 @@ Ordered strongest-first per AGENTS.md; §1.1 dictates the mix (no real staple da
 1. **Unit tests** — `test/upgrade/resolve-highlight.test.ts`, hand-built minimal `ModpackData`:
    clean staple (2-option split → both options gain both textures, sharing bytes); `InvalidDataException`
    (missing texture in ≠1 container); `KeyNotFoundException`-equivalent (missing texture in 0
-   containers); no-op (no hair mtrls; all-paired); deferred `RepathHairMashups` throw (hair mtrls
-   present, `badOptions` empty, `containers` empty); plus the unguarded-sampler file-skip and the
-   live-mutation staple. Fixtures cite the C# they derive from.
+   containers); no-op (no hair mtrls; all-paired); the material-only mashup branch (hair mtrls
+   present, `badOptions` empty, `containers` empty) — originally a deferred-throw assertion, updated
+   2026-07-18 to assert fall-through to `repathHairMashups`; plus the unguarded-sampler file-skip and
+   the live-mutation staple. Fixtures cite the C# they derive from.
 2. **Synthetic golden** — `scripts/generate-synthetics/build-synthetic-highlight.ts` (committed
    builder; built pack gitignored, `npm run synthetics` regenerates). A minimal `.pmp` whose hair
    `.mtrl` is **already-Dawntrail** (`hair.shpk` with a normal+mask sampler but no pre-DT shader
@@ -228,7 +234,8 @@ Ordered strongest-first per AGENTS.md; §1.1 dictates the mix (no real staple da
 
 ## 5. Out of scope / follow-ups
 
-- **`RepathHairMashups`** — remains deferred; backlog `2026-07-15` is narrowed to it (not deleted).
+- **`RepathHairMashups`** — shipped 2026-07-18 (`docs/superpowers/specs/2026-07-18-repath-hair-mashups-design.md`);
+  backlog `2026-07-15` is closed (deleted).
 - **The other 17 throwing mods** — not added; one real expected-failure mod is enough to prove the
   path. They stay available locally if broader coverage is ever wanted.
 - **`includePartials = false`** — not modelled; our pipeline always runs partials, unchanged here.
