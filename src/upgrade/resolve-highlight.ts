@@ -1,14 +1,14 @@
 // Port of ModpackUpgrader.ResolveHighlightOptionsAndMashupHair, highlight-resolution half
 // (reference/.../Mods/ModpackUpgrader.cs:267-377). A pre-round (run before round 1, ungated by
 // includePartials — :83) that staples split Hair-shader normal/mask ("highlight/visibility")
-// textures across options, or fails loud when it cannot. The RepathHairMashups half (:379-482)
-// needs the live Dawntrail game index (rtx.FileExists) and is deferred, see
-// docs/backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md.
+// textures across options, or falls through to RepathHairMashups (:379-482, ported in
+// repath-hair-mashups.ts) for the material-only mashup-hair case.
 import type { ModpackData, ModpackOption } from "../model/modpack";
 import { dx11Path } from "../mtrl/dx11-path";
 import { parseMtrl } from "../mtrl/mtrl";
 import { ESamplerId, SHPK_HAIR } from "../mtrl/shader";
 import type { MtrlTexture, XivMtrl } from "../mtrl/types";
+import { repathHairMashups } from "./repath-hair-mashups";
 import { resolveFile } from "./upgrade";
 
 /** g_SamplerNormal / g_SamplerMask lookup reproducing C#'s UNGUARDED `x.Sampler.SamplerId`
@@ -97,13 +97,8 @@ export function resolveHighlightOptionsAndMashupHair(data: ModpackData): void {
   // (:346-355)
   if (badOptions.length === 0) {
     if (containers.size === 0) {
-      // Material-only Mashup hair (:348-353) -> RepathHairMashups. DEFERRED: needs the live DT
-      // game index (rtx.FileExists). Fail loud.
-      throw new Error(
-        "resolve-highlight: material-only mashup hair (RepathHairMashups) is unported — it needs " +
-          "the live Dawntrail game index; see " +
-          "docs/backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md",
-      );
+      repathHairMashups(data); // Material-only Mashup hair (:348-353) -> RepathHairMashups.
+      return;
     }
     return; // (:354)
   }
