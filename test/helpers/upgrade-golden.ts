@@ -10,11 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadModpack, type ModpackData } from "../../src/index";
 import {
+  OracleUpgradeError,
   oracleAvailable,
   oracleCacheGet,
   oracleCachePut,
   oracleKey,
-  upgrade,
+  upgradeWithTraceCapture,
 } from "./oracle";
 
 /** Content-addressed cache of ConsoleTools /upgrade outputs. Under the gitignored
@@ -28,7 +29,8 @@ export const DEFAULT_UPGRADE_CACHE = join(
 
 export type GoldenResult =
   | { kind: "pack"; data: ModpackData; bytes: Uint8Array }
-  | { kind: "noop" };
+  | { kind: "noop" }
+  | { kind: "error"; message: string };
 
 /** Golden container extension implied by the source name. Format is preserved: pmp->pmp; every
  * TTMP-family input (.ttmp2 AND legacy .ttmp) folds to ttmp2 because ConsoleTools /upgrade always
@@ -41,6 +43,12 @@ function goldenExt(name: string): "pmp" | "ttmp2" {
 /** Marker file recording that /upgrade produced no output (a no-op upgrade). */
 function noopMarker(key: string, dir: string): string {
   return join(dir, `${key}.noop`);
+}
+
+/** Marker recording that ConsoleTools /upgrade ERRORED on this input (content-addressed, like the
+ * `.noop` marker). Stores the error text for later loud reporting. Mirrors resave-golden.ts. */
+function errorMarker(key: string, dir: string): string {
+  return join(dir, `${key}.error`);
 }
 
 let UPGRADE_TMP: string | null = null;
@@ -67,14 +75,19 @@ function upgradeViaConsoleTools(
   const dest = join(dir, `out.${goldenExt(name)}`);
   writeFileSync(src, bytes);
   rmSync(dest, { force: true }); // a no-op leaves NO file — surface that as null, not a stale read
-  upgrade(src, dest);
+  upgradeWithTraceCapture(src, dest);
   return existsSync(dest) ? new Uint8Array(readFileSync(dest)) : null;
 }
 
 /**
  * Cached /upgrade golden for `bytes`, spawning ConsoleTools at most once per distinct input.
- * Returns { kind: "pack" } (golden parsed) or { kind: "noop" } (upgrade changed nothing), or
- * null only when uncached AND no oracle is available (caller fails per policy).
+ * Returns { kind: "pack" } (golden parsed), { kind: "noop" } (upgrade changed nothing), or
+ * { kind: "error" } (a GENUINE ConsoleTools /upgrade failure — cached as a `.error` marker,
+ * mirroring resave-golden.ts's ResaveGoldenResult), or null only when uncached AND no oracle is
+ * available (caller fails per policy). The "error" outcome is captured from ConsoleTools' Trace
+ * channel, not stdout/stderr: HandleUpgrade (Program.cs:185) reports /upgrade exceptions via
+ * Trace.WriteLine (not Console), so upgradeViaConsoleTools's call to upgradeWithTraceCapture reads
+ * ConsoleTools' configured trace log and classifies the failure as an OracleUpgradeError.
  */
 export function upgradeGoldenCached(
   name: string,
@@ -88,6 +101,10 @@ export function upgradeGoldenCached(
   const dir = opts.dir ?? DEFAULT_UPGRADE_CACHE;
   const key = oracleKey(bytes);
 
+  const errPath = errorMarker(key, dir);
+  if (existsSync(errPath)) {
+    return { kind: "error", message: readFileSync(errPath, "utf8") };
+  }
   if (existsSync(noopMarker(key, dir))) return { kind: "noop" };
   const hit = oracleCacheGet(key, dir);
   if (hit !== null) {
@@ -102,7 +119,21 @@ export function upgradeGoldenCached(
   if (!available) return null;
 
   const produce = opts.produce ?? upgradeViaConsoleTools;
-  const out = produce(name, bytes);
+  let out: Uint8Array | null;
+  try {
+    out = produce(name, bytes);
+  } catch (err) {
+    // A genuine ConsoleTools /upgrade error (its exception is on the Trace channel, captured by
+    // upgradeWithTraceCapture as an OracleUpgradeError) is cached as {kind:"error"}. Anything else
+    // (harness bug, lock-race, unexplained non-zero exit) propagates — never silently recorded as an
+    // oracle verdict.
+    if (err instanceof OracleUpgradeError) {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(errPath, err.message);
+      return { kind: "error", message: err.message };
+    }
+    throw err;
+  }
   if (out === null) {
     mkdirSync(dir, { recursive: true });
     writeFileSync(noopMarker(key, dir), new Uint8Array(0));

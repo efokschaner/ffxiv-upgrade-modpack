@@ -1,3 +1,4 @@
+import { dx11Path } from "../mtrl/dx11-path";
 import {
   ESamplerId,
   SHPK_CHARACTER,
@@ -36,23 +37,6 @@ export function doesMtrlNeedDawntrailUpdate(mtrl: XivMtrl): boolean {
     );
   }
   return false;
-}
-
-/**
- * Dx11Path (XivMtrl.cs:667-680). NOT a "strip a -- marker" helper (there is no such marker in our
- * model or in C#'s parsed TexturePath): the DX9 flag (0x8000) means the stored TexturePath lacks
- * the literal "--" hide-from-DX11 marker, and Dx11Path is the path AS the DX11 client would see it
- * with that marker spliced onto the filename. Our parser (src/mtrl/parse.ts) never manufactures or
- * strips "--" itself (confirmed: no "--" handling anywhere under src/mtrl), so this port needs its
- * own helper mirroring the C# getter exactly, operating on the texture (path + flags) rather than
- * a bare path string.
- */
-function dx11Path(tex: MtrlTexture): string {
-  if ((tex.flags & 0x8000) === 0) return tex.texturePath;
-  const slash = tex.texturePath.lastIndexOf("/");
-  const dir = slash >= 0 ? tex.texturePath.slice(0, slash) : "";
-  const file = slash >= 0 ? tex.texturePath.slice(slash + 1) : tex.texturePath;
-  return `${dir}/--${file}`;
 }
 
 function findByUsage(

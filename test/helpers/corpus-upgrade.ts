@@ -17,6 +17,47 @@ import { upgradeGoldenCached } from "./upgrade-golden";
 // Set UPDATE_UPGRADE_BASELINE=1 to (re-)record each pack's baseline to its current actual diff.
 const BLESS = process.env.UPDATE_UPGRADE_BASELINE === "1";
 
+/** Assert our port matches a ConsoleTools /upgrade oracle ERROR: a matched failure is a PASS (our
+ * upgrade must throw where TexTools throws); our upgrade SUCCEEDING is a divergence -> loud fail.
+ * Exported for unit testing (test/helpers/corpus-upgrade.test.ts). See spec §3 +
+ * docs/backlog/2026-07-11-expected-failure-golden.md. */
+export function assertMatchedUpgradeFailure(
+  name: string,
+  oracleMessage: string,
+  runUpgrade: () => void,
+): void {
+  let ourError: unknown;
+  try {
+    runUpgrade();
+  } catch (e) {
+    ourError = e;
+  }
+  if (ourError === undefined) {
+    expect.fail(
+      `${name}: ConsoleTools /upgrade errored but our upgrade SUCCEEDED — divergence.\n` +
+        `Oracle error was:\n${oracleMessage}`,
+    );
+  }
+  // Verify a MATCHED REASON, not just "both threw": our port reproduces ConsoleTools' exact error
+  // strings, so our thrown message must appear within the oracle's captured trace. A compound
+  // regression that throws a DIFFERENT error on this pack (e.g. the pre-round stops throwing and a
+  // later round throws for another reason) fails here instead of passing silently.
+  const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
+  const ourMessage =
+    ourError instanceof Error ? ourError.message : String(ourError);
+  const ourNorm = norm(ourMessage);
+  if (ourNorm.length === 0 || !norm(oracleMessage).includes(ourNorm)) {
+    expect.fail(
+      `${name}: our upgrade threw, but its error does not match the oracle's — a matched failure ` +
+        `must be the SAME error our port reproduces from TexTools.\nOur error:\n${ourMessage}\n\n` +
+        `Oracle error:\n${oracleMessage}`,
+    );
+  }
+  console.log(
+    `[upgrade] ${name}: matched expected failure (oracle + our port both error).`,
+  );
+}
+
 // End-to-end golden check: our upgrade pipeline vs the cached ConsoleTools /upgrade output,
 // diffed per gamePath on decompressed content, exact-byte except for confirmed intentional
 // divergences, ratcheted against a gitignored per-pack baseline (see the harness design spec).
@@ -29,7 +70,6 @@ export function registerUpgradeCheck(pack: string): void {
       // source ExtraFiles key set). Safe because upgradeModpack cloneModpack()s and never mutates
       // its argument (src/upgrade/upgrade.ts). Re-loading cost ~3s per big PMP, three times over.
       const source = loadModpack(name, bytes);
-      const oursModel = upgradeModpack(source);
       const golden = upgradeGoldenCached(name, bytes);
       if (golden === null) {
         throw new Error(
@@ -37,6 +77,19 @@ export function registerUpgradeCheck(pack: string): void {
             `Run with ConsoleTools installed to populate test/corpus/.upgrade-cache.`,
         );
       }
+      // The oracle itself errored on this pack (e.g. ModpackUpgrader's Highlight/Visibility
+      // "unresolveable" throw). A MATCHED failure is a PASS: our port must refuse exactly the packs
+      // TexTools refuses. Our upgrade SUCCEEDING here is a divergence -> loud fail. (Deliberately
+      // unlike corpus-resave.ts's loud-skip: a /resave oracle error is environmental — a TexTools
+      // CMP-read crash unrelated to our port — whereas a /upgrade oracle error is transform logic
+      // our port is expected to reproduce. See spec §3 + docs/backlog/2026-07-11-expected-failure-golden.md.)
+      if (golden.kind === "error") {
+        assertMatchedUpgradeFailure(name, golden.message, () =>
+          upgradeModpack(source),
+        );
+        return;
+      }
+      const oursModel = upgradeModpack(source);
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
       const reference = golden.kind === "noop" ? source : golden.data;

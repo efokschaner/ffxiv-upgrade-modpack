@@ -153,8 +153,14 @@ export function registerGeometryChecks(ctx: PackContext): void {
         name,
         new Uint8Array(readFileSync(pack)),
       );
-      if (golden === null || golden.kind === "noop") {
-        console.log(`[geometry] ${name}: A2 skipped (no golden / no-op)`);
+      if (
+        golden === null ||
+        golden.kind === "noop" ||
+        golden.kind === "error"
+      ) {
+        console.log(
+          `[geometry] ${name}: A2 skipped (no golden / no-op / oracle error)`,
+        );
         return;
       }
       const n = roundTripModels(goldenModels(golden.data), "A2");
