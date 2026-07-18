@@ -110,7 +110,13 @@ export function registerUpgradeCheck(pack: string): void {
       // closes that gap — such a file comes back as an ExtraFile, drops out of `allFiles`, and its
       // gamePath shows as `added` against the golden. (It also puts the whole write->read round-trip
       // under the golden oracle for free.)
-      const oursReRead = loadModpack(name, oursArchive);
+      // Re-read under the WRITTEN format (`target`), NOT the source `name`: our writer folds the
+      // whole TTMP family to ttmp2 (there is no legacy-.ttmp writer), so a legacy `.ttmp` source is
+      // written as ttmp2. Re-reading it under the `.ttmp` name would send the ttmp2 zip to
+      // readLegacyTtmp, which silently yields an EMPTY pack — making every file show as `added`
+      // against the golden (a whole-pack phantom divergence). The golden side already folds this way
+      // (upgrade-golden.ts goldenExt). See docs/backlog/2026-07-17-harness-legacy-ttmp-reread-format.md.
+      const oursReRead = loadModpack(`ours.${target}`, oursArchive);
 
       const payload = diffUpgrade(
         name,

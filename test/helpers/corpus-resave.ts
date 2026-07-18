@@ -65,7 +65,11 @@ export function registerResaveCheck(pack: string): void {
 
       const payload = diffUpgrade(
         name,
-        loadModpack(name, oursArchive), // re-read: compare the ARTIFACT, same as corpus-upgrade
+        // Re-read under the WRITTEN format (`target`), NOT the source `name` — a legacy `.ttmp` is
+        // written as ttmp2, and re-reading it as `.ttmp` sends the zip to readLegacyTtmp and yields
+        // an empty pack. Same seam as corpus-upgrade.ts; see
+        // docs/backlog/2026-07-17-harness-legacy-ttmp-reread-format.md.
+        loadModpack(`ours.${target}`, oursArchive), // compare the ARTIFACT, same as corpus-upgrade
         golden,
         confirmDivergence,
       );

@@ -171,6 +171,11 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Harness & housekeeping
 
+- [`readLegacyTtmp` silently returns an empty pack when fed a non-legacy (zip) archive](backlog/2026-07-17-harness-legacy-ttmp-reread-format.md)
+  — the harness re-read seam that exposed this (a legacy `.ttmp` written as ttmp2, re-read under the
+  `.ttmp` name → empty → whole-pack phantom `added`) is **fixed**; both harnesses now re-read under the
+  written `target`. What remains is the fail-loud half: `readLegacyTtmp` should throw on a zip (the
+  `PK` magic) instead of yielding empty, so a future miswire is loud rather than a silent phantom diff.
 - [Make the ConsoleTools oracle async, so the lock can heartbeat](backlog/2026-07-13-consoletools-oracle-async-lock.md)
   — the hand-rolled mutex breaks "stale" locks on a guess. A heartbeat is the proper fix but needs
   the `execFileSync` critical section gone first. Operator's call (2026-07-13): keep the hand-rolled
