@@ -32,16 +32,53 @@ cold by someone with no context.
 
 ## Prioritized
 
-Roughly highest-priority first. Mostly `/upgrade`-pipeline work still to port — the rounds our
-pipeline stubs — plus any correctness defect that makes our *output* wrong. Reference:
-`src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+Roughly highest-priority first, ranked toward a **robust and fully functional** port (prioritization
+pass 2026-07-17). The ordering follows three tiers: **(a)** the transform rounds the pipeline still
+*stubs / throws* on — functional completeness; **(b)** crashes and **silent divergences** on real
+inputs the corpus doesn't happen to cover — robustness and our "fail loud, never silently diverge"
+rule; **(c)** the real-corpus byte-divergences keeping already-shipped rounds off byte-zero.
+Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
 1. [Port the `RepathHairMashups` half of the pre-round](backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md)
-   — the `ResolveHighlightOptionsAndMashupHair` pre-round (`ModpackUpgrader.cs:83`) now runs first in
-   `upgradeModpack`; its highlight-resolution half (cross-option pointer stapling + fail-loud throws)
-   **shipped 2026-07-17** (`src/upgrade/resolve-highlight.ts`). Only the `RepathHairMashups` half
-   remains — it needs the live DT game index like the hair/eye partials, and is a fail-loud throw
-   today (latent: 0 of 1131 scanned mods reach it).
+   — **Round 6 (partials) is the only unshipped transform round; the pipeline throws on texture-only
+   hair/eye/skin mods.** The `ResolveHighlightOptionsAndMashupHair` pre-round (`ModpackUpgrader.cs:83`)
+   now runs first in `upgradeModpack`; its highlight-resolution half (cross-option pointer stapling +
+   fail-loud throws) **shipped 2026-07-17** (`src/upgrade/resolve-highlight.ts`). Only the
+   `RepathHairMashups` half remains — it needs the live DT game index like the hair/eye partials, and
+   is a fail-loud throw today (latent: 0 of 1131 scanned mods reach it). Blocked with the eye/hair
+   partials on the same **bundled DT reference path-set + canonical material tables** (design §5 /
+   §8.2 round 6); extracting that set — the operator has the game install + ConsoleTools — is the
+   enabling first step and unblocks all the partials at once.
+
+2. [Port FileSwap handling](backlog/2026-07-13-pmp-write-fileswaps.md) — **hard crash on a common real
+   input.** `resolveDuplicates` throws on a non-empty `fileSwaps` map. TexTools turns each swap into a
+   placeholder whose zero-hash burns an `idx` and shifts `common/N` numbering, and deciding *which*
+   swaps become placeholders needs the live game index we don't have. Real Penumbra `.pmp` mods
+   commonly carry file swaps, so this blocks a whole class of real packs despite 0 of 13 corpus PMPs
+   tripping it — but TexTools' own writer drops FileSwaps entirely, so "just drop them" is probably
+   the right (and cheap) port; that needs a synthetic pack to prove.
+
+3. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
+   — **silent divergence (fail-loud violation).** `IMC_TABLE` is exhaustive over equipment/accessory
+   but Set-only, so a NonSet meta that *would* grow its IMC silently passes through — wrong output
+   with no throw and no test catching it. Needs a NonSet `.imc` parser, its own extraction pass, and
+   the NonSet column selection; at minimum make it fail loud until then.
+
+4. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
+   — **silent divergence (fail-loud violation), cheap fix.** `parsePmpGroup` defaults `Options` to
+   `[]`, silently dropping the group's files, where C# throws `Unimplemented PMP group type`. Inverts
+   our fail-loud rule; flip it to a throw after the corpus scan the item calls for.
+
+5. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
+   — **mechanical real-corpus correctness win.** We emit at the convention path instead of the
+   canonical override. Fix is mechanical: re-run `scripts/extract-index-overrides.ts` against a game
+   install.
+
+6. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+   remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
+   diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
+   `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
+   NPOT-normalize and T2's NPOT resize still throw and remain open. Real cases exist.
 
 ## Unprioritized
 
@@ -51,11 +88,6 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
   — `writePmp` throws where `PopulatePmpStandardOption` converts. Unreachable today (only a TTMP→PMP
   format conversion could reach it, and no upgrade flow performs one), so it is a fail-loud guard
   waiting on a product decision.
-- [Port FileSwap handling](backlog/2026-07-13-pmp-write-fileswaps.md) — `resolveDuplicates` throws on
-  a non-empty `fileSwaps` map. TexTools turns each swap into a placeholder whose zero-hash burns an
-  `idx` and shifts `common/N` numbering, and deciding *which* swaps become placeholders needs the
-  live game index we don't have. TexTools' own writer drops FileSwaps entirely, so "just drop them"
-  is probably the right port — but that needs a synthetic pack to prove.
 - [`WizardHelpers.WriteImage` re-encode is unported](backlog/2026-07-13-pmp-writer-image-reencode.md)
   — option/group/meta `Image` fields and their zip members are carried through verbatim rather than
   re-encoded to a 16-bit PNG under a new name. Deliberate: no image encoder in this repo. Real corpus
@@ -63,9 +95,6 @@ pipeline stubs — plus any correctness defect that makes our *output* wrong. Re
 - [Manipulation normalization fails loud on a missing field](backlog/2026-07-13-pmp-manipulation-field-defaults.md)
   — instead of emitting the C# type's own default for an omitted key. The honest fix needs each
   field's exact C# enum and its zero-value member name. No corpus manipulation omits a field.
-- [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
-  — `parsePmpGroup` defaults `Options` to `[]`, silently dropping the group's files, where C# throws
-  `Unimplemented PMP group type`. Inverts our fail-loud rule. Scan the corpus before flipping it.
 - [Split `writePmp`](backlog/2026-07-13-split-writepmp-module.md) — it blends `PMP.WritePmp` and
   `WizardData.WritePmp` into one module, against "split, don't blend". Pure reorganization; needs its
   own careful pass because a mechanical refactor here risks byte-parity regressions with no new test
@@ -130,13 +159,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — a *different* gap from T2 (PMP-load-gated, not TTMP): shares `FixUpBrokenMipOffsets` but also
   truncates trailing null padding. Blast radius is bigger than a byte diff — dedup keys on loaded
   content, so it changes `common/N` **member names**. Must land before member-name parity is complete.
-- [T3 — ImageSharp Bicubic resampler: T2's NPOT resize still unported](backlog/2026-07-10-imagesharp-resampler.md)
-  — the resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
-  `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
-  NPOT-normalize and T2's NPOT resize still throw `TextureResizeUnsupported` and remain open.
-- [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
-  — we emit at the convention path instead of the canonical override. Fix is mechanical: re-run
-  `scripts/extract-index-overrides.ts` against a game install.
 
 ### Metadata
 
@@ -144,10 +166,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   `version !== 2`. A probe confirmed ConsoleTools upgrades v1→v2 by injecting base-game data; EST
   injection is portable today, GMP needs a reference table round 5 never extracted. Extinct in the
   wild (0 of 1431 corpus metas).
-- [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
-  — `IMC_TABLE` is exhaustive over equipment/accessory but Set-only, so a NonSet meta that *would*
-  grow its IMC silently passes through. Needs a NonSet `.imc` parser, its own extraction pass, and the
-  NonSet column selection.
 - [EQDP reconstruction drops mod rows for non-playable races](backlog/2026-07-10-eqdp-non-playable-races.md)
   — C# keeps every race the mod carries and backfills; we emit exactly the 18 playable ones.
   Unreachable today (game EQDP files are playable-race-scoped).
