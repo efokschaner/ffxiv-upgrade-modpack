@@ -10,10 +10,33 @@ This repo hand-ports **TexTools / xivModdingFramework's modpack *upgrade*** logi
 TypeScript. Several principles follow from that, and they **override contrary
 intuition** when the two conflict:
 
-- **Byte-parity is the definition of correct.** Our upgraded output must be
-  **byte-identical** to what ConsoleTools `/upgrade` produces, except for a small,
-  explicitly documented list of divergences (see *Upgrade golden harness*). "Looks
-  right" or "our own tests pass" is not the bar — matching TexTools byte-for-byte is.
+- **A working upgrader is the goal; byte-parity is how we get there.** The product is a
+  modpack upgrader whose output *works in-game and does what the user expects*. Matching
+  TexTools byte-for-byte is our default route to that — it is an extraordinarily strong
+  correctness signal and our only mechanical oracle — but it is the **means, not the end**.
+  Where faithfully reproducing TexTools would hand the user a **worse modpack** (silent data
+  loss, a broken mod, a dropped feature), we make the better modpack and diverge
+  deliberately.
+
+  This is not a licence to improve on TexTools wherever we think we know better. The bar for
+  a user-benefit divergence is **evidence, not judgement**:
+
+  1. The behaviour traces to a registered defect in `docs/TEXTOOLS_BUGS.md` — adjudicated a
+     genuine bug, not a quirk we merely dislike.
+  2. The divergence is exercised over the **corpus**, and every byte it moves is accounted
+     for by a confirmation rule (see *Upgrade golden harness*) — we know exactly what changed
+     and why.
+  3. Someone has **verified in the real game** that our output is better than TexTools' — the
+     mod works where TexTools' output is broken or degraded. This step is manual and cannot
+     be skipped or inferred; an untested "improvement" is just an unverified divergence.
+
+  Absent all three, reproduce TexTools faithfully — including its bugs.
+- **Byte-parity is the definition of correct — for everything else.** Our upgraded output
+  must be **byte-identical** to what ConsoleTools `/upgrade` produces, except for the small,
+  explicitly documented list of divergences above (see *Upgrade golden harness*). "Looks
+  right" or "our own tests pass" is not the bar — matching TexTools byte-for-byte is. This
+  still governs quirks and apparent bugs *that do not harm the user*: reproduce them
+  faithfully and note the quirk rather than correcting it.
 - **Ask what TexTools does, first.** When deciding how something should behave, the
   question is never "what's the best design?" but "what does TexTools /
   xivModdingFramework do here?" — then reproduce it, from the symbol the oracle
@@ -117,12 +140,24 @@ pack reaches at all are pinned by synthetic unit tests instead (see *Synthetic t
 
   A newly added corpus mod has no baseline and is expected to fully match; if it does
   not, either it is a real bug, or the difference is an intended divergence.
-- **Intended divergences from TexTools are never ignored.** Add a rule to
-  `DIVERGENCE_RULES` (`test/helpers/upgrade-compare.ts`) that *confirms* the divergence
-  is exactly the one we meant (e.g. same tex shape, pixels within our documented
-  encoder precision), with a cited reason. Files matched by no rule must be
-  byte-identical to the golden. This ruleset is the **single source of truth** for
-  every deviation we allow.
+- **Intended divergences from TexTools are never ignored.** Every deviation we allow is
+  *confirmed* by a rule that proves it is exactly the one we meant — never merely tolerated.
+  Anything matched by no such rule must be byte-identical to the golden. There are two
+  existing confirmation sites, by the shape of what diverges:
+  - **Payload content** — add a rule to `DIVERGENCE_RULES`
+    (`test/helpers/upgrade-compare.ts`), whose `confirm` narrowly verifies the difference
+    (e.g. same tex shape, pixels within our documented encoder precision) with a cited
+    reason.
+  - **Manifest JSON** — a scoped carve-out in `test/helpers/upgrade-archive-diff.ts`
+    (see the absent-payload `Files`-key confirmation there for the established shape).
+
+  Add to whichever fits, or — if a divergence's shape fits neither — build something like
+  them rather than widening a tolerance: it must **confirm** the specific expected
+  difference and reject everything else. Whatever you add, **call the intentional
+  divergence out clearly** at the site: what differs, why we accept it, and (for a
+  user-benefit divergence) the evidence required by the first principle above. A
+  divergence recorded only in a gitignored ratchet baseline is *not* documented — the
+  baseline suppresses a diff, it does not confirm one.
 - **Use coverage to find blind spots.** `npm run test:coverage` runs the same suite
   under v8 and writes a text + HTML + json-summary report to `coverage/`. It is
   report-only (no thresholds — the gate stays unbrittle); its job is to show which
