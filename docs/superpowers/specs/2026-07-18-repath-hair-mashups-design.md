@@ -73,10 +73,8 @@ Two generated constants, mirroring `IndexFile.FileExists`' hash mechanics exactl
 
 - `HAIR_TEX_ENTRIES: ReadonlySet<string>` — the `` `${folderHash}:${fileHash}` `` pairs for every
   file under the hair/`zear`/`tail` texture folders that exist in the `040000` index (~3,378).
-- `HAIR_TEX_FOLDERS: ReadonlySet<number>` — the folder hashes of those texture folders that are
-  actually present (~808). Used by the fail-loud guard (§3.4).
 
-Stored packed (e.g. arrays of `uint32` reconstructed into the sets at module load) to keep the file
+Stored packed (e.g. an array of `uint32` reconstructed into the set at module load) to keep the file
 compact; the exact packing is an implementation detail of the generator, chosen to keep the emitted
 file small and diff-stable (sorted).
 
@@ -87,11 +85,11 @@ runtime copy lives in the shipped module and is cited to `HashGenerator.cs:154-2
 
 1. Split `path` into `folder` + `file` at the last `/`.
 2. `fh = computeHash(folder)`, `xh = computeHash(file)`.
-3. If `HAIR_TEX_ENTRIES.has(`${fh}:${xh}`)` → `true`.
-4. Else → `false` (see §3.4 for the one case that instead throws).
+3. Return `HAIR_TEX_ENTRIES.has(`${fh}:${xh}`)`.
 
 Because this hashes whatever string it is given and checks the same index-derived pairs TexTools
-would, it reproduces `FileExists` — including its hash-collision behaviour — by construction.
+would, it reproduces `FileExists` — including its hash-collision behaviour — by construction. An
+out-of-namespace path (not enumerated at extraction time) is simply a miss → `false`.
 
 ### 3.3 Faithfulness of "out-of-namespace → false" (proven, not assumed)
 
@@ -102,18 +100,11 @@ authoritatively. Returning `false` for an out-of-namespace path (e.g. a `dummy.t
 which has no swap suffix and is a repath no-op anyway) is therefore harmless: the only way it could
 change output is a sampler whose *old* path is out-of-namespace **and** whose DT-swapped target also
 exists out-of-namespace — a hair material referencing textures in a non-standard tree that SE also
-shipped a DT rename for. That does not occur in real data; §3.4 makes it loud rather than silent.
+shipped a DT rename for. That does not occur in real data, and (per the operator's call, 2026-07-18)
+we do **not** add a guard for it: a plain `false` keeps the oracle a faithful membership check with no
+non-TexTools branch. If it ever surfaces, the golden diff catches it.
 
-### 3.4 Fail-loud guard for the pathological remainder
-
-To uphold "fail loud, never silently diverge": when the port is about to test a **DT-target** path
-(one bearing a `_norm`/`_mask`/`_mult`/`_base` suffix produced by a swap) whose folder hash is not in
-`HAIR_TEX_FOLDERS`, throw — we cannot answer `FileExists` authoritatively for a texture folder we did
-not extract. This narrow guard never fires for `dummy.tex` (wrong suffix) or any in-namespace path;
-it exists only so the §3.3 pathological case surfaces as a documented throw, not a silent `false`.
-(Latent: no real hair material references out-of-namespace DT-suffixed textures.)
-
-### 3.5 Extraction — `scripts/extract-hair-texture-index.ts`
+### 3.4 Extraction — `scripts/extract-hair-texture-index.ts`
 
 Following the `extract-hair-materials.ts` pattern (committed script → generated `.ts`, regenerable on
 a machine with the game via `npx tsx`):
@@ -123,8 +114,7 @@ a machine with the game via `npx tsx`):
 2. Enumerate candidate texture folders: `chara/human/c{race}/obj/{hair,zear,tail}/{h,z,t}{id}/texture`
    over the full `IDRaceDictionary` race grid (the 38 codes already in `extract-hair-materials.ts`)
    × id `1..500` (`_SCAN_LIMIT`). Compute each folder hash.
-3. Keep the index pairs whose `folderHash` is a candidate folder hash → `HAIR_TEX_ENTRIES`; keep the
-   present candidate folder hashes → `HAIR_TEX_FOLDERS`.
+3. Keep the index pairs whose `folderHash` is a candidate folder hash → `HAIR_TEX_ENTRIES`.
 4. Emit the generated `.ts`, sorted for a stable diff, with a `// GENERATED` header citing the C#
    reads. The script asserts it probed the full grid (completeness is load-bearing, per the
    existence-oracle invariant) and fails loud if the index is unavailable.
@@ -201,8 +191,15 @@ proves it, run through the `/upgrade` golden harness (AB-tested against ConsoleT
   `scripts/generate-synthetics/build-synthetic-mashup-hair.ts` (byte-reproducible via `pmp-builder.ts`).
 - **Synthetic unit tests** (`test/upgrade/repath-hair-mashups.test.ts`) for paths a whole-pack golden
   can't isolate: the `_m→_mask`-before-`_mult` (and `_s`) tie-break ordering; the "old path already
-  DT-form → no double-repath" case; the diffuse `_d→_base` path; and the §3.4 out-of-namespace guard
-  throw. Fixtures hand-derived from the C# and cited.
+  DT-form → no double-repath" case; and the diffuse `_d→_base` path. Fixtures hand-derived from the C#
+  and cited.
+- **Expected-failure synthetic (if warranted).** The parse/resolve-miss seam (§4 step 1) is a *throw*
+  in C# with no per-file try/catch. Where it is cheap to author a mashup-hair pack whose `.mtrl`
+  ConsoleTools also rejects, add it under the `upgrade-error` corpus root (the expected-failure
+  `/upgrade` capability, `docs/backlog/2026-07-11-expected-failure-golden.md`) so we confirm *both*
+  sides error rather than only asserting our throw — matching the operator's steer (2026-07-18). If no
+  input makes ConsoleTools throw at the same seam, pin the throw with a synthetic unit test instead
+  and note why a golden couldn't reach it.
 
 Coverage: `npm run test:coverage` should show `repath-hair-mashups.ts` and the oracle lookup reached;
 any line reachable by neither must be a fail-loud guard.
