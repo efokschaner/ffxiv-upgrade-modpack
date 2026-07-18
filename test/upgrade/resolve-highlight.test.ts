@@ -199,12 +199,18 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
     );
   });
 
-  it("throws the deferred RepathHairMashups error for material-only mashup hair", () => {
+  it("falls through to repathHairMashups for material-only mashup hair (:348-353) instead of throwing", () => {
+    // No badOptions (option holds neither texture of the pair) and no containers (no option
+    // holds either texture): the material-only mashup-hair branch now calls repathHairMashups
+    // (src/upgrade/repath-hair-mashups.ts, tested independently in
+    // test/upgrade/repath-hair-mashups.test.ts) instead of the old deferred throw. SAMPLE's
+    // norm/mask already point at their real DT names, so the call is a no-op re-serialize; the
+    // option's file set and byte identity are otherwise untouched by the reserialize (only the
+    // presence of the key matters here).
     const a = option("A", [[HAIR_MTRL_PATH, raw(HAIR_MTRL_BYTES)]]);
     const data = pack([a]);
-    expect(() => resolveHighlightOptionsAndMashupHair(data)).toThrow(
-      /RepathHairMashups|mashup/,
-    );
+    expect(() => resolveHighlightOptionsAndMashupHair(data)).not.toThrow();
+    expect(data.groups[0]!.options[0]!.files.has(HAIR_MTRL_PATH)).toBe(true);
   });
 
   it("skips a .mtrl that fails to parse", () => {
