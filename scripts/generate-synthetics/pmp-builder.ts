@@ -65,10 +65,15 @@ export const EMPTY_DEFAULT_MOD: PmpOptionJsonRaw = {
 };
 
 /** A Single-select group holding exactly one option ("On") that carries `files`
- * (gamePath -> zip path, backslashed on disk as Penumbra writes it). */
+ * (gamePath -> zip path, backslashed on disk as Penumbra writes it).
+ *
+ * `fileSwaps` (gamePath being overridden -> base-game path served instead, backslashed the same way
+ * — PMP.cs:1107-1109 notes the value is the backslashed one) defaults to `{}`, which keeps both the
+ * emitted key ORDER and the emitted bytes identical for every pack that does not pass it. */
 export function singleOptionGroup(
   name: string,
   files: Record<string, string>,
+  fileSwaps: Record<string, string> = {},
 ): PmpGroupJsonRaw {
   return {
     Version: 0,
@@ -85,7 +90,7 @@ export function singleOptionGroup(
         Description: "",
         Image: "",
         Files: files,
-        FileSwaps: {},
+        FileSwaps: fileSwaps,
         Manipulations: [],
       },
     ],

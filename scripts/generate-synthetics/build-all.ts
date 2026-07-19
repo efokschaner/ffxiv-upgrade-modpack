@@ -15,3 +15,4 @@ import "./build-synthetic-unclaimed-hair";
 import "./build-synthetic-eye-mask";
 import "./build-synthetic-highlight";
 import "./build-synthetic-mashup-hair";
+import "./build-synthetic-file-swaps";
