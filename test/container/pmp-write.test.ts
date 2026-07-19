@@ -64,6 +64,84 @@ describe("writePmp round-trip", () => {
     expect(names).toContain("default_mod.json");
     expect(names.some((n) => /^group_001_.*\.json$/.test(n))).toBe(true);
   });
+
+  // A non-empty FileSwaps map is preserved verbatim through a read -> write round trip: this is
+  // distinct from (and not covered by) the golden-harness carve-out in upgrade-archive-diff.ts,
+  // which only confirms "golden empty, ours non-empty" -- TexTools always writes `{}`
+  // (PopulatePmpStandardOption, PMP.cs:873-875), so the golden carries zero signal on whether the
+  // VALUE we emit is the source's own swaps or something invented. This asserts the exact
+  // key/value pairs -- including the backslashed value form Penumbra writes -- survive unchanged,
+  // for both an `optionToJson` call site that includes meta (a group option) and one that doesn't
+  // (default_mod.json, PMP.cs:1499-1501). See
+  // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md §3 and
+  // src/container/pmp.ts:437 (`base.FileSwaps = o.fileSwaps`).
+  it("carries a non-empty FileSwaps map through read -> write unchanged", () => {
+    const enc = new TextEncoder();
+    const defaultFile = "chara/equipment/default_holder.tex";
+    const groupFile = "chara/equipment/group_holder.tex";
+    const defaultSwaps = {
+      "chara/dummy/swap_dest_1.tex":
+        "chara\\equipment\\e6120\\texture\\v01_c0101e6120_top_n.tex",
+      "chara/dummy/swap_dest_2.tex":
+        "chara\\equipment\\e6120\\texture\\v01_c0101e6120_top_m.tex",
+    };
+    const groupSwaps = {
+      "chara/dummy/swap_dest_3.tex":
+        "chara\\equipment\\e6120\\texture\\v01_c0101e6120_dif.tex",
+    };
+    const meta = {
+      FileVersion: 3,
+      Name: "Swap Test",
+      Author: "test",
+      Description: "",
+      Version: "1.0",
+      Website: "",
+      Image: "",
+      ModTags: [],
+    };
+    const defaultMod = {
+      Version: 0,
+      Files: { [defaultFile]: defaultFile.replace(/\//g, "\\") },
+      FileSwaps: defaultSwaps,
+      Manipulations: [],
+    };
+    const group = {
+      Version: 0,
+      Name: "Choice",
+      Description: "",
+      Type: "Single",
+      Priority: 0,
+      DefaultSettings: 0,
+      Options: [
+        {
+          Name: "A",
+          Description: "",
+          Image: "",
+          Files: { [groupFile]: groupFile.replace(/\//g, "\\") },
+          FileSwaps: groupSwaps,
+          Manipulations: [],
+        },
+      ],
+    };
+    const entries = new Map<string, Uint8Array>([
+      ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
+      ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
+      ["group_001_Choice.json", enc.encode(JSON.stringify(group, null, 2))],
+      [defaultFile.replace(/\//g, "\\"), new Uint8Array([1, 2, 3])],
+      [groupFile.replace(/\//g, "\\"), new Uint8Array([4, 5, 6])],
+    ]);
+    const out = writePmp(readPmp(writeZip(entries)));
+    const written = readZip(out);
+    const writtenDefault = parseEntry<{ FileSwaps: Record<string, string> }>(
+      written,
+      "default_mod.json",
+    );
+    const writtenGroup = parseEntry<{
+      Options: Array<{ FileSwaps: Record<string, string> }>;
+    }>(written, "group_001_choice.json");
+    expect(writtenDefault.FileSwaps).toEqual(defaultSwaps);
+    expect(writtenGroup.Options[0]!.FileSwaps).toEqual(groupSwaps);
+  });
 });
 
 // The corpus only holds real PMPs, so writePmp's carry-through path (raw !== undefined)
@@ -140,11 +218,10 @@ describe("writePmp model-building fallback (no raw)", () => {
                   { data: redBytes, storage: FileStorageType.RawUncompressed },
                 ],
               ]),
-              // FileSwaps must stay empty here: resolveDuplicates fails loud on a non-empty
-              // FileSwaps map (this port cannot reproduce TexTools' game-index-dependent
-              // placeholder mechanics faithfully — see resolve-duplicates.ts /
-              // docs/backlog/2026-07-13-pmp-write-fileswaps.md), and
-              // that guard applies to every option writePmp actually assembles a prefix for.
+              // FileSwaps left empty here -- this fixture isn't exercising FileSwap
+              // preservation (a non-empty map is deliberately carried through unchanged, not
+              // rejected -- see the round-trip test above and
+              // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md).
               fileSwaps: {},
               // Every field a real PMPImcManipulationJson declares must be present: a document
               // omitting one is NOT modeled as "absent from the output" (a bare `{ Type: "Imc" }`
@@ -1004,9 +1081,10 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
             [optBPresentFile]: toZipValue(optBPresentFile),
             [optBAbsentFile]: toZipValue(optBAbsentFile),
           },
-          // FileSwaps must stay empty: resolveDuplicates fails loud on a non-empty FileSwaps map
-          // for any option it assigns a prefix to (see resolve-duplicates.ts /
-          // docs/backlog/2026-07-13-pmp-write-fileswaps.md).
+          // FileSwaps left empty: this fixture isn't exercising FileSwap preservation (a
+          // non-empty map is deliberately carried through unchanged, not rejected -- see the
+          // round-trip test in the "writePmp round-trip" describe block above and
+          // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md).
           FileSwaps: {},
           // A COMPLETE Imc manipulation -- normalizeManipulations throws on one missing a required
           // field (pmp-manipulation.test.ts), so this fixture needs every field spelled to prove

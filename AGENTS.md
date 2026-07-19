@@ -148,7 +148,7 @@ pack reaches at all are pinned by synthetic unit tests instead (see *Synthetic t
   its entry rather than re-blessing.
 - **Intended divergences from TexTools are never ignored.** Every deviation we allow is
   *confirmed* by a rule that proves it is exactly the one we meant — never merely tolerated.
-  Anything matched by no such rule must be byte-identical to the golden. There are two
+  Anything matched by no such rule must be byte-identical to the golden. There are three
   existing confirmation sites, by the shape of what diverges:
   - **Payload content** — add a rule to `DIVERGENCE_RULES`
     (`test/helpers/upgrade-compare.ts`), whose `confirm` narrowly verifies the difference
@@ -156,8 +156,14 @@ pack reaches at all are pinned by synthetic unit tests instead (see *Synthetic t
     reason.
   - **Manifest JSON** — a scoped carve-out in `test/helpers/upgrade-archive-diff.ts`
     (see the absent-payload `Files`-key confirmation there for the established shape).
+  - **Zip layout that cannot match at all** — `diffPayloadSemantic` / `diffArchives`'
+    `layoutEquivalent` mode (`test/helpers/upgrade-archive-diff.ts`), which re-keys the
+    payload comparison from zip member name to the Penumbra redirect table
+    (`gamePath -> content`). Applies only to packs whose *input* carries Penumbra
+    FileSwaps, where TexTools' write-time swap destruction shifts our `common/N`
+    dedup numbering away from the golden's even though runtime behaviour is identical.
 
-  Add to whichever fits, or — if a divergence's shape fits neither — build something like
+  Add to whichever fits, or — if a divergence's shape fits none of them — build something like
   them rather than widening a tolerance: it must **confirm** the specific expected
   difference and reject everything else. Whatever you add, **call the intentional
   divergence out clearly** at the site: what differs, why we accept it, and (for a

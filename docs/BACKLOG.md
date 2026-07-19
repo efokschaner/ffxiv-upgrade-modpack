@@ -78,11 +78,6 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
 ### PMP write path
 
-- [FileSwap preservation — remaining work](backlog/2026-07-13-pmp-write-fileswaps.md) — the crash is
-  fixed and swaps are preserved (a deliberate divergence from `docs/TEXTOOLS_BUGS.md` #10, confirmed
-  against the oracle on a real pack). Outstanding: a synthetic with ≥2 swaps *and* duplicate content
-  to reach the `common/N` shift, the cause-gated semantic-comparison mode it needs, the manifest
-  carve-out replacing today's baseline suppression, and the manual in-game gate.
 - [Port `.meta`/`.rgsp` → `Manipulations` conversion](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)
   — `writePmp` throws where `PopulatePmpStandardOption` converts. Unreachable today (only a TTMP→PMP
   format conversion could reach it, and no upgrade flow performs one), so it is a fail-loud guard
@@ -105,6 +100,14 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
   `Files` entry; ours emits only referenced members, so each orphan is a `structure`/`added` diff.
   The corpus-wide "container-manifest structure" gap (design §8.3), baselined on real packs and the
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression.
+- [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
+  — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
+  separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw
+  Penumbra export (a `/upgrade` no-op or an otherwise-untouched `/resave` option) since TexTools'
+  own writer currently emits `{}` unconditionally too (its matching `ShouldSerialize*` overrides are
+  commented out, `PMP.cs:1519-1524`). Surfaced as `Flower Child - by Solona.pmp`'s
+  `default_mod.json#/FileSwaps` baseline entry — unrelated to FileSwap preservation itself, which the
+  carve-out only confirms in the opposite (populated-vs-empty) direction.
 
 ### Findings from the `/resave` write-side oracle (2026-07-13)
 
@@ -134,6 +137,12 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — from the game path, yielding `Unknown` for a path it can't classify.
 - [`writeTtmp2` emits an option's files in a different order](backlog/2026-07-13-resave-ttmp2-option-file-order.md)
   — 20 packs; confirm it is *only* order before fixing.
+- [`/resave`'s `diffArchives` call never forwards `confirmDivergence`](backlog/2026-07-18-resave-confirmdivergence-not-forwarded.md)
+  — unlike `corpus-upgrade.ts`, so a `DIVERGENCE_RULES` entry that would *confirm* a payload-member
+  mismatch under `/upgrade` is merely baseline-suppressed under `/resave` instead — not documented,
+  per AGENTS.md. Pre-existing, surfaced while auditing both call sites for FileSwap preservation's
+  `layoutEquivalent` parameter. Fixing it will shrink several packs' `/resave` baselines, so it needs
+  its own deliberate re-bless.
 
 ### Textures
 
@@ -218,3 +227,8 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   `DIVERGENCE_RULES` predicate written as `.startsWith("chara/...")` would silently never fire from
   this call site. Document/guard, not fix — recovering the true gamePath at that layer isn't
   feasible without threading the option structure through.
+- [`diffPayloadSemantic` part 2 has narrower coverage than a casual read suggests](backlog/2026-07-18-semantic-payload-part2-coverage.md)
+  — the FileSwap relaxed-comparison mode's name-only pass filters `common/`-prefixed names out
+  entirely (a one-sided orphan inside `common/` is invisible) and never byte-compares a payload
+  member no `Files` value names (an `Image`, an `ExtraFiles` entry). Only affects the 2 corpus packs
+  on the relaxed path today; doc comment now states both gaps precisely, behaviour unchanged.

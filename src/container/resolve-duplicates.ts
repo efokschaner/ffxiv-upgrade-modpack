@@ -108,7 +108,8 @@ export function resolveDuplicates(
   // We do NOT reproduce that, because TexTools' own writer then destroys the swaps outright
   // (`opt.FileSwaps = new()`, PMP.cs:873-875 -- docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine
   // defect: silent data loss). A Penumbra file swap is a live redirection -- it merges into the
-  // same `redirections` table as Files (Penumbra SubMod.AddContainerTo, SubMod.cs:23-32) -- so
+  // same `redirections` table as Files (Penumbra SubMod.AddContainerTo, Penumbra repo
+  // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/) -- so
   // reproducing TexTools here would hand the user a modpack quietly missing functionality. Per
   // AGENTS.md's first principle we make the better modpack: swaps are carried through to the
   // written pack (src/container/pmp.ts) and never become placeholders, so they contribute no

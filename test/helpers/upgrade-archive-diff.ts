@@ -1,4 +1,5 @@
 import { readZip } from "../../src/zip/zip";
+import { payloadMemberNames, resolveRedirects } from "./archive-redirects";
 import { bytesEqual } from "./compare";
 import { jsonPointerDiff } from "./json-diff";
 import type { FileDiff } from "./upgrade-diff";
@@ -7,7 +8,7 @@ const dec = new TextDecoder();
 
 // A manifest member is a JSON document we compare semantically; everything else (game-file
 // payloads, the TTMP .mpd blob) is compared by the payload byte-diff (diffUpgrade), not here.
-function isManifest(name: string): boolean {
+export function isManifest(name: string): boolean {
   const n = name.toLowerCase();
   return (
     n === "meta.json" ||
@@ -106,13 +107,40 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *  Formerly also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check
  *  (`golden` = the original on-disk JSON, `ours` = the re-emitted one). That check was retired
  *  2026-07-13 when the PMP writer stopped round-tripping the source manifest — see corpus-units.ts's
- *  doc comment for why; `registerResaveCheck` (corpus-resave.ts) is its proper replacement. */
+ *  doc comment for why; `registerResaveCheck` (corpus-resave.ts) is its proper replacement.
+ *
+ *  `layoutEquivalent`, when true, ALSO rewrites a `Files` VALUE (not just a confirmed-absent key)
+ *  when it is purely a `common/N` dedup renumbering — the same shift `diffPayloadSemantic` already
+ *  tolerates in the archive's zip member NAMES (see `diffArchives`'s doc comment). A `Files` value is
+ *  itself a zip path, i.e. layout, so without this the exact same renumbering reappears here as a
+ *  manifest (`jsonPointerDiff`) mismatch even though the structural diff was already suppressed. This
+ *  is deliberately narrow, mirroring `diffPayloadSemantic`'s own part 2 scoping:
+ *   - only fires for a key present on BOTH sides — a missing/extra `Files` KEY (the gamePath, the
+ *     effective result) is never touched here, confirmed-absent-drop pruning above is unaffected;
+ *   - only fires when BOTH sides' values resolve (after backslash normalization, via `looseKey`, same
+ *     as the `present`/`absent` check above) to a path starting with `common/` — a value outside that
+ *     namespace on EITHER side is left as-is, so a writer bug that renames an ordinary (non-dedup)
+ *     member is still caught;
+ *   - it is a re-keying, not a content check: `diffPayloadSemantic`'s redirect-table comparison has
+ *     already proven the gamePath resolves to identical bytes on both sides, so this only suppresses
+ *     the redundant name-shaped report of that same fact, never substitutes for it. Callers must gate
+ *     `layoutEquivalent` on `packHasFileSwaps` of the INPUT pack, same as `diffArchives` requires. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,
   goldenMembers: Map<string, Uint8Array>,
+  layoutEquivalent = false,
 ): unknown {
   const present = memberKeys(goldenMembers);
+  // Deliberately `toLowerCase()`, NOT `looseKey`: this is an EXEMPTION test, not a resolution test.
+  // `looseKey` fails closed when used to RESOLVE a name (it can only ever match a real member, so
+  // being loose there is safe — see `looseKey`'s own doc comment), but fails OPEN when used to
+  // decide whether to EXEMPT a diff: `looseKey` strips every '.' and ' ', so e.g. "com mon/1/a"
+  // would normalize to "common/1/a" and wrongly qualify for the exemption below even though it
+  // never names the dedup namespace. A case-fold alone is the right amount of tolerance here.
+  const isCommon = (value: unknown): boolean =>
+    typeof value === "string" &&
+    value.replace(/\\/g, "/").toLowerCase().startsWith("common/");
   const confirmedFiles = (
     oursFiles: unknown,
     goldenFiles: Record<string, unknown>,
@@ -125,6 +153,15 @@ export function dropConfirmedAbsentKeys(
       const zipPath = isStringValue ? value.replace(/\\/g, "/") : "";
       const absent = isStringValue && !present.has(looseKey(zipPath));
       if (missingFromOurs && absent) continue; // the PMP.cs:883 drop — confirmed
+      if (
+        layoutEquivalent &&
+        !missingFromOurs &&
+        isCommon(value) &&
+        isCommon(o[gamePath])
+      ) {
+        out[gamePath] = o[gamePath]; // common/N renumbering — layout-equivalent, confirmed elsewhere
+        continue;
+      }
       out[gamePath] = value;
     }
     return out;
@@ -133,10 +170,73 @@ export function dropConfirmedAbsentKeys(
   const option = (oursOpt: unknown, goldenOpt: unknown): unknown => {
     if (!isObj(goldenOpt) || !isObj(oursOpt) || !isObj(goldenOpt.Files))
       return goldenOpt;
-    return {
+    const out: Record<string, unknown> = {
       ...goldenOpt,
       Files: confirmedFiles(oursOpt.Files, goldenOpt.Files),
     };
+    // INTENTIONAL DIVERGENCE (spec §5.1). PopulatePmpStandardOption sets `opt.FileSwaps = new()`
+    // and never repopulates it (PMP.cs:873-875), silently destroying every swap the pack carried --
+    // docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. We preserve them instead, because a
+    // swap is a live redirection in Penumbra (SubMod.AddContainerTo, Penumbra repo
+    // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/). So: an EMPTY
+    // golden FileSwaps against a NON-EMPTY ours is the confirmed shape, and we adopt ours' value so
+    // the pointer diff sees no difference. Applies regardless of `layoutEquivalent` -- this is about
+    // the writer destroying swaps on write, not about zip layout.
+    //
+    // Deliberately tight, and NOT symmetric:
+    //  - ours empty + golden populated means we LOST swaps -- still a mismatch;
+    //  - both populated but differing means we MANGLED them -- still a mismatch.
+    // Only "golden dropped everything, we kept something" is confirmed.
+    //
+    // UNGATED: unlike the `layoutEquivalent`-gated common/N exemption above, this carve-out runs for
+    // every pack, not just ones `packHasFileSwaps` flags on the input. Acceptable today because
+    // `base.FileSwaps = o.fileSwaps` (src/container/pmp.ts:446) is a pure passthrough of the reader's
+    // own `fileSwaps` map -- there is no writer code path that could FABRICATE a populated FileSwaps
+    // map for an option the input never gave one to, so the shape this carve-out blesses (ours
+    // non-empty, golden empty) cannot arise for a swap-free pack. That passthrough is pinned by
+    // `test/container/pmp-write.test.ts`'s round-trip case; if it ever grows real logic instead of a
+    // straight assignment, this carve-out should gate on `packHasFileSwaps` of the input too.
+    //
+    // IN-GAME VERIFICATION (AGENTS.md first principle, requirement 3) -- performed 2026-07-19 by the
+    // operator, against `torn bassment glow.pmp` (6 swaps pulling e6120 textures onto e0246):
+    // both packs load in Penumbra; the FileSwaps metadata difference is visible; and **a material
+    // that loads successfully from our output FAILS to load from TexTools' output**, because the
+    // swaps that resolved its textures were destroyed on write. That is the concrete user-visible
+    // harm this divergence exists to prevent, observed rather than reasoned.
+    //
+    // The exact mechanism, so this is reproducible rather than testimony. The packed material
+    // `chara/equipment/e0246/material/v0001/mt_c0101e0246_top_a.mtrl` references THREE textures,
+    // and ALL THREE arrive via FileSwaps -- none is packed:
+    //     v01_c0101e0246_top_n_afadde89.tex   <- e6120/v01_c0101e6120_top_n.tex
+    //     v01_c0101e0246_top_m_0b26c9b8.tex   <- e6120/v01_c0101e6120_top_m.tex
+    //     v01_c0101e0246_top_id_f6bf57ea.tex  <- e6120/v01_c0101e6120_top_id.tex
+    // Those hash-suffixed DESTINATION paths are TexTools' item-swap feature minting unique names so
+    // the swapped item cannot collide with real e0246 gear. Checked against the 040000 index
+    // (scripts/lib/game-index.ts): all three destinations are ABSENT from the game, all three
+    // sources EXIST. So they resolve to nothing unless the swap supplies them -- there is no
+    // base-game fallback, because the suffixed name is not a base-game name (the conventional
+    // un-suffixed `v01_c0101e0246_top_n.tex` does exist, but the material never asks for it).
+    // Drop the swaps and the material points at three addresses backed by nothing: a hard load
+    // failure, not a degraded appearance.
+    //
+    // Verified against ConsoleTools `/resave`, NOT `/upgrade` -- ConsoleTools no-ops on every
+    // swap-carrying pack we have, so it emits no `/upgrade` output to compare against. `/resave` is
+    // the same write path minus the transform (Program.cs:191-221) and PopulatePmpStandardOption
+    // sits in that shared path, so the destruction shown there is the destruction any writing
+    // `/upgrade` performs. What this does NOT establish is how often a real user reaches that path
+    // via `/upgrade`; that is a reachability question answered by the call path, not by this
+    // evidence. See the spec §7 -- do not cite this as more than it is.
+    const gSwaps = isObj(goldenOpt.FileSwaps) ? goldenOpt.FileSwaps : undefined;
+    const oSwaps = isObj(oursOpt.FileSwaps) ? oursOpt.FileSwaps : undefined;
+    if (
+      gSwaps !== undefined &&
+      oSwaps !== undefined &&
+      Object.keys(gSwaps).length === 0 &&
+      Object.keys(oSwaps).length > 0
+    ) {
+      out.FileSwaps = oSwaps;
+    }
+    return out;
   };
 
   if (!isObj(golden) || !isObj(ours)) return golden;
@@ -274,7 +374,15 @@ function diffPayloadMembers(
  *
  * `confirmDivergence`, when supplied, is forwarded to `diffPayloadMembers`' matched-pair content
  * check (see its doc comment) so a confirmed DIVERGENCE_RULES entry is not double-reported here
- * after `diffUpgrade` already accepted it. */
+ * after `diffUpgrade` already accepted it.
+ *
+ * `layoutEquivalent` swaps the payload comparison for `diffPayloadSemantic` — compare the redirect
+ * table rather than the member-name multiset. Pass `true` ONLY when the INPUT pack carries FileSwaps
+ * (`packHasFileSwaps`), never based on what the diff looks like: gating on the symptom would
+ * silently absorb genuine writer regressions in every pack. See the spec, §5.2.
+ *
+ * `layoutEquivalent` REQUIRES `checkPayloadMembers` — see the guard at the top of the function body
+ * for why the two are coupled. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
@@ -284,7 +392,23 @@ export function diffArchives(
     ours: Uint8Array,
     golden: Uint8Array,
   ) => boolean,
+  layoutEquivalent = false,
 ): FileDiff[] {
+  if (layoutEquivalent && !checkPayloadMembers) {
+    // Fail loud (AGENTS.md), not silently diverge: dropConfirmedAbsentKeys' Files-VALUE
+    // common/N exemption (below, via jsonPointerDiff) is sound only because diffPayloadSemantic
+    // (gated by checkPayloadMembers) independently proves the redirect resolves to identical
+    // content. Without that, this combination would exempt a genuinely mis-pointed redirect —
+    // e.g. ours "chara/a.tex" -> "common/1/a.bin" vs golden "chara/a.tex" -> "common/2/zzz.bin",
+    // naming entirely different content — with no content check anywhere in the comparison.
+    throw new Error(
+      "diffArchives: layoutEquivalent requires checkPayloadMembers=true. The Files-value " +
+        "common/N exemption is only sound when diffPayloadSemantic (checkPayloadMembers) runs " +
+        "alongside it to independently prove content equivalence through the redirect table; " +
+        "enabling layoutEquivalent without it would exempt every common/->common/ Files-value " +
+        "difference with no content check at all.",
+    );
+  }
   const om = readZip(ours);
   const gm = readZip(golden);
   const oNames = new Set(manifestNames(om));
@@ -317,7 +441,10 @@ export function diffArchives(
       // qualifies as a confirmed drop, so this reduces to a straight structural diff in that case.
       // One FileDiff PER DIFFERING JSON POINTER, not one per document: see jsonPointerDiff's doc
       // comment for why the old document-granular `mismatch` was a ratchet hazard.
-      for (const d of jsonPointerDiff(o, dropConfirmedAbsentKeys(o, g, gm))) {
+      for (const d of jsonPointerDiff(
+        o,
+        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent),
+      )) {
         diffs.push({
           kind: "manifest",
           gamePath: `${name}#${d.pointer}`,
@@ -329,6 +456,158 @@ export function diffArchives(
     }
   }
   if (checkPayloadMembers)
-    diffs.push(...diffPayloadMembers(om, gm, confirmDivergence));
+    diffs.push(
+      ...(layoutEquivalent
+        ? diffPayloadSemantic(om, gm, confirmDivergence)
+        : diffPayloadMembers(om, gm, confirmDivergence)),
+    );
+  return diffs;
+}
+
+/** Payload comparison for a pack whose zip LAYOUT cannot match the golden's, but whose behaviour
+ *  must (the spec, §5.2). Compares the redirect table (`gamePath -> content`, keyed per option —
+ *  see `resolveRedirects`'s doc comment, archive-redirects.ts — Penumbra SubMod.AddContainerTo,
+ *  Penumbra repo Mods/SubMods/SubMod.cs:23-32, a separate repo from this project's reference/)
+ *  instead of the member-name multiset, because a preserved FileSwap means
+ *  TexTools burned a dedup `idx` we did not (PMP.cs · UnpackPmpOption · 1104-1137 ->
+ *  PmpExtensions.cs · ResolveDuplicates · 500,543 — `var idx = 1` then `idx++` on a repeat hit),
+ *  shifting every later `common/N`.
+ *
+ *  This is a RE-KEYING, not a tolerance. It still fails on a (option, gamePath) pair present on
+ *  one side only, on differing content for a shared pair, and on ANY non-`common/` member name
+ *  differing — only renumbering WITHIN the `common/N` dedup namespace is free. Callers must gate
+ *  it on the input pack actually carrying FileSwaps (`packHasFileSwaps`); firing it on the diff's
+ *  shape instead would silently absorb writer regressions in every other pack.
+ *
+ *  Two real narrowings versus the strict-mode sibling (`diffPayloadMembers`), not just a looser
+ *  tolerance — see part 2's own comment below for the detail: a one-sided orphan member INSIDE
+ *  `common/` is invisible here (part 2 filters the whole namespace out, on both sides, not just the
+ *  exact-name check), and a payload member no `Files` value names (an option's `Image`, an
+ *  `ExtraFiles` entry) never gets its bytes compared at all, even as a matched pair.
+ *
+ *  `FileDiff.gamePath` here is `resolveRedirects`' composite key
+ *  (`redirectKey`: `${manifestName}#${optionIndex}|${gamePath}`), not a bare gamePath — that key IS
+ *  the identity a divergence in this comparison is keyed by (see `resolveRedirects`' doc comment
+ *  for why an archive-wide merge would silently hide a cross-option divergence), and it stays
+ *  human-legible (names both the option and the gamePath) for a failing assertion. Because the
+ *  gamePath is always the key's trailing segment (after the last `|`), a `confirmDivergence` rule
+ *  whose predicate matches a gamePath *suffix* (`.endsWith(...)`, per `diffPayloadMembers`'s doc
+ *  comment above) still fires correctly against this composite key. */
+export function diffPayloadSemantic(
+  ours: Map<string, Uint8Array>,
+  golden: Map<string, Uint8Array>,
+  confirmDivergence?: (
+    gamePath: string,
+    ours: Uint8Array,
+    golden: Uint8Array,
+  ) => boolean,
+): FileDiff[] {
+  const diffs: FileDiff[] = [];
+
+  // 1. The redirect tables must agree exactly — same (option, gamePath) keys, same bytes.
+  const o = resolveRedirects(ours);
+  const g = resolveRedirects(golden);
+  for (const key of [...new Set([...o.keys(), ...g.keys()])].sort()) {
+    const ob = o.get(key);
+    const gb = g.get(key);
+    if (ob === undefined) {
+      diffs.push({
+        kind: "structure",
+        gamePath: key,
+        index: 0,
+        status: "added",
+        detail: undefined,
+      });
+      continue;
+    }
+    if (gb === undefined) {
+      diffs.push({
+        kind: "structure",
+        gamePath: key,
+        index: 0,
+        status: "removed",
+        detail: undefined,
+      });
+      continue;
+    }
+    if (bytesEqual(ob, gb)) continue;
+    if (confirmDivergence?.(key, ob, gb)) continue;
+    diffs.push({
+      kind: "structure",
+      gamePath: key,
+      index: 0,
+      status: "mismatch",
+      detail: `${ob.length} vs ${gb.length} bytes`,
+    });
+  }
+
+  // 2. Every payload member name OUTSIDE the `common/N` dedup namespace must still match exactly (up
+  //    to `looseKey`, same spelling tolerance as `diffPayloadMembers`), so a misnamed or dropped
+  //    ordinary member is still caught here. Matched by `looseKey` but REPORTED under the real member
+  //    name — unlike the matching key, `looseKey` strips every '.' (see its doc comment), so using it
+  //    as the reported name too would silently corrupt a real name like "a.tex" into "atex" in every
+  //    diff this branch raises.
+  //
+  //    Bucketed multiset pairing, mirroring `diffPayloadMembers` above — NOT a `Set`-membership
+  //    check. Two genuinely distinct member names can share a `looseKey` (e.g. "extra.tex" and
+  //    "extra .tex" both normalize to "extratex"); a `Set` can only record that the key is
+  //    PRESENT, not that one side has two real members under it and the other has one, so an
+  //    extra, unpaired member on either side would be silently lost. Bucketing by `looseKey`,
+  //    sorting within each bucket, and pairing positionally makes the comparison count-aware: only
+  //    the overflow past the shared count is reported, exactly as `diffPayloadMembers` does.
+  //
+  //    TWO real narrowings versus that strict-mode sibling — both a genuine coverage loss in
+  //    relaxed mode, not merely cosmetic, and both scoped to packs that take this path
+  //    (`packHasFileSwaps`, 2 of the corpus as of this writing — see the design spec §5.2):
+  //     - `common/`-prefixed names are filtered OUT of this comparison entirely (`outsideNames`,
+  //       on both `ours` and `golden`) rather than merely exempted from the exact-name check. A
+  //       member that exists inside `common/` on only ONE side — an orphan the writer dropped or
+  //       added, unrelated to any legitimate renumbering — is invisible to this whole function,
+  //       though `diffPayloadMembers` (strict mode) would report it as a structural add/remove.
+  //       Nothing else in relaxed mode catches it either, unless it also happens to be a
+  //       `Files`-referenced member whose content part 1 checks.
+  //     - Matched pairs here are NOT byte-compared — this part is name-only. "Already checked by
+  //       part 1's redirect-table comparison" holds ONLY for a member actually named by some
+  //       option's `Files` value: part 1 walks `Files` (via `resolveRedirects`), so a payload
+  //       member no `Files` entry points at — an option's `Image` PNG, an `ExtraFiles` entry — has
+  //       its bytes checked by NEITHER part here, even though `diffPayloadMembers` (strict mode)
+  //       would content-compare it as a matched pair. See
+  //       `docs/backlog/2026-07-18-semantic-payload-part2-coverage.md`.
+  const outsideNames = (m: Map<string, Uint8Array>) =>
+    payloadMemberNames(m).filter((n) => !looseKey(n).startsWith("common/"));
+  const bucket = (names: string[]): Map<string, string[]> => {
+    const m = new Map<string, string[]>();
+    for (const n of names) {
+      const list = m.get(looseKey(n)) ?? [];
+      list.push(n);
+      m.set(looseKey(n), list);
+    }
+    return m;
+  };
+  const ob = bucket(outsideNames(ours));
+  const gb = bucket(outsideNames(golden));
+  for (const bucketKey of [...new Set([...ob.keys(), ...gb.keys()])].sort()) {
+    const os = (ob.get(bucketKey) ?? []).slice().sort();
+    const gs = (gb.get(bucketKey) ?? []).slice().sort();
+    const n = Math.min(os.length, gs.length);
+    for (let i = n; i < gs.length; i++) {
+      diffs.push({
+        kind: "structure",
+        gamePath: gs[i]!,
+        index: 0,
+        status: "added",
+        detail: undefined,
+      });
+    }
+    for (let i = n; i < os.length; i++) {
+      diffs.push({
+        kind: "structure",
+        gamePath: os[i]!,
+        index: 0,
+        status: "removed",
+        detail: undefined,
+      });
+    }
+  }
   return diffs;
 }
