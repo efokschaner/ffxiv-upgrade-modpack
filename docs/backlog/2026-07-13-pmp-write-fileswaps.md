@@ -1,59 +1,37 @@
-# Port FileSwap handling in the PMP write path (currently: fail loud)
+# FileSwap preservation — remaining work
 
-Filed: 2026-07-13 · Status: open
+Filed: 2026-07-13 · Status: **partly shipped**, superseded by
+`docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md`
 
-`resolveDuplicates` (`src/container/resolve-duplicates.ts`) throws when an option carries a
-non-empty `fileSwaps` map, because this port cannot reproduce TexTools' FileSwap handling
-faithfully with the information available to a browser-targeted library. Full picture, for whoever
-picks this up:
+The original item ("`resolveDuplicates` throws on a non-empty `fileSwaps` map; we cannot reproduce
+TexTools' placeholder mechanism without the live game index") is **resolved**. Its central premise
+was wrong: the index was only ever needed to decide a single `idx` increment, and since we now
+preserve swaps rather than modelling placeholders, nothing about the game index is required. See the
+spec §4 for the full reasoning and the measurement that closed the bundled-index option.
 
-- **The placeholder mechanism.** In TexTools, `ResolveDuplicates` (`PmpExtensions.cs:476-566`) does
-  not run over "just the custom files" — it runs over `WizardStandardOptionData.Files`, which
-  `UnpackPmpOption` (`PMP.cs:1104-1137`) builds by merging custom `Files` AND `FileSwaps` into one
-  dictionary. On the `/upgrade` load path, `zipArchivePath` is `null` (`WizardData.cs:818`:
-  `UnpackPmpOption(o, null, unzipPath, false)`), so `includeData` is `false` (`PMP.cs:1015`). For
-  each FileSwap, TexTools resolves the swap's *source* against the live game index
-  (`tx.Get8xDataOffset(src, true)`, `PMP.cs:1117`); if that lookup succeeds (`offset > 0`), the swap
-  becomes an empty placeholder entry, `ret.Add(src, new FileStorageInformation())` (`PMP.cs:1130`) —
-  keyed by the swap's *source* path, not its destination, and carrying a default-valued struct
-  (`RealPath == null`, `StorageType == EFileStorageType.ReadOnly`). `WizardStandardOptionData` has
-  no separate FileSwaps field (`WizardData.cs:69-80`), so that placeholder flows on as an ordinary
-  `Files` entry and reaches `ResolveDuplicates` indistinguishable from a real file.
-- **The idx-burning interaction with the zero-hash bug (`docs/TEXTOOLS_BUGS.md` #8).** The
-  placeholder's `RealPath` is `null`, so it fails `File.Exists(f.Info.RealPath)`
-  (`PmpExtensions.cs:509`) exactly like an absent PMP file does, and takes the same zero-hash
-  sentinel path (`:509-514`) — colliding with every other absent/placeholder file in the option and
-  burning an `idx` value that shifts the `common/N` numbering of every genuine duplicate that
-  follows it in iteration order.
-- **We cannot reproduce this without a game index.** Deciding whether a given FileSwap yields a
-  placeholder (vs. being skipped entirely, `PMP.cs:1118-1122`, `offset <= 0`) requires querying the
-  live game's index file via `tx.Get8xDataOffset` — `PMP.cs:1063-1067` opens a readonly transaction
-  specifically to do this. This library has no game index and no transaction layer; porting this
-  faithfully would mean either bundling/fetching real game index data (out of scope for a
-  browser-targeted upgrader) or guessing, which risks silently mis-numbering `common/N` for every
-  duplicate after a swap.
-- **TexTools' own writer drops FileSwaps outright regardless.** `PopulatePmpStandardOption`
-  (`PMP.cs:873-875`) sets `opt.FileSwaps = new()` and never adds to it — only `opt.Files` and
-  `opt.Manipulations` get populated in the function body that follows. So even if we *could*
-  reproduce the read-side placeholder mechanism perfectly, the pack TexTools itself writes back out
-  loses the FileSwaps entirely; matching TexTools' emitted bytes does not require carrying FileSwaps
-  through at all. See `docs/TEXTOOLS_BUGS.md` #10 — adjudicated as a genuine TexTools defect (silent
-  data loss on write), not a quirk we need to transcribe.
-- **No corpus coverage.** All 13 real corpus PMPs have `fileSwaps=0`; this is a latent gap with no
-  oracle behind it today.
-- **Current behaviour:** `resolveDuplicates` throws a descriptive error citing the above when an
-  option's `fileSwaps` is non-empty, rather than risking a silently wrong `common/N` numbering.
-  Pinned by a test in `test/container/resolve-duplicates.test.ts`.
+**Shipped (2026-07-18):** the throw is gone; swaps are carried through to the written pack;
+`torn bassment glow.pmp` is in `test/corpus/real/` and its `/resave` diff empirically confirms
+ConsoleTools destroys all 6 swaps while we keep them (`docs/TEXTOOLS_BUGS.md` #10 observed, not
+inferred).
 
-**To actually fix this:** given TexTools' own writer drops FileSwaps unconditionally
-(`docs/TEXTOOLS_BUGS.md` #10), the pragmatic port-side fix does NOT need the game index at all —
-since our output only needs to match what TexTools writes, and TexTools writes nothing for
-FileSwaps, we could instead *drop* fileSwaps entries before they ever reach `resolveDuplicates`
-(matching the writer's end state) rather than trying to reproduce the read-side placeholder/
-idx-burning mechanics. The one caveat: if TexTools' `/upgrade` needs to rewrite a pack that had
-FileSwaps but doesn't ultimately touch that particular option's payload (e.g. the swap survives
-untouched in a no-op-for-that-option path), the idx-burning could still perturb OTHER options'
-`common/N` numbering in ways a "just drop them" port would miss — this needs verifying against a
-synthetic pack with FileSwaps once one exists before treating "drop silently" as safe. Would need a
-synthetic modpack builder (`scripts/generate-synthetics/`) carrying a FileSwaps entry to pin the
-golden bytes either way.
+**Remaining:**
+
+1. **The `common/N` divergence is still unexercised.** TexTools' zero-hash class burns one `idx`
+   once it reaches **two members** — and ≥2 valid swaps alone clear that, no absent file needed
+   (the original item and early spec drafts both got this threshold wrong).
+   `torn bassment glow.pmp` has 6 swaps but no duplicate content, so there is no `common/N` member
+   for the burned `idx` to shift and the divergence never materialises. Reaching it needs a
+   **synthetic pack with ≥2 swaps AND duplicate content**. Spec §5.2.
+2. **The cause-gated semantic-comparison mode** that divergence needs (compare payload by
+   `gamePath` through the redirect table rather than by zip member name, gated on the input pack
+   carrying ≥1 FileSwap). Spec §5.2. Penumbra's `SubMod.AddContainerTo` (`SubMod.cs:23-32`) is the
+   authority on what "same effective result" means.
+3. **The §5.1 manifest carve-out** confirming our populated `FileSwaps` against the golden's `{}`,
+   replacing the current ratchet-baseline suppression.
+4. **The in-game verification gate** (spec §7) — manual, required by AGENTS.md's first principle
+   before this counts as a justified divergence.
+
+**Frequency correction.** The original item claimed real PMPs "commonly carry file swaps". Measured
+2026-07-18 across the operator's whole user directory: **1 of 826 PMPs** (~0.12%). Still worth
+fixing — it was a hard crash on a real pack — but the "common input" framing that put it at #1 does
+not survive measurement.

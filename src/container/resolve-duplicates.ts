@@ -7,17 +7,17 @@
 //
 // Three things ported deliberately, not by omission:
 //
-// 1. `useCompressed` is always false FOR INPUTS WE ACCEPT. GetHashKey's caller
-//    (PmpExtensions.cs:488-499) picks compressed-vs-uncompressed hashing by majority `StorageType`
-//    across the file set, defaulting to the else/compCount++ branch (:493-496) for anything that
-//    isn't `UncompressedIndividual`/`UncompressedBlob` -- which includes a FileSwap placeholder's
+// 1. `useCompressed` is always false. GetHashKey's caller (PmpExtensions.cs:488-499) picks
+//    compressed-vs-uncompressed hashing by majority `StorageType` across the file set, defaulting
+//    to the else/compCount++ branch (:493-496) for anything that isn't
+//    `UncompressedIndividual`/`UncompressedBlob` -- which includes a FileSwap placeholder's
 //    `FileStorageInformation` default (`StorageType` is a struct field defaulting to
 //    `EFileStorageType.ReadOnly`, TransactionDataHandler.cs:25-47), so a pack WITH FileSwaps could
-//    in principle push `compCount` above `uncompCount`. It never does here because we reject any
-//    option with a non-empty FileSwaps map before this point (see the throw above) -- every file we
-//    actually hash is a real, always-`RawUncompressed` PMP file, so `compCount` is always 0 and the
-//    uncompressed branch always wins. We don't port the majority-vote branch at all -- only the
-//    branch that can ever be taken given that rejection. And since only EQUALITY CLASSES of the hash
+//    in principle push `compCount` above `uncompCount` IN TEXTOOLS. It never does here because we
+//    do not construct placeholders at all (see the FileSwaps note below) -- every entry we hash is
+//    a real, always-`RawUncompressed` PMP file, so `compCount` is always 0 and the uncompressed
+//    branch always wins. We don't port the majority-vote branch at all -- only the branch that can
+//    ever be taken given that. And since only EQUALITY CLASSES of the hash
 //    matter for dedup (never the digest value itself), `sha1Hex` (src/util/sha1.ts) stands in for
 //    `TransactionDataHandler.GetUncompressedFile` + `SHA1.ComputeHash` in one step: our in-memory
 //    `ModpackFile.data` already IS the uncompressed bytes, so there is no separate "resolve from
@@ -93,39 +93,27 @@ export function resolveDuplicates(
     }
   }
 
-  // FileSwaps cannot be reproduced faithfully. In TexTools, ResolveDuplicates runs over
-  // WizardStandardOptionData.Files, which UnpackPmpOption (PMP.cs:1104-1137) populates by merging
-  // custom Files AND FileSwaps into one dictionary. On the /upgrade load path (WizardData.cs:818:
-  // `UnpackPmpOption(o, null, unzipPath, false)`) `zipArchivePath` is null, so `includeData` is false
-  // (PMP.cs:1015) and each FileSwap whose source resolves in the live game index becomes an empty
-  // placeholder, `ret.Add(src, new FileStorageInformation())` (PMP.cs:1130) -- deciding this requires
-  // `tx.Get8xDataOffset` against the GAME INDEX (PMP.cs:1063-1067, :1117-1122), which this
-  // browser-targeted library does not have and cannot open. `WizardStandardOptionData` has no
+  // INTENTIONAL DIVERGENCE -- FileSwaps are preserved, not modelled as placeholders. In TexTools,
+  // ResolveDuplicates runs over WizardStandardOptionData.Files, which UnpackPmpOption
+  // (PMP.cs:1104-1137) populates by merging custom Files AND FileSwaps into one dictionary. On the
+  // /upgrade load path (WizardData.cs:818: `UnpackPmpOption(o, null, unzipPath, false)`)
+  // `zipArchivePath` is null, so `includeData` is false (PMP.cs:1015) and each FileSwap whose
+  // source resolves in the live game index becomes an empty placeholder,
+  // `ret.Add(src, new FileStorageInformation())` (PMP.cs:1130). `WizardStandardOptionData` has no
   // separate FileSwaps field (WizardData.cs:69-80), so that placeholder flows on as an ordinary
   // Files entry and reaches ResolveDuplicates, where it fails `File.Exists(null)` and burns an idx
-  // on the zero-hash path (PmpExtensions.cs:509-514; docs/TEXTOOLS_BUGS.md #8), shifting every later
-  // common/N number. We cannot reproduce that without a game index, so fail loud rather than
-  // silently diverge -- see docs/backlog/2026-07-13-pmp-write-fileswaps.md.
+  // on the zero-hash path (PmpExtensions.cs:509-514; docs/TEXTOOLS_BUGS.md #8) once the zero-hash
+  // class reaches two members -- shifting every later common/N number.
   //
-  // Checked over EVERY option in `data.groups`, NOT just `prefixes.keys()` -- i.e. independent of
-  // whatever `buildPages` (option-prefix.ts) pruned. An option can be absent from `prefixes` (its
-  // group didn't survive pruning) while still carrying a non-empty FileSwaps map; iterating only
-  // `prefixes.keys()` would silently skip the guard for exactly that option instead of throwing --
-  // the inverse of "fail loud, never silently diverge" (AGENTS.md). `prefixes` itself is still used
-  // above for the knownOptions cross-check (a caller-mismatch guard, unrelated to pruning).
-  for (const g of data.groups) {
-    for (const option of g.options) {
-      if (Object.keys(option.fileSwaps).length > 0) {
-        throw new Error(
-          "resolveDuplicates: option has a non-empty FileSwaps map, which this port cannot reproduce " +
-            "faithfully -- deciding whether a swap yields an empty placeholder entry (PMP.cs:1104-1137) " +
-            "requires querying the live game index (tx.Get8xDataOffset, PMP.cs:1117-1122), which this " +
-            "browser-targeted library does not have. See " +
-            "docs/backlog/2026-07-13-pmp-write-fileswaps.md for the full analysis.",
-        );
-      }
-    }
-  }
+  // We do NOT reproduce that, because TexTools' own writer then destroys the swaps outright
+  // (`opt.FileSwaps = new()`, PMP.cs:873-875 -- docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine
+  // defect: silent data loss). A Penumbra file swap is a live redirection -- it merges into the
+  // same `redirections` table as Files (Penumbra SubMod.AddContainerTo, SubMod.cs:23-32) -- so
+  // reproducing TexTools here would hand the user a modpack quietly missing functionality. Per
+  // AGENTS.md's first principle we make the better modpack: swaps are carried through to the
+  // written pack (src/container/pmp.ts) and never become placeholders, so they contribute no
+  // entries here and burn no idx. See
+  // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md.
 
   interface Entry {
     file: ModpackFile;

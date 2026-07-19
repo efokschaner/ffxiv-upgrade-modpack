@@ -434,6 +434,14 @@ function optionToJson(
       Files[gamePath] = zip.replace(/\//g, "\\"); // PMP.cs:914
     }
     base.Files = Files;
+    // INTENTIONAL DIVERGENCE -- do NOT "fix" this to `{}` to match TexTools. PopulatePmpStandardOption
+    // sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:873-875), silently destroying
+    // every swap the pack carried: docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. A swap
+    // is a live redirection in Penumbra -- merged into the same `redirections` table as Files, with
+    // Files winning a gamePath collision (SubMod.AddContainerTo, Penumbra SubMod.cs:23-32) -- so
+    // reproducing that would hand the user a modpack quietly missing functionality. Per AGENTS.md's
+    // first principle we carry them through instead. See
+    // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md.
     base.FileSwaps = o.fileSwaps;
     base.Manipulations = normalizeManipulations(o.manipulations);
     if (isMultiOption) {

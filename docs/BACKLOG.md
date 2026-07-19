@@ -39,31 +39,36 @@ inputs the corpus doesn't happen to cover — robustness and our "fail loud, nev
 rule; **(c)** the real-corpus byte-divergences keeping already-shipped rounds off byte-zero.
 Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [Port FileSwap handling](backlog/2026-07-13-pmp-write-fileswaps.md) — **hard crash on a common real
-   input.** `resolveDuplicates` throws on a non-empty `fileSwaps` map. TexTools turns each swap into a
-   placeholder whose zero-hash burns an `idx` and shifts `common/N` numbering, and deciding *which*
-   swaps become placeholders needs the live game index we don't have. Real Penumbra `.pmp` mods
-   commonly carry file swaps, so this blocks a whole class of real packs despite 0 of 13 corpus PMPs
-   tripping it — but TexTools' own writer drops FileSwaps entirely, so "just drop them" is probably
-   the right (and cheap) port; that needs a synthetic pack to prove.
+1. [A default-only PMP gets a `default/` member prefix](backlog/2026-07-18-default-only-pmp-option-prefix.md)
+   — **silent layout divergence that also masks content comparison.** A `default_mod.json`-only pack
+   (no groups) has every member emitted one folder deeper than the golden. Because no member name
+   pairs, the golden diff never content-compares that pack's payload at all — so its baseline is not
+   evidence of byte-parity. Affects every default-only PMP; surfaced 2026-07-18 by the first corpus
+   pack with that shape.
 
-2. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
+2. [SQPack model encode writes unused-LoD offsets as end-of-data](backlog/2026-07-18-mdl-self-roundtrip-byte21.md)
+   — **the suite is RED on this**, and no ratchet baseline covers it. A `lodCount = 1` model
+   round-trips with `vertexOffset[1..2]`/`indexOffset[1..2]` rewritten from `0` to the file length.
+   `/upgrade` rewrites `.mdl`s, so emitted models may carry the bogus offsets; item 1 is currently
+   hiding whether they do.
+
+3. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
    — **silent divergence (fail-loud violation).** `IMC_TABLE` is exhaustive over equipment/accessory
    but Set-only, so a NonSet meta that *would* grow its IMC silently passes through — wrong output
    with no throw and no test catching it. Needs a NonSet `.imc` parser, its own extraction pass, and
    the NonSet column selection; at minimum make it fail loud until then.
 
-3. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
+4. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
    — **silent divergence (fail-loud violation), cheap fix.** `parsePmpGroup` defaults `Options` to
    `[]`, silently dropping the group's files, where C# throws `Unimplemented PMP group type`. Inverts
    our fail-loud rule; flip it to a throw after the corpus scan the item calls for.
 
-4. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
+5. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
    — **mechanical real-corpus correctness win.** We emit at the convention path instead of the
    canonical override. Fix is mechanical: re-run `scripts/extract-index-overrides.ts` against a game
    install.
 
-5. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+6. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
@@ -73,6 +78,11 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
 ### PMP write path
 
+- [FileSwap preservation — remaining work](backlog/2026-07-13-pmp-write-fileswaps.md) — the crash is
+  fixed and swaps are preserved (a deliberate divergence from `docs/TEXTOOLS_BUGS.md` #10, confirmed
+  against the oracle on a real pack). Outstanding: a synthetic with ≥2 swaps *and* duplicate content
+  to reach the `common/N` shift, the cause-gated semantic-comparison mode it needs, the manifest
+  carve-out replacing today's baseline suppression, and the manual in-game gate.
 - [Port `.meta`/`.rgsp` → `Manipulations` conversion](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)
   — `writePmp` throws where `PopulatePmpStandardOption` converts. Unreachable today (only a TTMP→PMP
   format conversion could reach it, and no upgrade flow performs one), so it is a fail-loud guard

@@ -231,36 +231,43 @@ describe("resolveDuplicates", () => {
     expect(() => resolveDuplicates(d, prefixes)).toThrow(/prefixes/);
   });
 
-  it(
-    "throws on a non-empty FileSwaps map -- we cannot faithfully reproduce the PMP.cs:1104-1137 " +
-      "placeholder mechanism (no game index) and TexTools' own writer drops FileSwaps anyway (PMP.cs:873-875)",
-    () => {
-      const opt = option("Opt", [file("a.tex", bytes(1))], {
-        "chara/dest.tex": "chara/src.tex",
-      });
-      const prefixes = new Map([[opt, "g/"]]);
-      const d = pack([group("G", [opt])]);
+  // INTENTIONAL DIVERGENCE (docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md):
+  // TexTools merges FileSwaps into Files as dataless placeholders (PMP.cs:1104-1137) which burn an
+  // idx on the zero-hash path once two of them collide, then destroys the swaps on write
+  // (PMP.cs:873-875, docs/TEXTOOLS_BUGS.md #10). We preserve the swaps instead, so they never reach
+  // this function's dedup at all. These two tests pin that -- swaps contribute NO entries and burn
+  // NO idx -- and replace two earlier tests that pinned the old fail-loud throw.
+  it("ignores FileSwaps entirely: they contribute no entries and burn no idx", () => {
+    const a = file("a.tex", bytes(1));
+    const dupA = file("b.tex", bytes(1)); // same content as `a` -> the pack's ONE real duplicate
+    const opt = option("Opt", [a, dupA], {
+      "chara/dest1.tex": "chara/src1.tex",
+      "chara/dest2.tex": "chara/src2.tex", // >=2 swaps: TexTools WOULD burn idx 1 here
+    });
+    const prefixes = new Map([[opt, "g/"]]);
+    const d = pack([group("G", [opt])]);
 
-      expect(() => resolveDuplicates(d, prefixes)).toThrow(/FileSwaps/);
-    },
-  );
+    const result = resolveDuplicates(d, prefixes);
 
-  it(
-    "throws on a non-empty FileSwaps map even when the option was PRUNED and has no `prefixes` " +
-      "entry -- the guard must not depend on buildPages' pruning (an option whose ONLY content is " +
-      "FileSwaps would otherwise be silently dropped instead of failing loud)",
-    () => {
-      const opt = option("Opt", [], {
-        "chara/dest.tex": "chara/src.tex",
-      });
-      // `prefixes` has NO entry for `opt` at all -- simulating a group/option that buildPages
-      // pruned out of the surviving pages. `data.groups` still carries it, though.
-      const prefixes = new Map<ModpackOption, string>();
-      const d = pack([group("G", [opt])]);
+    // Only the two real files are placed; neither swap appears.
+    expect(result.size).toBe(2);
+    // The duplicate claims common/1 -- NOT common/2. In TexTools the two placeholders would have
+    // collided on ZERO_HASH first and taken idx 1, pushing this to common/2.
+    expect(result.get(a)).toBe("common/1/a.tex");
+    expect(result.get(dupA)).toBe("common/1/a.tex");
+  });
 
-      expect(() => resolveDuplicates(d, prefixes)).toThrow(/FileSwaps/);
-    },
-  );
+  it("ignores FileSwaps on an option that buildPages PRUNED (no `prefixes` entry) without throwing", () => {
+    const opt = option("Opt", [], {
+      "chara/dest.tex": "chara/src.tex",
+    });
+    // `prefixes` has NO entry for `opt` at all -- simulating a group/option that buildPages
+    // pruned out of the surviving pages. `data.groups` still carries it, though.
+    const prefixes = new Map<ModpackOption, string>();
+    const d = pack([group("G", [opt])]);
+
+    expect(resolveDuplicates(d, prefixes).size).toBe(0);
+  });
 
   it("8. composes with the real optionPrefixes(): a content duplicate across two DIFFERENT options dedupes globally, matching the observed corpus shape ([Jaque] Romeo & Juliet: one common/N/ shared by paths from two options)", () => {
     const emptyDefault = option("", []);
