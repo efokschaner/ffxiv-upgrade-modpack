@@ -132,9 +132,15 @@ export function dropConfirmedAbsentKeys(
   layoutEquivalent = false,
 ): unknown {
   const present = memberKeys(goldenMembers);
+  // Deliberately `toLowerCase()`, NOT `looseKey`: this is an EXEMPTION test, not a resolution test.
+  // `looseKey` fails closed when used to RESOLVE a name (it can only ever match a real member, so
+  // being loose there is safe — see `looseKey`'s own doc comment), but fails OPEN when used to
+  // decide whether to EXEMPT a diff: `looseKey` strips every '.' and ' ', so e.g. "com mon/1/a"
+  // would normalize to "common/1/a" and wrongly qualify for the exemption below even though it
+  // never names the dedup namespace. A case-fold alone is the right amount of tolerance here.
   const isCommon = (value: unknown): boolean =>
     typeof value === "string" &&
-    looseKey(value.replace(/\\/g, "/")).startsWith("common/");
+    value.replace(/\\/g, "/").toLowerCase().startsWith("common/");
   const confirmedFiles = (
     oursFiles: unknown,
     goldenFiles: Record<string, unknown>,
@@ -310,7 +316,10 @@ function diffPayloadMembers(
  * `layoutEquivalent` swaps the payload comparison for `diffPayloadSemantic` — compare the redirect
  * table rather than the member-name multiset. Pass `true` ONLY when the INPUT pack carries FileSwaps
  * (`packHasFileSwaps`), never based on what the diff looks like: gating on the symptom would
- * silently absorb genuine writer regressions in every pack. See the spec, §5.2. */
+ * silently absorb genuine writer regressions in every pack. See the spec, §5.2.
+ *
+ * `layoutEquivalent` REQUIRES `checkPayloadMembers` — see the guard at the top of the function body
+ * for why the two are coupled. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
@@ -322,6 +331,21 @@ export function diffArchives(
   ) => boolean,
   layoutEquivalent = false,
 ): FileDiff[] {
+  if (layoutEquivalent && !checkPayloadMembers) {
+    // Fail loud (AGENTS.md), not silently diverge: dropConfirmedAbsentKeys' Files-VALUE
+    // common/N exemption (below, via jsonPointerDiff) is sound only because diffPayloadSemantic
+    // (gated by checkPayloadMembers) independently proves the redirect resolves to identical
+    // content. Without that, this combination would exempt a genuinely mis-pointed redirect —
+    // e.g. ours "chara/a.tex" -> "common/1/a.bin" vs golden "chara/a.tex" -> "common/2/zzz.bin",
+    // naming entirely different content — with no content check anywhere in the comparison.
+    throw new Error(
+      "diffArchives: layoutEquivalent requires checkPayloadMembers=true. The Files-value " +
+        "common/N exemption is only sound when diffPayloadSemantic (checkPayloadMembers) runs " +
+        "alongside it to independently prove content equivalence through the redirect table; " +
+        "enabling layoutEquivalent without it would exempt every common/->common/ Files-value " +
+        "difference with no content check at all.",
+    );
+  }
   const om = readZip(ours);
   const gm = readZip(golden);
   const oNames = new Set(manifestNames(om));
@@ -381,7 +405,8 @@ export function diffArchives(
  *  must (the spec, §5.2). Compares the redirect table (`gamePath -> content`, keyed per option —
  *  see `resolveRedirects`'s doc comment, archive-redirects.ts — Penumbra SubMod.AddContainerTo,
  *  SubMod.cs:23-32) instead of the member-name multiset, because a preserved FileSwap means
- *  TexTools burned a dedup `idx` we did not (PMP.cs:1104-1137 -> PmpExtensions.cs:509-514),
+ *  TexTools burned a dedup `idx` we did not (PMP.cs · UnpackPmpOption · 1104-1137 ->
+ *  PmpExtensions.cs · ResolveDuplicates · 500,543 — `var idx = 1` then `idx++` on a repeat hit),
  *  shifting every later `common/N`.
  *
  *  This is a RE-KEYING, not a tolerance. It still fails on a (option, gamePath) pair present on

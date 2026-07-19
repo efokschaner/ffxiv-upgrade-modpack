@@ -567,8 +567,9 @@ describe("diffArchives layoutEquivalent parameter", () => {
 // map's VALUE is a zip path too, so `dropConfirmedAbsentKeys` must also stop reporting a `Files`
 // value difference that is purely a `common/N` renumbering — otherwise the exact same shift
 // reappears as a manifest (`jsonPointerDiff`) diff instead of a structure diff. See the
-// FileSwap-preservation spec, §5.2, and PMP.cs:1104-1137 -> PmpExtensions.cs:509-514 for why the
-// renumbering happens at all. `Files` KEYS (the gamePath) are the effective result and are never
+// FileSwap-preservation spec, §5.2, and PMP.cs · UnpackPmpOption · 1104-1137 ->
+// PmpExtensions.cs · ResolveDuplicates · 500,543 for why the renumbering happens at all.
+// `Files` KEYS (the gamePath) are the effective result and are never
 // exempted here — only the VALUE (the zip path) is layout.
 describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => {
   const FILE_DEF = { FileSwaps: {}, Manipulations: [] };
@@ -590,7 +591,12 @@ describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => 
       },
       "common/2/a.bin": new Uint8Array([1, 2, 3]),
     });
-    expect(diffArchives(ours, golden, false, undefined, true)).toEqual([]);
+    // checkPayloadMembers=true: layoutEquivalent now REQUIRES it (diffArchives throws otherwise —
+    // see the guard at the top of diffArchives). Running it here is also what makes this test mean
+    // something: diffPayloadSemantic independently proves "common/1/a.bin" and "common/2/a.bin"
+    // resolve to identical bytes, which is the only thing that makes the manifest's Files-value
+    // exemption below sound rather than a blind rewrite.
+    expect(diffArchives(ours, golden, true, undefined, true)).toEqual([]);
   });
 
   it("still reports a Files value difference outside the common/ namespace", () => {
@@ -610,11 +616,35 @@ describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => 
       },
       "g/off/a.tex": new Uint8Array([1]),
     });
-    const diffs = diffArchives(ours, golden, false, undefined, true);
-    expect(diffs).toHaveLength(1);
-    expect(diffs[0]).toMatchObject({
+    // checkPayloadMembers=true (required alongside layoutEquivalent — see diffArchives' guard).
+    // Flipping this on means diffPayloadSemantic ALSO independently catches the same divergence:
+    // "g/on/a.tex" and "g/off/a.tex" are outside the common/ namespace, so part 2 of
+    // diffPayloadSemantic reports the rename too (see its own "REJECTS a NON-common member name
+    // differing" test). That is correct, not noise — this test now proves BOTH comparisons refuse
+    // to exempt a non-common rename, not just the manifest one, so all three diffs are pinned
+    // exactly rather than loosened to "at least the manifest one".
+    const diffs = diffArchives(ours, golden, true, undefined, true);
+    expect(diffs).toHaveLength(3);
+    expect(diffs).toContainEqual({
       kind: "manifest",
+      gamePath: "default_mod.json#/Files/chara~1a.tex",
+      index: 0,
       status: "mismatch",
+      detail: undefined,
+    });
+    expect(diffs).toContainEqual({
+      kind: "structure",
+      gamePath: "g/off/a.tex",
+      index: 0,
+      status: "added",
+      detail: undefined,
+    });
+    expect(diffs).toContainEqual({
+      kind: "structure",
+      gamePath: "g/on/a.tex",
+      index: 0,
+      status: "removed",
+      detail: undefined,
     });
   });
 
@@ -641,11 +671,27 @@ describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => 
       "common/1/a.bin": new Uint8Array([1]),
       "common/3/b.bin": new Uint8Array([9]),
     });
-    const diffs = diffArchives(ours, golden, false, undefined, true);
-    expect(diffs).toHaveLength(1);
-    expect(diffs[0]).toMatchObject({
+    // checkPayloadMembers=true (required alongside layoutEquivalent). "chara/b.tex" is entirely
+    // absent from ours' Files map (not a renumbering of a key ours also has), so
+    // diffPayloadSemantic's redirect-table comparison (part 1) independently reports it "added"
+    // too, on top of the manifest diff — both comparisons correctly refuse to swallow a gamePath
+    // ours never redirects at all. Pinned exactly (not "at least the manifest diff") so a future
+    // regression that duplicates or drops either report is caught.
+    const diffs = diffArchives(ours, golden, true, undefined, true);
+    expect(diffs).toHaveLength(2);
+    expect(diffs).toContainEqual({
       kind: "manifest",
+      gamePath: "default_mod.json#/Files/chara~1b.tex",
+      index: 0,
       status: "added",
+      detail: undefined,
+    });
+    expect(diffs).toContainEqual({
+      kind: "structure",
+      gamePath: "default_mod.json#0|chara/b.tex",
+      index: 0,
+      status: "added",
+      detail: undefined,
     });
   });
 
@@ -691,11 +737,74 @@ describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => 
       },
       "g/off/a.bin": new Uint8Array([1]),
     });
-    const diffs = diffArchives(ours, golden, false, undefined, true);
-    expect(diffs).toHaveLength(1);
-    expect(diffs[0]).toMatchObject({
+    // checkPayloadMembers=true (required alongside layoutEquivalent). The two sides resolve
+    // "chara/a.tex" to the SAME bytes (both [1]) through different member names, so
+    // diffPayloadSemantic's redirect-table comparison (part 1) sees no divergence — but "g/off/a.bin"
+    // is outside common/ and only exists on the golden side, so part 2 independently reports it
+    // "added" too. Pinned exactly, same reasoning as the sibling tests above.
+    const diffs = diffArchives(ours, golden, true, undefined, true);
+    expect(diffs).toHaveLength(2);
+    expect(diffs).toContainEqual({
       kind: "manifest",
+      gamePath: "default_mod.json#/Files/chara~1a.tex",
+      index: 0,
       status: "mismatch",
+      detail: undefined,
     });
+    expect(diffs).toContainEqual({
+      kind: "structure",
+      gamePath: "g/off/a.bin",
+      index: 0,
+      status: "added",
+      detail: undefined,
+    });
+  });
+});
+
+// Pins the exemption in dropConfirmedAbsentKeys as Files-VALUE-scoped, not option-wide: the
+// `option()` closure there only rewrites `Files`, but a future over-broad edit (e.g. spreading the
+// `layoutEquivalent` carve-out across the whole option) would silently start swallowing other
+// fields too. No test above exercises a NON-Files field under layoutEquivalent=true, so this closes
+// that gap by asserting a FileSwaps (and Priority) difference is still reported in full.
+describe("diffArchives layoutEquivalent: non-Files manifest fields are never exempted", () => {
+  it("still reports a FileSwaps and Priority difference under layoutEquivalent=true", () => {
+    const zipOf = (fileSwaps: Record<string, string>, priority: number) =>
+      pmp({
+        "meta.json": META,
+        "group_001_g.json": {
+          Options: [
+            {
+              Name: "On",
+              Priority: priority,
+              Files: { "chara/a.tex": "common\\1\\a.bin" }, // identical on both sides
+              FileSwaps: fileSwaps,
+            },
+          ],
+        },
+        "common/1/a.bin": new Uint8Array([1, 2, 3]),
+      });
+    const ours = zipOf({ "chara/other.tex": "chara/base.tex" }, 0);
+    const golden = zipOf({ "chara/other.tex": "chara/different.tex" }, 1);
+    // checkPayloadMembers=true (required alongside layoutEquivalent). Files is identical on both
+    // sides here, so neither the manifest Files-value exemption nor diffPayloadSemantic has
+    // anything to suppress — the only differences are FileSwaps and Priority, both of which must
+    // surface exactly as they would with layoutEquivalent off.
+    const diffs = diffArchives(ours, golden, true, undefined, true);
+    expect(diffs).toEqual([
+      {
+        kind: "manifest",
+        gamePath: "group_001_g.json#/Options/0/FileSwaps/chara~1other.tex",
+        index: 0,
+        status: "mismatch",
+        detail: undefined,
+      },
+      {
+        kind: "manifest",
+        gamePath: "group_001_g.json#/Options/0/Priority",
+        index: 0,
+        status: "mismatch",
+        detail: undefined,
+      },
+    ]);
   });
 });
