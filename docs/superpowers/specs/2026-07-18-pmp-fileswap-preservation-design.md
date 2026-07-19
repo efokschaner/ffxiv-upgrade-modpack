@@ -1,6 +1,9 @@
 # PMP FileSwap preservation — the first user-benefit divergence
 
-Status: designed, not implemented · Filed 2026-07-18
+Filed 2026-07-18 · Status: **partly implemented.** The throw is gone, swaps are preserved, and the
+divergence is confirmed against the oracle on a real pack (§6.1). Outstanding: the synthetic that
+makes the `common/N` shift observable, the semantic-comparison mode (§5.2), the manifest carve-out
+(§5.1), and the in-game gate (§7).
 
 Closes `docs/backlog/2026-07-13-pmp-write-fileswaps.md`. This is also the first application of
 AGENTS.md's first principle ("a working upgrader is the goal; byte-parity is how we get there"),
@@ -200,11 +203,32 @@ hardcodes `FileSwaps: {}` at `:88` and needs extending first). Requirements:
 
 - **≥2 FileSwaps whose sources are real base-game paths**, so ConsoleTools' index lookup succeeds and
   the zero-hash class reaches the 2-member threshold. A pack whose sources do not resolve proves
-  nothing — TexTools skips them and the goldens agree trivially.
-- **At least one genuine duplicate pair**, so a `common/N` member exists for the burned `idx` to
-  shift. This is what `torn bassment glow.pmp` lacks and the entire reason the synthetic is needed.
-- `gamePath`s `/upgrade` ignores, so ConsoleTools no-ops and the harness compares against the input
-  pack — the `absent-file.pmp` pattern.
+  nothing — TexTools skips them (`offset <= 0`, `PMP.cs:1118-1122`) and the goldens agree trivially.
+- **At least one genuine duplicate pair** (two distinct gamePaths and zip members carrying identical
+  bytes), so a `common/N` member exists for the burned `idx` to shift.
+- **Two groups, not one** — the swaps in one option, the duplicate pair in another.
+  `UnpackPmpOption` appends an option's placeholders *after* that same option's Files
+  (`PMP.cs:1104-1137`), and `ResolveDuplicates` walks option-by-option
+  (`PmpExtensions.cs:594-611`). So in a one-option pack every real file is visited before any
+  placeholder, the zero-hash collision happens last, and the burned `idx` lands after every duplicate
+  has already been numbered — shifting nothing and proving nothing. **This is precisely why
+  `torn bassment glow.pmp` shows no effect** despite carrying 6 valid swaps. Splitting across two
+  groups puts the collision first:
+
+      TexTools:  [swaps option: placeholder(src1), placeholder(src2)] -> collide, burn idx 1
+                 [dupes option: dupA, dupB]                          -> duplicate -> common/2
+      Ours:      [swaps option: nothing — swaps are never placeholders]
+                 [dupes option: dupA, dupB]                          -> duplicate -> common/1
+
+  The golden's common index set therefore has a **gap at 1** (the burned `idx`'s own name is never
+  emitted — every zero-hash entry is dropped from the returned map) while ours is gapless. That gap
+  is the signature §5.2's mode keys on.
+- **`/resave` is the oracle for this pack, not `/upgrade`.** Its gamePaths are ones `/upgrade`
+  ignores, so ConsoleTools no-ops and the upgrade golden degenerates to the input pack — no
+  TexTools-written archive, hence no TexTools `common/N` numbering to compare against. `/resave` is
+  load-then-write and therefore always emits a real archive. An `/upgrade`-transforming synthetic
+  would need real game-file bytes, which would break these packs' "reproducible from a committed
+  builder with no third-party mod" property.
 
 Optional third pack: a swap whose `gamePath` collides with a `Files` key, exercising the `TryAdd`
 precedence in §5.2. Worth noting TexTools dedupes placeholders by the swap **source**
