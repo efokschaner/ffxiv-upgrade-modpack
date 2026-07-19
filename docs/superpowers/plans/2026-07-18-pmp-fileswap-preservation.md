@@ -873,8 +873,11 @@ Expected: no output.
 
 - [ ] **Step 6: Commit**
 
+Note: `test/corpus/` is gitignored, so the re-blessed baselines are NOT committed — only the
+harness change is.
+
 ```bash
-git add test/helpers/ test/corpus/.resave-baseline 2>/dev/null; git add test/helpers/
+git add test/helpers/
 git commit -m "test(harness): confirm the FileSwaps divergence instead of baselining it
 
 PopulatePmpStandardOption destroys FileSwaps on write (PMP.cs:873-875,
