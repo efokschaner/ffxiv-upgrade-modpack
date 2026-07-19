@@ -191,6 +191,15 @@ for it. The `/upgrade` no-op branch does **not** detect or report that: it will 
 coupling the two harnesses to cover it costs more than it is worth. A brief comment on the no-op
 branch notes that writer parity lives in the `/resave` check; that is the whole of the linkage.
 
+**The case is live, not hypothetical: exactly one pack today.**
+`Milktruck Bust Scaling Tweaks v1.0.0.ttmp2` is both a `/upgrade` no-op and a `/resave` oracle error,
+so nothing in either harness compares its written output to anything. It is not silent — `/resave`
+`console.error`s `[resave] UNVERIFIED:` and skips, and `corpus-resave.ts:64` is the only skip site in
+the suite, so a run's `1 skipped` is exactly this pack. The remedy does not need crosstalk: `/resave`
+can run its oracle-FREE assertions (the write→re-read round-trip, `pmpSelfConsistency`) before
+skipping. Tracked as `docs/backlog/2026-07-19-resave-oracle-error-skips-all-assertions.md`. Record the
+count here if it ever grows beyond one.
+
 ## 6. What this deletes
 
 - `stripOursPrefix` (added 2026-07-19; becomes dead) — its one external caller
