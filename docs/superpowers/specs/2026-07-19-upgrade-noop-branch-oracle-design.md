@@ -131,6 +131,16 @@ pack is covered by `registerResaveCheck` against a real TexTools `/resave` golde
 `pmpSelfConsistency` **stays** — it is oracle-free (no dangling `Files` key, no orphan member) and
 independent of whatever reference the branch uses.
 
+**The delegation rests on a property of today's transform, not on an invariant.** `/resave` writes
+`write(load(x))` while the no-op `/upgrade` ships `write(transform(load(x)))`, so handing manifest and
+member-name parity to `/resave` is only valid while `transform` changes nothing the writer
+serializes. That holds today: `src/upgrade/` mutates only `option.files`, and any key it added would
+itself surface as a `transform` diff. But if a future round edits manipulations — which §2's first
+consequence says TexTools' own transform can do while still no-opping — the `/resave` delegation
+silently stops covering these packs' manifests, and nothing replaces it (`transformChanges` is
+file-sets-only by design; `diffUpgrade` is gamePath-keyed). Whoever ports such a round must revisit
+this section.
+
 ### 3.4 Resulting semantics
 
 A no-op pack's `/upgrade` baseline **should be empty**. The only assertions left are "our transform
