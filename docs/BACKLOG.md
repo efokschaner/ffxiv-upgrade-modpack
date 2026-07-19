@@ -47,10 +47,10 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
    pack with that shape.
 
 2. [SQPack model encode writes unused-LoD offsets as end-of-data](backlog/2026-07-18-mdl-self-roundtrip-byte21.md)
-   — **the suite is RED on this**, and no ratchet baseline covers it. A `lodCount = 1` model
-   round-trips with `vertexOffset[1..2]`/`indexOffset[1..2]` rewritten from `0` to the file length.
-   `/upgrade` rewrites `.mdl`s, so emitted models may carry the bogus offsets; item 1 is currently
-   hiding whether they do.
+   — **our codec contradicts itself**, no oracle involved. A `lodCount = 1` model round-trips with
+   `vertexOffset[1..2]`/`indexOffset[1..2]` rewritten from `0` to the file length. `/upgrade` rewrites
+   `.mdl`s, so emitted models may carry the bogus offsets; item 1 is currently hiding whether they do.
+   The only non-empty entry in the `.roundtrip-baseline` ratchet.
 
 3. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
    — **silent divergence (fail-loud violation).** `IMC_TABLE` is exhaustive over equipment/accessory

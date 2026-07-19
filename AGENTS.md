@@ -140,6 +140,12 @@ pack reaches at all are pinned by synthetic unit tests instead (see *Synthetic t
 
   A newly added corpus mod has no baseline and is expected to fully match; if it does
   not, either it is a real bug, or the difference is an intended divergence.
+- **A third ratchet covers the SQPack self round-trip**, `test/corpus/.roundtrip-baseline/`
+  (same key, same bless env var). Read its entries differently from the other two: they
+  record `decode(encode(x)) != x` — **our codec contradicting itself, with no TexTools
+  output involved** — so a `roundtrip` entry is a stronger indictment than a golden diff,
+  not a weaker one. The goal state is an all-`[]` baseline set. When fixing one, delete
+  its entry rather than re-blessing.
 - **Intended divergences from TexTools are never ignored.** Every deviation we allow is
   *confirmed* by a rule that proves it is exactly the one we meant — never merely tolerated.
   Anything matched by no such rule must be byte-identical to the golden. There are two

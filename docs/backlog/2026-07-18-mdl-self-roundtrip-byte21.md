@@ -1,6 +1,7 @@
 # SQPack model encode writes unused-LoD offsets as end-of-data instead of `0`
 
-Filed: 2026-07-18 · Status: open · **Suite is RED on this** (no ratchet baseline covers it)
+Filed: 2026-07-18 · Status: open · ratcheted in `test/corpus/.roundtrip-baseline/` (the ONLY
+non-empty entry across 81 packs — every other pack's baseline is `[]` and rejects any divergence)
 
 Surfaced by adding `torn bassment glow.pmp` to `test/corpus/real/`. Unrelated to the FileSwaps work
 that brought the pack in.
@@ -43,3 +44,7 @@ pack**: the default-only option-prefix bug
 diff reports `added`/`removed` name pairs and never content-compares them. Fixing the prefix bug will
 expose whatever content divergence is hiding behind it. Treat that as a reason to fix the prefix bug
 first, and do not read this pack's blessed baseline as evidence that its `.mdl` content matches.
+
+**Working on it:** delete this pack's entry from `test/corpus/.roundtrip-baseline/` to make the check
+fail hard again. When fixed, leave the entry deleted rather than re-blessing — the goal state is an
+all-`[]` baseline set, which rejects any divergence outright.

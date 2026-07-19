@@ -8,7 +8,12 @@ import { decodeSqPackFile } from "../../src/sqpack/sqpack";
 import { bytesEqual, compareBytesLex } from "./compare";
 
 export type DiffStatus = "added" | "removed" | "mismatch";
-export type DiffKind = "payload" | "manifest" | "structure";
+// "roundtrip" is NOT an oracle comparison like the other three -- it records a SELF-consistency
+// failure (decode(encode(x)) != x, corpus-sqpack.ts) where no TexTools output is involved. It shares
+// the ratchet machinery so a known codec defect can be recorded and burned down instead of blocking
+// the suite, but read a `roundtrip` baseline entry as "our codec contradicts itself here", which is
+// a stronger indictment than a golden diff, not a weaker one.
+export type DiffKind = "payload" | "manifest" | "structure" | "roundtrip";
 export interface FileDiff {
   kind: DiffKind;
   gamePath: string; // for manifest/structure diffs this holds the archive member name

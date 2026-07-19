@@ -11,6 +11,17 @@ export const DEFAULT_UPGRADE_BASELINE = join(
   ".upgrade-baseline",
 );
 
+/** Ratchet for the SQPack self round-trip (corpus-sqpack.ts). Same machinery, separate root: these
+ * entries record OUR codec contradicting itself (decode(encode(x)) != x), with no oracle involved --
+ * see DiffKind's "roundtrip" note. Kept apart from the /upgrade and /resave baselines so a
+ * self-consistency defect can never be mistaken for a known TexTools divergence. */
+export const DEFAULT_ROUNDTRIP_BASELINE = join(
+  __dirname,
+  "..",
+  "corpus",
+  ".roundtrip-baseline",
+);
+
 function baselinePath(key: string, dir: string): string {
   return join(dir, `${key}.json`);
 }
