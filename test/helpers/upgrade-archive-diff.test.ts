@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readZip, writeZip } from "../../src/zip/zip";
-import { diffArchives } from "./upgrade-archive-diff";
+import { diffArchives, diffPayloadSemantic } from "./upgrade-archive-diff";
 
 const enc = new TextEncoder();
 function pmp(members: Record<string, unknown | Uint8Array>): Uint8Array {
@@ -396,5 +396,105 @@ describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:883-888)", ()
     const golden = groupArchive(goldenOpts, { [`on/${PRESENT}`]: payload });
     const ours = groupArchive(oursOpts, { [`on/${PRESENT}`]: payload });
     expect(diffArchives(ours, golden)).toHaveLength(1);
+  });
+});
+
+// diffPayloadSemantic compares the redirect table resolveRedirects builds (archive-redirects.ts),
+// keyed PER OPTION as `${manifestName}#${optionIndex}|${gamePath}` (redirectKey) rather than by bare
+// gamePath — see that module's doc comment for why an archive-wide merge would silently hide a
+// divergence between two mutually exclusive options that define the same gamePath. These fixtures
+// all use a single option (group_001_g.json, index 0), so every reported key has the fixed prefix
+// "group_001_g.json#0|" ahead of the gamePath under test.
+describe("diffPayloadSemantic (layout-equivalent payload comparison)", () => {
+  const enc = (v: unknown) => new TextEncoder().encode(JSON.stringify(v));
+  const b = (...v: number[]) => new Uint8Array(v);
+  const key = (gamePath: string) => `group_001_g.json#0|${gamePath}`;
+
+  /** Members for a one-group pack whose single option maps `files` (gamePath -> member name). */
+  function members(
+    files: Record<string, string>,
+    payload: Record<string, Uint8Array>,
+  ): Map<string, Uint8Array> {
+    const m = new Map<string, Uint8Array>();
+    m.set("meta.json", enc({ FileVersion: 3, Name: "t" }));
+    m.set(
+      "group_001_g.json",
+      enc({ Options: [{ Name: "On", Files: files, FileSwaps: {} }] }),
+    );
+    for (const [k, v] of Object.entries(payload)) m.set(k, v);
+    return m;
+  }
+
+  it("accepts a common/N renumbering when the redirect table is identical", () => {
+    const ours = members(
+      { "chara/a.tex": "common\\1\\a.tex" },
+      { "common/1/a.tex": b(1, 2) },
+    );
+    const golden = members(
+      { "chara/a.tex": "common\\2\\a.tex" },
+      { "common/2/a.tex": b(1, 2) },
+    );
+    expect(diffPayloadSemantic(ours, golden)).toEqual([]);
+  });
+
+  it("REJECTS differing content for a shared gamePath", () => {
+    const ours = members(
+      { "chara/a.tex": "common\\1\\a.tex" },
+      { "common/1/a.tex": b(1, 2) },
+    );
+    const golden = members(
+      { "chara/a.tex": "common\\2\\a.tex" },
+      { "common/2/a.tex": b(9, 9) },
+    );
+    const d = diffPayloadSemantic(ours, golden);
+    expect(d).toHaveLength(1);
+    expect(d[0]!.status).toBe("mismatch");
+    expect(d[0]!.gamePath).toBe(key("chara/a.tex"));
+  });
+
+  it("REJECTS a gamePath the golden has and we do not", () => {
+    const ours = members({}, {});
+    const golden = members(
+      { "chara/a.tex": "common\\2\\a.tex" },
+      { "common/2/a.tex": b(1) },
+    );
+    const d = diffPayloadSemantic(ours, golden);
+    expect(d).toHaveLength(1);
+    expect(d[0]!.status).toBe("added");
+    expect(d[0]!.gamePath).toBe(key("chara/a.tex"));
+  });
+
+  it("REJECTS a NON-common member name differing, even when content matches", () => {
+    // A writer bug that misnames an ordinary member must still be caught: only common/N
+    // renumbering is free. Both sides resolve "chara/a.tex" to the SAME bytes (b(1)) through
+    // their own member, so the redirect-table comparison (part 1) sees no divergence at all —
+    // only the payload member-NAME comparison (part 2, outside the common/ namespace) catches it.
+    const ours = members(
+      { "chara/a.tex": "g\\on\\a.tex" },
+      { "g/on/a.tex": b(1) },
+    );
+    const golden = members(
+      { "chara/a.tex": "g\\off\\a.tex" },
+      { "g/off/a.tex": b(1) },
+    );
+    const d = diffPayloadSemantic(ours, golden);
+    expect(
+      d.some((x) => x.status === "removed" && x.gamePath === "g/on/a.tex"),
+    ).toBe(true);
+    expect(
+      d.some((x) => x.status === "added" && x.gamePath === "g/off/a.tex"),
+    ).toBe(true);
+  });
+
+  it("consults confirmDivergence for a shared gamePath's content mismatch", () => {
+    const ours = members(
+      { "chara/a.tex": "common\\1\\a.tex" },
+      { "common/1/a.tex": b(1) },
+    );
+    const golden = members(
+      { "chara/a.tex": "common\\2\\a.tex" },
+      { "common/2/a.tex": b(2) },
+    );
+    expect(diffPayloadSemantic(ours, golden, () => true)).toEqual([]);
   });
 });

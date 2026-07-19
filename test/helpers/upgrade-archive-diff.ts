@@ -1,4 +1,5 @@
 import { readZip } from "../../src/zip/zip";
+import { payloadMemberNames, resolveRedirects } from "./archive-redirects";
 import { bytesEqual } from "./compare";
 import { jsonPointerDiff } from "./json-diff";
 import type { FileDiff } from "./upgrade-diff";
@@ -330,5 +331,100 @@ export function diffArchives(
   }
   if (checkPayloadMembers)
     diffs.push(...diffPayloadMembers(om, gm, confirmDivergence));
+  return diffs;
+}
+
+/** Payload comparison for a pack whose zip LAYOUT cannot match the golden's, but whose behaviour
+ *  must (the spec, §5.2). Compares the redirect table (`gamePath -> content`, keyed per option —
+ *  see `resolveRedirects`'s doc comment, archive-redirects.ts — Penumbra SubMod.AddContainerTo,
+ *  SubMod.cs:23-32) instead of the member-name multiset, because a preserved FileSwap means
+ *  TexTools burned a dedup `idx` we did not (PMP.cs:1104-1137 -> PmpExtensions.cs:509-514),
+ *  shifting every later `common/N`.
+ *
+ *  This is a RE-KEYING, not a tolerance. It still fails on a (option, gamePath) pair present on
+ *  one side only, on differing content for a shared pair, and on ANY non-`common/` member name
+ *  differing — only renumbering WITHIN the `common/N` dedup namespace is free. Callers must gate
+ *  it on the input pack actually carrying FileSwaps (`packHasFileSwaps`); firing it on the diff's
+ *  shape instead would silently absorb writer regressions in every other pack.
+ *
+ *  `FileDiff.gamePath` here is `resolveRedirects`' composite key
+ *  (`redirectKey`: `${manifestName}#${optionIndex}|${gamePath}`), not a bare gamePath — that key IS
+ *  the identity a divergence in this comparison is keyed by (see `resolveRedirects`' doc comment
+ *  for why an archive-wide merge would silently hide a cross-option divergence), and it stays
+ *  human-legible (names both the option and the gamePath) for a failing assertion. Because the
+ *  gamePath is always the key's trailing segment (after the last `|`), a `confirmDivergence` rule
+ *  whose predicate matches a gamePath *suffix* (`.endsWith(...)`, per `diffPayloadMembers`'s doc
+ *  comment above) still fires correctly against this composite key. */
+export function diffPayloadSemantic(
+  ours: Map<string, Uint8Array>,
+  golden: Map<string, Uint8Array>,
+  confirmDivergence?: (
+    gamePath: string,
+    ours: Uint8Array,
+    golden: Uint8Array,
+  ) => boolean,
+): FileDiff[] {
+  const diffs: FileDiff[] = [];
+
+  // 1. The redirect tables must agree exactly — same (option, gamePath) keys, same bytes.
+  const o = resolveRedirects(ours);
+  const g = resolveRedirects(golden);
+  for (const key of [...new Set([...o.keys(), ...g.keys()])].sort()) {
+    const ob = o.get(key);
+    const gb = g.get(key);
+    if (ob === undefined) {
+      diffs.push({
+        kind: "structure",
+        gamePath: key,
+        index: 0,
+        status: "added",
+      });
+      continue;
+    }
+    if (gb === undefined) {
+      diffs.push({
+        kind: "structure",
+        gamePath: key,
+        index: 0,
+        status: "removed",
+      });
+      continue;
+    }
+    if (bytesEqual(ob, gb)) continue;
+    if (confirmDivergence?.(key, ob, gb)) continue;
+    diffs.push({
+      kind: "structure",
+      gamePath: key,
+      index: 0,
+      status: "mismatch",
+      detail: `${ob.length} vs ${gb.length} bytes`,
+    });
+  }
+
+  // 2. Only the `common/N` dedup namespace may be renamed. Every OTHER payload member name must
+  //    still match exactly (up to `looseKey`, same spelling tolerance as `diffPayloadMembers`), so
+  //    a misnamed or dropped ordinary member is still caught here. Matched by `looseKey` but
+  //    REPORTED under the real member name — unlike the matching key, `looseKey` strips every '.'
+  //    (see its doc comment), so using it as the reported name too would silently corrupt a real
+  //    name like "a.tex" into "atex" in every diff this branch raises.
+  const outsideNames = (m: Map<string, Uint8Array>) =>
+    payloadMemberNames(m).filter((n) => !looseKey(n).startsWith("common/"));
+  const oOutside = outsideNames(ours);
+  const gOutside = outsideNames(golden);
+  const oKeys = new Set(oOutside.map(looseKey));
+  const gKeys = new Set(gOutside.map(looseKey));
+  for (const n of gOutside) {
+    if (!oKeys.has(looseKey(n)))
+      diffs.push({ kind: "structure", gamePath: n, index: 0, status: "added" });
+  }
+  for (const n of oOutside) {
+    if (!gKeys.has(looseKey(n)))
+      diffs.push({
+        kind: "structure",
+        gamePath: n,
+        index: 0,
+        status: "removed",
+      });
+  }
   return diffs;
 }
