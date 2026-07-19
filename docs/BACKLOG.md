@@ -100,6 +100,14 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
   `Files` entry; ours emits only referenced members, so each orphan is a `structure`/`added` diff.
   The corpus-wide "container-manifest structure" gap (design §8.3), baselined on real packs and the
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression.
+- [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
+  — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
+  separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw
+  Penumbra export (a `/upgrade` no-op or an otherwise-untouched `/resave` option) since TexTools'
+  own writer currently emits `{}` unconditionally too (its matching `ShouldSerialize*` overrides are
+  commented out, `PMP.cs:1519-1524`). Surfaced as `Flower Child - by Solona.pmp`'s
+  `default_mod.json#/FileSwaps` baseline entry — unrelated to FileSwap preservation itself, which the
+  carve-out only confirms in the opposite (populated-vs-empty) direction.
 
 ### Findings from the `/resave` write-side oracle (2026-07-13)
 

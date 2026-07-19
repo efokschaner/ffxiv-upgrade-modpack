@@ -58,7 +58,13 @@ We therefore **preserve FileSwaps verbatim and do not model the placeholder mech
 Evidence, against the three-part bar in AGENTS.md's first principle:
 
 1. **Registered defect** — `docs/TEXTOOLS_BUGS.md` #10, adjudicated before this spec.
-2. **Corpus-confirmed** — §5. Every byte this moves is confirmed by a rule, not baselined.
+2. **Corpus-confirmed** — §5. Every byte this moves — a *populated* `FileSwaps` map — is confirmed by
+   a rule, not baselined; no ratchet baseline suppresses that shape. (Precisely: no baseline holds a
+   `/FileSwaps` divergence *of this feature's* shape, golden-empty-vs-ours-populated. One baseline
+   entry does mention `/FileSwaps` today — `Flower Child - by Solona.pmp`, a swap-FREE pack — but it
+   is the unrelated empty-vs-omitted-key asymmetry documented in
+   `docs/backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md`, which the carve-out correctly does
+   not confirm since it never reaches the "ours populated" branch.)
 3. **In-game check** — §7. **Outstanding.** This spec is not implementable-to-completion until it
    is done; see the gate there.
 
@@ -191,9 +197,40 @@ becomes unreproducible. Measured 2026-07-18, before either FileSwap-carrying pac
 **0 of 18 corpus PMPs** carried swaps — the observation that motivated gating on cause rather than
 symptom in the first place, since a gate that fires on nothing is cheap to get right. That measurement
 is now stale: with `torn bassment glow.pmp` (§6.1) added to the real corpus and the synthetic
-`file-swaps.pmp` (§6.1) built, exactly **two** packs take the relaxed path today. Every other corpus
-pack still keeps full byte-and-name exactness, unchanged — the gate remains as narrow as intended,
-just no longer empty.
+`file-swaps.pmp` (§6.1) built, exactly **two** packs take the relaxed path today, out of **20** corpus
+PMPs in total (real + synthetic + the `upgrade-error` root's one pack) — matching the PR description's
+"2 of 20 local PMPs." Every other corpus pack still keeps full byte-and-name exactness, unchanged —
+the gate remains as narrow as intended, just no longer empty.
+
+**The gate is deliberately broader than the precise condition, and that is an honest trade, not an
+oversight.** `packHasFileSwaps` fires on **≥1** swap in any option. The actual `idx` burn this mode
+exists to tolerate needs TexTools' shared zero-hash class (§4) to reach **≥2 members**, and — as
+`resolve-duplicates.ts`'s own header records (point 2) — that class is fed by *two* origins, not one:
+a genuinely absent `Files` entry (present in both ports, `docs/TEXTOOLS_BUGS.md` #8) AND a FileSwap
+whose source *resolves* in the live game index (§4's `Get8xDataOffset` check — only a resolving swap
+becomes a zero-hash placeholder at all; TexTools-only, since we never construct one). So the precise
+sufficient condition is at least one resolving swap plus at least one other zero-hash-class member —
+which could be a second resolving swap, but could equally be an ordinary absent file elsewhere in the
+pack; a *lone* swap already suffices for the burn if the pack happens to carry an unrelated absent
+file too. Even then, the shift is only *observable* in a PMP's member layout if some duplicate content
+exists whose `common/N` numbering the burn would shift; with none, the burn is invisible regardless of
+how it was reached (exactly `torn bassment glow.pmp`'s case, above). The gate cannot evaluate any of
+this: index resolution needs the live game index, which §4 deliberately does not bundle; whether an
+absent file exists elsewhere in the pack is knowable but not currently wired to this gate; and
+observability depends on the dedup result, which does not exist until *after* the comparison this gate
+controls has already decided how to run. So `packHasFileSwaps` over-approximates on purpose, on the
+only property that is both cheap and always sufficient: "the input carries a swap at all" is a
+necessary condition for every path to the divergence, so gating on it never relaxes a pack that
+strict-mode exactness actually requires — it can only relax some swap-carrying packs that turn out not
+to need it. The cost of over-approximating is bounded and one-sided — a pack that could not actually
+produce the `common/N` divergence still takes the relaxed path, and only surrenders the two coverage
+gaps `diffPayloadSemantic` carries relative to strict mode (documented in
+`docs/backlog/2026-07-18-semantic-payload-part2-coverage.md`). In practice the ≥1-vs-≥2-swaps question
+does not currently distinguish anything either way: both packs on the relaxed path today
+(`torn bassment glow.pmp`, `file-swaps.pmp`) carry ≥2 swaps, so ≥1 and ≥2 pick the same two packs — the
+gap would only show up on a single-swap pack, which the corpus does not have. Tightening the gate is a
+candidate for whoever picks up the coverage-gap backlog item above, not something argued to be worth
+doing here.
 
 The rejected alternative is a **symptom** gate ("if the only diffs are `common/N`-shaped, fall back to
 semantic"), which would silently absorb genuine writer regressions in *any* pack. That is the version
@@ -239,21 +276,41 @@ divergence currently baselined across real packs and synthetics. Deliberately no
 **Real pack (added 2026-07-18): `torn bassment glow.pmp`.** Found by scanning the operator's entire
 user directory — **1 of 826 PMPs** carries FileSwaps, so this is the only real coverage that exists.
 6 swaps, all unshadowed by `Files` keys, all 6 sources verified present in the game index (so
-ConsoleTools takes the placeholder branch, not the `offset <= 0` skip at `PMP.cs:1118-1122`). It
-carries `.mtrl`/`.mdl`, so `/upgrade` genuinely transforms it rather than no-opping.
+ConsoleTools takes the placeholder branch, not the `offset <= 0` skip at `PMP.cs:1118-1122`).
+**`/upgrade` genuinely no-ops on this pack** — this was originally assumed otherwise (it carries
+`.mtrl`/`.mdl`, which "should" transform), but that was inference, not measurement: the cached golden
+is a `test/corpus/.upgrade-cache/<key>.noop` marker (`<key>` = `sha256` of the pack's bytes), meaning
+ConsoleTools wrote no output file at all, so the `/upgrade` check compares our output against the
+pack's own INPUT, never anything TexTools produced. **`/resave` is therefore the oracle for this
+pack** — it is load-then-write and always emits a real TexTools-written archive, unlike `/upgrade`'s
+no-op. The pack is still valuable real coverage: it remains the only mod (of 826 scanned) found to
+carry FileSwaps at all, and `/resave` puts its full load -> write round-trip, `.mtrl`/`.mdl` included,
+under a genuine TexTools oracle even though `/upgrade` has nothing to transform.
 
 Its `/resave` diff is the empirical confirmation of §3: six
 `default_mod.json#/FileSwaps/…#0:removed` entries — present in ours, absent from the golden.
 `docs/TEXTOOLS_BUGS.md` #10 observed on a real mod, not inferred from the C#.
 
 It does **not** reach §5.2: it has no duplicate content, so no `common/N` member exists for the
-burned `idx` to shift.
+burned `idx` to shift. It DOES take §5.2's `layoutEquivalent` (relaxed) comparison path, though — the
+gate is on the input carrying any FileSwap, not on whether a `common/N` shift is actually reachable
+(see the §5.2 gate-honesty paragraph below) — so both its `/upgrade` and `/resave` checks compare
+payload through `diffPayloadSemantic` rather than `diffPayloadMembers`.
 
 It also arrived with two unrelated defects it is the first pack to expose — a default-only option
 prefix (`docs/backlog/2026-07-18-default-only-pmp-option-prefix.md`) and a `.mdl` unused-LoD offset
-bug (`docs/backlog/2026-07-18-mdl-self-roundtrip-byte21.md`). **Its blessed baseline is therefore
-weak**: the prefix bug renames every member, so no payload content is compared at all. Do not read
-that baseline as evidence of byte-parity, and re-bless once the prefix item lands.
+bug (`docs/backlog/2026-07-18-mdl-self-roundtrip-byte21.md`). **Its blessed baseline is weak on member
+NAMES, not on content.** The prefix bug renames every member, so `diffPayloadSemantic` part 2 (the
+name-only comparison outside `common/`, `test/helpers/upgrade-archive-diff.ts`) pairs nothing and
+reports every non-`common/` member as added/removed — that half of the baseline is not evidence of
+member-name parity. But payload CONTENT is a separate comparison unaffected by member names:
+`diffPayloadSemantic` part 1 (`resolveRedirects`, walking each option's `Files` map) and
+`diffUpgrade` (`test/helpers/upgrade-diff.ts`) both key by `gamePath`, not by zip member name, and
+both run regardless of the prefix bug. Their evidence: the `/upgrade` baseline (compared against the
+no-op input) has no `"kind": "payload"` entries at all — `diffUpgrade` found zero gamePath-content
+differences, so content parity IS established there, even though every non-`common/` member is
+reported `added`/`removed` by name. Do not read the STRUCTURE (member-name) half of either baseline as
+evidence of anything beyond names, and re-bless once the prefix item lands.
 
 **Synthetic still required: `test/corpus/synthetic/file-swaps.pmp`**, via `pmp-builder.ts` (which
 hardcodes `FileSwaps: {}` at `:88` and needs extending first). Requirements:

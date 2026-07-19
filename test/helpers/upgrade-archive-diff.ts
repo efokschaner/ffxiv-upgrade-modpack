@@ -187,6 +187,15 @@ export function dropConfirmedAbsentKeys(
     //  - ours empty + golden populated means we LOST swaps -- still a mismatch;
     //  - both populated but differing means we MANGLED them -- still a mismatch.
     // Only "golden dropped everything, we kept something" is confirmed.
+    //
+    // UNGATED: unlike the `layoutEquivalent`-gated common/N exemption above, this carve-out runs for
+    // every pack, not just ones `packHasFileSwaps` flags on the input. Acceptable today because
+    // `base.FileSwaps = o.fileSwaps` (src/container/pmp.ts:446) is a pure passthrough of the reader's
+    // own `fileSwaps` map -- there is no writer code path that could FABRICATE a populated FileSwaps
+    // map for an option the input never gave one to, so the shape this carve-out blesses (ours
+    // non-empty, golden empty) cannot arise for a swap-free pack. That passthrough is pinned by
+    // `test/container/pmp-write.test.ts`'s round-trip case; if it ever grows real logic instead of a
+    // straight assignment, this carve-out should gate on `packHasFileSwaps` of the input too.
     const gSwaps = isObj(goldenOpt.FileSwaps) ? goldenOpt.FileSwaps : undefined;
     const oSwaps = isObj(oursOpt.FileSwaps) ? oursOpt.FileSwaps : undefined;
     if (
