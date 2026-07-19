@@ -759,6 +759,49 @@ describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => 
       detail: undefined,
     });
   });
+
+  // Adversarial regression for `isCommon` (dropConfirmedAbsentKeys, upgrade-archive-diff.ts): it
+  // must use a plain case-fold, NOT `looseKey`. `looseKey` strips every '.' and ' ', so
+  // "com mon\1\a.bin" normalizes to "common/1/abin" and would wrongly LOOK like the common/ dedup
+  // namespace — but it is not that namespace, it is an ordinary member name that happens to contain
+  // a space. `looseKey` is the right amount of tolerance for a RESOLUTION check (fails closed: it
+  // can only ever match a real member) but the wrong amount for this EXEMPTION check (fails open:
+  // it would hide a genuine Files-value difference because only the golden side is really in
+  // common/). Only a case-fold is safe here.
+  it("still reports a Files value where one side only LOOKS like common/ under looseKey (space, not the real namespace)", () => {
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "com mon\\1\\a.bin" },
+      },
+      "com mon/1/a.bin": new Uint8Array([1]),
+    });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "common\\1\\a.bin" },
+      },
+      "common/1/a.bin": new Uint8Array([1]),
+    });
+    // checkPayloadMembers=true (required alongside layoutEquivalent). Both sides resolve
+    // "chara/a.tex" to the SAME bytes ([1]) through their own member — and diffPayloadSemantic's own
+    // namespace check (which legitimately uses looseKey, for RESOLUTION not EXEMPTION) treats both
+    // member names as inside the dedup namespace — so diffPayloadSemantic reports nothing here,
+    // isolating dropConfirmedAbsentKeys' isCommon as the only thing under test: it must still see
+    // "com mon\1\a.bin" as NOT common/ and refuse the exemption.
+    const diffs = diffArchives(ours, golden, true, undefined, true);
+    expect(diffs).toEqual([
+      {
+        kind: "manifest",
+        gamePath: "default_mod.json#/Files/chara~1a.tex",
+        index: 0,
+        status: "mismatch",
+        detail: undefined,
+      },
+    ]);
+  });
 });
 
 // Pins the exemption in dropConfirmedAbsentKeys as Files-VALUE-scoped, not option-wide: the
@@ -789,22 +832,23 @@ describe("diffArchives layoutEquivalent: non-Files manifest fields are never exe
     // sides here, so neither the manifest Files-value exemption nor diffPayloadSemantic has
     // anything to suppress — the only differences are FileSwaps and Priority, both of which must
     // surface exactly as they would with layoutEquivalent off.
+    // toHaveLength + toContainEqual, not toEqual on the whole array: element order here comes from
+    // jsonPointerDiff's internal sorting, not from anything this test intends to pin.
     const diffs = diffArchives(ours, golden, true, undefined, true);
-    expect(diffs).toEqual([
-      {
-        kind: "manifest",
-        gamePath: "group_001_g.json#/Options/0/FileSwaps/chara~1other.tex",
-        index: 0,
-        status: "mismatch",
-        detail: undefined,
-      },
-      {
-        kind: "manifest",
-        gamePath: "group_001_g.json#/Options/0/Priority",
-        index: 0,
-        status: "mismatch",
-        detail: undefined,
-      },
-    ]);
+    expect(diffs).toHaveLength(2);
+    expect(diffs).toContainEqual({
+      kind: "manifest",
+      gamePath: "group_001_g.json#/Options/0/FileSwaps/chara~1other.tex",
+      index: 0,
+      status: "mismatch",
+      detail: undefined,
+    });
+    expect(diffs).toContainEqual({
+      kind: "manifest",
+      gamePath: "group_001_g.json#/Options/0/Priority",
+      index: 0,
+      status: "mismatch",
+      detail: undefined,
+    });
   });
 });
