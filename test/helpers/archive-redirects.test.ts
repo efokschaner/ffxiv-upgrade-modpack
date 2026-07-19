@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   packHasFileSwaps,
   payloadMemberNames,
+  redirectKey,
   resolveRedirects,
 } from "./archive-redirects";
 
@@ -64,7 +65,9 @@ describe("resolveRedirects", () => {
       },
       { "common/1/a.tex": bytes(1, 2, 3) },
     );
-    expect([...resolveRedirects(m)]).toEqual([["chara/a.tex", bytes(1, 2, 3)]]);
+    expect([...resolveRedirects(m)]).toEqual([
+      [redirectKey("group_001_g.json", 0, "chara/a.tex"), bytes(1, 2, 3)],
+    ]);
   });
 
   it("resolves a member name that differs only by case or a trailing dot (looseKey)", () => {
@@ -80,7 +83,11 @@ describe("resolveRedirects", () => {
       },
       { "g/on/a.tex": bytes(4) },
     );
-    expect(resolveRedirects(m).get("chara/a.tex")).toEqual(bytes(4));
+    expect(
+      resolveRedirects(m).get(
+        redirectKey("group_001_g.json", 0, "chara/a.tex"),
+      ),
+    ).toEqual(bytes(4));
   });
 
   it("omits a gamePath whose member is absent, rather than inventing bytes", () => {
@@ -96,7 +103,11 @@ describe("resolveRedirects", () => {
       },
       {},
     );
-    expect(resolveRedirects(m).has("chara/a.tex")).toBe(false);
+    expect(
+      resolveRedirects(m).has(
+        redirectKey("group_001_g.json", 0, "chara/a.tex"),
+      ),
+    ).toBe(false);
   });
 
   it("does NOT resolve FileSwaps — a swap value is a game path, not a member", () => {
@@ -114,6 +125,48 @@ describe("resolveRedirects", () => {
     );
     expect(resolveRedirects(m).size).toBe(0);
   });
+
+  it(
+    "keys each option separately, so two options that redirect the SAME gamePath to " +
+      "DIFFERENT content (the ordinary shape of a Single-select group) do not collide — " +
+      "REGRESSION for the archive-wide last-write-wins merge this replaces",
+    () => {
+      // Two mutually exclusive options in one Single-select group both redirect chara/a.tex,
+      // to different payload members. An archive-wide `Map<gamePath, bytes>` with unconditional
+      // `out.set(...)` would let the second option's entry silently overwrite the first's,
+      // masking a real content divergence in whichever option a caller compares against a
+      // golden that differs only in the OTHER option. Per-option keying (this test) keeps both.
+      const groupA = {
+        Options: [
+          { Name: "A", Files: { "chara/a.tex": "opt\\a.tex" }, FileSwaps: {} },
+          { Name: "B", Files: { "chara/a.tex": "opt\\b.tex" }, FileSwaps: {} },
+        ],
+      };
+      const membersLeft = pack(groupA, {
+        "opt/a.tex": bytes(1),
+        "opt/b.tex": bytes(2),
+      });
+      // The "golden" differs from "ours" only in option B's content — option A is identical.
+      const membersRight = pack(groupA, {
+        "opt/a.tex": bytes(1),
+        "opt/b.tex": bytes(9),
+      });
+
+      const left = resolveRedirects(membersLeft);
+      const right = resolveRedirects(membersRight);
+
+      const keyA = redirectKey("group_001_g.json", 0, "chara/a.tex");
+      const keyB = redirectKey("group_001_g.json", 1, "chara/a.tex");
+
+      // Option A (index 0) is untouched by the divergence and must still compare equal.
+      expect(left.get(keyA)).toEqual(right.get(keyA));
+      // Option B (index 1) carries the real divergence and must NOT be masked by option A's
+      // entry for the same gamePath — this is exactly what an archive-wide merge would hide.
+      expect(left.get(keyB)).toEqual(bytes(2));
+      expect(right.get(keyB)).toEqual(bytes(9));
+      expect(left.get(keyB)).not.toEqual(right.get(keyB));
+    },
+  );
 });
 
 describe("payloadMemberNames", () => {

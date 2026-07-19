@@ -16,12 +16,21 @@ import { isManifest, looseKey } from "./upgrade-archive-diff";
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;
 
-/** Every option document in the archive: each `group_NNN*.json`'s `Options` entries, plus
- *  `default_mod.json`, which IS a single option document (PMP.cs:1504-1517). */
-function optionDocs(
-  members: Map<string, Uint8Array>,
-): Record<string, unknown>[] {
-  const out: Record<string, unknown>[] = [];
+/** One option document in the archive, plus the identity that pairs it with the SAME option on
+ *  the other side of a comparison: the manifest member it came from, and (for a `group_NNN*.json`'s
+ *  `Options` array) its index within that array. `default_mod.json` IS a single option document
+ *  (PMP.cs:1504-1517), so it is always index 0. Manifest member names are regenerated identically by
+ *  both our writer and TexTools' (see `resolveRedirects` below for why that licenses using the name
+ *  as part of the pairing key), and `dropConfirmedAbsentKeys` (upgrade-archive-diff.ts) already pairs
+ *  a `group_NNN.json`'s `Options` the same way, by index — this mirrors that. */
+interface OptionEntry {
+  manifestName: string;
+  optionIndex: number;
+  doc: Record<string, unknown>;
+}
+
+function optionEntries(members: Map<string, Uint8Array>): OptionEntry[] {
+  const out: OptionEntry[] = [];
   for (const [name, raw] of members) {
     if (!/(^|\/)(group_\d+.*|default_mod)\.json$/i.test(name)) continue;
     let doc: unknown;
@@ -32,12 +41,22 @@ function optionDocs(
     }
     if (!isObj(doc)) continue;
     if (Array.isArray(doc.Options)) {
-      for (const o of doc.Options) if (isObj(o)) out.push(o);
+      doc.Options.forEach((o, i) => {
+        if (isObj(o)) out.push({ manifestName: name, optionIndex: i, doc: o });
+      });
     } else {
-      out.push(doc);
+      out.push({ manifestName: name, optionIndex: 0, doc });
     }
   }
   return out;
+}
+
+/** Every option document in the archive, discarding the pairing identity `optionEntries` tracks —
+ *  `packHasFileSwaps` only needs to know "does ANY option have a swap", not which one. */
+function optionDocs(
+  members: Map<string, Uint8Array>,
+): Record<string, unknown>[] {
+  return optionEntries(members).map((e) => e.doc);
 }
 
 /** True iff any option in the archive carries a non-empty `FileSwaps` map. This is the CAUSE gate
@@ -56,7 +75,34 @@ export function payloadMemberNames(members: Map<string, Uint8Array>): string[] {
   return [...members.keys()].filter((n) => !isManifest(n));
 }
 
-/** The archive's effective `gamePath -> content` mapping, resolved through every option's `Files`.
+/** Composite key pairing a `gamePath` with the option that redirects it, so two DIFFERENT options
+ *  defining the SAME `gamePath` (the ordinary shape of a Single-select/radio group, where each
+ *  option is a mutually exclusive alternative content for the same file) get distinct entries
+ *  instead of colliding. `manifestName` + `optionIndex` identify the option exactly as
+ *  `dropConfirmedAbsentKeys` (upgrade-archive-diff.ts) already pairs options across two archives —
+ *  by manifest member name, then by index within that member's `Options` array — which is safe
+ *  because both our writer and TexTools' regenerate group manifest member names identically. */
+export function redirectKey(
+  manifestName: string,
+  optionIndex: number,
+  gamePath: string,
+): string {
+  return `${manifestName}#${optionIndex}|${gamePath}`;
+}
+
+/** The archive's effective `gamePath -> content` mapping, resolved through each option's `Files`,
+ *  keyed PER OPTION rather than merged archive-wide.
+ *
+ *  Per the design spec (`docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md`
+ *  §5.2): "if each option's `gamePath → content` map is equal, any selection yields an equal
+ *  effective mapping — linear and sufficient." That is a claim about EACH option's map, not one
+ *  merged map for the whole archive. An archive-wide `Map<gamePath, bytes>` with last-write-wins
+ *  merging would collapse two options that legitimately define the same `gamePath` with different
+ *  content — the normal shape of a Single-select group's mutually exclusive choices — so only the
+ *  last-visited option's content would ever be compared, silently hiding a real divergence in every
+ *  other option. That is exactly the failure mode AGENTS.md's "fail loud, never silently diverge"
+ *  rule exists to prevent, so the key here includes the option's identity (`redirectKey`) and every
+ *  option's mapping is preserved and compared independently.
  *
  *  A gamePath whose member is absent is OMITTED rather than defaulted — an absent payload is a real
  *  state (PMP.cs:883-888 drops such a key on write) and inventing bytes for it would mask a genuinely
@@ -69,13 +115,13 @@ export function resolveRedirects(
   for (const [name, bytes] of members) byLooseName.set(looseKey(name), bytes);
 
   const out = new Map<string, Uint8Array>();
-  for (const o of optionDocs(members)) {
-    if (!isObj(o.Files)) continue;
-    for (const [gamePath, zipPath] of Object.entries(o.Files)) {
+  for (const { manifestName, optionIndex, doc } of optionEntries(members)) {
+    if (!isObj(doc.Files)) continue;
+    for (const [gamePath, zipPath] of Object.entries(doc.Files)) {
       if (typeof zipPath !== "string") continue;
       const bytes = byLooseName.get(looseKey(zipPath.replace(/\\/g, "/")));
       if (bytes === undefined) continue;
-      out.set(gamePath, bytes);
+      out.set(redirectKey(manifestName, optionIndex, gamePath), bytes);
     }
   }
   return out;
