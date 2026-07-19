@@ -170,10 +170,33 @@ export function dropConfirmedAbsentKeys(
   const option = (oursOpt: unknown, goldenOpt: unknown): unknown => {
     if (!isObj(goldenOpt) || !isObj(oursOpt) || !isObj(goldenOpt.Files))
       return goldenOpt;
-    return {
+    const out: Record<string, unknown> = {
       ...goldenOpt,
       Files: confirmedFiles(oursOpt.Files, goldenOpt.Files),
     };
+    // INTENTIONAL DIVERGENCE (spec §5.1). PopulatePmpStandardOption sets `opt.FileSwaps = new()`
+    // and never repopulates it (PMP.cs:873-875), silently destroying every swap the pack carried --
+    // docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. We preserve them instead, because a
+    // swap is a live redirection in Penumbra (SubMod.AddContainerTo, SubMod.cs:23-32). So: an EMPTY
+    // golden FileSwaps against a NON-EMPTY ours is the confirmed shape, and we adopt ours' value so
+    // the pointer diff sees no difference. Applies regardless of `layoutEquivalent` -- this is about
+    // the writer destroying swaps on write, not about zip layout.
+    //
+    // Deliberately tight, and NOT symmetric:
+    //  - ours empty + golden populated means we LOST swaps -- still a mismatch;
+    //  - both populated but differing means we MANGLED them -- still a mismatch.
+    // Only "golden dropped everything, we kept something" is confirmed.
+    const gSwaps = isObj(goldenOpt.FileSwaps) ? goldenOpt.FileSwaps : undefined;
+    const oSwaps = isObj(oursOpt.FileSwaps) ? oursOpt.FileSwaps : undefined;
+    if (
+      gSwaps !== undefined &&
+      oSwaps !== undefined &&
+      Object.keys(gSwaps).length === 0 &&
+      Object.keys(oSwaps).length > 0
+    ) {
+      out.FileSwaps = oSwaps;
+    }
+    return out;
   };
 
   if (!isObj(golden) || !isObj(ours)) return golden;

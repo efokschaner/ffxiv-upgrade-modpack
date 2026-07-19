@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { readZip, writeZip } from "../../src/zip/zip";
-import { diffArchives, diffPayloadSemantic } from "./upgrade-archive-diff";
+import { jsonPointerDiff } from "./json-diff";
+import {
+  diffArchives,
+  diffPayloadSemantic,
+  dropConfirmedAbsentKeys,
+} from "./upgrade-archive-diff";
 
 const enc = new TextEncoder();
 function pmp(members: Record<string, unknown | Uint8Array>): Uint8Array {
@@ -850,5 +855,50 @@ describe("diffArchives layoutEquivalent: non-Files manifest fields are never exe
       status: "mismatch",
       detail: undefined,
     });
+  });
+});
+
+// CONFIRMATION (not a baseline suppression) of the ONE FileSwaps divergence we intend:
+// PopulatePmpStandardOption sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:873-875),
+// silently destroying every Penumbra file swap the pack carried (docs/TEXTOOLS_BUGS.md #10, a
+// genuine defect). We preserve them instead (SubMod.AddContainerTo, SubMod.cs:23-32), so the
+// EXPECTED shape is golden.FileSwaps EMPTY and ours.FileSwaps NON-EMPTY. This must apply
+// regardless of layoutEquivalent -- it is about the writer destroying swaps, not zip layout -- so
+// these fixtures pass a bare `new Map()` for goldenMembers (unrelated to this rule).
+describe("FileSwaps confirmation (TEXTOOLS_BUGS #10)", () => {
+  const ours = {
+    Name: "o",
+    Files: {},
+    FileSwaps: { "chara/d.tex": "chara\\s.tex" },
+  };
+
+  it("confirms ours-populated against golden-empty", () => {
+    const golden = { Name: "o", Files: {}, FileSwaps: {} };
+    const pruned = dropConfirmedAbsentKeys(ours, golden, new Map()) as Record<
+      string,
+      unknown
+    >;
+    expect(jsonPointerDiff(ours, pruned)).toEqual([]);
+  });
+
+  it("still REJECTS two non-empty maps that differ (we mangled them, not preserved them)", () => {
+    const golden = {
+      Name: "o",
+      Files: {},
+      FileSwaps: { "chara/d.tex": "chara\\OTHER.tex" },
+    };
+    const pruned = dropConfirmedAbsentKeys(ours, golden, new Map());
+    expect(jsonPointerDiff(ours, pruned).length).toBeGreaterThan(0);
+  });
+
+  it("still REJECTS ours-empty against golden-populated (we LOST swaps)", () => {
+    const oursEmpty = { Name: "o", Files: {}, FileSwaps: {} };
+    const golden = {
+      Name: "o",
+      Files: {},
+      FileSwaps: { "chara/d.tex": "chara\\s.tex" },
+    };
+    const pruned = dropConfirmedAbsentKeys(oursEmpty, golden, new Map());
+    expect(jsonPointerDiff(oursEmpty, pruned).length).toBeGreaterThan(0);
   });
 });
