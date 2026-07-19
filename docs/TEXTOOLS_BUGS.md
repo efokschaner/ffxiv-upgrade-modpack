@@ -261,8 +261,20 @@ effect (entry 8, above) this creates.
 
 **The harm is observed, not theorised.** In-game verification 2026-07-19 (AGENTS.md's first
 principle, requirement 3) against `torn bassment glow.pmp`: both packs load in Penumbra, and **a
-material loads successfully from our output that FAILS to load from TexTools' output** — the swap
-that resolved its texture having been destroyed on write. Verified against `/resave` rather than
+material loads successfully from our output that FAILS to load from TexTools' output** — the swaps
+that resolved its textures having been destroyed on write.
+
+The mechanism, recorded so the observation is reproducible rather than testimony. The packed
+material `chara/equipment/e0246/material/v0001/mt_c0101e0246_top_a.mtrl` references three textures,
+**all three supplied by FileSwaps** (`..._top_n_afadde89.tex`, `..._top_m_0b26c9b8.tex`,
+`..._top_id_f6bf57ea.tex`, swapped from the corresponding `e6120` textures). Those hash-suffixed
+destination paths are TexTools' own item-swap feature minting unique names so the swapped item
+cannot collide with real `e0246` gear — and checked against the 040000 index they are **absent from
+the game**, while all three swap sources exist. So they are backed by nothing unless the swap
+supplies them; there is no base-game fallback, because a suffixed name is not a base-game name.
+Dropping the swaps leaves the material pointing at three addresses that resolve to nothing — a hard
+load failure, not a degraded appearance. **TexTools' writer thus destroys exactly the data its own
+item-swap feature depends on.** Verified against `/resave` rather than
 `/upgrade`, because ConsoleTools no-ops on every swap-carrying pack available; `/resave` is the same
 write path minus the transform (`Program.cs:191-221`) and this function sits in it, so the
 destruction shown there is the destruction any writing `/upgrade` performs.

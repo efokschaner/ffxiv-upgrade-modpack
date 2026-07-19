@@ -357,11 +357,24 @@ on write regardless, so the golden is identical either way; we preserve verbatim
 
 **Result (operator, 2026-07-19).** Both packs load in Penumbra and work. The `FileSwaps` metadata
 difference is visible between the two outputs. Decisively: **a material loads successfully from our
-output that FAILS to load from TexTools' output**, because the swap that resolved its texture was
+output that FAILS to load from TexTools' output**, because the swaps that resolved its textures were
 destroyed on write. That is the concrete user-visible harm this divergence exists to prevent —
 observed, not reasoned. Recorded at the enforcement site in `dropConfirmedAbsentKeys`
 (`test/helpers/upgrade-archive-diff.ts`), per AGENTS.md's requirement that the evidence live with
 the rule it justifies.
+
+**The mechanism, verified afterwards so the observation is reproducible.** The packed material
+`chara/equipment/e0246/material/v0001/mt_c0101e0246_top_a.mtrl` references three textures and **all
+three arrive via FileSwaps** — `..._top_n_afadde89.tex`, `..._top_m_0b26c9b8.tex`,
+`..._top_id_f6bf57ea.tex`, swapped from the matching `e6120` textures. Those hash-suffixed
+*destination* paths are TexTools' item-swap feature minting unique names so the swapped item cannot
+collide with real `e0246` gear. Checked against the 040000 index (`scripts/lib/game-index.ts`): all
+three destinations are **absent** from the game, all three sources **exist**. There is therefore no
+base-game fallback — the conventional un-suffixed `v01_c0101e0246_top_n.tex` does exist, but the
+material never asks for it. Drop the swaps and the material points at three addresses backed by
+nothing, which is why the failure is a hard load error rather than a wrong-looking texture. Note the
+irony worth carrying upstream: **TexTools' writer destroys exactly the data its own item-swap
+feature depends on.**
 
 All three bars of AGENTS.md's first principle are therefore met: (1) registered defect
 (`docs/TEXTOOLS_BUGS.md` #10), (2) every byte the divergence moves is accounted for by a

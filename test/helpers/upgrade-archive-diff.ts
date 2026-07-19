@@ -201,8 +201,23 @@ export function dropConfirmedAbsentKeys(
     // operator, against `torn bassment glow.pmp` (6 swaps pulling e6120 textures onto e0246):
     // both packs load in Penumbra; the FileSwaps metadata difference is visible; and **a material
     // that loads successfully from our output FAILS to load from TexTools' output**, because the
-    // swap that resolved its texture was destroyed on write. That is the concrete user-visible harm
-    // this divergence exists to prevent, observed rather than reasoned.
+    // swaps that resolved its textures were destroyed on write. That is the concrete user-visible
+    // harm this divergence exists to prevent, observed rather than reasoned.
+    //
+    // The exact mechanism, so this is reproducible rather than testimony. The packed material
+    // `chara/equipment/e0246/material/v0001/mt_c0101e0246_top_a.mtrl` references THREE textures,
+    // and ALL THREE arrive via FileSwaps -- none is packed:
+    //     v01_c0101e0246_top_n_afadde89.tex   <- e6120/v01_c0101e6120_top_n.tex
+    //     v01_c0101e0246_top_m_0b26c9b8.tex   <- e6120/v01_c0101e6120_top_m.tex
+    //     v01_c0101e0246_top_id_f6bf57ea.tex  <- e6120/v01_c0101e6120_top_id.tex
+    // Those hash-suffixed DESTINATION paths are TexTools' item-swap feature minting unique names so
+    // the swapped item cannot collide with real e0246 gear. Checked against the 040000 index
+    // (scripts/lib/game-index.ts): all three destinations are ABSENT from the game, all three
+    // sources EXIST. So they resolve to nothing unless the swap supplies them -- there is no
+    // base-game fallback, because the suffixed name is not a base-game name (the conventional
+    // un-suffixed `v01_c0101e0246_top_n.tex` does exist, but the material never asks for it).
+    // Drop the swaps and the material points at three addresses backed by nothing: a hard load
+    // failure, not a degraded appearance.
     //
     // Verified against ConsoleTools `/resave`, NOT `/upgrade` -- ConsoleTools no-ops on every
     // swap-carrying pack we have, so it emits no `/upgrade` output to compare against. `/resave` is
