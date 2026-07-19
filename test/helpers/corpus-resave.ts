@@ -20,8 +20,10 @@ const BLESS = process.env.UPDATE_UPGRADE_BASELINE === "1";
 /**
  * WRITE-SIDE golden check: load + load-time fixes + write, vs ConsoleTools /resave — the same
  * load path /upgrade takes (Program.cs:204 -> WizardData.FromModpack), minus the transform. This is
- * the first thing in the suite to AB-test our WRITERS against TexTools at all; the /upgrade harness
- * oracles the transform and, on its no-op branch, silently takes our own writer as ground truth.
+ * the first thing in the suite to AB-test our WRITERS against TexTools at all, and — since the
+ * /upgrade harness's no-op branch no longer compares member names or manifest JSON against anything
+ * (see docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md) — the SOLE
+ * writer-parity oracle for a pack that no-ops under /upgrade.
  *
  * Ratcheted against its own baseline dir (the key is sha256(input pack) for both harnesses, so a
  * shared dir would collide).

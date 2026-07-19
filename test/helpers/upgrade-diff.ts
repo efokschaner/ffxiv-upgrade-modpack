@@ -13,7 +13,17 @@ export type DiffStatus = "added" | "removed" | "mismatch";
 // the ratchet machinery so a known codec defect can be recorded and burned down instead of blocking
 // the suite, but read a `roundtrip` baseline entry as "our codec contradicts itself here", which is
 // a stronger indictment than a golden diff, not a weaker one.
-export type DiffKind = "payload" | "manifest" | "structure" | "roundtrip";
+export type DiffKind =
+  | "payload"
+  | "manifest"
+  | "structure"
+  | "roundtrip"
+  | "transform";
+// "transform" is likewise NOT an oracle comparison. It records that OUR upgrade transform changed
+// an option's file set for a pack ConsoleTools /upgrade left alone (it wrote no output at all), so
+// there is no TexTools artifact on the other side of it -- see
+// docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md §3.2. It mirrors the exact
+// predicate the oracle itself branches on (ModpackUpgrader.cs · AnyChanges · 25-49).
 export interface FileDiff {
   kind: DiffKind;
   gamePath: string; // for manifest/structure diffs this holds the archive member name

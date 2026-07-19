@@ -102,13 +102,6 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
   `default_mod.json#/FileSwaps` baseline entry — unrelated to FileSwap preservation itself, which the
   carve-out only confirms in the opposite (populated-vs-empty) direction.
 
-- [`SetId` manifest mismatches on no-op packs are baseline-suppressed, not confirmed](backlog/2026-07-19-noop-reference-manifest-spelling.md)
-  — against a no-op golden the reference is the raw Penumbra input, which spells some manipulation
-  fields loosely (`"246"` vs `246`); our writer normalizes them the TexTools way. 18 such entries
-  across 4 packs, but only `torn bassment glow.pmp`'s has been checked against the `/resave` oracle
-  (and is benign). The other 17 are suppressed with no confirmation — verify, then replace with a
-  narrow confirmation rule. Same family as the empty-vs-omitted `FileSwaps` item above.
-
 ### Findings from the `/resave` write-side oracle (2026-07-13)
 
 The `/resave` harness (`test/helpers/corpus-resave.ts`) is the first thing in the suite to AB-test
@@ -202,6 +195,14 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   `.ttmp` name → empty → whole-pack phantom `added`) is **fixed**; both harnesses now re-read under the
   written `target`. What remains is the fail-loud half: `readLegacyTtmp` should throw on a zip (the
   `PK` magic) instead of yielding empty, so a future miswire is loud rather than a silent phantom diff.
+- [`/resave` asserts nothing when its oracle errors](backlog/2026-07-19-resave-oracle-error-skips-all-assertions.md)
+  — it skips (loudly, and correctly — the one such error is environmental, TexTools reading the
+  installed game's `human.cmp`) *before* running the checks that need no golden: the
+  write→re-read→compare round-trip and `pmpSelfConsistency`. Matters because
+  `Milktruck Bust Scaling Tweaks v1.0.0.ttmp2` is both a `/upgrade` no-op and a `/resave` oracle
+  error, so nothing in either harness compares its written output to anything. Fixable entirely
+  inside `/resave`, with no crosstalk between the harnesses. Do **not** close it by asserting a
+  matched failure — the item explains why that is wrong here.
 - [Make the ConsoleTools oracle async, so the lock can heartbeat](backlog/2026-07-13-consoletools-oracle-async-lock.md)
   — the hand-rolled mutex breaks "stale" locks on a guess. A heartbeat is the proper fix but needs
   the `execFileSync` critical section gone first. Operator's call (2026-07-13): keep the hand-rolled

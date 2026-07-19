@@ -44,10 +44,10 @@ This used to be unobservable for `torn bassment glow.pmp`, because a suspected d
 option-prefix bug renamed every member and left the golden diff pairing nothing. That is **resolved**
 (2026-07-19): the `default/` prefix turned out to be CORRECT — TexTools' own `/resave` golden emits it
 byte-identically — and the real fault was the harness comparing a rewritten archive against a raw
-Penumbra input on the no-op branch. `registerUpgradeCheck` now confirms the prefix instead of
-reporting it, and that pack's baseline fell from 37 entries to 1 (a manifest `SetId` spelling, also
-explained). **Every payload member now content-compares clean**, so no `.mdl` divergence is hiding
-there.
+Penumbra input on the no-op branch, which has no oracle behind it. That comparison is now gone
+(`docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md`), and **that pack's
+`/upgrade` baseline is empty** — as is every other no-op pack's. Every payload member
+content-compares clean, so no `.mdl` divergence is hiding there.
 
 Note what that does and does not prove: `/upgrade` NO-OPs on that pack, so the clean comparison shows
 our load->write round-trip preserves the input `.mdl` bytes — it does not exercise the v6-bump rewrite
