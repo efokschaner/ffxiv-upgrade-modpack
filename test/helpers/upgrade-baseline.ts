@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { FileDiff } from "./upgrade-diff";
 
@@ -52,13 +58,26 @@ export function loadBaseline(
     : null;
 }
 
+/** Blessing an EMPTY diff set removes the baseline file rather than writing `[]`.
+ *
+ * `loadBaseline` is always consumed as `?? []`, so a missing file and an `[]` file assert exactly
+ * the same thing ("no divergence allowed") — an `[]` file is pure noise. Removing it also makes the
+ * burn-down terminal state legible: when a pack's last divergence is fixed and you re-bless, its
+ * file DISAPPEARS instead of lingering as an empty husk, so a baseline directory's file count is
+ * the count of packs that still diverge. (That count lying is half of
+ * docs/backlog/2026-07-14-orphaned-baseline-cache-entries.md.) */
 export function saveBaseline(
   key: string,
   files: FileDiff[],
   dir: string = DEFAULT_UPGRADE_BASELINE,
 ): void {
+  const p = baselinePath(key, dir);
+  if (files.length === 0) {
+    if (existsSync(p)) rmSync(p);
+    return;
+  }
   mkdirSync(dir, { recursive: true });
-  writeFileSync(baselinePath(key, dir), JSON.stringify(files, null, 2));
+  writeFileSync(p, JSON.stringify(files, null, 2));
 }
 
 /** PASS when actual ⊆ baseline (by identity). Extra baseline entries are fine (we improved). */

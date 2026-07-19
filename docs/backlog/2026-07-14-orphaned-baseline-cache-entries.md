@@ -25,6 +25,14 @@ problem: `ls .upgrade-baseline | wc -l` no longer answers "how many packs are ra
 counts you reason about during a bless are quietly wrong, and a stale baseline looks exactly like a
 live one.
 
+**Partly addressed 2026-07-18.** A second, independent source of count-inflation is fixed: blessing
+an *empty* diff set used to write an `[]` file, even though `loadBaseline` is always consumed as
+`?? []` so absent and empty assert the same thing. `saveBaseline` now removes the file instead (98
+existing empty files pruned across the three roots — `.upgrade-baseline` 85→77, `.resave-baseline`
+80→70, `.roundtrip-baseline` 81→1). A baseline directory's file count is now the count of packs that
+**still diverge**, and a pack burned to zero divergences disappears from it. What remains open is the
+harder half described here: keys belonging to packs that no longer exist at all.
+
 **An orphan is not invalid, only unreferenced.** If a pack's bytes ever return to a previous state,
 its old baseline and golden are correct and would be hit again. Pruning trades that (rare) cache hit
 for legibility.
