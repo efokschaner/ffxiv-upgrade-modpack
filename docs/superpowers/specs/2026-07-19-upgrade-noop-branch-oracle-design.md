@@ -54,6 +54,9 @@ machinery exists solely to absorb a reference that should not have been used.
 | `/resave` (`Program.cs:204-211`) | `WizardData.FromModpack(src)` | `data.WriteModpack(dest, true)` |
 | `/upgrade` (`ModpackUpgrader.cs:58`, `:212-219`) | `WizardData.FromModpack(path)` | `if (AnyChanges) WriteModpack(newPath, true)` |
 
+(The write condition is literally `if (data.AnyChanges || rewriteOnNoChanges)` at `:216`; `HandleUpgrade`
+calls the 2-arg overload, so `rewriteOnNoChanges` defaults to `false` — `Program.cs:179`.)
+
 So when `/upgrade` no-ops, `/resave`'s output **is** what `/upgrade` would have written — and
 `registerResaveCheck` already diffs our writer against exactly that golden, with
 `checkPayloadMembers` on for PMP (`corpus-resave.ts:91-97`).
@@ -85,11 +88,35 @@ Assert that our upgrade changed no option's file set, mirroring `AnyChanges`. Co
 returned by `upgradeModpack(source)` against `source` itself — post-load, pre-transform, matching
 where the C# captures `originals`.
 
-**Predicate: file sets only** (per option: same count, same `gamePath` keys, same content), because
-that is precisely the condition the oracle branches on. Deliberately *not* whole-model identity: if
-TexTools' transform mutates manipulations on such a pack it still no-ops, so a faithful port must be
-free to do the same. Anything the transform does outside the file set has no oracle on this branch in
-either direction, and this spec does not invent one.
+**Predicate: file sets only** — per option, paired by **group index then option index**: same
+`gamePath` key set, same content bytes. Deliberately *not* whole-model identity: if TexTools'
+transform mutates manipulations on such a pack it still no-ops, so a faithful port must be free to do
+the same. Anything the transform does outside the file set has no oracle on this branch in either
+direction, and this spec does not invent one.
+
+**Why index pairing, and why bytes.** Both differ from the C# and both need justifying:
+
+- C# keys `originals` by `WizardOptionEntry` *reference* (`ModpackUpgrader.cs:64`, `:76`), which works
+  because its transform mutates options in place. Our `upgradeModpack` clones, so reference identity
+  is unavailable. Positional pairing is the correct substitute: neither our pipeline nor `/upgrade`
+  adds or removes options, so options align by structural position — the same assumption the harness
+  spec already relies on (`2026-07-04-upgrade-golden-harness-design.md` §3). A count mismatch is
+  itself reported as a change rather than silently truncating.
+- C# compares `FileStorageInformation.Equals` — and that type is a plain struct with **no custom
+  `Equals`** (`TransactionDataHandler.cs:42-71`), so it is field-wise over `StorageType`,
+  `RealOffset`, `RealPath`, `FileSize`. `RealPath` is a *temp file path*, so in C# a transform that
+  rewrites a file to byte-identical content still counts as a change. Our model has no such
+  descriptor (`ModpackFile` is `{ storage, data? }`), so we compare bytes.
+
+  This makes our predicate **strictly weaker, never stronger**, which is what keeps it safe here: a
+  byte change implies a `FileStorageInformation` change, so anything we flag C# would have flagged
+  too. And the converse gap cannot arise on this branch — had C# seen a change of any kind it would
+  have written a golden, and we would be on the real-golden branch instead. So on the no-op branch a
+  byte-level report of "no change" and the oracle's own verdict cannot disagree.
+
+**It is the only assertion on this branch that bypasses the writer.** It compares `upgradeModpack`'s
+return value against the pre-transform model, deliberately: it is about the transform alone. Writer
+behaviour is covered by `diffUpgrade` (which reads back the written archive) and by `/resave`.
 
 **Lives in `test/helpers/`, not `src/`.** It is an oracle-side predicate the harness needs in order to
 interpret a missing golden — not behaviour our product performs. See §4.
@@ -154,8 +181,14 @@ branch notes that writer parity lives in the `/resave` check; that is the whole 
 
 ## 6. What this deletes
 
-- `stripOursPrefix` — both call sites, the fail-loud guard, the doc block, and the parameter on
-  `diffArchives` / `diffPayloadSemantic` / `dropConfirmedAbsentKeys` (added 2026-07-19; becomes dead).
+- `stripOursPrefix` (added 2026-07-19; becomes dead) — its one external caller
+  (`corpus-upgrade.ts`), the two internal forwards inside `diffArchives`, the fail-loud guard, the
+  parameter on `diffArchives` / `diffPayloadSemantic` / `dropConfirmedAbsentKeys`, and the doc-block
+  paragraphs describing it.
+- `defaultOnlyNoop` and the 38-line comment block above it in `corpus-upgrade.ts` — the whole
+  justification for a distinction this change removes. The `layoutEquivalent` gate reverts to
+  `packHasFileSwaps(readZip(bytes))` alone, and its `console.log` reverts to the FileSwaps-only
+  wording (it would otherwise announce "compared SEMANTICALLY" for a reason that no longer exists).
 - `docs/backlog/2026-07-19-noop-reference-manifest-spelling.md` and its index entry — the 18 `SetId`
   entries it tracks stop being produced. Delete only after the re-bless confirms they are gone.
 - The four-key manifest set (`#/Name`, `#/Description`, `#/Version`, `meta.json#/Image`) from every
@@ -174,8 +207,12 @@ thing that pins its `default/` prefix against a real TexTools golden.
   `gamePath` → change; same keys with differing content → change; a differing **manipulation** with
   identical file sets → **no** change (pins §3.2's deliberate scope, so a later "tighten it to
   whole-model" edit fails loudly rather than silently diverging from the oracle's predicate).
-- no-op branch wiring: assert `diffArchives` is not consulted on the no-op branch and is still
-  consulted on the real-golden branch.
+There is deliberately **no unit test asserting "`diffArchives` is not consulted on the no-op branch"**.
+`diffArchives` is a static import into `registerUpgradeCheck`, which is one monolithic `it()` that
+reads files and can spawn ConsoleTools — observing the call would need `vi.mock` or an extraction
+refactor this design does not otherwise justify. The meaningful version of that assertion is
+empirical and comes free with the corpus run: **every real-golden pack's diff must be unchanged** by
+this work. If one moves, the branch condition is wrong.
 
 **Corpus.** The existing no-op packs are the integration test. Expected outcome: every no-op pack's
 `/upgrade` baseline becomes empty (§3.4). A pack that does not reach empty is a real finding and must
@@ -189,11 +226,18 @@ packs never passed it. The corpus run confirms this.
 1. Land the harness change with the transform-no-op assertion and the `diffArchives` removal.
 2. Run the suite **before** blessing and read the no-op packs' actual diffs. Confirm each reaches
    empty, and account for any that does not.
-3. Re-bless (`UPDATE_UPGRADE_BASELINE=1`). Baselines shrink; no pack should gain entries.
+3. Re-bless (`UPDATE_UPGRADE_BASELINE=1`). Every no-op pack's baseline should reach **empty** (§3.4)
+   — the same bar §7 sets, not the weaker "merely shrinks". The one way a no-op pack can legitimately
+   gain an entry is a new `kind: "transform"` diff, which means our transform changed a file set the
+   oracle left alone. That is a genuine finding: explain it before blessing, never bless past it.
 4. Delete `stripOursPrefix` and the backlog item once the run confirms both are dead.
 
-Baselines are gitignored, so this shrinkage is local-only and each contributor re-derives it — the
-same property the corpus itself has.
+**Steps 2-4 are not executable on a fresh clone.** `test/corpus/real/` and `test/corpus/synthetic/`
+are gitignored and a fresh clone has neither the packs nor ConsoleTools, so the `upgrade` check
+no-ops entirely. Every figure in §1.1's cost table was measured on a populated local corpus
+(2026-07-19) and is likewise unverifiable without one. Rebuild the synthetics with
+`npm run synthetics`; the real packs must be supplied. Baselines are gitignored for the same reason,
+so this shrinkage is local-only and each contributor re-derives it.
 
 ## 9. Out of scope
 
