@@ -39,36 +39,29 @@ inputs the corpus doesn't happen to cover — robustness and our "fail loud, nev
 rule; **(c)** the real-corpus byte-divergences keeping already-shipped rounds off byte-zero.
 Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [A default-only PMP gets a `default/` member prefix](backlog/2026-07-18-default-only-pmp-option-prefix.md)
-   — **silent layout divergence that also masks content comparison.** A `default_mod.json`-only pack
-   (no groups) has every member emitted one folder deeper than the golden. Because no member name
-   pairs, the golden diff never content-compares that pack's payload at all — so its baseline is not
-   evidence of byte-parity. Affects every default-only PMP; surfaced 2026-07-18 by the first corpus
-   pack with that shape.
-
-2. [SQPack model encode writes unused-LoD offsets as end-of-data](backlog/2026-07-18-mdl-self-roundtrip-byte21.md)
+1. [SQPack model encode writes unused-LoD offsets as end-of-data](backlog/2026-07-18-mdl-self-roundtrip-byte21.md)
    — **our codec contradicts itself**, no oracle involved. A `lodCount = 1` model round-trips with
    `vertexOffset[1..2]`/`indexOffset[1..2]` rewritten from `0` to the file length. `/upgrade` rewrites
-   `.mdl`s, so emitted models may carry the bogus offsets; item 1 is currently hiding whether they do.
-   The only non-empty entry in the `.roundtrip-baseline` ratchet.
+   `.mdl`s, so emitted models may carry the bogus offsets. The only non-empty entry in the
+   `.roundtrip-baseline` ratchet.
 
-3. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
+2. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
    — **silent divergence (fail-loud violation).** `IMC_TABLE` is exhaustive over equipment/accessory
    but Set-only, so a NonSet meta that *would* grow its IMC silently passes through — wrong output
    with no throw and no test catching it. Needs a NonSet `.imc` parser, its own extraction pass, and
    the NonSet column selection; at minimum make it fail loud until then.
 
-4. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
+3. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
    — **silent divergence (fail-loud violation), cheap fix.** `parsePmpGroup` defaults `Options` to
    `[]`, silently dropping the group's files, where C# throws `Unimplemented PMP group type`. Inverts
    our fail-loud rule; flip it to a throw after the corpus scan the item calls for.
 
-5. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
+4. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
    — **mechanical real-corpus correctness win.** We emit at the convention path instead of the
    canonical override. Fix is mechanical: re-run `scripts/extract-index-overrides.ts` against a game
    install.
 
-6. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+5. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
@@ -108,6 +101,13 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
   commented out, `PMP.cs:1519-1524`). Surfaced as `Flower Child - by Solona.pmp`'s
   `default_mod.json#/FileSwaps` baseline entry — unrelated to FileSwap preservation itself, which the
   carve-out only confirms in the opposite (populated-vs-empty) direction.
+
+- [`SetId` manifest mismatches on no-op packs are baseline-suppressed, not confirmed](backlog/2026-07-19-noop-reference-manifest-spelling.md)
+  — against a no-op golden the reference is the raw Penumbra input, which spells some manipulation
+  fields loosely (`"246"` vs `246`); our writer normalizes them the TexTools way. 18 such entries
+  across 4 packs, but only `torn bassment glow.pmp`'s has been checked against the `/resave` oracle
+  (and is benign). The other 17 are suppressed with no confirmation — verify, then replace with a
+  narrow confirmation rule. Same family as the empty-vs-omitted `FileSwaps` item above.
 
 ### Findings from the `/resave` write-side oracle (2026-07-13)
 

@@ -297,20 +297,29 @@ gate is on the input carrying any FileSwap, not on whether a `common/N` shift is
 (see the §5.2 gate-honesty paragraph below) — so both its `/upgrade` and `/resave` checks compare
 payload through `diffPayloadSemantic` rather than `diffPayloadMembers`.
 
-It also arrived with two unrelated defects it is the first pack to expose — a default-only option
-prefix (`docs/backlog/2026-07-18-default-only-pmp-option-prefix.md`) and a `.mdl` unused-LoD offset
-bug (`docs/backlog/2026-07-18-mdl-self-roundtrip-byte21.md`). **Its blessed baseline is weak on member
-NAMES, not on content.** The prefix bug renames every member, so `diffPayloadSemantic` part 2 (the
-name-only comparison outside `common/`, `test/helpers/upgrade-archive-diff.ts`) pairs nothing and
-reports every non-`common/` member as added/removed — that half of the baseline is not evidence of
-member-name parity. But payload CONTENT is a separate comparison unaffected by member names:
-`diffPayloadSemantic` part 1 (`resolveRedirects`, walking each option's `Files` map) and
-`diffUpgrade` (`test/helpers/upgrade-diff.ts`) both key by `gamePath`, not by zip member name, and
-both run regardless of the prefix bug. Their evidence: the `/upgrade` baseline (compared against the
-no-op input) has no `"kind": "payload"` entries at all — `diffUpgrade` found zero gamePath-content
-differences, so content parity IS established there, even though every non-`common/` member is
-reported `added`/`removed` by name. Do not read the STRUCTURE (member-name) half of either baseline as
-evidence of anything beyond names, and re-bless once the prefix item lands.
+It also arrived as the first pack with **no groups at all** (only a `default_mod.json`), which
+initially read as a defect — every member emitted one folder deeper than the reference, reported as
+12 `added` + 12 `removed`, so `diffPayloadSemantic` part 2 (the name-only comparison outside
+`common/`, `test/helpers/upgrade-archive-diff.ts`) paired nothing.
+
+**Resolved 2026-07-19, and it was not a port bug.** The `default/` prefix is CORRECT: TexTools'
+loader synthesizes a lone group named "Default" for a groups-less PMP (`WizardData.FromPmp`,
+`WizardData.cs:1118-1138`), which `MakeGroupPrefix` folder-safes to `default/` (`:1390-1400`), and
+ConsoleTools `/resave` on this very pack emits `default/chara/equipment/e0246/...` byte-identically
+to ours. The fault was in the harness: `/upgrade` NO-OPs on this pack, so the reference is the
+**untouched Penumbra input**, a layout TexTools' writer never produced. `registerUpgradeCheck` now
+detects the default-only + no-op shape and passes a `stripOursPrefix` **confirmation** (not a waiver
+— the stripped name must then match exactly). The baseline fell from 37 entries to 1, and every
+payload member content-compares clean. See `test/helpers/corpus-upgrade.ts` reason (b).
+
+Its one remaining entry, `default_mod.json#/Manipulations/6/Manipulation/SetId`, is the same
+raw-input artifact in the manifest rather than the layout: Penumbra wrote the string `"246"` where we
+(and TexTools) write the number `246` — proven by the `/resave` golden, which matches our manifest
+exactly. A no-op pack's residual manifest baseline is likewise not evidence of divergence.
+
+The `.mdl` unused-LoD offset item (`docs/backlog/2026-07-18-mdl-self-roundtrip-byte21.md`) is
+unaffected and still open, but is no longer masked here — see that item for what the now-clean
+comparison does and does not prove.
 
 **Synthetic still required: `test/corpus/synthetic/file-swaps.pmp`**, via `pmp-builder.ts` (which
 hardcodes `FileSwaps: {}` at `:88` and needs extending first). Requirements:

@@ -38,12 +38,21 @@ benign case's size signature. **Do not widen `isTrailingZeroGrowth` to tolerate 
 that retires the only check standing between us and an arbitrary Type-3 encode bug.
 
 **Possible severity beyond the round-trip.** `/upgrade` rewrites `.mdl` files (the v6 bump), so
-emitted models may carry these bogus offsets. Whether they do is **not currently observable for this
-pack**: the default-only option-prefix bug
-(`docs/backlog/2026-07-18-default-only-pmp-option-prefix.md`) renames every member, so the golden
-diff reports `added`/`removed` name pairs and never content-compares them. Fixing the prefix bug will
-expose whatever content divergence is hiding behind it. Treat that as a reason to fix the prefix bug
-first, and do not read this pack's blessed baseline as evidence that its `.mdl` content matches.
+emitted models may carry these bogus offsets.
+
+This used to be unobservable for `torn bassment glow.pmp`, because a suspected default-only
+option-prefix bug renamed every member and left the golden diff pairing nothing. That is **resolved**
+(2026-07-19): the `default/` prefix turned out to be CORRECT — TexTools' own `/resave` golden emits it
+byte-identically — and the real fault was the harness comparing a rewritten archive against a raw
+Penumbra input on the no-op branch. `registerUpgradeCheck` now confirms the prefix instead of
+reporting it, and that pack's baseline fell from 37 entries to 1 (a manifest `SetId` spelling, also
+explained). **Every payload member now content-compares clean**, so no `.mdl` divergence is hiding
+there.
+
+Note what that does and does not prove: `/upgrade` NO-OPs on that pack, so the clean comparison shows
+our load->write round-trip preserves the input `.mdl` bytes — it does not exercise the v6-bump rewrite
+path where these bogus offsets would be emitted. A pack whose `/upgrade` actually rewrites a
+`lodCount = 1` model is still the test this item wants.
 
 **Working on it:** delete this pack's entry from `test/corpus/.roundtrip-baseline/` to make the check
 fail hard again. When fixed, leave the entry deleted rather than re-blessing — the goal state is an

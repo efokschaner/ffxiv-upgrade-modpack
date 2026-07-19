@@ -126,13 +126,55 @@ export function registerUpgradeCheck(pack: string): void {
         reference,
         confirmDivergence,
       );
-      // The gate comes from the INPUT pack, not `ours` or the golden — PopulatePmpStandardOption
-      // (PMP.cs:873-875) has already destroyed the golden's swaps by the time we'd read it here, so
-      // gating on the golden would never fire. See the FileSwap-preservation spec, §5.2.
-      const layoutEquivalent = packHasFileSwaps(readZip(bytes));
+      // Two INDEPENDENT reasons the zip layout cannot match member-for-member, either of which
+      // re-keys the payload comparison to the Penumbra redirect table (gamePath -> content).
+      //
+      //  (a) FileSwaps in the INPUT pack. The gate comes from the input, not `ours` or the golden —
+      //      PopulatePmpStandardOption (PMP.cs:873-875) has already destroyed the golden's swaps by
+      //      the time we'd read it here, so gating on the golden would never fire. See the
+      //      FileSwap-preservation spec, §5.2.
+      //
+      //  (b) A DEFAULT-ONLY PMP on the NO-OP branch. ConsoleTools wrote no archive at all, so the
+      //      reference above is the UNTOUCHED INPUT PACK — laid out by Penumbra, never by TexTools'
+      //      writer. For a PMP with NO GROUPS that layout provably cannot match ours: TexTools'
+      //      loader synthesizes a lone group named "Default" (FromPmp, WizardData.cs:1118-1138),
+      //      MakeGroupPrefix folder-safes it to `default/` (:1390-1400), and every member comes out
+      //      one folder deeper than the raw input's. `torn bassment glow.pmp` is the pack that
+      //      exposed this — 12 added + 12 removed, purely from a prefix we emit CORRECTLY. Verified
+      //      against the write-side oracle: ConsoleTools /resave on that same pack emits
+      //      `default/chara/equipment/e0246/...`, byte-identical to ours, and its /resave baseline
+      //      records no name divergence at all.
+      //
+      //      Scoped to the default-only SHAPE, not to no-op in general, and paired with a
+      //      `stripOursPrefix` CONFIRMATION rather than a waiver (see the diffArchives call below).
+      //      A blanket "no-op -> stop comparing names" would disarm the no-op synthetics that exist
+      //      to pin member names (f1-safename, case-mismatch, trailing-dot), whose builders author
+      //      the input layout to be exactly what TexTools writes.
+      //
+      //      Content is NOT lost either way: diffUpgrade above already compares every gamePath's
+      //      bytes, and diffPayloadSemantic part 1 re-compares them through the redirect table.
+      //
+      //      NOTE the layout is not the only thing a raw-input reference gets wrong. Penumbra also
+      //      spells MANIFEST VALUES its own way, and our writer normalizes them the TexTools way, so
+      //      a no-op pack's residual manifest baseline is not evidence of divergence either. Two
+      //      confirmed instances: every no-op synthetic baselines the same four keys Penumbra omits
+      //      or spells differently (`default_mod.json#/Name`, `#/Description`, `#/Version`,
+      //      `meta.json#/Image`), and `torn bassment glow.pmp` baselines
+      //      `default_mod.json#/Manipulations/6/Manipulation/SetId` purely because its input holds
+      //      the string "246" where we (and TexTools) write the number 246 — proven by the /resave
+      //      oracle, whose golden for that pack matches our manifest exactly.
+      //      `groups[0]` is our reader's synthesized Default group, so `<= 1` means "no real
+      //      groups" (see src/container/option-prefix.ts's header).
+      const defaultOnlyNoop =
+        golden.kind === "noop" && target === "pmp" && source.groups.length <= 1;
+      const layoutEquivalent =
+        defaultOnlyNoop || packHasFileSwaps(readZip(bytes));
       if (layoutEquivalent) {
+        const why = defaultOnlyNoop
+          ? "default-only PMP vs a no-op (raw input) reference -> `default/` prefix confirmed"
+          : "input carries FileSwaps";
         console.log(
-          `[upgrade] ${name}: input carries FileSwaps -> payload compared SEMANTICALLY ` +
+          `[upgrade] ${name}: ${why} -> payload compared SEMANTICALLY ` +
             `(redirect table, not member names). See the FileSwap-preservation spec, §5.2.`,
         );
       }
@@ -149,6 +191,10 @@ export function registerUpgradeCheck(pack: string): void {
         target === "pmp",
         confirmDivergence,
         layoutEquivalent,
+        // CONFIRM (not waive) the one member-name difference reason (b) above predicts: strip the
+        // synthesized `default/` folder from OUR names, then require an EXACT match with the
+        // golden's. Anything else about the layout is still reported.
+        defaultOnlyNoop ? "default/" : undefined,
       );
       // Oracle-free invariant on OUR OWN artifact: no dangling `Files` key, no orphan member.
       // Independent of the golden, so it still guards a pack ConsoleTools cannot upgrade or that

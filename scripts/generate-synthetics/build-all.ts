@@ -16,3 +16,4 @@ import "./build-synthetic-eye-mask";
 import "./build-synthetic-highlight";
 import "./build-synthetic-mashup-hair";
 import "./build-synthetic-file-swaps";
+import "./build-synthetic-default-only";
