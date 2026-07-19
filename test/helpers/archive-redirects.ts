@@ -1,6 +1,7 @@
 // Reads a PMP archive the way Penumbra does: as a redirect table, not as a file layout.
 //
-// Penumbra's SubMod.AddContainerTo (Penumbra SubMod.cs:23-32) reduces an option to
+// Penumbra's SubMod.AddContainerTo (Penumbra repo Mods/SubMods/SubMod.cs:23-32 -- a separate repo
+// from this project's reference/) reduces an option to
 // `redirections` + `manipulations`:
 //
 //     foreach (var (path, file) in container.Files)     redirections.TryAdd(path, file);

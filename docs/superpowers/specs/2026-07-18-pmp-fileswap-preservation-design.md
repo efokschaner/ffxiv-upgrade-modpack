@@ -9,12 +9,19 @@ deleted once this landed — its remaining work is what this spec covers). This 
 application of AGENTS.md's first principle ("a working upgrader is the goal; byte-parity is how we
 get there"), amended in the commit immediately preceding this spec.
 
-## 1. The problem
+## 1. The problem (as filed)
+
+*This section is framed in the present tense of the problem as originally filed, before any of this
+spec's work landed — see the status line at the top for what has since shipped. `resolveDuplicates`
+no longer throws (§6), and the "commonly" claim below turned out to be wrong: §6.1's later scan of
+826 real PMPs found the true rate is 1 in 826, not common at all. Kept here as the historical
+record of why this was picked up, not as a claim still true of the code.*
 
 `resolveDuplicates` (`src/container/resolve-duplicates.ts:116-128`) throws when any option carries a
-non-empty `fileSwaps` map. Real Penumbra `.pmp` mods commonly carry file swaps, so this is a hard
-crash on a common real input — the highest-priority backlog item. No corpus pack trips it (all 13
-real PMPs have `fileSwaps=0`), so it is latent rather than observed.
+non-empty `fileSwaps` map. Real Penumbra `.pmp` mods were assumed to carry file swaps often enough to
+matter, so this reads as a hard crash on a common real input — the highest-priority backlog item. No
+corpus pack trips it (all 13 real PMPs then in the corpus have `fileSwaps=0`), so it is latent rather
+than observed.
 
 The throw was correct when written. It exists because reproducing TexTools *exactly* appeared to
 require game data we do not have. That framing is what this spec overturns.
@@ -89,10 +96,27 @@ narrowly-scoped need arises.
 
 **5.1 Manifest — `FileSwaps` populated where the golden has `{}`.** Present whenever a pack has
 swaps. This divergence *is* the feature. Confirmed by a scoped carve-out in
-`test/helpers/upgrade-archive-diff.ts`, alongside the existing absent-payload `Files`-key
-confirmation, which is the established shape to follow. The rule must confirm narrowly: ours' option
-`FileSwaps` equals the **input pack's** for that option, and the golden's is empty. A `FileSwaps`
-value that matches neither is still a mismatch.
+`test/helpers/upgrade-archive-diff.ts` (`dropConfirmedAbsentKeys`), alongside the existing
+absent-payload `Files`-key confirmation, which is the established shape to follow.
+
+The confirmation and value fidelity are deliberately split across two different mechanisms, because
+the golden carries no signal on the latter at all — TexTools always writes `FileSwaps: {}`
+(`PMP.cs:873-875`), so there is no golden *value* to compare ours against:
+
+- **The golden-harness carve-out confirms PRESENCE, not VALUE.** It fires only when the golden's
+  option `FileSwaps` is empty and ours is non-empty; either wrong shape (both empty — we lost the
+  swaps — or both non-empty but differing — we mangled them) is still reported as a mismatch. What it
+  does **not** do is check ours' value against anything from the input pack — once the shape matches,
+  it adopts ours' value unread. Read narrowly, a mangled or even wholly invented swap value would
+  still be blessed by this rule alone.
+- **Value fidelity — that the emitted `FileSwaps` are the verbatim key/value pairs the source pack
+  carried — is pinned separately**, by a synthetic writer round-trip unit test:
+  `test/container/pmp-write.test.ts`'s `"carries a non-empty FileSwaps map through read -> write
+  unchanged"` case reads a pack with known swap values (including the backslashed path form Penumbra
+  writes) and asserts the written `FileSwaps` equal the input exactly, for both a `default_mod.json`
+  option and a `group_NNN.json` option.
+
+Together the two cover the property §5.1 originally claimed as one rule; neither alone does.
 
 **5.2 `common/N` numbering — needs a semantic-comparison mode.** TexTools' zero-hash class burns one
 `idx` once it reaches **two members**, shifting `common/N` for every duplicate promoted after that
@@ -133,7 +157,9 @@ that renames the redirect to entirely different bytes, with no content check any
 to catch it.
 
 **The mechanism: a cause-gated semantic-comparison mode.** Penumbra's runtime model is the authority
-on what must be preserved. `SubMod.AddContainerTo` (Penumbra `SubMod.cs:23-32`) reduces an option to:
+on what must be preserved. `SubMod.AddContainerTo`, in the separate **Penumbra** repository
+(`C:\dev\efokschaner\Penumbra`, *not* vendored under this repo's `reference/`) at
+`Penumbra/Mods/SubMods/SubMod.cs:23-32`, reduces an option to:
 
 ```csharp
 foreach (var (path, file) in container.Files)     redirections.TryAdd(path, file);
@@ -161,8 +187,13 @@ Still asserted in this mode, or we lose real coverage:
 
 **Gate on cause, not symptom.** The mode activates only when the *input* pack carries ≥1 FileSwap —
 a property known before any comparison, and exactly the condition under which member-name parity
-becomes unreproducible. Measured 2026-07-18: **0 of 18 corpus PMPs** carry swaps, so every pack we
-test today keeps full byte-and-name exactness, unchanged.
+becomes unreproducible. Measured 2026-07-18, before either FileSwap-carrying pack below existed:
+**0 of 18 corpus PMPs** carried swaps — the observation that motivated gating on cause rather than
+symptom in the first place, since a gate that fires on nothing is cheap to get right. That measurement
+is now stale: with `torn bassment glow.pmp` (§6.1) added to the real corpus and the synthetic
+`file-swaps.pmp` (§6.1) built, exactly **two** packs take the relaxed path today. Every other corpus
+pack still keeps full byte-and-name exactness, unchanged — the gate remains as narrow as intended,
+just no longer empty.
 
 The rejected alternative is a **symptom** gate ("if the only diffs are `common/N`-shaped, fall back to
 semantic"), which would silently absorb genuine writer regressions in *any* pack. That is the version
@@ -193,7 +224,8 @@ divergence currently baselined across real packs and synthetics. Deliberately no
   not reproduce this," citing this spec.
 - **`scripts/generate-synthetics/build-synthetic-file-swaps.ts`** (new) + registration in
   `build-all.ts` — see §6.1.
-- **`test/helpers/upgrade-archive-diff.ts`** — the §5.1 carve-out, carrying the §7 evidence.
+- **`test/helpers/upgrade-archive-diff.ts`** — the §5.1 carve-out; it will carry the §7 evidence once
+  the in-game gate (still outstanding, see §7) has actually been performed.
 - **`docs/BACKLOG.md`** — delete the "PMP write path" item this spec supersedes and its index entry
   (its file was `docs/backlog/2026-07-13-pmp-write-fileswaps.md`); grep for citations first
   (`docs/TEXTOOLS_BUGS.md` #10 referenced it). §5.2 landed in full, so no residual gap from it needs

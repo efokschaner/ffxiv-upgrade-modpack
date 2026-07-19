@@ -861,7 +861,8 @@ describe("diffArchives layoutEquivalent: non-Files manifest fields are never exe
 // CONFIRMATION (not a baseline suppression) of the ONE FileSwaps divergence we intend:
 // PopulatePmpStandardOption sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:873-875),
 // silently destroying every Penumbra file swap the pack carried (docs/TEXTOOLS_BUGS.md #10, a
-// genuine defect). We preserve them instead (SubMod.AddContainerTo, SubMod.cs:23-32), so the
+// genuine defect). We preserve them instead (SubMod.AddContainerTo, Penumbra repo
+// Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/), so the
 // EXPECTED shape is golden.FileSwaps EMPTY and ours.FileSwaps NON-EMPTY. This must apply
 // regardless of layoutEquivalent -- it is about the writer destroying swaps, not zip layout -- so
 // these fixtures pass a bare `new Map()` for goldenMembers (unrelated to this rule).

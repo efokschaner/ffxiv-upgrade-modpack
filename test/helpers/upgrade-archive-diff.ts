@@ -177,7 +177,8 @@ export function dropConfirmedAbsentKeys(
     // INTENTIONAL DIVERGENCE (spec §5.1). PopulatePmpStandardOption sets `opt.FileSwaps = new()`
     // and never repopulates it (PMP.cs:873-875), silently destroying every swap the pack carried --
     // docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. We preserve them instead, because a
-    // swap is a live redirection in Penumbra (SubMod.AddContainerTo, SubMod.cs:23-32). So: an EMPTY
+    // swap is a live redirection in Penumbra (SubMod.AddContainerTo, Penumbra repo
+    // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/). So: an EMPTY
     // golden FileSwaps against a NON-EMPTY ours is the confirmed shape, and we adopt ours' value so
     // the pointer diff sees no difference. Applies regardless of `layoutEquivalent` -- this is about
     // the writer destroying swaps on write, not about zip layout.
@@ -427,7 +428,8 @@ export function diffArchives(
 /** Payload comparison for a pack whose zip LAYOUT cannot match the golden's, but whose behaviour
  *  must (the spec, §5.2). Compares the redirect table (`gamePath -> content`, keyed per option —
  *  see `resolveRedirects`'s doc comment, archive-redirects.ts — Penumbra SubMod.AddContainerTo,
- *  SubMod.cs:23-32) instead of the member-name multiset, because a preserved FileSwap means
+ *  Penumbra repo Mods/SubMods/SubMod.cs:23-32, a separate repo from this project's reference/)
+ *  instead of the member-name multiset, because a preserved FileSwap means
  *  TexTools burned a dedup `idx` we did not (PMP.cs · UnpackPmpOption · 1104-1137 ->
  *  PmpExtensions.cs · ResolveDuplicates · 500,543 — `var idx = 1` then `idx++` on a repeat hit),
  *  shifting every later `common/N`.
@@ -437,6 +439,12 @@ export function diffArchives(
  *  differing — only renumbering WITHIN the `common/N` dedup namespace is free. Callers must gate
  *  it on the input pack actually carrying FileSwaps (`packHasFileSwaps`); firing it on the diff's
  *  shape instead would silently absorb writer regressions in every other pack.
+ *
+ *  Two real narrowings versus the strict-mode sibling (`diffPayloadMembers`), not just a looser
+ *  tolerance — see part 2's own comment below for the detail: a one-sided orphan member INSIDE
+ *  `common/` is invisible here (part 2 filters the whole namespace out, on both sides, not just the
+ *  exact-name check), and a payload member no `Files` value names (an option's `Image`, an
+ *  `ExtraFiles` entry) never gets its bytes compared at all, even as a matched pair.
  *
  *  `FileDiff.gamePath` here is `resolveRedirects`' composite key
  *  (`redirectKey`: `${manifestName}#${optionIndex}|${gamePath}`), not a bare gamePath — that key IS
@@ -494,12 +502,12 @@ export function diffPayloadSemantic(
     });
   }
 
-  // 2. Only the `common/N` dedup namespace may be renamed. Every OTHER payload member name must
-  //    still match exactly (up to `looseKey`, same spelling tolerance as `diffPayloadMembers`), so
-  //    a misnamed or dropped ordinary member is still caught here. Matched by `looseKey` but
-  //    REPORTED under the real member name — unlike the matching key, `looseKey` strips every '.'
-  //    (see its doc comment), so using it as the reported name too would silently corrupt a real
-  //    name like "a.tex" into "atex" in every diff this branch raises.
+  // 2. Every payload member name OUTSIDE the `common/N` dedup namespace must still match exactly (up
+  //    to `looseKey`, same spelling tolerance as `diffPayloadMembers`), so a misnamed or dropped
+  //    ordinary member is still caught here. Matched by `looseKey` but REPORTED under the real member
+  //    name — unlike the matching key, `looseKey` strips every '.' (see its doc comment), so using it
+  //    as the reported name too would silently corrupt a real name like "a.tex" into "atex" in every
+  //    diff this branch raises.
   //
   //    Bucketed multiset pairing, mirroring `diffPayloadMembers` above — NOT a `Set`-membership
   //    check. Two genuinely distinct member names can share a `looseKey` (e.g. "extra.tex" and
@@ -507,9 +515,25 @@ export function diffPayloadSemantic(
   //    PRESENT, not that one side has two real members under it and the other has one, so an
   //    extra, unpaired member on either side would be silently lost. Bucketing by `looseKey`,
   //    sorting within each bucket, and pairing positionally makes the comparison count-aware: only
-  //    the overflow past the shared count is reported, exactly as `diffPayloadMembers` does. Unlike
-  //    that sibling, matched pairs here are not byte-compared — a shared `gamePath`'s content is
-  //    already checked by part 1's redirect-table comparison above; this part is name-only.
+  //    the overflow past the shared count is reported, exactly as `diffPayloadMembers` does.
+  //
+  //    TWO real narrowings versus that strict-mode sibling — both a genuine coverage loss in
+  //    relaxed mode, not merely cosmetic, and both scoped to packs that take this path
+  //    (`packHasFileSwaps`, 2 of the corpus as of this writing — see the design spec §5.2):
+  //     - `common/`-prefixed names are filtered OUT of this comparison entirely (`outsideNames`,
+  //       on both `ours` and `golden`) rather than merely exempted from the exact-name check. A
+  //       member that exists inside `common/` on only ONE side — an orphan the writer dropped or
+  //       added, unrelated to any legitimate renumbering — is invisible to this whole function,
+  //       though `diffPayloadMembers` (strict mode) would report it as a structural add/remove.
+  //       Nothing else in relaxed mode catches it either, unless it also happens to be a
+  //       `Files`-referenced member whose content part 1 checks.
+  //     - Matched pairs here are NOT byte-compared — this part is name-only. "Already checked by
+  //       part 1's redirect-table comparison" holds ONLY for a member actually named by some
+  //       option's `Files` value: part 1 walks `Files` (via `resolveRedirects`), so a payload
+  //       member no `Files` entry points at — an option's `Image` PNG, an `ExtraFiles` entry — has
+  //       its bytes checked by NEITHER part here, even though `diffPayloadMembers` (strict mode)
+  //       would content-compare it as a matched pair. See
+  //       `docs/backlog/2026-07-18-semantic-payload-part2-coverage.md`.
   const outsideNames = (m: Map<string, Uint8Array>) =>
     payloadMemberNames(m).filter((n) => !looseKey(n).startsWith("common/"));
   const bucket = (names: string[]): Map<string, string[]> => {

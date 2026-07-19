@@ -219,3 +219,8 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   `DIVERGENCE_RULES` predicate written as `.startsWith("chara/...")` would silently never fire from
   this call site. Document/guard, not fix — recovering the true gamePath at that layer isn't
   feasible without threading the option structure through.
+- [`diffPayloadSemantic` part 2 has narrower coverage than a casual read suggests](backlog/2026-07-18-semantic-payload-part2-coverage.md)
+  — the FileSwap relaxed-comparison mode's name-only pass filters `common/`-prefixed names out
+  entirely (a one-sided orphan inside `common/` is invisible) and never byte-compares a payload
+  member no `Files` value names (an `Image`, an `ExtraFiles` entry). Only affects the 2 corpus packs
+  on the relaxed path today; doc comment now states both gaps precisely, behaviour unchanged.

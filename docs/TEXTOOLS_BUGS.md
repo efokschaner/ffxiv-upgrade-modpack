@@ -250,7 +250,8 @@ finishes the job for one of its three members.
 (`UnpackPmpOption`, `PMP.cs:1104-1137`, which needs a live game index we don't bundle) or reproducing
 the write-side drop. This is the first divergence justified under AGENTS.md's user-benefit principle
 rather than plain TexTools byte-parity: a FileSwap is a live redirection in Penumbra's runtime model
-(`SubMod.AddContainerTo`, Penumbra `SubMod.cs:23-32`), so reproducing the write-time drop would hand
+(`SubMod.AddContainerTo`, Penumbra repo `Mods/SubMods/SubMod.cs:23-32` — a separate repo from this
+project's `reference/`), so reproducing the write-time drop would hand
 the user a modpack quietly missing functionality. The resulting divergence (our `FileSwaps` populated
 where the golden's is always `{}`) is confirmed against the oracle by a scoped carve-out in the golden
 harness (`dropConfirmedAbsentKeys`, `test/helpers/upgrade-archive-diff.ts`), not by a ratchet
