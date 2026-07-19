@@ -107,13 +107,34 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *  Formerly also reused, with the roles relabeled, by corpus-pmp.ts's manifest round-trip check
  *  (`golden` = the original on-disk JSON, `ours` = the re-emitted one). That check was retired
  *  2026-07-13 when the PMP writer stopped round-tripping the source manifest — see corpus-units.ts's
- *  doc comment for why; `registerResaveCheck` (corpus-resave.ts) is its proper replacement. */
+ *  doc comment for why; `registerResaveCheck` (corpus-resave.ts) is its proper replacement.
+ *
+ *  `layoutEquivalent`, when true, ALSO rewrites a `Files` VALUE (not just a confirmed-absent key)
+ *  when it is purely a `common/N` dedup renumbering — the same shift `diffPayloadSemantic` already
+ *  tolerates in the archive's zip member NAMES (see `diffArchives`'s doc comment). A `Files` value is
+ *  itself a zip path, i.e. layout, so without this the exact same renumbering reappears here as a
+ *  manifest (`jsonPointerDiff`) mismatch even though the structural diff was already suppressed. This
+ *  is deliberately narrow, mirroring `diffPayloadSemantic`'s own part 2 scoping:
+ *   - only fires for a key present on BOTH sides — a missing/extra `Files` KEY (the gamePath, the
+ *     effective result) is never touched here, confirmed-absent-drop pruning above is unaffected;
+ *   - only fires when BOTH sides' values resolve (after backslash normalization, via `looseKey`, same
+ *     as the `present`/`absent` check above) to a path starting with `common/` — a value outside that
+ *     namespace on EITHER side is left as-is, so a writer bug that renames an ordinary (non-dedup)
+ *     member is still caught;
+ *   - it is a re-keying, not a content check: `diffPayloadSemantic`'s redirect-table comparison has
+ *     already proven the gamePath resolves to identical bytes on both sides, so this only suppresses
+ *     the redundant name-shaped report of that same fact, never substitutes for it. Callers must gate
+ *     `layoutEquivalent` on `packHasFileSwaps` of the INPUT pack, same as `diffArchives` requires. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,
   goldenMembers: Map<string, Uint8Array>,
+  layoutEquivalent = false,
 ): unknown {
   const present = memberKeys(goldenMembers);
+  const isCommon = (value: unknown): boolean =>
+    typeof value === "string" &&
+    looseKey(value.replace(/\\/g, "/")).startsWith("common/");
   const confirmedFiles = (
     oursFiles: unknown,
     goldenFiles: Record<string, unknown>,
@@ -126,6 +147,15 @@ export function dropConfirmedAbsentKeys(
       const zipPath = isStringValue ? value.replace(/\\/g, "/") : "";
       const absent = isStringValue && !present.has(looseKey(zipPath));
       if (missingFromOurs && absent) continue; // the PMP.cs:883 drop — confirmed
+      if (
+        layoutEquivalent &&
+        !missingFromOurs &&
+        isCommon(value) &&
+        isCommon(o[gamePath])
+      ) {
+        out[gamePath] = o[gamePath]; // common/N renumbering — layout-equivalent, confirmed elsewhere
+        continue;
+      }
       out[gamePath] = value;
     }
     return out;
@@ -324,7 +354,10 @@ export function diffArchives(
       // qualifies as a confirmed drop, so this reduces to a straight structural diff in that case.
       // One FileDiff PER DIFFERING JSON POINTER, not one per document: see jsonPointerDiff's doc
       // comment for why the old document-granular `mismatch` was a ratchet hazard.
-      for (const d of jsonPointerDiff(o, dropConfirmedAbsentKeys(o, g, gm))) {
+      for (const d of jsonPointerDiff(
+        o,
+        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent),
+      )) {
         diffs.push({
           kind: "manifest",
           gamePath: `${name}#${d.pointer}`,

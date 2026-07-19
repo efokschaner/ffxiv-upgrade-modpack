@@ -562,3 +562,140 @@ describe("diffArchives layoutEquivalent parameter", () => {
     expect(relaxed.filter((d) => d.kind === "structure")).toEqual([]);
   });
 });
+
+// Closes the gap left by the `layoutEquivalent` structural (member-name) fix above: a `Files`
+// map's VALUE is a zip path too, so `dropConfirmedAbsentKeys` must also stop reporting a `Files`
+// value difference that is purely a `common/N` renumbering — otherwise the exact same shift
+// reappears as a manifest (`jsonPointerDiff`) diff instead of a structure diff. See the
+// FileSwap-preservation spec, §5.2, and PMP.cs:1104-1137 -> PmpExtensions.cs:509-514 for why the
+// renumbering happens at all. `Files` KEYS (the gamePath) are the effective result and are never
+// exempted here — only the VALUE (the zip path) is layout.
+describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => {
+  const FILE_DEF = { FileSwaps: {}, Manipulations: [] };
+
+  it("does not report a Files value differing only by common/N renumbering", () => {
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "common\\1\\a.bin" },
+      },
+      "common/1/a.bin": new Uint8Array([1, 2, 3]),
+    });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "common\\2\\a.bin" },
+      },
+      "common/2/a.bin": new Uint8Array([1, 2, 3]),
+    });
+    expect(diffArchives(ours, golden, false, undefined, true)).toEqual([]);
+  });
+
+  it("still reports a Files value difference outside the common/ namespace", () => {
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "g\\on\\a.tex" },
+      },
+      "g/on/a.tex": new Uint8Array([1]),
+    });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "g\\off\\a.tex" },
+      },
+      "g/off/a.tex": new Uint8Array([1]),
+    });
+    const diffs = diffArchives(ours, golden, false, undefined, true);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0]).toMatchObject({
+      kind: "manifest",
+      status: "mismatch",
+    });
+  });
+
+  it("still reports a Files KEY present in golden but missing from ours, unaffected by layoutEquivalent", () => {
+    // The missing key's own payload genuinely exists in the golden archive (a resolvable member),
+    // so this is NOT the PMP.cs:883 confirmed-absent-drop case — it must stay a reported diff.
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "common\\1\\a.bin" },
+      },
+      "common/1/a.bin": new Uint8Array([1]),
+    });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: {
+          "chara/a.tex": "common\\1\\a.bin",
+          "chara/b.tex": "common\\3\\b.bin",
+        },
+      },
+      "common/1/a.bin": new Uint8Array([1]),
+      "common/3/b.bin": new Uint8Array([9]),
+    });
+    const diffs = diffArchives(ours, golden, false, undefined, true);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0]).toMatchObject({
+      kind: "manifest",
+      status: "added",
+    });
+  });
+
+  it("reports the common/N renumbering when layoutEquivalent is NOT set (must not leak into normal packs)", () => {
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "common\\1\\a.bin" },
+      },
+      "common/1/a.bin": new Uint8Array([1, 2, 3]),
+    });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "common\\2\\a.bin" },
+      },
+      "common/2/a.bin": new Uint8Array([1, 2, 3]),
+    });
+    const diffs = diffArchives(ours, golden); // layoutEquivalent defaults to false
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0]).toMatchObject({
+      kind: "manifest",
+      status: "mismatch",
+    });
+  });
+
+  it("still reports a Files value where only ONE side is inside common/", () => {
+    const ours = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "common\\1\\a.bin" },
+      },
+      "common/1/a.bin": new Uint8Array([1]),
+    });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": {
+        ...FILE_DEF,
+        Files: { "chara/a.tex": "g\\off\\a.bin" },
+      },
+      "g/off/a.bin": new Uint8Array([1]),
+    });
+    const diffs = diffArchives(ours, golden, false, undefined, true);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0]).toMatchObject({
+      kind: "manifest",
+      status: "mismatch",
+    });
+  });
+});
