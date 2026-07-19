@@ -525,3 +525,40 @@ describe("diffPayloadSemantic (layout-equivalent payload comparison)", () => {
     expect(d[0]!.gamePath).toBe("extra.tex");
   });
 });
+
+// diffArchives' fifth parameter (layoutEquivalent) swaps the payload comparison for
+// diffPayloadSemantic instead of diffPayloadMembers — see diffArchives' doc comment and the
+// FileSwap-preservation spec §5.2. Reuses the file's own `pmp` helper (writeZip, src/zip/zip.ts),
+// not a new zip-building helper — the file already has one.
+describe("diffArchives layoutEquivalent parameter", () => {
+  const zipOf = (
+    files: Record<string, string>,
+    payload: Record<string, Uint8Array>,
+  ) =>
+    pmp({
+      "meta.json": { FileVersion: 3, Name: "t" },
+      "group_001_g.json": {
+        Options: [{ Name: "On", Files: files, FileSwaps: {} }],
+      },
+      ...payload,
+    });
+
+  it("uses member-name comparison by default and semantic only when asked", () => {
+    const ours = zipOf(
+      { "chara/a.tex": "common\\1\\a.tex" },
+      { "common/1/a.tex": new Uint8Array([1]) },
+    );
+    const golden = zipOf(
+      { "chara/a.tex": "common\\2\\a.tex" },
+      { "common/2/a.tex": new Uint8Array([1]) },
+    );
+
+    // Default: the member-name shift IS reported.
+    const strict = diffArchives(ours, golden, true);
+    expect(strict.some((d) => d.kind === "structure")).toBe(true);
+
+    // layoutEquivalent: the same shift is accepted, because the redirect tables agree.
+    const relaxed = diffArchives(ours, golden, true, undefined, true);
+    expect(relaxed.filter((d) => d.kind === "structure")).toEqual([]);
+  });
+});

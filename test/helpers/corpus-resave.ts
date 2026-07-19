@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadModpack, writeModpack } from "../../src/index";
+import { readZip } from "../../src/zip/zip";
+import { packHasFileSwaps } from "./archive-redirects";
 import { oracleKey } from "./oracle";
 import { DEFAULT_RESAVE_BASELINE, resaveGoldenCached } from "./resave-golden";
 import { diffArchives } from "./upgrade-archive-diff";
@@ -73,10 +75,26 @@ export function registerResaveCheck(pack: string): void {
         golden,
         confirmDivergence,
       );
+      // The gate comes from the INPUT pack, not `ours` or the golden — PopulatePmpStandardOption
+      // (PMP.cs:873-875) has already destroyed the golden's swaps by the time we'd read it here, so
+      // gating on the golden would never fire. See the FileSwap-preservation spec, §5.2.
+      const layoutEquivalent = packHasFileSwaps(readZip(bytes));
+      if (layoutEquivalent) {
+        console.log(
+          `[resave] ${name}: input carries FileSwaps -> payload compared SEMANTICALLY ` +
+            `(redirect table, not member names). See the FileSwap-preservation spec, §5.2.`,
+        );
+      }
       // Payload MEMBER NAMES are compared here from the start (unlike the /upgrade harness, which
       // has to keep them off until the writer regenerates them): that is the whole point of this
       // check — the names are what the writer decides.
-      const archive = diffArchives(oursArchive, goldenBytes, target === "pmp");
+      const archive = diffArchives(
+        oursArchive,
+        goldenBytes,
+        target === "pmp",
+        undefined,
+        layoutEquivalent,
+      );
       const diff = { ...payload, files: [...payload.files, ...archive] };
       const key = oracleKey(bytes);
 

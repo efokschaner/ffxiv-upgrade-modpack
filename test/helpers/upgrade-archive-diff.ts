@@ -275,7 +275,12 @@ function diffPayloadMembers(
  *
  * `confirmDivergence`, when supplied, is forwarded to `diffPayloadMembers`' matched-pair content
  * check (see its doc comment) so a confirmed DIVERGENCE_RULES entry is not double-reported here
- * after `diffUpgrade` already accepted it. */
+ * after `diffUpgrade` already accepted it.
+ *
+ * `layoutEquivalent` swaps the payload comparison for `diffPayloadSemantic` — compare the redirect
+ * table rather than the member-name multiset. Pass `true` ONLY when the INPUT pack carries FileSwaps
+ * (`packHasFileSwaps`), never based on what the diff looks like: gating on the symptom would
+ * silently absorb genuine writer regressions in every pack. See the spec, §5.2. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
@@ -285,6 +290,7 @@ export function diffArchives(
     ours: Uint8Array,
     golden: Uint8Array,
   ) => boolean,
+  layoutEquivalent = false,
 ): FileDiff[] {
   const om = readZip(ours);
   const gm = readZip(golden);
@@ -330,7 +336,11 @@ export function diffArchives(
     }
   }
   if (checkPayloadMembers)
-    diffs.push(...diffPayloadMembers(om, gm, confirmDivergence));
+    diffs.push(
+      ...(layoutEquivalent
+        ? diffPayloadSemantic(om, gm, confirmDivergence)
+        : diffPayloadMembers(om, gm, confirmDivergence)),
+    );
   return diffs;
 }
 
