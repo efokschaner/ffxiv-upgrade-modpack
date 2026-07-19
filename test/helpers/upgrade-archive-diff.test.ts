@@ -497,4 +497,31 @@ describe("diffPayloadSemantic (layout-equivalent payload comparison)", () => {
     );
     expect(diffPayloadSemantic(ours, golden, () => true)).toEqual([]);
   });
+
+  // Regression for the Important finding against 86ed4b5: part 2 matched names via `looseKey` and
+  // compared with Set membership (`.has`/`.includes`), which can only record that a key is PRESENT.
+  // Two genuinely distinct real member names that share a `looseKey` (here "extra.tex" and
+  // "extra .tex" both normalize to "extratex") then collapse into one Set entry, so an extra,
+  // unpaired member on either side is silently lost — the Set-based check returned `[]` for this
+  // exact input. Fixed by bucketing names by `looseKey` and pairing positionally within each
+  // bucket (mirroring `diffPayloadMembers`), so the comparison is count-aware, not just
+  // presence-aware. No manifest/option document is needed here: with no `group_*.json` /
+  // `default_mod.json` entries, `resolveRedirects` (part 1) yields empty tables for both sides, so
+  // this isolates part 2 (the payload member NAME multiset) exactly.
+  it("catches an extra real member name that collapses onto an already-matched looseKey", () => {
+    const ours = new Map<string, Uint8Array>([
+      ["extra.tex", b(9)],
+      ["extra .tex", b(9)],
+    ]);
+    const golden = new Map<string, Uint8Array>([["extra.tex", b(9)]]);
+    const d = diffPayloadSemantic(ours, golden);
+    expect(d).toHaveLength(1);
+    expect(d[0]!.status).toBe("removed");
+    // Positional pairing within the shared looseKey bucket ("extra .tex" < "extra.tex" in sort
+    // order, since ' ' < '.'): the first sorted name on each side is treated as the matched pair,
+    // leaving the SECOND sorted "ours" name ("extra.tex") as the unpaired overflow that gets
+    // reported — same positional-pairing behaviour as `diffPayloadMembers`'s sibling regression
+    // test above, not an attempt to guess which literal member is "the extra" one.
+    expect(d[0]!.gamePath).toBe("extra.tex");
+  });
 });

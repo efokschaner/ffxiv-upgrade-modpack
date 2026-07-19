@@ -378,6 +378,7 @@ export function diffPayloadSemantic(
         gamePath: key,
         index: 0,
         status: "added",
+        detail: undefined,
       });
       continue;
     }
@@ -387,6 +388,7 @@ export function diffPayloadSemantic(
         gamePath: key,
         index: 0,
         status: "removed",
+        detail: undefined,
       });
       continue;
     }
@@ -407,24 +409,51 @@ export function diffPayloadSemantic(
   //    REPORTED under the real member name — unlike the matching key, `looseKey` strips every '.'
   //    (see its doc comment), so using it as the reported name too would silently corrupt a real
   //    name like "a.tex" into "atex" in every diff this branch raises.
+  //
+  //    Bucketed multiset pairing, mirroring `diffPayloadMembers` above — NOT a `Set`-membership
+  //    check. Two genuinely distinct member names can share a `looseKey` (e.g. "extra.tex" and
+  //    "extra .tex" both normalize to "extratex"); a `Set` can only record that the key is
+  //    PRESENT, not that one side has two real members under it and the other has one, so an
+  //    extra, unpaired member on either side would be silently lost. Bucketing by `looseKey`,
+  //    sorting within each bucket, and pairing positionally makes the comparison count-aware: only
+  //    the overflow past the shared count is reported, exactly as `diffPayloadMembers` does. Unlike
+  //    that sibling, matched pairs here are not byte-compared — a shared `gamePath`'s content is
+  //    already checked by part 1's redirect-table comparison above; this part is name-only.
   const outsideNames = (m: Map<string, Uint8Array>) =>
     payloadMemberNames(m).filter((n) => !looseKey(n).startsWith("common/"));
-  const oOutside = outsideNames(ours);
-  const gOutside = outsideNames(golden);
-  const oKeys = new Set(oOutside.map(looseKey));
-  const gKeys = new Set(gOutside.map(looseKey));
-  for (const n of gOutside) {
-    if (!oKeys.has(looseKey(n)))
-      diffs.push({ kind: "structure", gamePath: n, index: 0, status: "added" });
-  }
-  for (const n of oOutside) {
-    if (!gKeys.has(looseKey(n)))
+  const bucket = (names: string[]): Map<string, string[]> => {
+    const m = new Map<string, string[]>();
+    for (const n of names) {
+      const list = m.get(looseKey(n)) ?? [];
+      list.push(n);
+      m.set(looseKey(n), list);
+    }
+    return m;
+  };
+  const ob = bucket(outsideNames(ours));
+  const gb = bucket(outsideNames(golden));
+  for (const bucketKey of [...new Set([...ob.keys(), ...gb.keys()])].sort()) {
+    const os = (ob.get(bucketKey) ?? []).slice().sort();
+    const gs = (gb.get(bucketKey) ?? []).slice().sort();
+    const n = Math.min(os.length, gs.length);
+    for (let i = n; i < gs.length; i++) {
       diffs.push({
         kind: "structure",
-        gamePath: n,
+        gamePath: gs[i]!,
+        index: 0,
+        status: "added",
+        detail: undefined,
+      });
+    }
+    for (let i = n; i < os.length; i++) {
+      diffs.push({
+        kind: "structure",
+        gamePath: os[i]!,
         index: 0,
         status: "removed",
+        detail: undefined,
       });
+    }
   }
   return diffs;
 }
