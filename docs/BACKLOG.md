@@ -102,13 +102,6 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
   `default_mod.json#/FileSwaps` baseline entry — unrelated to FileSwap preservation itself, which the
   carve-out only confirms in the opposite (populated-vs-empty) direction.
 
-- [`SetId` manifest mismatches on no-op packs are baseline-suppressed, not confirmed](backlog/2026-07-19-noop-reference-manifest-spelling.md)
-  — against a no-op golden the reference is the raw Penumbra input, which spells some manipulation
-  fields loosely (`"246"` vs `246`); our writer normalizes them the TexTools way. 18 such entries
-  across 4 packs, but only `torn bassment glow.pmp`'s has been checked against the `/resave` oracle
-  (and is benign). The other 17 are suppressed with no confirmation — verify, then replace with a
-  narrow confirmation rule. Same family as the empty-vs-omitted `FileSwaps` item above.
-
 ### Findings from the `/resave` write-side oracle (2026-07-13)
 
 The `/resave` harness (`test/helpers/corpus-resave.ts`) is the first thing in the suite to AB-test
