@@ -26,9 +26,11 @@ Two different comparisons then run against that reference, and only one of them 
 The second was never designed for this branch. It arrived with the PMP writer-regeneration work,
 where the reference is a real TexTools golden, and was applied to the no-op branch by extension.
 
-The codebase already records the problem: `corpus-resave.ts:22-24` and `resave-golden.ts:143-145`
-both note that the `/upgrade` no-op branch "compares our writer to the INPUT archive … i.e. it takes
-our own writer as ground truth."
+The codebase already recorded the problem: before this change, `corpus-resave.ts` and
+`resave-golden.ts` both carried a comment noting that the `/upgrade` no-op branch "compares our
+writer to the INPUT archive … i.e. it takes our own writer as ground truth." This change rewrites
+both comments to describe the fixed behaviour (§3.3), so the observation now lives only in git
+history (the pre-change blame of those two files), not at any current line number.
 
 ### 1.1 What it has cost
 

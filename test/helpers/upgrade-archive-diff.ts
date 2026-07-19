@@ -73,10 +73,20 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
 
 /** CONFIRMATION (not a tolerance) of the ONE manifest difference we intend: TexTools' writer drops
  *  a file whose payload does not exist from both the zip and the option's `Files` map
- *  (PopulatePmpStandardOption, PMP.cs:883-888), and our writer now does too. On a NO-OP upgrade
- *  ConsoleTools writes nothing, so the harness's reference is the INPUT pack — which still carries
- *  the dangling key. So: a `Files` key missing from OURS is allowed iff the golden's value for it
- *  names a zip path that does not resolve as a member of the GOLDEN's own archive.
+ *  (PopulatePmpStandardOption, PMP.cs:883-888), and our writer now does too. So: a `Files` key
+ *  missing from OURS is allowed iff the golden's value for it names a zip path that does not resolve
+ *  as a member of the GOLDEN's own archive.
+ *
+ *  Originally reachable on the `/upgrade` no-op branch, where ConsoleTools writes nothing and the
+ *  harness's reference used to be the raw INPUT pack — which still carries the dangling key that
+ *  TexTools' writer would have dropped. That branch no longer compares member names or manifest JSON
+ *  at all (see docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md), so this
+ *  carve-out is currently inert on every remaining call site: both `/resave` and a real-golden
+ *  `/upgrade` compare against actual TexTools output, which has already dropped any such key, so the
+ *  golden-side lookup below never fails to resolve. Retained anyway as cheap, still-unit-tested
+ *  insurance against a reference that once again carries a dangling key — and `AGENTS.md` cites this
+ *  function as the established shape for a manifest-JSON carve-out, so other call sites may yet need
+ *  it live.
  *
  *  Deliberately tight, in the spirit of DivergenceRule.confirm (upgrade-compare.ts):
  *   - resolution uses `looseKey`, NOT the reader's own `windowsPathKey` — see `looseKey`'s doc

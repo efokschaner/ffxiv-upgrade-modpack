@@ -306,11 +306,16 @@ initially read as a defect — every member emitted one folder deeper than the r
 loader synthesizes a lone group named "Default" for a groups-less PMP (`WizardData.FromPmp`,
 `WizardData.cs:1118-1138`), which `MakeGroupPrefix` folder-safes to `default/` (`:1390-1400`), and
 ConsoleTools `/resave` on this very pack emits `default/chara/equipment/e0246/...` byte-identically
-to ours. The fault was in the harness: `/upgrade` NO-OPs on this pack, so the reference is the
-**untouched Penumbra input**, a layout TexTools' writer never produced. `registerUpgradeCheck` now
-detects the default-only + no-op shape and passes a `stripOursPrefix` **confirmation** (not a waiver
-— the stripped name must then match exactly). The baseline fell from 37 entries to 1, and every
-payload member content-compares clean. See `test/helpers/corpus-upgrade.ts` reason (b).
+to ours. The fault was in the harness: `/upgrade` NO-OPs on this pack, so the reference was the
+**untouched Penumbra input**, a layout TexTools' writer never produced. At the time this was written,
+`registerUpgradeCheck` detected the default-only + no-op shape and passed a `stripOursPrefix`
+**confirmation** (not a waiver — the stripped name had to match exactly), which fell the baseline from
+37 entries to 1, with every payload member content-comparing clean. See
+`test/helpers/corpus-upgrade.ts` reason (b) — **superseded**:
+`docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md` later removed the no-op
+branch's member-name/manifest comparison (and `stripOursPrefix` with it) entirely, since that
+comparison was unsound in general, not just for this pack's prefix; writer parity for a no-op pack now
+comes solely from the `/resave` check described there.
 
 Its one remaining entry, `default_mod.json#/Manipulations/6/Manipulation/SetId`, is the same
 raw-input artifact in the manifest rather than the layout: Penumbra wrote the string `"246"` where we

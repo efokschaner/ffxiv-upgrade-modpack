@@ -33,10 +33,23 @@
 //     byte-identical content is therefore still a change. We compare bytes, because ModpackFile
 //     carries no such descriptor.
 //
-//     Safe precisely because it is weaker: a byte change implies a FileStorageInformation change, so
-//     anything we flag C# would have flagged too. The converse gap cannot arise HERE -- had C# seen
-//     any change it would have written a golden and we would be on the real-golden branch. On the
-//     no-op branch the two verdicts cannot disagree.
+//     Safe precisely because it is weaker: WriteFile (EndwalkerUpgrade.cs:1795-1817) allocates a
+//     FRESH temp path via IOUtil.GetFrameworkTempFile() on every call, and only THEN does
+//     `files[path] = info` -- there is no in-place overwrite. So any path our model shows as
+//     rewritten (bytes differ) corresponds to a real WriteFile call, which always minted a new
+//     RealPath and therefore a changed FileStorageInformation there too. That is the direction that
+//     actually needs support: anything WE flag, C# would have flagged too. The converse gap (C#
+//     flags a rewrite to byte-identical content, via its always-fresh RealPath, which we would not)
+//     is real but cannot arise HERE -- had C# seen any change it would have written a golden and we
+//     would be on the real-golden branch instead. On the no-op branch the two verdicts cannot
+//     disagree.
+//
+//  One place this predicate is STRONGER than C#, not weaker: the group/option-COUNT arms below (an
+//  added or removed group or option) have no AnyChanges analogue at all. AnyChanges only ever walks
+//  StandardData.Files for options present in `originals`; it has no notion of a group or option being
+//  added or removed and would report no signal from that by itself. Those arms are fail-loud guards,
+//  not a ported comparison -- neither our pipeline nor /upgrade's transform adds or removes options,
+//  so they exist to catch a violation of that assumption, not to mirror a C# code path.
 
 import type {
   ModpackData,
@@ -54,7 +67,7 @@ function changeKey(group: number, option: number, gamePath: string): string {
   return `g${group}/o${option}|${gamePath}`;
 }
 
-function describe(f: ModpackFile): string {
+function describeSize(f: ModpackFile): string {
   return f.data === undefined ? "absent" : `${f.data.length}`;
 }
 
@@ -93,7 +106,7 @@ function optionChanges(
         gamePath: changeKey(group, option, gamePath),
         index: 0,
         status: "mismatch",
-        detail: `${describe(b)} vs ${describe(a)} bytes`,
+        detail: `${describeSize(b)} vs ${describeSize(a)} bytes`,
       });
     }
   }

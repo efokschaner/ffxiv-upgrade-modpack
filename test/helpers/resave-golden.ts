@@ -141,8 +141,9 @@ function resaveViaConsoleTools(name: string, bytes: Uint8Array): Uint8Array {
 /**
  * Cached ConsoleTools /resave golden for `bytes`, spawning ConsoleTools at most once per distinct
  * input. /resave is load-then-write (Program.cs:191-221) with NO transform, so it is a pure oracle
- * for our writers — the one thing the /upgrade harness has never covered (it compares our writer to
- * the INPUT archive on the no-op branch, i.e. it takes our own writer as ground truth).
+ * for our writers — and, for a pack whose /upgrade no-ops, the SOLE one: that branch no longer
+ * compares member names or manifest JSON against anything (see
+ * docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md).
  *
  * Unlike /upgrade there is no no-op case: /resave always writes — but it CAN error: TexTools
  * cannot round-trip every pack it can load (e.g. its RSP-manipulation write path reads the
