@@ -355,16 +355,39 @@ on write regardless, so the golden is identical either way; we preserve verbatim
 
 ## 7. In-game verification gate — outstanding
 
-AGENTS.md requirement 3 is manual and cannot be inferred. Before this ships, someone must:
+AGENTS.md requirement 3 is manual and cannot be inferred.
 
-1. Take a real mod carrying file swaps.
-2. Upgrade it with ConsoleTools `/upgrade`, and with ours.
-3. Install both in Penumbra and confirm ConsoleTools' output has lost the swapped-file behaviour
-   while ours retains it.
+**The method changed once, for a measured reason.** The original plan was to `/upgrade` a swap-carrying
+mod with ConsoleTools and with ours, and compare. That is not performable with any pack we have:
+ConsoleTools **no-ops** on both swap-carrying packs (`torn bassment glow.pmp` and the synthetic), so
+it writes no `/upgrade` output at all and there is nothing to compare against. A user running
+`/upgrade` on those packs keeps their original, swaps intact — no data loss on that path *for those
+packs*.
 
-Until that is recorded in the §5.1 carve-out, this is an unverified divergence and must not merge.
-The reasoning in §3 is strong but it is reasoning; the principle exists precisely because
-"obviously better" is where unverified improvements come from.
+**Verification is therefore performed against `/resave`** (operator's call, 2026-07-18). This is
+sound because `/resave` is `WizardData.FromModpack` → `WriteModpack` (`Program.cs:191-221`) — the
+**same write path `/upgrade` takes**, minus the transform. `PopulatePmpStandardOption`
+(`PMP.cs:873-875`) sits in that shared path, so destruction demonstrated through `/resave` is
+destruction for any `/upgrade` that actually writes.
+
+The procedure:
+
+1. Take a real mod carrying file swaps (`torn bassment glow.pmp`: 6 swaps pulling `e6120` textures
+   onto `e0246`, for races `c0101`/`c1101`; race `c0201`'s textures are packed `Files` and act as a
+   built-in control).
+2. Produce ConsoleTools `/resave` output, and our upgraded output.
+3. In Penumbra, confirm the resaved pack has **lost** the swapped-file appearance on the swap-fed
+   races while the control race is unaffected — and that ours matches the original.
+
+**What this establishes, and what it does not.** It establishes that the swaps are load-bearing
+in-game and that TexTools' writer destroys them — which is what justifies preserving them. It does
+**not** measure how often a real user reaches that write path via `/upgrade`; that is a reachability
+question answered by the call path above, not by this artifact. Do not cite this evidence as more
+than it is.
+
+Until the observation is recorded at the §5.1 confirmation site, this is an unverified divergence and
+must not merge. The reasoning in §3 is strong but it is reasoning; the principle exists precisely
+because "obviously better" is where unverified improvements come from.
 
 ## 8. Out of scope
 
