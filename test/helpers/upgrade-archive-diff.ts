@@ -7,7 +7,7 @@ const dec = new TextDecoder();
 
 // A manifest member is a JSON document we compare semantically; everything else (game-file
 // payloads, the TTMP .mpd blob) is compared by the payload byte-diff (diffUpgrade), not here.
-function isManifest(name: string): boolean {
+export function isManifest(name: string): boolean {
   const n = name.toLowerCase();
   return (
     n === "meta.json" ||
