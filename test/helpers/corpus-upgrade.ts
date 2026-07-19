@@ -15,6 +15,7 @@ import {
 import { confirmDivergence } from "./upgrade-compare";
 import { diffUpgrade } from "./upgrade-diff";
 import { upgradeGoldenCached } from "./upgrade-golden";
+import { transformChanges } from "./upgrade-noop";
 
 // Set UPDATE_UPGRADE_BASELINE=1 to (re-)record each pack's baseline to its current actual diff.
 const BLESS = process.env.UPDATE_UPGRADE_BASELINE === "1";
@@ -126,55 +127,39 @@ export function registerUpgradeCheck(pack: string): void {
         reference,
         confirmDivergence,
       );
-      // Two INDEPENDENT reasons the zip layout cannot match member-for-member, either of which
-      // re-keys the payload comparison to the Penumbra redirect table (gamePath -> content).
+      // A NO-OP golden means ConsoleTools wrote NO ARCHIVE, so `reference`/`goldenBytes` above are
+      // the UNTOUCHED INPUT PACK — a Penumbra export whose layout and manifest spelling TexTools'
+      // writer never produced. Comparing our member NAMES or manifest JSON against it asserts "our
+      // writer reproduces this author's arbitrary choices", which has no oracle behind it and takes
+      // our own writer as ground truth. So on this branch we do NOT call diffArchives at all.
       //
-      //  (a) FileSwaps in the INPUT pack. The gate comes from the input, not `ours` or the golden —
-      //      PopulatePmpStandardOption (PMP.cs:873-875) has already destroyed the golden's swaps by
-      //      the time we'd read it here, so gating on the golden would never fire. See the
-      //      FileSwap-preservation spec, §5.2.
+      // What replaces it:
+      //  - CONTENT is still compared, by `diffUpgrade` above, keyed by gamePath — the assertion the
+      //    harness spec designed for this branch (2026-07-04-upgrade-golden-harness-design.md §4.3).
+      //  - The TRANSFORM is asserted directly below, mirroring the very predicate the oracle
+      //    branches on when it declines to write (ModpackUpgrader.cs · AnyChanges · 25-49). This is
+      //    STRICTER than diffUpgrade in one way that matters: it is keyed per OPTION, so a file
+      //    moving between options is caught where diffUpgrade's whole-pack multiset flattens it away.
+      //  - WRITER PARITY is covered by registerResaveCheck (corpus-resave.ts) against a real
+      //    ConsoleTools /resave golden. /upgrade and /resave are the same call minus the transform
+      //    (Program.cs:204-211 vs ModpackUpgrader.cs:58 + :212-219), so when /upgrade no-ops the
+      //    /resave golden IS what /upgrade would have written. The two harnesses stay INDEPENDENT:
+      //    this branch deliberately does not consult /resave's cache or its error markers.
       //
-      //  (b) A DEFAULT-ONLY PMP on the NO-OP branch. ConsoleTools wrote no archive at all, so the
-      //      reference above is the UNTOUCHED INPUT PACK — laid out by Penumbra, never by TexTools'
-      //      writer. For a PMP with NO GROUPS that layout provably cannot match ours: TexTools'
-      //      loader synthesizes a lone group named "Default" (FromPmp, WizardData.cs:1118-1138),
-      //      MakeGroupPrefix folder-safes it to `default/` (:1390-1400), and every member comes out
-      //      one folder deeper than the raw input's. `torn bassment glow.pmp` is the pack that
-      //      exposed this — 12 added + 12 removed, purely from a prefix we emit CORRECTLY. Verified
-      //      against the write-side oracle: ConsoleTools /resave on that same pack emits
-      //      `default/chara/equipment/e0246/...`, byte-identical to ours, and its /resave baseline
-      //      records no name divergence at all.
-      //
-      //      Scoped to the default-only SHAPE, not to no-op in general, and paired with a
-      //      `stripOursPrefix` CONFIRMATION rather than a waiver (see the diffArchives call below).
-      //      A blanket "no-op -> stop comparing names" would disarm the no-op synthetics that exist
-      //      to pin member names (f1-safename, case-mismatch, trailing-dot), whose builders author
-      //      the input layout to be exactly what TexTools writes.
-      //
-      //      Content is NOT lost either way: diffUpgrade above already compares every gamePath's
-      //      bytes, and diffPayloadSemantic part 1 re-compares them through the redirect table.
-      //
-      //      NOTE the layout is not the only thing a raw-input reference gets wrong. Penumbra also
-      //      spells MANIFEST VALUES its own way, and our writer normalizes them the TexTools way, so
-      //      a no-op pack's residual manifest baseline is not evidence of divergence either. Two
-      //      confirmed instances: every no-op synthetic baselines the same four keys Penumbra omits
-      //      or spells differently (`default_mod.json#/Name`, `#/Description`, `#/Version`,
-      //      `meta.json#/Image`), and `torn bassment glow.pmp` baselines
-      //      `default_mod.json#/Manipulations/6/Manipulation/SetId` purely because its input holds
-      //      the string "246" where we (and TexTools) write the number 246 — proven by the /resave
-      //      oracle, whose golden for that pack matches our manifest exactly.
-      //      `groups[0]` is our reader's synthesized Default group, so `<= 1` means "no real
-      //      groups" (see src/container/option-prefix.ts's header).
-      const defaultOnlyNoop =
-        golden.kind === "noop" && target === "pmp" && source.groups.length <= 1;
-      const layoutEquivalent =
-        defaultOnlyNoop || packHasFileSwaps(readZip(bytes));
+      // See docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md.
+      const noopReference = golden.kind === "noop";
+      const transform = noopReference
+        ? transformChanges(source, oursModel)
+        : [];
+
+      // Gated on the INPUT pack carrying FileSwaps, not on `ours` or the golden —
+      // PopulatePmpStandardOption (PMP.cs:873-875) has already destroyed the golden's swaps by the
+      // time we'd read it here, so gating on the golden would never fire. See the
+      // FileSwap-preservation spec, §5.2.
+      const layoutEquivalent = packHasFileSwaps(readZip(bytes));
       if (layoutEquivalent) {
-        const why = defaultOnlyNoop
-          ? "default-only PMP vs a no-op (raw input) reference -> `default/` prefix confirmed"
-          : "input carries FileSwaps";
         console.log(
-          `[upgrade] ${name}: ${why} -> payload compared SEMANTICALLY ` +
+          `[upgrade] ${name}: input carries FileSwaps -> payload compared SEMANTICALLY ` +
             `(redirect table, not member names). See the FileSwap-preservation spec, §5.2.`,
         );
       }
@@ -185,17 +170,15 @@ export function registerUpgradeCheck(pack: string): void {
       // diffUpgrade's whole-pack, gamePath-keyed multiset flattens away entirely. Scoped to PMP
       // only: a TTMP's single opaque "TTMPD.mpd" blob is not a PMP-shaped payload member (see
       // diffArchives' doc comment).
-      const archive = diffArchives(
-        oursArchive,
-        goldenBytes,
-        target === "pmp",
-        confirmDivergence,
-        layoutEquivalent,
-        // CONFIRM (not waive) the one member-name difference reason (b) above predicts: strip the
-        // synthesized `default/` folder from OUR names, then require an EXACT match with the
-        // golden's. Anything else about the layout is still reported.
-        defaultOnlyNoop ? "default/" : undefined,
-      );
+      const archive = noopReference
+        ? []
+        : diffArchives(
+            oursArchive,
+            goldenBytes,
+            target === "pmp",
+            confirmDivergence,
+            layoutEquivalent,
+          );
       // Oracle-free invariant on OUR OWN artifact: no dangling `Files` key, no orphan member.
       // Independent of the golden, so it still guards a pack ConsoleTools cannot upgrade or that
       // has no golden at all. PMP-only: a TTMP has no per-file zip members to orphan.
@@ -209,7 +192,7 @@ export function registerUpgradeCheck(pack: string): void {
 
       const diff = {
         ...payload,
-        files: [...payload.files, ...archive, ...selfDiffs],
+        files: [...payload.files, ...archive, ...selfDiffs, ...transform],
       };
       const key = oracleKey(bytes);
 
