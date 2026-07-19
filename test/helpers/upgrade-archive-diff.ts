@@ -77,16 +77,17 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *  missing from OURS is allowed iff the golden's value for it names a zip path that does not resolve
  *  as a member of the GOLDEN's own archive.
  *
- *  Originally reachable on the `/upgrade` no-op branch, where ConsoleTools writes nothing and the
- *  harness's reference used to be the raw INPUT pack — which still carries the dangling key that
- *  TexTools' writer would have dropped. That branch no longer compares member names or manifest JSON
- *  at all (see docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md), so this
- *  carve-out is currently inert on every remaining call site: both `/resave` and a real-golden
- *  `/upgrade` compare against actual TexTools output, which has already dropped any such key, so the
- *  golden-side lookup below never fails to resolve. Retained anyway as cheap, still-unit-tested
- *  insurance against a reference that once again carries a dangling key — and `AGENTS.md` cites this
- *  function as the established shape for a manifest-JSON carve-out, so other call sites may yet need
- *  it live.
+ *  This arm (`missingFromOurs && absent`, below) is currently UNREACHABLE from any call site. It
+ *  existed for the `/upgrade` no-op branch, where ConsoleTools writes nothing and the harness's
+ *  reference used to be the raw INPUT pack — which still carries the dangling key that TexTools'
+ *  writer would have dropped. That branch no longer compares member names or manifest JSON at all
+ *  (see docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md), so both remaining
+ *  call sites (`/resave`, corpus-resave.ts; a real-golden `/upgrade`, corpus-upgrade.ts) compare
+ *  against actual TexTools output, which has already dropped any such key — the golden-side lookup
+ *  below never fails to resolve, so `absent` is never true. Retained anyway, as cheap, still-unit-
+ *  tested insurance against a future reference that once again carries a dangling key. Removing it
+ *  would make the comparison STRICTER, not weaker: the reject path is simply `jsonPointerDiff`'s
+ *  default (a missing key is a diff), so nothing currently green depends on this arm firing.
  *
  *  Deliberately tight, in the spirit of DivergenceRule.confirm (upgrade-compare.ts):
  *   - resolution uses `looseKey`, NOT the reader's own `windowsPathKey` — see `looseKey`'s doc
@@ -377,10 +378,13 @@ function diffPayloadMembers(
  * PMP-shaped "payload member" (a per-gamePath zip entry) at all — turning this on for TTMP would
  * compare the wrong thing (and any OTHER member in a source `.ttmp2`/`.ttmp` archive, which
  * `writeTtmp2` has no analogue for, would produce a spurious diff). It used to be further scoped to
- * the no-op branch only, because our writer reused the source pack's own zip member names where a
+ * a no-op golden only, because our writer reused the source pack's own zip member names where a
  * real golden regenerates every name as `<optionPrefix><gamePath>`; now that `writePmp` regenerates
  * names the same way (see `src/container/option-prefix.ts` / `resolve-duplicates.ts`), that
- * restriction is gone and this runs on every PMP golden, no-op or not.
+ * restriction on THIS function is gone — but `diffArchives` itself is no longer called at all on the
+ * `/upgrade` no-op branch (corpus-upgrade.ts no longer has a golden archive to diff against there),
+ * so in practice this runs on every PMP golden that reaches `diffArchives`: a real-golden `/upgrade`
+ * and every `/resave`.
  *
  * `confirmDivergence`, when supplied, is forwarded to `diffPayloadMembers`' matched-pair content
  * check (see its doc comment) so a confirmed DIVERGENCE_RULES entry is not double-reported here

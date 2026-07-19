@@ -112,7 +112,7 @@ describe("diffArchives", () => {
 // was invisible to the manifest-only comparison. Before `checkPayloadMembers` existed, `diffArchives`
 // never looked at non-manifest member NAMES at all, so this scenario returned `[]`.
 describe("diffArchives payload-member comparison (replaces the orphan-payload-member guard)", () => {
-  it("catches a silently-lost unreferenced (ExtraFile) payload member on a no-op golden", () => {
+  it("catches a silently-lost unreferenced (ExtraFile) payload member when checkPayloadMembers is on", () => {
     const golden = pmp({
       "meta.json": META,
       "default_mod.json": DEF,
@@ -132,7 +132,7 @@ describe("diffArchives payload-member comparison (replaces the orphan-payload-me
   });
 
   it("does not compare payload member names when checkPayloadMembers is off (the TTMP branch)", () => {
-    // Same silent loss, but with checkPayloadMembers left off (the non-noop branch) — deliberately
+    // Same silent loss, but with checkPayloadMembers left off (the TTMP branch) — deliberately
     // not compared there; see diffArchives' doc comment.
     const golden = pmp({
       "meta.json": META,
@@ -212,7 +212,11 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
   const oneKey = { [PRESENT]: `on\\${PRESENT.replace(/\//g, "\\")}` };
 
   it("confirms a dropped key whose payload is genuinely absent from the golden", () => {
-    // Golden = the noop reference (the input pack): lists ABSENT but never contained its member.
+    // Golden lists ABSENT in its Files map but never actually contained a member for it — the
+    // PMP.cs:883 drop this confirmation exists for. See dropConfirmedAbsentKeys' doc comment for
+    // why no current harness call site can reach this arm (both remaining callers compare against
+    // real TexTools output, which has already dropped any such key); the direct unit tests here are
+    // what keeps it covered.
     const golden = archive(bothKeys, { [`on/${PRESENT}`]: payload });
     const ours = archive(oneKey, { [`on/${PRESENT}`]: payload });
     expect(diffArchives(ours, golden)).toEqual([]);
@@ -466,6 +470,21 @@ describe("diffPayloadSemantic (layout-equivalent payload comparison)", () => {
     const d = diffPayloadSemantic(ours, golden);
     expect(d).toHaveLength(1);
     expect(d[0]!.status).toBe("added");
+    expect(d[0]!.gamePath).toBe(key("chara/a.tex"));
+  });
+
+  // Mirror of the "golden has, we don't" case above: a redirect key WE have that the golden lacks
+  // (`gb === undefined` in diffPayloadSemantic part 1). Live code on the /resave relaxed path,
+  // previously exercised by nothing in the suite.
+  it("REJECTS a gamePath we have and the golden does not", () => {
+    const ours = members(
+      { "chara/a.tex": "common\\1\\a.tex" },
+      { "common/1/a.tex": b(1) },
+    );
+    const golden = members({}, {});
+    const d = diffPayloadSemantic(ours, golden);
+    expect(d).toHaveLength(1);
+    expect(d[0]!.status).toBe("removed");
     expect(d[0]!.gamePath).toBe(key("chara/a.tex"));
   });
 

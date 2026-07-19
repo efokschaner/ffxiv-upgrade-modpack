@@ -13,7 +13,7 @@ import {
   saveBaseline,
 } from "./upgrade-baseline";
 import { confirmDivergence } from "./upgrade-compare";
-import { diffUpgrade } from "./upgrade-diff";
+import { diffUpgrade, type FileDiff } from "./upgrade-diff";
 import { upgradeGoldenCached } from "./upgrade-golden";
 import { transformChanges } from "./upgrade-noop";
 
@@ -96,7 +96,6 @@ export function registerUpgradeCheck(pack: string): void {
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
       const reference = golden.kind === "noop" ? source : golden.data;
-      const goldenBytes = golden.kind === "noop" ? bytes : golden.bytes;
 
       // Exercise the real writer on the oracle path (audit blind spot #5): the archive it produces
       // now feeds BOTH the structure/manifest diff below AND the payload diff (see next comment) —
@@ -127,8 +126,8 @@ export function registerUpgradeCheck(pack: string): void {
         reference,
         confirmDivergence,
       );
-      // A NO-OP golden means ConsoleTools wrote NO ARCHIVE, so `reference`/`goldenBytes` above are
-      // the UNTOUCHED INPUT PACK — a Penumbra export whose layout and manifest spelling TexTools'
+      // A NO-OP golden means ConsoleTools wrote NO ARCHIVE, so `reference` above is the UNTOUCHED
+      // INPUT PACK — a Penumbra export whose layout and manifest spelling TexTools'
       // writer never produced. Comparing our member NAMES or manifest JSON against it asserts "our
       // writer reproduces this author's arbitrary choices", which has no oracle behind it and takes
       // our own writer as ground truth. So on this branch we do NOT call diffArchives at all.
@@ -152,17 +151,6 @@ export function registerUpgradeCheck(pack: string): void {
         ? transformChanges(source, oursModel)
         : [];
 
-      // Gated on the INPUT pack carrying FileSwaps, not on `ours` or the golden —
-      // PopulatePmpStandardOption (PMP.cs:873-875) has already destroyed the golden's swaps by the
-      // time we'd read it here, so gating on the golden would never fire. See the
-      // FileSwap-preservation spec, §5.2.
-      const layoutEquivalent = packHasFileSwaps(readZip(bytes));
-      if (layoutEquivalent) {
-        console.log(
-          `[upgrade] ${name}: input carries FileSwaps -> payload compared SEMANTICALLY ` +
-            `(redirect table, not member names). See the FileSwap-preservation spec, §5.2.`,
-        );
-      }
       // Payload member NAMES are now comparable on the real-golden branch too: our writer
       // regenerates them the TexTools way (optionPrefix + gamePath, content-deduped into
       // common/N). This is strictly stronger than the payload diff: a member name IS
@@ -170,15 +158,31 @@ export function registerUpgradeCheck(pack: string): void {
       // diffUpgrade's whole-pack, gamePath-keyed multiset flattens away entirely. Scoped to PMP
       // only: a TTMP's single opaque "TTMPD.mpd" blob is not a PMP-shaped payload member (see
       // diffArchives' doc comment).
-      const archive = noopReference
-        ? []
-        : diffArchives(
-            oursArchive,
-            goldenBytes,
-            target === "pmp",
-            confirmDivergence,
-            layoutEquivalent,
+      //
+      // `layoutEquivalent` (and the `readZip` it costs — a full zip parse, up to 457 MB for the
+      // biggest corpus pack) is only computed on THIS branch, because it is only ever consumed by
+      // the `diffArchives` call below: on the no-op branch `diffArchives` does not run at all (see
+      // the comment above), so there is nothing here for it to gate. Gated on the INPUT pack
+      // carrying FileSwaps, not on `ours` or the golden — PopulatePmpStandardOption (PMP.cs:873-875)
+      // has already destroyed the golden's swaps by the time we'd read it here, so gating on the
+      // golden would never fire. See the FileSwap-preservation spec, §5.2.
+      let archive: FileDiff[] = [];
+      if (!noopReference) {
+        const layoutEquivalent = packHasFileSwaps(readZip(bytes));
+        if (layoutEquivalent) {
+          console.log(
+            `[upgrade] ${name}: input carries FileSwaps -> payload compared SEMANTICALLY ` +
+              `(redirect table, not member names). See the FileSwap-preservation spec, §5.2.`,
           );
+        }
+        archive = diffArchives(
+          oursArchive,
+          golden.bytes,
+          target === "pmp",
+          confirmDivergence,
+          layoutEquivalent,
+        );
+      }
       // Oracle-free invariant on OUR OWN artifact: no dangling `Files` key, no orphan member.
       // Independent of the golden, so it still guards a pack ConsoleTools cannot upgrade or that
       // has no golden at all. PMP-only: a TTMP has no per-file zip members to orphan.

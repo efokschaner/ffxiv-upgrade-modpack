@@ -155,7 +155,8 @@ pack reaches at all are pinned by synthetic unit tests instead (see *Synthetic t
     (e.g. same tex shape, pixels within our documented encoder precision) with a cited
     reason.
   - **Manifest JSON** — a scoped carve-out in `test/helpers/upgrade-archive-diff.ts`
-    (see the absent-payload `Files`-key confirmation there for the established shape).
+    (see the FileSwaps-preservation confirmation in `dropConfirmedAbsentKeys`'s `option()` helper
+    there for the established shape).
   - **Zip layout that cannot match at all** — `diffPayloadSemantic` / `diffArchives`'
     `layoutEquivalent` mode (`test/helpers/upgrade-archive-diff.ts`), which re-keys the
     payload comparison from zip member name to the Penumbra redirect table

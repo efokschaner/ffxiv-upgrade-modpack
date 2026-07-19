@@ -156,6 +156,20 @@ describe("transformChanges", () => {
     ]);
   });
 
+  it("reports a structural change when group counts differ", () => {
+    const before = pack(group(option({})), group(option({})));
+    const after = pack(group(option({})));
+    expect(transformChanges(before, after)).toEqual([
+      {
+        kind: "transform",
+        gamePath: "g1/o0|<group>",
+        index: 0,
+        status: "removed",
+        detail: undefined,
+      },
+    ]);
+  });
+
   it("treats an absent payload as equal only to another absent payload", () => {
     const absent: ModpackFile = { storage: FileStorageType.RawUncompressed };
     const before = pack(group(option({ "chara/a.mdl": absent })));
