@@ -196,6 +196,21 @@ export function dropConfirmedAbsentKeys(
     // non-empty, golden empty) cannot arise for a swap-free pack. That passthrough is pinned by
     // `test/container/pmp-write.test.ts`'s round-trip case; if it ever grows real logic instead of a
     // straight assignment, this carve-out should gate on `packHasFileSwaps` of the input too.
+    //
+    // IN-GAME VERIFICATION (AGENTS.md first principle, requirement 3) -- performed 2026-07-19 by the
+    // operator, against `torn bassment glow.pmp` (6 swaps pulling e6120 textures onto e0246):
+    // both packs load in Penumbra; the FileSwaps metadata difference is visible; and **a material
+    // that loads successfully from our output FAILS to load from TexTools' output**, because the
+    // swap that resolved its texture was destroyed on write. That is the concrete user-visible harm
+    // this divergence exists to prevent, observed rather than reasoned.
+    //
+    // Verified against ConsoleTools `/resave`, NOT `/upgrade` -- ConsoleTools no-ops on every
+    // swap-carrying pack we have, so it emits no `/upgrade` output to compare against. `/resave` is
+    // the same write path minus the transform (Program.cs:191-221) and PopulatePmpStandardOption
+    // sits in that shared path, so the destruction shown there is the destruction any writing
+    // `/upgrade` performs. What this does NOT establish is how often a real user reaches that path
+    // via `/upgrade`; that is a reachability question answered by the call path, not by this
+    // evidence. See the spec §7 -- do not cite this as more than it is.
     const gSwaps = isObj(goldenOpt.FileSwaps) ? goldenOpt.FileSwaps : undefined;
     const oSwaps = isObj(oursOpt.FileSwaps) ? oursOpt.FileSwaps : undefined;
     if (

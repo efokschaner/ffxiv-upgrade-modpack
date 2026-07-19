@@ -1,8 +1,8 @@
 # PMP FileSwap preservation — the first user-benefit divergence
 
-Filed 2026-07-18 · Status: **implemented**, except the in-game gate (§7), which is manual and
-outstanding. The synthetic (§6.1), the semantic-comparison mode (§5.2) and the manifest carve-out
-(§5.1) have landed.
+Filed 2026-07-18 · Status: **implemented and verified.** The synthetic (§6.1), the
+semantic-comparison mode (§5.2) and the manifest carve-out (§5.1) have landed, and the in-game gate
+(§7) was satisfied 2026-07-19.
 
 This closed out the "PMP write path" backlog's FileSwap-preservation item (filed 2026-07-13,
 deleted once this landed — its remaining work is what this spec covers). This is also the first
@@ -65,8 +65,8 @@ Evidence, against the three-part bar in AGENTS.md's first principle:
    is the unrelated empty-vs-omitted-key asymmetry documented in
    `docs/backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md`, which the carve-out correctly does
    not confirm since it never reaches the "ours populated" branch.)
-3. **In-game check** — §7. **Outstanding.** This spec is not implementable-to-completion until it
-   is done; see the gate there.
+3. **In-game check** — §7. **Satisfied 2026-07-19:** a material loads from our output that fails to
+   load from TexTools', the swap having been destroyed on write.
 
 `src/container/pmp.ts:437` (`base.FileSwaps = o.fileSwaps`) already does the right thing. It is
 retained *deliberately*, not by omission — an earlier draft of this work proposed "fixing" it to
@@ -353,7 +353,19 @@ different keyspaces, so a pack can collide in one and not the other. Build it la
 Deliberately **not** built: a swap whose source does not exist in-game. TexTools discards all swaps
 on write regardless, so the golden is identical either way; we preserve verbatim.
 
-## 7. In-game verification gate — outstanding
+## 7. In-game verification gate — SATISFIED 2026-07-19
+
+**Result (operator, 2026-07-19).** Both packs load in Penumbra and work. The `FileSwaps` metadata
+difference is visible between the two outputs. Decisively: **a material loads successfully from our
+output that FAILS to load from TexTools' output**, because the swap that resolved its texture was
+destroyed on write. That is the concrete user-visible harm this divergence exists to prevent —
+observed, not reasoned. Recorded at the enforcement site in `dropConfirmedAbsentKeys`
+(`test/helpers/upgrade-archive-diff.ts`), per AGENTS.md's requirement that the evidence live with
+the rule it justifies.
+
+All three bars of AGENTS.md's first principle are therefore met: (1) registered defect
+(`docs/TEXTOOLS_BUGS.md` #10), (2) every byte the divergence moves is accounted for by a
+confirmation rule (§5.1, §5.2), (3) verified in the real game.
 
 AGENTS.md requirement 3 is manual and cannot be inferred.
 
@@ -385,9 +397,7 @@ in-game and that TexTools' writer destroys them — which is what justifies pres
 question answered by the call path above, not by this artifact. Do not cite this evidence as more
 than it is.
 
-Until the observation is recorded at the §5.1 confirmation site, this is an unverified divergence and
-must not merge. The reasoning in §3 is strong but it is reasoning; the principle exists precisely
-because "obviously better" is where unverified improvements come from.
+The reasoning in §3 was strong, but it was reasoning; the principle exists precisely because "obviously better" is where unverified improvements come from. This section records the measurement that replaced it.
 
 ## 8. Out of scope
 

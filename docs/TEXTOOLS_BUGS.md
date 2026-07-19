@@ -259,6 +259,14 @@ baseline — see `docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-de
 analysis, including why no bundled game index is needed and the `common/N` dedup-numbering side
 effect (entry 8, above) this creates.
 
+**The harm is observed, not theorised.** In-game verification 2026-07-19 (AGENTS.md's first
+principle, requirement 3) against `torn bassment glow.pmp`: both packs load in Penumbra, and **a
+material loads successfully from our output that FAILS to load from TexTools' output** — the swap
+that resolved its texture having been destroyed on write. Verified against `/resave` rather than
+`/upgrade`, because ConsoleTools no-ops on every swap-carrying pack available; `/resave` is the same
+write path minus the transform (`Program.cs:191-221`) and this function sits in it, so the
+destruction shown there is the destruction any writing `/upgrade` performs.
+
 **Upstream fix:** either serialize `files`' original FileSwaps back into `opt.FileSwaps` in
 `PopulatePmpStandardOption` (matching `opt.Files`/`opt.Manipulations`'s treatment), or — if dropping
 them is intentional (e.g. because a swap's target may no longer resolve against the current game
