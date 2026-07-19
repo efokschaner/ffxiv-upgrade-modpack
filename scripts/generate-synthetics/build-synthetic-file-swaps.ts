@@ -11,7 +11,8 @@
 // corpus pack with swaps, is exactly this degenerate case: 6 swaps, no duplicate content, no
 // observable effect.)
 //
-// Splitting across two groups fixes the ordering. ResolveDuplicates walks option-by-option
+// Splitting across two groups fixes the ordering. FileIdentifier.IdentifierListFromDictionaries
+// walks option-by-option building the dictionary ResolveDuplicates then dedupes
 // (PmpExtensions.cs:594-611), so:
 //
 //   TexTools:  [swaps option: placeholder(src1), placeholder(src2)]  -> collide on ZERO_HASH, burn idx 1

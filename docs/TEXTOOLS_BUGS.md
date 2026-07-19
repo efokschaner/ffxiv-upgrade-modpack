@@ -194,8 +194,8 @@ That write-time guard drops the absent files' own `Files` entries and payload by
 different function, already spent by the time the drop happens. So with two absent files, the very
 next **genuine** duplicate (two really-identical present files) is relocated into `common/2/…` instead
 of `common/1/…` — an observable member-name difference between our output and TexTools' that survives
-the write-time drop and would need reproducing if we ever port `ResolveDuplicates` (see
-`backlog/2026-07-13-pmp-write-fileswaps.md`).
+the write-time drop. We do reproduce it, now that `ResolveDuplicates` is ported (see the "Us:"
+paragraph below).
 
 **Us:** `resolveDuplicates` inserts the same all-zero sentinel hash for a byte-less
 `ModpackFile` (`data === undefined`) and lets it dedupe against every other absent file, burning
@@ -228,8 +228,8 @@ no-op distinctly.
 
 ## 10. `PopulatePmpStandardOption` silently destroys a pack's FileSwaps on write
 
-**Status:** **gap** — we fail loud instead · **Where:** `PMP.cs:873-875` (see
-`src/container/resolve-duplicates.ts`)
+**Status:** **worked around** · **Where:** `PMP.cs:873-875` (see
+`src/container/resolve-duplicates.ts`, `src/container/pmp.ts`)
 
 `PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:874`) alongside `opt.Files` and
 `opt.Manipulations`, but unlike those two, nothing ever adds to it afterward — the function's body
@@ -244,13 +244,19 @@ warning and no error. That is a data-loss defect, not a transcribed SE oddity: n
 data or a legacy format forces it, it's a writer that starts populating a field and then never
 finishes the job for one of its three members.
 
-**Us:** `resolveDuplicates` throws when an option carries a non-empty `FileSwaps` map, rather than
-attempting to reproduce (or silently drop) file swaps. We can't reproduce TexTools' *read-side*
-placeholder mechanism faithfully either (`UnpackPmpOption`, `PMP.cs:1104-1137`, needs a live game
-index we don't have — see the throw site and `backlog/2026-07-13-pmp-write-fileswaps.md` for the
-full analysis), so failing loud is
-the only option that doesn't risk shipping a silently-wrong pack. No corpus PMP currently carries any
-FileSwaps (checked empirically, all 13 real corpus packs have `fileSwaps=0`), so this is latent.
+**Us:** `resolveDuplicates` does **not** reproduce this bug, and does **not** fail loud on it either
+— we deliberately preserve every FileSwap the source pack carries (`src/container/pmp.ts:437-445`,
+`base.FileSwaps = o.fileSwaps`) rather than modelling TexTools' *read-side* placeholder mechanism
+(`UnpackPmpOption`, `PMP.cs:1104-1137`, which needs a live game index we don't bundle) or reproducing
+the write-side drop. This is the first divergence justified under AGENTS.md's user-benefit principle
+rather than plain TexTools byte-parity: a FileSwap is a live redirection in Penumbra's runtime model
+(`SubMod.AddContainerTo`, Penumbra `SubMod.cs:23-32`), so reproducing the write-time drop would hand
+the user a modpack quietly missing functionality. The resulting divergence (our `FileSwaps` populated
+where the golden's is always `{}`) is confirmed against the oracle by a scoped carve-out in the golden
+harness (`dropConfirmedAbsentKeys`, `test/helpers/upgrade-archive-diff.ts`), not by a ratchet
+baseline — see `docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md` for the full
+analysis, including why no bundled game index is needed and the `common/N` dedup-numbering side
+effect (entry 8, above) this creates.
 
 **Upstream fix:** either serialize `files`' original FileSwaps back into `opt.FileSwaps` in
 `PopulatePmpStandardOption` (matching `opt.Files`/`opt.Manipulations`'s treatment), or — if dropping

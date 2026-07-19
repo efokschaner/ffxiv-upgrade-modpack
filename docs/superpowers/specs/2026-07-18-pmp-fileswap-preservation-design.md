@@ -1,13 +1,13 @@
 # PMP FileSwap preservation — the first user-benefit divergence
 
-Filed 2026-07-18 · Status: **partly implemented.** The throw is gone, swaps are preserved, and the
-divergence is confirmed against the oracle on a real pack (§6.1). Outstanding: the synthetic that
-makes the `common/N` shift observable, the semantic-comparison mode (§5.2), the manifest carve-out
-(§5.1), and the in-game gate (§7).
+Filed 2026-07-18 · Status: **implemented**, except the in-game gate (§7), which is manual and
+outstanding. The synthetic (§6.1), the semantic-comparison mode (§5.2) and the manifest carve-out
+(§5.1) have landed.
 
-Closes `docs/backlog/2026-07-13-pmp-write-fileswaps.md`. This is also the first application of
-AGENTS.md's first principle ("a working upgrader is the goal; byte-parity is how we get there"),
-amended in the commit immediately preceding this spec.
+This closed out the "PMP write path" backlog's FileSwap-preservation item (filed 2026-07-13,
+deleted once this landed — its remaining work is what this spec covers). This is also the first
+application of AGENTS.md's first principle ("a working upgrader is the goal; byte-parity is how we
+get there"), amended in the commit immediately preceding this spec.
 
 ## 1. The problem
 
@@ -105,11 +105,32 @@ That was wrong: **≥2 valid swaps clear the threshold on their own.** Staying u
 require a pack with fewer than two swaps — a degenerate shape. This is the ordinary case, not a
 corner, so it must be handled rather than dodged.
 
-**Not expressible by either confirmation site.** A member-name shift surfaces as `structure`
-added/removed diffs; `confirmDivergence` is consulted only on content mismatches of *name-matched*
-pairs (`upgrade-archive-diff.ts:223`), and `diffPayloadMembers` buckets by the full member name
-(`:199-209`), so `common/1/x` and `common/2/x` never pair. It would fall through to the gitignored
-ratchet baseline, which AGENTS.md explicitly does not count as documenting a divergence.
+**A third confirmation site.** A member-name shift surfaces as `structure` added/removed diffs;
+`confirmDivergence` is consulted only on content mismatches of *name-matched* pairs
+(`upgrade-archive-diff.ts:223`), and `diffPayloadMembers` buckets by the full member name (`:199-209`),
+so `common/1/x` and `common/2/x` never pair — neither of AGENTS.md's two existing confirmation sites
+(payload content via `DIVERGENCE_RULES`; manifest JSON via a `upgrade-archive-diff.ts` carve-out, §5.1)
+can express this shape on its own. It would otherwise fall through to the gitignored ratchet baseline,
+which AGENTS.md explicitly does not count as documenting a divergence. `diffPayloadSemantic`, below, is
+a **third** confirmation site added for exactly this shape — a re-keying of the payload comparison from
+member name to the Penumbra redirect table, so a pure `common/N` renumbering is recognized as identical
+behaviour rather than merely tolerated.
+
+**The manifest half this section originally missed.** A `Files` map VALUE is a zip path too — pure
+layout, exactly what §5.2 declares invisible to Penumbra — so a `common/N` renumbering reappears as an
+ordinary `jsonPointerDiff` mismatch on `group_NNN.json`/`default_mod.json` even once the payload-member
+diff above is silenced. `dropConfirmedAbsentKeys` therefore gained a second, narrower exemption
+alongside its existing confirmed-absent-key drop (§5.1): a `Files` value present on both sides that
+resolves (after backslash normalization) to `common/…` on both sides is treated as equal. Both this and
+`diffPayloadSemantic` are gated on the same `layoutEquivalent` flag, computed once per pack from the
+*input*'s FileSwaps — §5.2's cause gate, never the diff's shape.
+
+That coupling is load-bearing, not incidental: `diffArchives` **throws** if `layoutEquivalent` is set
+without `checkPayloadMembers` also being `true`. The manifest `Files`-value exemption is sound only
+because `diffPayloadSemantic` (which `checkPayloadMembers` enables) independently proves the redirect
+resolves to identical content on both sides — without it, the exemption would accept a `Files` value
+that renames the redirect to entirely different bytes, with no content check anywhere in the comparison
+to catch it.
 
 **The mechanism: a cause-gated semantic-comparison mode.** Penumbra's runtime model is the authority
 on what must be preserved. `SubMod.AddContainerTo` (Penumbra `SubMod.cs:23-32`) reduces an option to:
@@ -173,9 +194,13 @@ divergence currently baselined across real packs and synthetics. Deliberately no
 - **`scripts/generate-synthetics/build-synthetic-file-swaps.ts`** (new) + registration in
   `build-all.ts` — see §6.1.
 - **`test/helpers/upgrade-archive-diff.ts`** — the §5.1 carve-out, carrying the §7 evidence.
-- **`docs/BACKLOG.md` + `docs/backlog/2026-07-13-pmp-write-fileswaps.md`** — delete the item and its
-  index entry; grep for citations first (`resolve-duplicates.ts` cites it in the throw message and
-  header, and `docs/TEXTOOLS_BUGS.md` #10 references it). File the §5.2 gap as a new item.
+- **`docs/BACKLOG.md`** — delete the "PMP write path" item this spec supersedes and its index entry
+  (its file was `docs/backlog/2026-07-13-pmp-write-fileswaps.md`); grep for citations first
+  (`docs/TEXTOOLS_BUGS.md` #10 referenced it). §5.2 landed in full, so no residual gap from it needs
+  filing — but closing this out surfaced an unrelated, pre-existing one: `test/helpers/corpus-resave.ts`
+  does not forward `confirmDivergence` to `diffArchives` the way `corpus-upgrade.ts` does, so
+  `DIVERGENCE_RULES` never fire for `/resave`'s structural comparison. Filed separately as
+  `docs/backlog/2026-07-18-resave-confirmdivergence-not-forwarded.md`.
 
 ### 6.1 Corpus coverage
 
@@ -208,7 +233,8 @@ hardcodes `FileSwaps: {}` at `:88` and needs extending first). Requirements:
   bytes), so a `common/N` member exists for the burned `idx` to shift.
 - **Two groups, not one** — the swaps in one option, the duplicate pair in another.
   `UnpackPmpOption` appends an option's placeholders *after* that same option's Files
-  (`PMP.cs:1104-1137`), and `ResolveDuplicates` walks option-by-option
+  (`PMP.cs:1104-1137`), and `FileIdentifier.IdentifierListFromDictionaries` walks option-by-option
+  building the flattened dictionary `ResolveDuplicates` then dedupes
   (`PmpExtensions.cs:594-611`). So in a one-option pack every real file is visited before any
   placeholder, the zero-hash collision happens last, and the burned `idx` lands after every duplicate
   has already been numbered — shifting nothing and proving nothing. **This is precisely why
@@ -254,7 +280,6 @@ The reasoning in §3 is strong but it is reasoning; the principle exists precise
 ## 8. Out of scope
 
 - Modelling the placeholder mechanism, `Get8xDataOffset`, or any bundled index table (§4).
-- The `common/N` interaction (§5.2) — filed, kept unreachable.
 - Whether the upgrade transform should ever *rewrite* a swap's paths. Verified not to arise:
   the rounds rewrite `option.files` keys (`repath-hair-mashups.ts`, `unclaimed-hair.ts`) but never
   touch `fileSwaps`, and TexTools cannot either, since its swaps are dataless placeholders. Both

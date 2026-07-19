@@ -78,11 +78,6 @@ Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
 ### PMP write path
 
-- [FileSwap preservation — remaining work](backlog/2026-07-13-pmp-write-fileswaps.md) — the crash is
-  fixed and swaps are preserved (a deliberate divergence from `docs/TEXTOOLS_BUGS.md` #10, confirmed
-  against the oracle on a real pack). Outstanding: a synthetic with ≥2 swaps *and* duplicate content
-  to reach the `common/N` shift, the cause-gated semantic-comparison mode it needs, the manifest
-  carve-out replacing today's baseline suppression, and the manual in-game gate.
 - [Port `.meta`/`.rgsp` → `Manipulations` conversion](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)
   — `writePmp` throws where `PopulatePmpStandardOption` converts. Unreachable today (only a TTMP→PMP
   format conversion could reach it, and no upgrade flow performs one), so it is a fail-loud guard
@@ -134,6 +129,12 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — from the game path, yielding `Unknown` for a path it can't classify.
 - [`writeTtmp2` emits an option's files in a different order](backlog/2026-07-13-resave-ttmp2-option-file-order.md)
   — 20 packs; confirm it is *only* order before fixing.
+- [`/resave`'s `diffArchives` call never forwards `confirmDivergence`](backlog/2026-07-18-resave-confirmdivergence-not-forwarded.md)
+  — unlike `corpus-upgrade.ts`, so a `DIVERGENCE_RULES` entry that would *confirm* a payload-member
+  mismatch under `/upgrade` is merely baseline-suppressed under `/resave` instead — not documented,
+  per AGENTS.md. Pre-existing, surfaced while auditing both call sites for FileSwap preservation's
+  `layoutEquivalent` parameter. Fixing it will shrink several packs' `/resave` baselines, so it needs
+  its own deliberate re-bless.
 
 ### Textures
 

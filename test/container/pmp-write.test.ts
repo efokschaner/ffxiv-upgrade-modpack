@@ -218,11 +218,10 @@ describe("writePmp model-building fallback (no raw)", () => {
                   { data: redBytes, storage: FileStorageType.RawUncompressed },
                 ],
               ]),
-              // FileSwaps must stay empty here: resolveDuplicates fails loud on a non-empty
-              // FileSwaps map (this port cannot reproduce TexTools' game-index-dependent
-              // placeholder mechanics faithfully — see resolve-duplicates.ts /
-              // docs/backlog/2026-07-13-pmp-write-fileswaps.md), and
-              // that guard applies to every option writePmp actually assembles a prefix for.
+              // FileSwaps left empty here -- this fixture isn't exercising FileSwap
+              // preservation (a non-empty map is deliberately carried through unchanged, not
+              // rejected -- see the round-trip test above and
+              // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md).
               fileSwaps: {},
               // Every field a real PMPImcManipulationJson declares must be present: a document
               // omitting one is NOT modeled as "absent from the output" (a bare `{ Type: "Imc" }`
@@ -1082,9 +1081,10 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
             [optBPresentFile]: toZipValue(optBPresentFile),
             [optBAbsentFile]: toZipValue(optBAbsentFile),
           },
-          // FileSwaps must stay empty: resolveDuplicates fails loud on a non-empty FileSwaps map
-          // for any option it assigns a prefix to (see resolve-duplicates.ts /
-          // docs/backlog/2026-07-13-pmp-write-fileswaps.md).
+          // FileSwaps left empty: this fixture isn't exercising FileSwap preservation (a
+          // non-empty map is deliberately carried through unchanged, not rejected -- see the
+          // round-trip test in the "writePmp round-trip" describe block above and
+          // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md).
           FileSwaps: {},
           // A COMPLETE Imc manipulation -- normalizeManipulations throws on one missing a required
           // field (pmp-manipulation.test.ts), so this fixture needs every field spelled to prove
