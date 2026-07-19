@@ -124,14 +124,12 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *   - it is a re-keying, not a content check: `diffPayloadSemantic`'s redirect-table comparison has
  *     already proven the gamePath resolves to identical bytes on both sides, so this only suppresses
  *     the redundant name-shaped report of that same fact, never substitutes for it. Callers must gate
- *     `layoutEquivalent` on a STRUCTURAL property of the comparison, never on what the diff looks
- *     like — see `diffArchives`'s doc comment for the two admissible gates. */
+ *     `layoutEquivalent` on `packHasFileSwaps` of the INPUT pack, same as `diffArchives` requires. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,
   goldenMembers: Map<string, Uint8Array>,
   layoutEquivalent = false,
-  stripOursPrefix?: string,
 ): unknown {
   const present = memberKeys(goldenMembers);
   // Deliberately `toLowerCase()`, NOT `looseKey`: this is an EXEMPTION test, not a resolution test.
@@ -163,28 +161,6 @@ export function dropConfirmedAbsentKeys(
       ) {
         out[gamePath] = o[gamePath]; // common/N renumbering — layout-equivalent, confirmed elsewhere
         continue;
-      }
-      // `stripOursPrefix`: the member-NAME counterpart of this exemption, for the same value seen
-      // through the manifest. A `Files` value IS a zip path, so the synthesized `default/` folder
-      // that shifts our member names shifts these values identically. CONFIRMATION, not a waiver —
-      // ours must equal the golden's value EXACTLY once the one known prefix is removed, so any
-      // other difference in the value is still reported. See `diffArchives`' doc comment for the
-      // single case a caller may pass it.
-      if (stripOursPrefix !== undefined && !missingFromOurs) {
-        const oursValue = o[gamePath];
-        const stripped =
-          typeof oursValue === "string" &&
-          oursValue.replace(/\\/g, "/").startsWith(stripOursPrefix)
-            ? oursValue.slice(stripOursPrefix.length)
-            : oursValue;
-        if (
-          typeof stripped === "string" &&
-          isStringValue &&
-          looseKey(stripped.replace(/\\/g, "/")) === looseKey(zipPath)
-        ) {
-          out[gamePath] = oursValue;
-          continue;
-        }
       }
       out[gamePath] = value;
     }
@@ -401,32 +377,9 @@ function diffPayloadMembers(
  * after `diffUpgrade` already accepted it.
  *
  * `layoutEquivalent` swaps the payload comparison for `diffPayloadSemantic` — compare the redirect
- * table rather than the member-name multiset. Pass `true` ONLY when the comparison is STRUCTURALLY
- * incapable of matching member names, never based on what the diff looks like: gating on the symptom
- * would silently absorb genuine writer regressions in every pack. Exactly two such gates exist today
- * (both applied by `registerUpgradeCheck`, corpus-upgrade.ts, which documents each in full):
- *   1. the INPUT pack carries FileSwaps (`packHasFileSwaps`) — TexTools' write-time swap destruction
- *      shifts our `common/N` dedup numbering away from the golden's. See the spec, §5.2.
- *   2. the golden is a NO-OP — ConsoleTools wrote no archive, so the reference is the raw input pack,
- *      a layout TexTools' writer never produced and therefore no oracle for member names at all.
- *
- * `stripOursPrefix` removes one known leading folder from OUR payload member names (and from our
- * matching `Files` VALUES) before pairing them with the golden's. Unlike the two gates above it is a
- * CONFIRMATION of one specific expected difference, not a relaxation: the stripped name must then
- * equal the golden's exactly, so any member that differs in any other way is still reported.
- *
- * Exactly one caller passes it, `registerUpgradeCheck` for a DEFAULT-ONLY PMP on the no-op branch,
- * and it is derivable rather than observed: a PMP with no groups makes `WizardData.FromPmp`
- * synthesize a lone group named "Default" (WizardData.cs:1118-1138), which `MakeGroupPrefix`
- * folder-safes to the prefix `default/` (WizardData.cs:1390-1400). Our output is therefore the raw
- * Penumbra input's layout plus exactly that one folder. Verified against the write-side oracle:
- * ConsoleTools /resave on `torn bassment glow.pmp` emits `default/chara/equipment/e0246/...`,
- * byte-identical to ours.
- *
- * Deliberately NOT generalized to "the golden is a no-op, so skip name comparison": the other no-op
- * synthetics (`f1-safename.pmp`, `case-mismatch.pmp`, `trailing-dot.pmp`) author their input layout
- * to be exactly what TexTools writes, precisely so the member-name comparison pins their repro. A
- * blanket skip would make all three unable to fail.
+ * table rather than the member-name multiset. Pass `true` ONLY when the INPUT pack carries FileSwaps
+ * (`packHasFileSwaps`), never based on what the diff looks like: gating on the symptom would
+ * silently absorb genuine writer regressions in every pack. See the spec, §5.2.
  *
  * `layoutEquivalent` REQUIRES `checkPayloadMembers` — see the guard at the top of the function body
  * for why the two are coupled. */
@@ -440,20 +393,7 @@ export function diffArchives(
     golden: Uint8Array,
   ) => boolean,
   layoutEquivalent = false,
-  stripOursPrefix?: string,
 ): FileDiff[] {
-  if (stripOursPrefix !== undefined && !layoutEquivalent) {
-    // Fail loud (AGENTS.md), not silently diverge: the prefix confirmation below only re-keys the
-    // NAME of a member. It is sound because diffPayloadSemantic's part 1 independently proves each
-    // gamePath resolves to identical BYTES through the redirect table. Without layoutEquivalent the
-    // payload goes to diffPayloadMembers, which has no part 1 — so a prefix-stripped pairing there
-    // would rest on nothing but the names it just rewrote.
-    throw new Error(
-      "diffArchives: stripOursPrefix requires layoutEquivalent=true. Re-keying a member name by " +
-        "prefix is only sound when diffPayloadSemantic's redirect-table pass runs alongside it to " +
-        "independently prove the content matches; diffPayloadMembers has no equivalent.",
-    );
-  }
   if (layoutEquivalent && !checkPayloadMembers) {
     // Fail loud (AGENTS.md), not silently diverge: dropConfirmedAbsentKeys' Files-VALUE
     // common/N exemption (below, via jsonPointerDiff) is sound only because diffPayloadSemantic
@@ -503,7 +443,7 @@ export function diffArchives(
       // comment for why the old document-granular `mismatch` was a ratchet hazard.
       for (const d of jsonPointerDiff(
         o,
-        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent, stripOursPrefix),
+        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent),
       )) {
         diffs.push({
           kind: "manifest",
@@ -518,7 +458,7 @@ export function diffArchives(
   if (checkPayloadMembers)
     diffs.push(
       ...(layoutEquivalent
-        ? diffPayloadSemantic(om, gm, confirmDivergence, stripOursPrefix)
+        ? diffPayloadSemantic(om, gm, confirmDivergence)
         : diffPayloadMembers(om, gm, confirmDivergence)),
     );
   return diffs;
@@ -561,7 +501,6 @@ export function diffPayloadSemantic(
     ours: Uint8Array,
     golden: Uint8Array,
   ) => boolean,
-  stripOursPrefix?: string,
 ): FileDiff[] {
   const diffs: FileDiff[] = [];
 
@@ -634,19 +573,8 @@ export function diffPayloadSemantic(
   //       its bytes checked by NEITHER part here, even though `diffPayloadMembers` (strict mode)
   //       would content-compare it as a matched pair. See
   //       `docs/backlog/2026-07-18-semantic-payload-part2-coverage.md`.
-  //    `stripOursPrefix` (see `diffArchives`' doc comment for when a caller may pass it) removes
-  //    that exact leading folder from OUR names before pairing. This is a CONFIRMATION, not a
-  //    waiver: the stripped name must still match the golden's exactly, so a member that differs in
-  //    any other way is still reported. It exists for the default-only-PMP case, where our name is
-  //    provably the golden's plus one synthesized folder and nothing else.
-  const strip = (n: string): string =>
-    stripOursPrefix !== undefined && n.startsWith(stripOursPrefix)
-      ? n.slice(stripOursPrefix.length)
-      : n;
-  const outsideNames = (m: Map<string, Uint8Array>, ours: boolean) =>
-    payloadMemberNames(m)
-      .map((n) => (ours ? strip(n) : n))
-      .filter((n) => !looseKey(n).startsWith("common/"));
+  const outsideNames = (m: Map<string, Uint8Array>) =>
+    payloadMemberNames(m).filter((n) => !looseKey(n).startsWith("common/"));
   const bucket = (names: string[]): Map<string, string[]> => {
     const m = new Map<string, string[]>();
     for (const n of names) {
@@ -656,8 +584,8 @@ export function diffPayloadSemantic(
     }
     return m;
   };
-  const ob = bucket(outsideNames(ours, true));
-  const gb = bucket(outsideNames(golden, false));
+  const ob = bucket(outsideNames(ours));
+  const gb = bucket(outsideNames(golden));
   for (const bucketKey of [...new Set([...ob.keys(), ...gb.keys()])].sort()) {
     const os = (ob.get(bucketKey) ?? []).slice().sort();
     const gs = (gb.get(bucketKey) ?? []).slice().sort();
