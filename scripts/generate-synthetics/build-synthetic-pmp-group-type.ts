@@ -8,8 +8,8 @@
 // `PMPGroupJson.get_Options()` via `PMPJson.GetHeaderImage()` inside `PMP.LoadPMP`. So there is no
 // deserialization-time rejection (no `FallBackSubType` is declared here, unlike
 // PmpManipulation.cs:21) — the base class loads fine and its virtual `Options` throws on first
-// access, during LOAD, before any transform runs. The absent-`Type` pack interpolates C#'s null
-// string as empty, yielding the trailing-colon message verbatim.
+// access, during LOAD, before any transform runs. The absent-`Type` pack yields the trailing-colon
+// message because the C# field initializes to `""` (PMP.cs:1397), not because anything is null.
 //
 // They are two SEPARATE packs for the same reason selection-type/selection-type-absent are (see
 // those builders): an absent key and a bogus value are distinct inputs, and isolating them keeps one

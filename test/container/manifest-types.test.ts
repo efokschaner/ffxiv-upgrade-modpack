@@ -30,8 +30,8 @@ describe("parsePmpGroup group Type resolution", () => {
     );
   });
 
-  // An absent key deserializes to a null C# string, which interpolates as empty — not a separate
-  // branch in the C#, hence the trailing-colon-and-nothing message.
+  // Not a separate branch in the C#: the field initializes to `""` (PMP.cs:1397) and an absent key
+  // never overwrites it, so the same interpolation yields the trailing-colon-and-nothing message.
   it("throws the same, with an empty Type, when the key is absent", () => {
     expect(() => parsePmpGroup(group())).toThrow(
       "Unimplemented PMP group type: ",

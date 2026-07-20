@@ -175,8 +175,10 @@ const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc"]);
  * subtype hierarchy into one interface, so parse IS our subtype-resolution seam, and `readPmp` calls
  * this for every group — same outcome (load refuses the pack), one frame earlier. The message is
  * byte-identical to the C# one, which `assertMatchedUpgradeFailure` requires: it substring-matches
- * our thrown message against the oracle's captured trace. An absent `Type` interpolates C#'s null
- * string as empty, which our `?? ""` reproduces. */
+ * our thrown message against the oracle's captured trace. An absent `Type` yields the trailing-colon
+ * message because the C# field initializes to `""` (:1397) — and `LoadPMP` deserializes groups with
+ * `NullValueHandling.Ignore` (:160-163), so an explicitly-null `Type` is skipped and keeps that `""`
+ * too. Our `?? ""` reproduces both. */
 export function parsePmpGroup(raw: PmpGroupJsonRaw): PmpGroupJson {
   const type = raw.Type ?? "";
   if (!KNOWN_PMP_GROUP_TYPES.has(type)) {
