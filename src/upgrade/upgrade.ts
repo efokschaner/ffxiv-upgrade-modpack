@@ -322,9 +322,10 @@ function targetKey(info: UpgradeInfo): string {
  * a single first-wins-deduped map, plus every option's `.tex` keys into `allTextures` (:108-109);
  * pass 2 applies those targets to every option's textures (round 2, UpgradeRemainingTextures). The
  * partial round runs UpdateSkinPaths (skin path aliasing) and the unclaimed-hair/accessory rescue
- * (:162-182) over `allTextures` minus every target value; UpdateEyeMask now runs as a fail-loud
- * control-flow gate (`src/upgrade/eye-mask.ts`) — only its pixel conversion is deferred, see
- * `partials`. Always returns a fresh ModpackData (never mutates `data`).
+ * (:162-182) over `allTextures` minus every target value; UpdateEyeMask (`src/upgrade/eye-mask.ts`)
+ * ports the full control flow INCLUDING the ImageSharp pixel conversion (`convertEyeMaskToDiffuse`,
+ * EndwalkerUpgrade.cs:1910-2003) — see `partials`. Always returns a fresh ModpackData (never mutates
+ * `data`).
  */
 export function upgradeModpack(data: ModpackData): ModpackData {
   const out = cloneModpack(data);
