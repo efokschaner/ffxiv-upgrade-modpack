@@ -270,4 +270,22 @@ describe("writeTtmp2 null fidelity", () => {
     const out = mpl(writeTtmp2(readTtmp2(src)));
     expect(out.Version).not.toBeNull();
   });
+
+  // The .NET Version round-trip is not a null guard only: WriteWizardPack RE-RENDERS the version
+  // through `Version.TryParse` + `ver ??= new Version("1.0")` + `ToString()` (WizardData.cs ·
+  // WriteWizardPack · 1335-1337, stringified at TTMPWriter.cs · TTMPWriter · 61-69). A bare "1" has
+  // too few components for TryParse, so the fallback applies and the .mpl says "1.0"; "01.2"
+  // normalizes to "1.2". Pinned end-to-end because ttmp2.ts writing `data.meta.version` raw would
+  // otherwise pass every other test here — the PMP side has its own pin in pmp-manifest.test.ts.
+  it("normalizes Version through .NET Version semantics", () => {
+    const bare = withMpl(makeTtmp2Wizard().bytes, (doc) => {
+      doc.Version = "1";
+    });
+    expect(mpl(writeTtmp2(readTtmp2(bare))).Version).toBe("1.0");
+
+    const padded = withMpl(makeTtmp2Wizard().bytes, (doc) => {
+      doc.Version = "01.2";
+    });
+    expect(mpl(writeTtmp2(readTtmp2(padded))).Version).toBe("1.2");
+  });
 });
