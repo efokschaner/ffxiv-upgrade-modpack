@@ -341,6 +341,7 @@ console.log(
 // table-building (fast, order-sensitive) runs sequentially afterward for deterministic output.
 const CONCURRENCY = 8;
 const extractedBytes = new Map<string, Uint8Array>(); // .imc gamePath -> bytes
+const extractErrors = new Map<string, string>(); // .imc gamePath -> error message
 let cursor = 0;
 async function extractWorker(wid: number): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), `imc-w${wid}-`));
@@ -352,9 +353,10 @@ async function extractWorker(wid: number): Promise<void> {
     try {
       await extractGameFileAsync(imcPath, dest);
       extractedBytes.set(imcPath, new Uint8Array(readFileSync(dest)));
-    } catch {
+    } catch (err) {
       // Left unset; the table-building loop below fails loud, because the index said this
       // path exists and a failed extract of an existing file is not a faithful state.
+      extractErrors.set(imcPath, (err as Error).message);
     }
     if ((i + 1) % 200 === 0)
       console.log(`  ...extracted ${i + 1}/${presentPaths.length}`);
@@ -375,7 +377,11 @@ for (const r of roots) {
     // Absent from the game index, or the extract failed. Absent is a real, faithful state (see
     // above); a failed extract of a path the index says EXISTS is not, so fail loud on it.
     if (gameIndex.fileExists(imcPath)) {
-      console.error(`FAILED extracting ${imcPath} (index says it exists)`);
+      const cause = extractErrors.get(imcPath);
+      console.error(
+        `FAILED extracting ${imcPath} (index says it exists)` +
+          (cause ? `: ${cause}` : ""),
+      );
       imcParseFailed = true;
       continue;
     }

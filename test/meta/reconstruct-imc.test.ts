@@ -43,11 +43,14 @@ describe("reconstructMeta IMC seeding (spec §3.2)", () => {
     expect(out.imc).toHaveLength(20);
   });
 
-  it("matches a key case-insensitively", () => {
-    const upper = WEAPON.toUpperCase();
-    // parseMetaRoot is case-sensitive on the path shape, so use the real path with only the
-    // lookup exercised: an all-lowercase key must be found from a mixed-case gamePath.
-    expect(IMC_TABLE[upper.toLowerCase()]).toBeDefined();
+  // parseMetaRoot's regexes are lowercase-only, so a mixed-case gamePath can never actually reach
+  // the IMC_TABLE lookup -- reconstruct.ts's `gamePath.toLowerCase()` is defensive, not load-bearing.
+  // What makes that lowercasing correct is this table-wide invariant: every key is already its own
+  // lowercase form, so lowercasing a lookup key can only ever match an entry that is genuinely there.
+  it("every IMC_TABLE key is already lowercase", () => {
+    for (const key of Object.keys(IMC_TABLE)) {
+      expect(key).toBe(key.toLowerCase());
+    }
   });
 
   // Spec §3.2 row 3: a root the table has no data for cannot be seeded faithfully.

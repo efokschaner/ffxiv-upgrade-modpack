@@ -449,6 +449,7 @@ describe("reconstructMeta IMC reconstruction", () => {
   it("grows a monster's IMC segment from the base seed (NonSet root)", () => {
     const key = "chara/monster/m8045/obj/body/b0001/m8045b0001.meta";
     const base = IMC_TABLE[key]!;
+    expect(base.length).toBeGreaterThan(1); // fixture precondition
     const imc = [new Uint8Array([2, 0, 0, 0, 0, 0])];
     const mod: ItemMeta = {
       version: 2,
@@ -460,8 +461,9 @@ describe("reconstructMeta IMC reconstruction", () => {
       gmp: null,
     };
     const out = reconstructMeta(mod, mod.path);
-    expect(out.imc).toHaveLength(Math.max(1, base.length));
+    expect(out.imc).toHaveLength(base.length);
     expect(out.imc![0]).toEqual(imc[0]);
+    expect(out.imc![1]).toEqual(new Uint8Array(base[1]!));
   });
 
   it("leaves a meta with no IMC segment untouched", () => {
