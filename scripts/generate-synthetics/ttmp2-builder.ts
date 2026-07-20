@@ -105,3 +105,81 @@ export function writeTtmp2Pack(
   );
   console.log("wrote", out);
 }
+
+/** Writes a one-page, one-group, one-option wizard .ttmp2 carrying arbitrary payloads, for
+ *  fixtures whose point is the FILE CONTENT rather than the group structure writeTtmp2Pack
+ *  exercises. Each file's bytes are SQPACK-compressed into the .mpd and pointed at by its own
+ *  ModsJson (TTMP.cs:378/:488). Same pinned mtime and key order as writeTtmp2Pack, and for the
+ *  same reasons — see this file's header. */
+export function writeTtmp2Files(
+  fileName: string,
+  packName: string,
+  files: { gamePath: string; data: Uint8Array }[],
+): void {
+  const chunks: Uint8Array[] = [];
+  let offset = 0;
+  const modsJsons = files.map((f) => {
+    const blob = encodeSqPackFile(f.data, SqPackType.Standard);
+    const entry = {
+      Name: "Dummy",
+      Category: "Unknown",
+      FullPath: f.gamePath,
+      ModOffset: offset,
+      ModSize: blob.length,
+      DatFile: "040000",
+      IsDefault: false,
+    };
+    chunks.push(blob);
+    offset += blob.length;
+    return entry;
+  });
+  const mpd = new Uint8Array(offset);
+  let o = 0;
+  for (const c of chunks) {
+    mpd.set(c, o);
+    o += c.length;
+  }
+  const mpl = {
+    TTMPVersion: "2.1w",
+    Name: packName,
+    Author: "synthetic",
+    Version: "1.0.0",
+    Description: "",
+    Url: "",
+    MinimumFrameworkVersion: "1.3.0.0",
+    ModPackPages: [
+      {
+        PageIndex: 0,
+        ModGroups: [
+          {
+            GroupName: "Main",
+            OptionList: [
+              {
+                Name: "On",
+                Description: "",
+                ImagePath: "",
+                GroupName: "Main",
+                IsChecked: false,
+                ModsJsons: modsJsons,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  mkdirSync(OUT_DIR, { recursive: true });
+  const out = join(OUT_DIR, fileName);
+  writeFileSync(
+    out,
+    zipSync(
+      {
+        "TTMPL.mpl": new TextEncoder().encode(JSON.stringify(mpl)),
+        "TTMPD.mpd": mpd,
+      },
+      { mtime: FIXED_MTIME },
+    ),
+  );
+  console.log("wrote", out);
+}

@@ -17,3 +17,5 @@ import "./build-synthetic-highlight";
 import "./build-synthetic-mashup-hair";
 import "./build-synthetic-file-swaps";
 import "./build-synthetic-default-only";
+import "./build-synthetic-imc-weapon";
+import "./build-synthetic-imc-demihuman";

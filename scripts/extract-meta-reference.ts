@@ -6,10 +6,12 @@
 // EST type, extracted directly from the four base-game EST files ConsoleTools ships.
 //
 // IMC reconstruction (Task 8b, src/meta/reconstruct.ts) similarly seeds a .meta's IMC segment
-// from the base game, growing the variant list to the base game's subset count when the mod
-// supplies fewer variants (PMP.cs:455-480; docs/superpowers/specs/2026-07-10-metadata-round-
-// design.md §3.2-3.3). That requires a (itemType, primaryId, slot) -> ordered base variant-entry
-// table, extracted from base-game .imc files for the items the corpus's .meta files reference.
+// from the base game, growing the entry list to the base game's entry count when the mod
+// supplies fewer entries (PMP.cs:455-480; docs/superpowers/specs/2026-07-10-metadata-round-
+// design.md §3.2-3.3). That requires a `.meta` root path -> ordered base entry table, extracted
+// from base-game .imc files. It is exhaustive over every root in the framework's item_sets.db
+// whose primary type Imc.UsesImc accepts (Imc.cs · UsesImc · 74-85): equipment, accessory,
+// weapon, monster, demihuman -- not merely the ones a corpus .meta happens to reference.
 //
 // NOTE (authorized scope change from the round-5 task-6 brief): EQP/GMP extraction was
 // intentionally dropped. The scoping spike found EQP/GMP segments never grow and never mismatch
@@ -21,7 +23,7 @@
 // item_sets.db item enumeration behind the exhaustive IMC table):
 //   $env:NODE_OPTIONS='--experimental-sqlite'; npx tsx scripts/extract-meta-reference.ts
 // Add `--imc-only` to regenerate just imc-table.ts (leaving est-table.ts untouched) — the IMC
-// extraction is ~1555 ConsoleTools spawns (a parallel pool, a few minutes); EST is 4 files.
+// extraction is ~8000 ConsoleTools spawns (a parallel pool, ~15 minutes); EST is 4 files.
 // The generated tables (est-table.ts / imc-table.ts) are excluded from Biome (see biome.jsonc).
 
 import { execFile } from "node:child_process";
@@ -42,6 +44,12 @@ import { loadModpack } from "../src/index";
 import { deserializeMeta } from "../src/meta/deserialize";
 import { allFiles, FileStorageType } from "../src/model/modpack";
 import { decodeSqPackFile } from "../src/sqpack/sqpack";
+import { GameIndex } from "./lib/game-index";
+import {
+  type ImcRootInfo,
+  rawImcFilePath,
+  readImcEntries,
+} from "./lib/imc-entries";
 
 // oracle.ts (and corpus-roots.ts, which it depends on) read __dirname at module scope
 // (Vite-only global); shim it before importing either. See scripts/extract-shader-params.ts
@@ -60,8 +68,9 @@ const { corpusPacks } = await import("../test/helpers/corpus-roots");
 // --imc-only regenerates ONLY imc-table.ts, leaving est-table.ts untouched (this script normally
 // regenerates BOTH). Use it to widen the IMC table without re-running the EST extraction.
 const IMC_ONLY = process.argv.includes("--imc-only");
-// IMC_LIMIT=N extracts only the first N items and neither validates nor writes imc-table.ts — a
-// cheap smoke test of the item_sets.db enumeration + parallel extraction before the full ~1555 run.
+// IMC_LIMIT=N extracts only the first N distinct .imc files and neither validates nor writes
+// imc-table.ts — a cheap smoke test of the item_sets.db enumeration + parallel extraction before
+// the full ~8000-file run.
 const IMC_LIMIT = process.env.IMC_LIMIT
   ? Number(process.env.IMC_LIMIT)
   : Number.POSITIVE_INFINITY;
@@ -71,6 +80,10 @@ const IMC_LIMIT = process.env.IMC_LIMIT
 // so a bug here can never affect the EST path. Same command as oracle.run (["/extract", path, dest]).
 const CONSOLE_TOOLS_EXE =
   "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
+// The game's sqpack folder, read in-process by GameIndex as the FileExists oracle for .imc paths
+// (same constant as scripts/extract-hair-materials.ts:26-27).
+const SQPACK =
+  "C:\\Program Files (x86)\\Steam\\steamapps\\common\\FINAL FANTASY XIV Online\\game\\sqpack\\ffxiv";
 const execFileAsync = promisify(execFile);
 async function extractGameFileAsync(
   gamePath: string,
@@ -252,120 +265,17 @@ if (!IMC_ONLY) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// IMC extraction (Task 8a).
+// IMC extraction (Task 8a, re-keyed in the NonSet round).
 //
-// Port of Imc.GetFullImcInfo (Imc.cs:351-451): a .imc file is `int16 subsetCount, int16
-// TypeIdentifier` then a DEFAULT subset followed by `subsetCount` variant subsets. We only
-// support ImcType.Set (31) here -- equipment/accessory, whose SecondaryType is always null
-// (Imc.cs:265-270 SaveEntries) -- because that is the only shape parseMetaRoot (src/meta/root.ts)
-// currently recognizes; ImcType.NonSet (weapon/monster/demihuman) is out of scope until root.ts
-// widens (see docs/backlog/2026-07-10-nonset-imc-reference-table.md). Each ImcType.Set subset is
-// 5 slot entries of 6 bytes each
-// (MaterialSet u8, Decal u8, Mask u16 LE, Vfx u8, Animation u8 -- SerializeEntry/DeserializeEntry,
-// Imc.cs:310-342).
+// The three symbols ConsoleTools actually executes to build a .meta's IMC base seed
+// (ItemMetadata.cs · CreateFromRaw · 233-247) are ported in scripts/lib/imc-entries.ts:
+// XivDependencyRoot.GetRawImcFilePath, XivDependencyRoot.GetImcEntryPaths and Imc.GetEntries.
+// This script only enumerates the roots, extracts each .imc, and fans the decoded entries back
+// out per root. Both ImcType.Set (equipment/accessory) and ImcType.NonSet (weapon/monster/
+// demihuman) are covered -- the entry-offset arithmetic in imc-entries.ts handles both.
 //
-// The slot->column mapping is Imc.SlotOffsetDictionary (Imc.cs:547-559), which merges the
-// equipment and accessory slot->offset dictionaries (their key sets are disjoint, so one lookup
-// serves both item types):
-const IMC_SLOT_OFFSET: Record<string, number> = {
-  met: 0,
-  top: 1,
-  glv: 2,
-  dwn: 3,
-  sho: 4,
-  ear: 0,
-  nek: 1,
-  wrs: 2,
-  rir: 3,
-  ril: 4,
-};
-
-const IMC_TYPE_SET = 31; // ImcType.Set, Imc.cs:43
-const IMC_ENTRY_SIZE = 6;
-const IMC_SLOTS_PER_SUBSET = 5;
-
-type ImcItemType = "equipment" | "accessory";
-
-interface ParsedImc {
-  subsetCount: number;
-  // subsets[0] is the DEFAULT subset; subsets[1..subsetCount] are the variant subsets, in file
-  // order (Imc.cs:408-442). Each subset is 5 slot entries of 6 raw bytes each.
-  subsets: number[][][];
-}
-
-// Port of the ImcType.Set branch of Imc.GetFullImcInfo (Imc.cs:408-442).
-function parseImcFile(data: Uint8Array, label: string): ParsedImc {
-  if (data.byteLength < 4) {
-    throw new Error(
-      `${label}: file too short for header (${data.byteLength} bytes)`,
-    );
-  }
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const subsetCount = view.getInt16(0, true);
-  const typeIdentifier = view.getInt16(2, true);
-  if (typeIdentifier !== IMC_TYPE_SET) {
-    throw new Error(
-      `${label}: unsupported ImcType ${typeIdentifier} (only ImcType.Set=31 is ported; ` +
-        "NonSet weapon/monster/demihuman items are out of scope, see " +
-        "docs/backlog/2026-07-10-nonset-imc-reference-table.md)",
-    );
-  }
-  const subsetTotal = 1 + subsetCount; // default + variants, Imc.cs:365-366,425
-  const expectedLength =
-    4 + IMC_ENTRY_SIZE * IMC_SLOTS_PER_SUBSET * subsetTotal;
-  if (data.byteLength !== expectedLength) {
-    throw new Error(
-      `${label}: subsetCount ${subsetCount} implies length ${expectedLength}, but file is ${data.byteLength} bytes`,
-    );
-  }
-  const subsets: number[][][] = [];
-  let offset = 4;
-  for (let s = 0; s < subsetTotal; s++) {
-    const slots: number[][] = [];
-    for (let slot = 0; slot < IMC_SLOTS_PER_SUBSET; slot++) {
-      const entry: number[] = [];
-      for (let b = 0; b < IMC_ENTRY_SIZE; b++) {
-        entry.push(data[offset]!);
-        offset++;
-      }
-      slots.push(entry);
-    }
-    subsets.push(slots);
-  }
-  return { subsetCount, subsets };
-}
-
-// Port of the column selection XivDependencyRoot.GetImcEntryPaths performs
-// (XivDependencyRoot.cs:1133-1202) + Imc.GetEntries reading each pointed-to entry
-// (Imc.cs:189-238): the entries a .meta's IMC section carries for `slot` are the DEFAULT
-// subset's slot column, then each variant subset's slot column, in subset order.
-function imcSlotColumn(parsed: ParsedImc, slot: string): number[][] {
-  const slotIdx = IMC_SLOT_OFFSET[slot];
-  if (slotIdx === undefined) {
-    throw new Error(
-      `imc: unknown slot "${slot}" (not in Imc.SlotOffsetDictionary)`,
-    );
-  }
-  return parsed.subsets.map((subset) => subset[slotIdx]!);
-}
-
-// Enumerate every equipment/accessory item referenced by a .meta gamePath across the corpus.
-// NonSet (weapon/monster/demihuman) items use a different .imc shape and are out of scope for this
-// table (docs/backlog/2026-07-10-nonset-imc-reference-table.md) -- skip (log) those rather than
-// fail loud. itemType "other" (hair/face, human roots) never carries IMC (Imc.UsesImc excludes
-// human, Imc.cs:76-85) and is skipped too.
-interface ImcItemRef {
-  itemType: ImcItemType;
-  primaryId: number;
-  slots: Set<string>;
-}
-const imcItems = new Map<string, ImcItemRef>();
-// Exhaustive enumeration from the framework's item_sets.db `roots` table (the authoritative
-// dependency-root list) -- every equipment/accessory (item, slot), NOT just the items a corpus
-// .meta happens to reference. This makes the IMC table cover every base-game equipment/accessory
-// item. reference/ is gitignored
-// (the maintainer re-clones the framework); node:sqlite needs --experimental-sqlite (set via
-// NODE_OPTIONS -- see the regen command in this file's header).
+// reference/ is gitignored (the maintainer re-clones the framework); node:sqlite needs
+// --experimental-sqlite (set via NODE_OPTIONS -- see the regen command in this file's header).
 const ITEM_SETS_DB = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
@@ -378,115 +288,125 @@ const ITEM_SETS_DB = join(
   "DB",
   "item_sets.db",
 );
+// Exhaustive enumeration from the framework's item_sets.db `roots` table over every primary type
+// Imc.UsesImc accepts (Imc.cs · UsesImc · 74-85): equipment, accessory, weapon, monster, demihuman.
+// `root_path` is stored verbatim as the .meta gamePath, which is the table key (spec §3.2).
+interface ImcRootRow extends ImcRootInfo {
+  rootPath: string;
+}
 const { DatabaseSync } = await import("node:sqlite");
 const rootsDb = new DatabaseSync(ITEM_SETS_DB, { readOnly: true });
-const roots = rootsDb
+let roots = rootsDb
   .prepare(
-    "SELECT primary_type AS itemType, primary_id AS primaryId, slot FROM roots " +
-      "WHERE primary_type IN ('equipment', 'accessory')",
+    "SELECT primary_type AS primaryType, primary_id AS primaryId, " +
+      "secondary_type AS secondaryType, secondary_id AS secondaryId, " +
+      "slot, root_path AS rootPath FROM roots " +
+      "WHERE primary_type IN ('equipment', 'accessory', 'weapon', 'monster', 'demihuman')",
   )
-  .all() as { itemType: ImcItemType; primaryId: number; slot: string }[];
+  .all() as unknown as ImcRootRow[];
 rootsDb.close();
-for (const r of roots) {
-  const key = `${r.itemType}/${r.primaryId}`;
-  let ref = imcItems.get(key);
-  if (!ref) {
-    ref = { itemType: r.itemType, primaryId: r.primaryId, slots: new Set() };
-    imcItems.set(key, ref);
-  }
-  ref.slots.add(r.slot);
+
+// One .imc serves many roots (every slot of an equipment set; every slot of a demihuman set), so
+// extract per distinct PATH and fan the result back out to each root that reads it.
+const pathOf = new Map<string, string>(); // rootPath -> .imc gamePath
+for (const r of roots) pathOf.set(r.rootPath, rawImcFilePath(r));
+
+// The game index is the existence oracle (AGENTS.md): a path absent here is a file the game
+// genuinely does not have, which TexTools seeds as NOTHING (ItemMetadata.cs · CreateFromRaw ·
+// 236,243-246). Recording those as an explicit [] is what lets a table MISS mean "we have no data"
+// and throw. Pre-filtering here also keeps us from spawning ConsoleTools for files that cannot be
+// extracted.
+const gameIndex = GameIndex.load(SQPACK);
+let distinctPaths = [...new Set(pathOf.values())];
+if (IMC_LIMIT !== Number.POSITIVE_INFINITY) {
+  // Smoke test: keep the first N distinct .imc files and only the roots that read them, so every
+  // invariant below (a root's path is always extracted) still holds on the reduced set.
+  distinctPaths = distinctPaths.slice(0, IMC_LIMIT);
+  const kept = new Set(distinctPaths);
+  roots = roots.filter((r) => kept.has(pathOf.get(r.rootPath)!));
 }
+const presentPaths = distinctPaths.filter((p) => gameIndex.fileExists(p));
 console.log(
-  `\nIMC: item_sets.db lists ${roots.length} equipment/accessory (item,slot) roots across ` +
-    `${imcItems.size} distinct items to extract` +
+  `\nIMC: ${roots.length} roots across ${distinctPaths.length} distinct .imc files; ` +
+    `${presentPaths.length} present in game, ${distinctPaths.length - presentPaths.length} absent ` +
+    "(recorded as [])" +
     (IMC_LIMIT !== Number.POSITIVE_INFINITY
       ? ` (IMC_LIMIT=${IMC_LIMIT}: smoke test, will not validate or write)`
       : ""),
 );
 
-const imcTable: Record<string, number[][]> = {};
-let imcExtracted = 0;
-let imcMissing = 0;
-let imcParseFailed = false;
-
-const allItems = [...imcItems.values()];
-const items =
-  IMC_LIMIT === Number.POSITIVE_INFINITY
-    ? allItems
-    : allItems.slice(0, IMC_LIMIT);
-const imcGamePath = (ref: ImcItemRef): string => {
-  const prefix = ref.itemType === "equipment" ? "e" : "a";
-  const idStr = String(ref.primaryId).padStart(4, "0");
-  return `chara/${ref.itemType}/${prefix}${idStr}/${prefix}${idStr}.imc`;
-};
-
 // Parallel extraction pool: ConsoleTools spawns (~0.9s each) dominate wall time, so a small
-// concurrency pool over the items turns a ~20-minute sequential run into a few minutes. Each worker
-// uses its own temp dest (no shared-file race). Slow extraction runs concurrently; parsing +
+// concurrency pool over the files turns a very long sequential run into ~15 minutes. Each worker
+// uses its own temp dest (no shared-file race). Slow extraction runs concurrently; decoding +
 // table-building (fast, order-sensitive) runs sequentially afterward for deterministic output.
 const CONCURRENCY = 8;
-const extractedBytes = new Map<string, Uint8Array>(); // "type/id" -> .imc bytes (misses absent)
+const extractedBytes = new Map<string, Uint8Array>(); // .imc gamePath -> bytes
+const extractErrors = new Map<string, string>(); // .imc gamePath -> error message
 let cursor = 0;
 async function extractWorker(wid: number): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), `imc-w${wid}-`));
   const dest = join(dir, "file.imc");
   while (true) {
     const i = cursor++;
-    if (i >= items.length) break;
-    const ref = items[i]!;
+    if (i >= presentPaths.length) break;
+    const imcPath = presentPaths[i]!;
     try {
-      await extractGameFileAsync(imcGamePath(ref), dest);
-      extractedBytes.set(
-        `${ref.itemType}/${ref.primaryId}`,
-        new Uint8Array(readFileSync(dest)),
-      );
-    } catch {
-      imcMissing++; // no .imc in the game for this item id (not every id has one)
+      await extractGameFileAsync(imcPath, dest);
+      extractedBytes.set(imcPath, new Uint8Array(readFileSync(dest)));
+    } catch (err) {
+      // Left unset; the table-building loop below fails loud, because the index said this
+      // path exists and a failed extract of an existing file is not a faithful state.
+      extractErrors.set(imcPath, (err as Error).message);
     }
     if ((i + 1) % 200 === 0)
-      console.log(`  ...extracted ${i + 1}/${items.length}`);
+      console.log(`  ...extracted ${i + 1}/${presentPaths.length}`);
   }
 }
 await Promise.all(
   Array.from({ length: CONCURRENCY }, (_, w) => extractWorker(w)),
 );
 
-for (const ref of items) {
-  const bytes = extractedBytes.get(`${ref.itemType}/${ref.primaryId}`);
-  if (!bytes) continue; // missing (counted in imcMissing)
-  const gamePath = imcGamePath(ref);
-  let parsed: ParsedImc;
-  try {
-    parsed = parseImcFile(bytes, gamePath);
-  } catch (err) {
-    console.error(`FAILED parsing ${gamePath}: ${(err as Error).message}`);
-    imcParseFailed = true;
-    continue;
-  }
-  for (const slot of ref.slots) {
-    try {
-      imcTable[`${ref.itemType}/${ref.primaryId}/${slot}`] = imcSlotColumn(
-        parsed,
-        slot,
-      );
-    } catch (err) {
+const imcTable: Record<string, number[][]> = {};
+let imcParseFailed = false;
+let imcAbsent = 0;
+for (const r of roots) {
+  const imcPath = pathOf.get(r.rootPath)!;
+  const key = r.rootPath.toLowerCase();
+  const bytes = extractedBytes.get(imcPath);
+  if (!bytes) {
+    // Absent from the game index, or the extract failed. Absent is a real, faithful state (see
+    // above); a failed extract of a path the index says EXISTS is not, so fail loud on it.
+    if (gameIndex.fileExists(imcPath)) {
+      const cause = extractErrors.get(imcPath);
       console.error(
-        `FAILED: ${gamePath} slot "${slot}": ${(err as Error).message}`,
+        `FAILED extracting ${imcPath} (index says it exists)` +
+          (cause ? `: ${cause}` : ""),
       );
       imcParseFailed = true;
+      continue;
     }
+    imcTable[key] = [];
+    imcAbsent++;
+    continue;
   }
-  imcExtracted++;
+  try {
+    imcTable[key] = readImcEntries(bytes, r.slot);
+  } catch (err) {
+    console.error(
+      `FAILED reading ${imcPath} for ${r.rootPath}: ${(err as Error).message}`,
+    );
+    imcParseFailed = true;
+  }
 }
 console.log(
-  `  extracted ${imcExtracted} items, ${imcMissing} not present in game`,
+  `  built ${Object.keys(imcTable).length} root keys (${imcAbsent} with no .imc in game)`,
 );
 
 // IMC_LIMIT smoke test: enumeration + parallel extraction exercised on a subset; do NOT validate
 // (needs the specific golden-target items) or overwrite the committed imc-table.ts.
 if (IMC_LIMIT !== Number.POSITIVE_INFINITY) {
   console.log(
-    `\nIMC_LIMIT=${IMC_LIMIT} smoke test done (${imcExtracted} extracted, ` +
+    `\nIMC_LIMIT=${IMC_LIMIT} smoke test done (${extractedBytes.size} extracted, ` +
       `${Object.keys(imcTable).length} keys). Not validating or writing imc-table.ts.`,
   );
   process.exit(imcParseFailed ? 1 : 0);
@@ -521,19 +441,20 @@ const UPGRADE_CACHE_DIR = join(
 const VALIDATION_TARGETS = [
   {
     gamePath: "chara/equipment/e6137/e6137_top.meta",
-    key: "equipment/6137/top",
+    key: "chara/equipment/e6137/e6137_top.meta",
   },
   {
     gamePath: "chara/equipment/e0724/e0724_top.meta",
-    key: "equipment/724/top",
+    key: "chara/equipment/e0724/e0724_top.meta",
   },
 ];
 let validationFailed = false;
 for (const target of VALIDATION_TARGETS) {
   const table = imcTable[target.key];
-  if (!table) {
+  if (table === undefined || table.length === 0) {
     console.error(
-      `VALIDATION FAILED: IMC_TABLE["${target.key}"] was not extracted (needed for the golden spot-check)`,
+      `VALIDATION FAILED: IMC_TABLE["${target.key}"] is ${table === undefined ? "absent" : "empty"} ` +
+        "(needed for the golden spot-check)",
     );
     validationFailed = true;
     continue;
@@ -630,23 +551,27 @@ if (!imcParseFailed && !validationFailed) {
   const out =
     "// GENERATED — regenerate via npx tsx scripts/extract-meta-reference.ts. Do not edit by hand.\n" +
     "//\n" +
-    "// Base-game IMC lookup, port of Imc.GetFullImcInfo (Imc.cs:351-451) restricted to ImcType.Set\n" +
-    "// (equipment/accessory), combined with the (default, variant) column selection\n" +
-    "// XivDependencyRoot.GetImcEntryPaths performs (XivDependencyRoot.cs:1133-1202) via\n" +
-    "// Imc.GetEntries (Imc.cs:189-238). Key is itemType/primaryId/slot; the value is the\n" +
-    "// ordered [DefaultSubset[slot], Subset[0][slot], ..., Subset[subsetCount-1][slot]] 6-byte\n" +
-    "// entries (MaterialSet, Decal, Mask lo, Mask hi, Vfx, Animation -- SerializeEntry/\n" +
-    "// DeserializeEntry, Imc.cs:310-342), i.e. exactly what a base .meta's IMC section would\n" +
-    "// contain for that item+slot. Slot -> column index per Imc.SlotOffsetDictionary\n" +
-    "// (Imc.cs:547-559). See scripts/extract-meta-reference.ts for the extraction/parsing logic,\n" +
-    "// provenance, and the golden spot-check that validates this port.\n" +
+    "// Base-game IMC lookup: the base seed ConsoleTools builds for a .meta's IMC segment\n" +
+    "// (ItemMetadata.cs · CreateFromRaw · 233-247), via ports of the three symbols that path\n" +
+    "// executes -- XivDependencyRoot.GetRawImcFilePath (XivDependencyRoot.cs:1093-1126),\n" +
+    "// XivDependencyRoot.GetImcEntryPaths (XivDependencyRoot.cs:1133-1202) and Imc.GetEntries\n" +
+    "// (Imc.cs:189-238). Those ports live in scripts/lib/imc-entries.ts; see\n" +
+    "// scripts/extract-meta-reference.ts for the enumeration, extraction, and the golden\n" +
+    "// spot-check that validates them against real ConsoleTools output.\n" +
     "//\n" +
-    "// SCOPE: exhaustive over base-game equipment/accessory. Every (item, slot) root in the\n" +
-    "// framework's item_sets.db `roots` table is extracted (~1555 items / ~7775 keys), so this\n" +
-    "// covers every base-game equipment/accessory item -- not just the ones a corpus .meta happens\n" +
-    "// to reference. NonSet (weapon/monster/demihuman) items use a different .imc shape (ImcType.\n" +
-    "// NonSet) and remain out of scope until parseMetaRoot (src/meta/root.ts) recognizes those\n" +
-    "// roots -- see docs/backlog/2026-07-10-nonset-imc-reference-table.md.\n" +
+    "// KEY: the lowercased .meta root path (item_sets.db `roots.root_path`, e.g.\n" +
+    '// "chara/equipment/e0724/e0724_top.meta").\n' +
+    "// VALUE: the ordered 6-byte entries that root's .meta IMC section carries -- one per subset\n" +
+    "// (default first, then each variant subset), each (MaterialSet, Decal, Mask lo, Mask hi, Vfx,\n" +
+    "// Animation -- SerializeEntry/DeserializeEntry, Imc.cs:310-342).\n" +
+    "// [] means the game has no .imc file for that root at all, which TexTools seeds as no entries\n" +
+    "// (ItemMetadata.cs · CreateFromRaw · 236,243-246) -- a real, faithful state, not missing data.\n" +
+    "// A MISS means the root is unknown to item_sets.db, which we cannot seed faithfully: it is a\n" +
+    "// fail-loud condition for consumers, never a pass-through.\n" +
+    "//\n" +
+    "// SCOPE: exhaustive over every root in item_sets.db whose primary type Imc.UsesImc accepts\n" +
+    "// (Imc.cs · UsesImc · 74-85) -- equipment, accessory, weapon, monster, demihuman -- covering\n" +
+    "// both ImcType.Set and ImcType.NonSet files, not just the roots a corpus .meta references.\n" +
     "export const IMC_TABLE: Record<string, number[][]> = {\n" +
     body +
     "\n};\n";
