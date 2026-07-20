@@ -36,7 +36,7 @@ currently produce: `parseMetaRoot` throws on a demihuman path outright.
 
 ### 2.2 The base seed never goes through `GetFullImcInfo`
 
-`ItemMetadata.GetMetadata` (`ItemMetadata.cs · GetMetadata · 233-247`) seeds `ImcEntries` via
+`ItemMetadata.CreateFromRaw` (`ItemMetadata.cs · CreateFromRaw · 233-247`) seeds `ImcEntries` via
 `root.GetImcEntryPaths(tx)` → `Imc.GetEntries(...)`, **not** via `Imc.GetFullImcInfo`. That matters
 because the two disagree, and we ported against the wrong one's shape.
 
