@@ -88,6 +88,18 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   const indexRealSizes = [0, 0, 0];
 
   // decompOffset starts after the reserved 68-byte header + vInfo + mData.
+  //
+  // Each offset below is recorded UNCONDITIONALLY, before that LoD's blocks are read (Dat.cs:825,
+  // 835) — there is no "unused LoD keeps its stored 0" case. A zero-block LoD therefore takes
+  // whatever the cursor currently is, so the trailing unused LoDs of a `lodCount = 1` model come out
+  // as the end-of-geometry cursor rather than 0. That is canonical, not a defect: TexTools' own
+  // serializer writes the same end-of-geometry value into both unused vertex and both unused index
+  // slots (Mdl.cs:3930-3942), as does our port (src/mdl/model/serialize.ts). Consequence worth
+  // knowing: a .mdl authored outside TexTools (a raw game file / Penumbra export stores 0) is
+  // normalized on decode, so decode(encode(x)) rewrites those four fields. The corpus self
+  // round-trip confirms that normalization against the oracle — it hands ConsoleTools /unwrap the
+  // entry we compressed and requires its decode to match ours byte-for-byte
+  // (test/helpers/corpus-sqpack.ts).
   let decompOffset = MDL_HEADER + vInfo.length + mData.length;
   for (let i = 0; i < 3; i++) {
     vertexUncompOffsets[i] = decompOffset;

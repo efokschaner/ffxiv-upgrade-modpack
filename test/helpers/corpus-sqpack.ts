@@ -40,30 +40,10 @@ function canonicalTexLength(decoded: Uint8Array): number {
 
 const SELF_CAP_PER_TYPE = 25; // full round-trip cap per SqPack type per pack
 
-// The reserved runtime-header padding a Type-3 (model) SQPack decode canonically appends: the output
-// is sized `68 + decompressedSize`, and `decompressedSize` (entry offset 8) already counts the same
-// 68-byte header, leaving 68 trailing zero bytes (type3.ts decodeType3, mirroring Dat.cs:801). This
-// is what /unwrap emits, so it is the canonical decoded length — see the Type-3 tolerance below.
-const MODEL_TRAILING_PADDING = 68;
-
 /** True when one buffer is a byte-exact prefix of the other (they differ only in trailing bytes). */
 function isPrefixRelation(a: Uint8Array, b: Uint8Array): boolean {
   const m = Math.min(a.length, b.length);
   for (let i = 0; i < m; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
-/** True when `longer` is exactly `shorter` followed by `pad` trailing ZERO bytes and nothing else —
- *  i.e. the only difference is a run of `pad` zeros appended to `shorter`. */
-function isTrailingZeroGrowth(
-  shorter: Uint8Array,
-  longer: Uint8Array,
-  pad: number,
-): boolean {
-  if (longer.length !== shorter.length + pad) return false;
-  if (!isPrefixRelation(shorter, longer)) return false;
-  for (let i = shorter.length; i < longer.length; i++)
-    if (longer[i] !== 0) return false;
   return true;
 }
 
@@ -97,9 +77,8 @@ export function registerSqpackChecks(ctx: PackContext): void {
         if (first === null) continue;
         totalByType.set(first.type, (totalByType.get(first.type) ?? 0) + 1);
         if ((testedByType.get(first.type) ?? 0) >= SELF_CAP_PER_TYPE) continue;
-        const second = decodeSqPackFile(
-          encodeSqPackFile(first.data, first.type),
-        );
+        const encoded = encodeSqPackFile(first.data, first.type);
+        const second = decodeSqPackFile(encoded);
         if (!bytesEqual(first.data, second.data)) {
           // Type 4 encode re-derives mip sizes from the canonical formula (exactly as SE's
           // Tex.CompressTexFile does), so a texture whose stored mip tail is non-canonical is
@@ -123,30 +102,46 @@ export function registerSqpackChecks(ctx: PackContext): void {
             );
             continue;
           }
-          // Type 3 (model): the SQPack decode canonically appends MODEL_TRAILING_PADDING (68) zero
-          // bytes of reserved runtime-header padding (see the constant). A game .mdl stored
-          // uncompressed in a PMP does NOT carry that padding, so decode(encode(x)) is x followed by
-          // exactly those 68 zeros — the same non-idempotency as Type 4, and equally benign. A
-          // decoded TTMP model already carries the padding, so it stays byte-exact and never reaches
-          // here. Tolerate ONLY when the difference is EXACTLY the padding: x is a byte-exact prefix,
-          // the re-decode is exactly 68 bytes longer, and those 68 bytes are zero (isTrailingZeroGrowth
-          // proves all three). Any other Type-3 divergence is a hard failure.
-          if (
-            first.type === SqPackType.Model &&
-            isTrailingZeroGrowth(
-              first.data,
-              second.data,
-              MODEL_TRAILING_PADDING,
-            )
-          ) {
-            modelPadded.push(
-              `${f.gamePath} (${first.data.length}->${second.data.length})`,
-            );
-            testedByType.set(
-              first.type,
-              (testedByType.get(first.type) ?? 0) + 1,
-            );
-            continue;
+          // Type 3 (model): a decode canonically normalizes a stored .mdl in two ways. It appends 68
+          // reserved zero bytes (the output is sized `68 + decompressedSize`, and `decompressedSize`
+          // already counts the same 68-byte header — Dat.cs:801, reproduced in decodeType3), and it
+          // rewrites the per-LoD buffer offsets to Dat.ReadSqPackType3's running cursor, which is
+          // assigned unconditionally so an unused LoD takes the end-of-geometry value rather than
+          // keeping a stored 0 (Dat.cs:825/835; TexTools' own serializer writes the same value,
+          // Mdl.cs:3930-3942). A game .mdl stored uncompressed in a PMP carries neither, so
+          // decode(encode(x)) differs from x on both counts — a benign non-idempotency, like Type 4.
+          // A decoded TTMP model is already canonical, stays byte-exact and never reaches here.
+          //
+          // Rather than assert the shape of that normalization ourselves, CONFIRM IT AGAINST THE
+          // ORACLE: hand ConsoleTools /unwrap the very entry we compressed and require its decode to
+          // equal ours byte-for-byte. That is a strictly stronger statement than any structural
+          // predicate — it proves the rewritten bytes are the bytes TexTools itself produces, not
+          // merely the ones we derived from reading Dat.cs — and it exercises our ENCODER too, since
+          // TexTools has to be able to read what we compressed. Any Type-3 divergence the oracle does
+          // not reproduce is a hard failure.
+          //
+          // (The separate /unwrap check below cannot cover these entries: it needs a stored compressed
+          // form, and a PMP RawUncompressed entry has none. Here we supply our own.)
+          if (first.type === SqPackType.Model) {
+            // Policy matches the /unwrap check: a null means the output is neither cached nor
+            // generable, so we cannot confirm and must fail loudly rather than skip.
+            const oracleOut = unwrapCached(encoded);
+            if (oracleOut === null) {
+              throw new Error(
+                `cannot confirm Type-3 round-trip normalization for ${f.gamePath}: ` +
+                  `no cached /unwrap output and ConsoleTools unavailable`,
+              );
+            }
+            if (bytesEqual(second.data, oracleOut)) {
+              modelPadded.push(
+                `${f.gamePath} (${first.data.length}->${second.data.length})`,
+              );
+              testedByType.set(
+                first.type,
+                (testedByType.get(first.type) ?? 0) + 1,
+              );
+              continue;
+            }
           }
           // Not an oracle diff -- this is our codec contradicting itself. Ratcheted (not ignored)
           // so a KNOWN codec defect is recorded and burnable rather than blocking the whole suite;
@@ -173,7 +168,7 @@ export function registerSqpackChecks(ctx: PackContext): void {
       }
       if (modelPadded.length) {
         console.log(
-          `[self round-trip] ${name}: ${modelPadded.length} Type-3 header-padding-canonicalized (+68 trailing zeros only): ${modelPadded.join(", ")}`,
+          `[self round-trip] ${name}: ${modelPadded.length} Type-3 decode-canonicalized, confirmed byte-identical to /unwrap: ${modelPadded.join(", ")}`,
         );
       }
 

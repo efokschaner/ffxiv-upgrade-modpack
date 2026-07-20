@@ -322,9 +322,13 @@ raw-input artifact in the manifest rather than the layout: Penumbra wrote the st
 (and TexTools) write the number `246` — proven by the `/resave` golden, which matches our manifest
 exactly. A no-op pack's residual manifest baseline is likewise not evidence of divergence.
 
-The `.mdl` unused-LoD offset item (`docs/backlog/2026-07-18-mdl-self-roundtrip-byte21.md`) is
-unaffected and still open, but is no longer masked here — see that item for what the now-clean
-comparison does and does not prove.
+The `.mdl` unused-LoD offset finding this pack also surfaced turned out **not** to be a codec bug and
+is closed (2026-07-19). `Dat.ReadSqPackType3` assigns each per-LoD buffer offset unconditionally
+(`Dat.cs:825/835`), so an unused LoD takes the end-of-geometry cursor rather than keeping a stored
+`0`, and TexTools' own serializer writes the same value (`Mdl.cs:3930-3942`). A `.mdl` authored
+outside TexTools stores `0`, so a decode normalizes it — faithfully. The self round-trip now confirms
+that against `/unwrap` (`test/helpers/corpus-sqpack.ts`) and this pack's `.roundtrip-baseline` entry
+is empty like every other pack's.
 
 **Synthetic still required: `test/corpus/synthetic/file-swaps.pmp`**, via `pmp-builder.ts` (which
 hardcodes `FileSwaps: {}` at `:88` and needs extending first). Requirements:

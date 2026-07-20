@@ -39,29 +39,23 @@ inputs the corpus doesn't happen to cover — robustness and our "fail loud, nev
 rule; **(c)** the real-corpus byte-divergences keeping already-shipped rounds off byte-zero.
 Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [SQPack model encode writes unused-LoD offsets as end-of-data](backlog/2026-07-18-mdl-self-roundtrip-byte21.md)
-   — **our codec contradicts itself**, no oracle involved. A `lodCount = 1` model round-trips with
-   `vertexOffset[1..2]`/`indexOffset[1..2]` rewritten from `0` to the file length. `/upgrade` rewrites
-   `.mdl`s, so emitted models may carry the bogus offsets. The only non-empty entry in the
-   `.roundtrip-baseline` ratchet.
-
-2. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
+1. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
    — **silent divergence (fail-loud violation).** `IMC_TABLE` is exhaustive over equipment/accessory
    but Set-only, so a NonSet meta that *would* grow its IMC silently passes through — wrong output
    with no throw and no test catching it. Needs a NonSet `.imc` parser, its own extraction pass, and
    the NonSet column selection; at minimum make it fail loud until then.
 
-3. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
+2. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
    — **silent divergence (fail-loud violation), cheap fix.** `parsePmpGroup` defaults `Options` to
    `[]`, silently dropping the group's files, where C# throws `Unimplemented PMP group type`. Inverts
    our fail-loud rule; flip it to a throw after the corpus scan the item calls for.
 
-4. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
+3. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
    — **mechanical real-corpus correctness win.** We emit at the convention path instead of the
    canonical override. Fix is mechanical: re-run `scripts/extract-index-overrides.ts` against a game
    install.
 
-5. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+4. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
