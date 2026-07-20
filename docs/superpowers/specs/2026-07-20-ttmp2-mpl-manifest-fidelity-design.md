@@ -1,8 +1,28 @@
 # `writeTtmp2` omits `.mpl` fields TexTools always writes
 
 **Date:** 2026-07-20
-**Status:** Design approved (brainstorming); ready for implementation plan.
-**Closes:** `docs/backlog/2026-07-13-resave-ttmp2-missing-mpl-fields.md`
+**Status:** **Implemented 2026-07-20.** (Was: design approved; ready for implementation plan.)
+**Closed:** the backlog item `writeTtmp2` omits `.mpl` fields TexTools always writes — filed
+2026-07-13, deleted on completion per `docs/BACKLOG.md`'s rules, so it is no longer linkable; see
+this spec's §1 for the finding it recorded.
+
+> **Implemented notes.** This spec is kept as written and corrected in place rather than rewritten,
+> so the design and what actually shipped can be compared. Where reality diverged from the design,
+> an `**Implemented:**` note says so at the relevant section. In summary:
+>
+> - §4.4's version reformat was **kept**, not dropped — it was the separable task the plan allowed to
+>   fall away, and it landed.
+> - The design did not anticipate how much fidelity work `Version.TryParse` itself needed. Porting
+>   the .NET parse/format contract honestly (`src/util/dotnet-version.ts`) turned out to be a task of
+>   its own, not the one-line lift §4.4 implies.
+> - The design did not anticipate `docs/TEXTOOLS_BUGS.md` #17 (`FromPMPGroup`'s Multi bitmask aliases
+>   option 64 onto option 0 via an unmasked 64-bit shift), found while porting §4.2's PMP
+>   `DefaultSettings` bitmask read and reproduced faithfully.
+> - §5's `SelectedSettings` conclusion ("no action") was **confirmed correct** in implementation.
+>
+> Post-change baselines: `.upgrade-baseline` 5811 → 3002 entries (2809 removed, 0 added, 0
+> modified); `.resave-baseline` → 2328. Both remaining sets are attributable to the two sibling
+> items in §5's last bullet plus the simple-pack item.
 **Depends on:** `2026-07-08-modpack-serialization-parity-design.md`,
 `2026-07-04-upgrade-golden-harness-design.md`, `2026-07-12-pmp-writer-regeneration-design.md`
 (which introduced `computeSelection`, retired here).
@@ -96,6 +116,10 @@ widening does not ripple. The PMP writer coalesces at its own seams, per §3.
 - `readTtmp2` (`ttmp2.ts:71-162`) — stop coalescing the four meta strings and the option
   `Description`; set `selected` from `IsChecked` (absent → `false`, the C# field default).
 - `readPmp` — set `selected` from `DefaultSettings`: index for Single, `1 << idx` bitmask otherwise.
+  **Implemented:** the bitmask is not the plain `1 << idx` written here. `DefaultSettings` is a
+  `ulong`, so C# masks the shift count to 6 bits and a group with 65+ options aliases option 64 onto
+  option 0. Reproduced faithfully and registered as `docs/TEXTOOLS_BUGS.md` #17 — a defect the design
+  did not anticipate, found only by porting from the C# rather than from this section.
 - Both — apply the `Options[0]` backstop at the tail of the group build.
 
 The backstop is **duplicated** at each seam rather than shared. It is three lines belonging to two
@@ -127,15 +151,24 @@ to `WizardData.cs:1474-1475+:1494`, a *different* symbol. Lift it to a shared ut
 `Version.TryParse`/`ToString()` contract itself, with each call site citing its own C# line — the
 shared thing is the framework primitive, not one caller's logic.
 
+**Implemented:** this task was **kept**, not dropped, and the shared util is
+`src/util/dotnet-version.ts`. It was materially larger than "lift `reformatPmpVersion`": faithfully
+reproducing .NET's `Version.TryParse` accept/reject rules and `ToString()`'s component-count
+formatting is a port in its own right, and the design under-scoped it. Note the corollary that no
+corpus pack exercises it — the re-bless moved **zero** entries of this shape, exactly as predicted
+here, so the whole task is pinned by synthetic unit tests only.
+
 ## 5. Not in scope
 
 - **Zero-option groups.** Both loaders `return null` for an empty group (`:749-753`, `:851-855`);
   our readers keep it. A real divergence two lines from code this change touches. **File as a
-  backlog item.**
+  backlog item.** **Implemented:** filed as `docs/backlog/2026-07-20-empty-group-not-dropped.md`. It
+  also explains the `options.length > 0` guard each backstop seam carries — the C# backstop is
+  unreachable with zero options, so the guard exists only because we do not port the early return.
 - **`SelectedSettings`.** Investigated and closed: `[JsonIgnore]` (`PMP.cs:1399-1400`), no
   `ShouldSerialize`, and the group writer passes only `Formatting.Indented` (`PMP.cs:856-862`). A
   ConsoleTools group json contains no such key, so our omitting it from `KNOWN_GROUP_KEYS` is
-  correct. No action.
+  correct. No action. **Implemented:** confirmed correct — no action was needed and none was taken.
 - The two sibling backlog items (`Name`/`Category` re-derivation, option file order) — they share
   the baseline entries but are independent fixes.
 

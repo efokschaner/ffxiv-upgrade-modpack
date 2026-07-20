@@ -38,7 +38,12 @@ describe("readTtmp2 selected", () => {
   // WizardData.cs:755-757's backstop is guarded by `options.length > 0`, standing in for the
   // zero-option early return at :749-753. An option-less Single group must survive the read with
   // no options rather than crashing on `options[0]!`.
-  it("a zero-option Single group does not trip the backstop", () => {
+  //
+  // NOTE this pins OUR behaviour, not parity: TexTools DROPS the group entirely (that early return
+  // is `return null`), so "survives" here is a known divergence, not the golden's shape. See
+  // docs/backlog/2026-07-20-empty-group-not-dropped.md — when that item ships, this test must be
+  // rewritten to assert the group is ABSENT.
+  it("a zero-option Single group survives the read (our divergence) without tripping the backstop", () => {
     const data = readTtmp2(makeTtmp2WizardWithChecked([]).bytes);
     expect(data.groups[0]!.options).toEqual([]);
   });

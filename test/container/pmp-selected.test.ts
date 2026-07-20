@@ -85,7 +85,12 @@ describe("readPmp selected", () => {
   // WizardData.cs:857-860's backstop is guarded by `options.length > 0`, standing in for the
   // zero-option early return at :851-855. An option-less Single group must simply survive the
   // read with no options rather than crashing on `options[0]!`.
-  it("Single: a zero-option group does not trip the backstop", () => {
+  //
+  // NOTE this pins OUR behaviour, not parity: TexTools DROPS the group entirely (that early return
+  // is `return null`), so "survives" here is a known divergence, not the golden's shape. See
+  // docs/backlog/2026-07-20-empty-group-not-dropped.md — when that item ships, this test must be
+  // rewritten to assert the group is ABSENT.
+  it("Single: a zero-option group survives the read (our divergence) without tripping the backstop", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
     );
