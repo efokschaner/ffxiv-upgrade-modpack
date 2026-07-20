@@ -45,9 +45,13 @@ export interface ModPackJson {
 
 // WRITE-SIDE VIEW of the types above.
 //
-// The interfaces above model the .mpl DOCUMENT, where any key may be absent (an old or
-// hand-authored pack), which is what `readTtmp2` parses and what the synthetic pack builders
-// emit. `TTMPWriter` is not so loose: it serializes real C# class INSTANCES with a bare
+// WHY A SEPARATE LAYER, rather than making these keys required on the interfaces above: those
+// interfaces model the READ-PATH DOCUMENT — the `.mpl` as it arrives from an arbitrary pack, where
+// a genuinely old or third-party file may legitimately omit any of these keys, and `readTtmp2` has
+// to answer for that absence (`mpl.MinimumFrameworkVersion ?? "1.0.0.0"`, `o.IsChecked ?? false`,
+// ttmp2.ts). Tightening them there would misdescribe what we may be handed on read. The write path
+// has the opposite obligation — it always emits the full key set — so it gets its own view.
+// `TTMPWriter` is not so loose: it serializes real C# class INSTANCES with a bare
 // `JsonConvert.SerializeObject(_modPackJson)` (TTMPWriter.cs · Write · 324) — Newtonsoft
 // defaults, so `NullValueHandling.Include`. An unassigned member is therefore written as an
 // explicit `"Field": null`, never omitted, and `ModPackJson.cs` carries no `[JsonProperty]`,
@@ -59,6 +63,12 @@ export interface ModPackJson {
 // consumers) untouched. Same two-layer split as the `Pmp*Json` / `Pmp*JsonRaw` pair below, in the
 // other direction: there the extra layer models what may be ABSENT on read, here what must be
 // PRESENT on write.
+//
+// NOTE ON THE INTERSECTIONS BELOW: each one narrows an OPTIONAL base key to a required, more
+// specific type, which works only while the base key stays optional. If a base key were ever
+// re-typed as required with a different type, the intersection would silently collapse that
+// member to `never` rather than erroring here — the failure would surface as a confusing
+// assignability error at the `writeTtmp2` literal instead.
 //
 // NOTE: these types fix the key set, not the key ORDER. Newtonsoft emits members in reflection
 // order, i.e. the C# DECLARATION order, so `writeTtmp2`'s object literals are spelled in that
