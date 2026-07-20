@@ -158,6 +158,116 @@ export function makeTtmp2Wizard(): SyntheticPack {
   };
 }
 
+/** A 2-option **Single**-group (`G`, options `A`/`B`) wizard pack whose options' `IsChecked` is set
+ *  per `checked`; an `undefined` entry omits the key entirely, so the C# `bool` field stays at its
+ *  `false` default (ModPackJson.cs:189-198). Same file/blob construction as `makeTtmp2Wizard`. */
+export function makeTtmp2WizardWithChecked(
+  checked: Array<boolean | undefined>,
+): SyntheticPack {
+  const { blob, offsets, sizes } = mpd(FILE_A, FILE_B);
+  const paths = [PATH_A, PATH_B];
+  const names = ["A", "B"];
+  const cats = ["Body", "Material"];
+  const mpl: ModPackJson = {
+    TTMPVersion: "2.1w",
+    Name: "Synth Wizard Checked",
+    Author: "test",
+    Version: "1.0",
+    Description: "",
+    Url: "",
+    MinimumFrameworkVersion: "1.3.0.0",
+    ModPackPages: [
+      {
+        PageIndex: 0,
+        ModGroups: [
+          {
+            GroupName: "G",
+            SelectionType: "Single",
+            OptionList: checked.map((isChecked, i) => ({
+              Name: names[i]!,
+              Description: "",
+              ImagePath: "",
+              GroupName: "G",
+              SelectionType: "Single",
+              // Omit the key entirely when `undefined` — the point of the fixture.
+              ...(isChecked === undefined ? {} : { IsChecked: isChecked }),
+              ModsJsons: [
+                {
+                  Name: names[i]!,
+                  Category: cats[i]!,
+                  FullPath: paths[i]!,
+                  ModOffset: offsets[i]!,
+                  ModSize: sizes[i]!,
+                  DatFile: "040000.win32.dat0",
+                  IsDefault: false,
+                },
+              ],
+            })),
+          },
+        ],
+      },
+    ],
+  };
+  const entries = new Map<string, Uint8Array>([
+    ["TTMPL.mpl", enc.encode(JSON.stringify(mpl))],
+    ["TTMPD.mpd", blob],
+  ]);
+  return {
+    name: "synth-wizard-checked.ttmp2",
+    bytes: writeZip(entries),
+    expectedFiles: { [PATH_A]: FILE_A, [PATH_B]: FILE_B },
+  };
+}
+
+/** A minimal .pmp carrying one `group_001_G.json` of `optionCount` payload-less options named
+ *  `O0..On`, with the given `Type` / `DefaultSettings`. `readPmp` always prepends the synthetic
+ *  `Default` group from default_mod.json, so the group under test is `groups[1]`. */
+export function makePmpWithGroup(opts: {
+  Type: string;
+  DefaultSettings: number;
+  optionCount: number;
+}): Uint8Array {
+  const meta = {
+    FileVersion: 3,
+    Name: "Synth PMP Group",
+    Author: "test",
+    Description: "",
+    Version: "1.0",
+    Website: "",
+    Image: "",
+    ModTags: [],
+  };
+  const defaultMod = {
+    Version: 0,
+    Files: { [PATH_A]: PATH_A.replace(/\//g, "\\") },
+    FileSwaps: {},
+    Manipulations: [],
+  };
+  const group = {
+    Version: 0,
+    Name: "G",
+    Description: "",
+    Type: opts.Type,
+    Priority: 0,
+    DefaultSettings: opts.DefaultSettings,
+    Options: Array.from({ length: opts.optionCount }, (_, i) => ({
+      Name: `O${i}`,
+      Description: "",
+      Image: "",
+      Files: {},
+      FileSwaps: {},
+      Manipulations: [],
+    })),
+  };
+  const entries = new Map<string, Uint8Array>([
+    ["meta.json", enc.encode(JSON.stringify(meta, null, 2))],
+    ["default_mod.json", enc.encode(JSON.stringify(defaultMod, null, 2))],
+    ["group_001_G.json", enc.encode(JSON.stringify(group, null, 2))],
+    [PATH_A, FILE_A],
+  ]);
+  return writeZip(entries);
+}
+
 // A legacy .ttmp carries no TTMPVersion, so DoesModpackNeedFix treats it as pre-2.x and loadModpack
 // now runs FixOldModel/FixOldTexData on its files at load. FILE_A/FILE_B are opaque garbage blobs
 // (deliberately not real SQPack payloads), so a `.mdl`/`.tex` path here would be DROPPED by the fix

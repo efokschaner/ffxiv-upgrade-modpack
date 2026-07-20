@@ -14,13 +14,16 @@ import {
 import { ttmpNeedsMdlFix } from "../upgrade/model";
 import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { concatBytes, fnv1aKey } from "../util/binary";
+import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
 import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
   ModPackJson,
-  TtmpModGroupJson,
-  TtmpModPackPageJson,
+  ModPackJsonWrite,
+  TtmpModGroupJsonWrite,
+  TtmpModPackPageJsonWrite,
   TtmpModsJson,
+  TtmpModsJsonWrite,
 } from "./manifest-types";
 
 function fileFromMod(
@@ -93,12 +96,18 @@ export function readTtmp2(
     needsMdlFix: ttmpNeedsMdlFix(mpl.TTMPVersion),
   });
 
+  // WizardMetaEntry.FromTtmp (WizardData.cs:1052-1069) assigns Name/Author/Url/Description VERBATIM
+  // — no `?? ""` — and the `= ""` initializers on those fields (:1015-1020) are overwritten by these
+  // very assignments, so a `.mpl` that spells `null` (or omits the key: an uninitialized C# `string`
+  // deserializes to `null`) keeps a null all the way to the write. `?? null` normalizes our
+  // `undefined`-for-absent to C#'s `null`-for-absent. `version` is the exception: WriteWizardPack
+  // forces it non-null (:1335-1337), so it keeps its coalesce.
   const meta = {
-    name: mpl.Name ?? "",
-    author: mpl.Author ?? "",
+    name: mpl.Name ?? null,
+    author: mpl.Author ?? null,
     version: mpl.Version ?? "",
-    description: mpl.Description ?? "",
-    url: mpl.Url ?? "",
+    description: mpl.Description ?? null,
+    url: mpl.Url ?? null,
     image: "",
     tags: [],
     minimumFrameworkVersion: mpl.MinimumFrameworkVersion ?? "1.0.0.0",
@@ -111,6 +120,9 @@ export function readTtmp2(
       description: "",
       image: "",
       priority: 0,
+      // WizardData.cs:1218-1221 — FromSimpleTtmp synthesizes its one fake ModOptionJson with
+      // `IsChecked = true`, which FromWizardGroup then copies to Selected (:668).
+      selected: true,
       fileSwaps: {},
       manipulations: [],
       files: filesFromMods(mpl.SimpleModsList, mpd, loadFix),
@@ -136,7 +148,7 @@ export function readTtmp2(
   const groups: ModpackGroup[] = [];
   for (const page of mpl.ModPackPages ?? []) {
     for (const g of page.ModGroups) {
-      groups.push({
+      const built: ModpackGroup = {
         name: g.GroupName,
         description: "",
         image: "",
@@ -148,14 +160,35 @@ export function readTtmp2(
         defaultSettings: 0,
         options: g.OptionList.map((o) => ({
           name: o.Name,
-          description: o.Description ?? "",
+          // WizardData.cs:663 — `wizOp.Description = o.Description;`, verbatim, no coalesce. An
+          // ABSENT key is `undefined` here but `null` in C# (an uninitialized `string` field,
+          // ModPackJson.cs · ModOptionJson · 159-198), so normalize to null rather than to "".
+          description: o.Description ?? null,
           image: o.ImagePath ?? "",
           priority: 0,
+          // WizardData.cs:668 — `wizOp.Selected = o.IsChecked;`, verbatim, with no clamping. An
+          // absent key leaves C#'s plain `bool` field at its `false` default
+          // (ModOptionJson.IsChecked, ModPackJson.cs:189-198).
+          selected: o.IsChecked ?? false,
           fileSwaps: {},
           manipulations: [],
           files: filesFromMods(o.ModsJsons, mpd, loadFix),
         })),
-      });
+      };
+      groups.push(built);
+      // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
+      // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
+      // selected option. The `length > 0` guard stands in for the zero-option early return at
+      // :749-753 (C# returns null for an empty group; we do not port that pruning yet — see
+      // docs/backlog/2026-07-20-empty-group-not-dropped.md), so an option-less group cannot crash
+      // here.
+      if (
+        built.selectionType === "Single" &&
+        built.options.length > 0 &&
+        !built.options.some((o) => o.selected)
+      ) {
+        built.options[0]!.selected = true;
+      }
     }
   }
   return { sourceFormat: ModpackFormat.Ttmp2, isSimple: false, meta, groups };
@@ -215,7 +248,9 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   const files = allFiles(data);
   const { blob, place } = buildBlob(files.map((e) => e.file));
 
-  const modOf = (gamePath: string, f: ModpackFile) => ({
+  // Key order is ModsJson's C# declaration order (ModPackJson.cs · ModsJson · 222-262), which is
+  // the order Newtonsoft emits (reflection order). See manifest-types.ts's write-view note.
+  const modOf = (gamePath: string, f: ModpackFile): TtmpModsJsonWrite => ({
     Name: f.ttmp?.name ?? "",
     Category: f.ttmp?.category ?? "",
     FullPath: gamePath,
@@ -223,22 +258,41 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
     ModSize: place.get(f)!.size,
     DatFile: f.ttmp?.datFile ?? "",
     IsDefault: f.ttmp?.isDefault ?? false,
+    // Never assigned by either TTMPWriter.AddFile overload (:168-177, :198-207), so always null —
+    // and present rather than omitted, per Newtonsoft's default NullValueHandling.Include (:324).
+    ModPackEntry: null,
   });
 
-  const mpl: ModPackJson = {
+  const mpl: ModPackJsonWrite = {
     TTMPVersion: data.isSimple ? "2.1s" : "2.1w",
     Name: data.meta.name,
     Author: data.meta.author,
-    Version: data.meta.version,
+    // WriteWizardPack normalizes the version through .NET Version semantics BEFORE the
+    // ModPackData it hands to the TTMPWriter ctor is stringified
+    // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
+    // WizardData.cs · WriteWizardPack · 1335-1337, assigned at :1343; `Version = version.ToString()`,
+    // TTMPWriter.cs · TTMPWriter · 61-69), so a source spelling "1" is written "1.0". Every .ttmp2
+    // write in the oracle routes through WriteWizardPack (WizardData.cs · WriteModpack · 1318-1321),
+    // so this applies to the simple and wizard shapes alike.
+    // NOTE: the ctor's own `modPackData.Version ?? new Version(1, 0, 0, 0)` (TTMPWriter.cs:61) is
+    // UNREACHABLE from this path — `ver ??=` already guaranteed non-null — so it changes no output
+    // here. It matters only to TTMPWriter's other callers (TTMP.cs:319, :359).
+    Version: reformatDotnetVersion(data.meta.version),
     Description: data.meta.description,
     Url: data.meta.url,
     MinimumFrameworkVersion: data.meta.minimumFrameworkVersion,
+    // TTMPWriter's ctor initializes exactly ONE of these (TTMPWriter.cs · TTMPWriter · 74-77) and
+    // leaves the other at null; the bare JsonConvert.SerializeObject at :324 uses Newtonsoft's
+    // default NullValueHandling.Include, so BOTH names always appear, one of them as `null`.
+    // Initialized here so the unused one is written; the branch below overwrites its own.
+    ModPackPages: null,
+    SimpleModsList: null,
   };
 
   if (data.isSimple) {
     mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));
   } else {
-    const byPage = new Map<number, TtmpModGroupJson[]>();
+    const byPage = new Map<number, TtmpModGroupJsonWrite[]>();
     for (const g of data.groups) {
       // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
       // Groups.") as its first statement, before it builds the ModGroup or visits any option.
@@ -258,18 +312,23 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
       list.push({
         GroupName: g.name,
         SelectionType: selectionType,
+        // Key order is ModOptionJson's C# declaration order (ModPackJson.cs · ModOptionJson ·
+        // 159-198) — note ModsJsons sits FOURTH, before GroupName/SelectionType.
         OptionList: g.options.map((o) => ({
           Name: o.name,
           Description: o.description,
           ImagePath: o.image,
+          ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
           GroupName: g.name,
           SelectionType: selectionType,
-          ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
+          // TTMPWriter.cs · AddOption · 148 — `IsChecked = modOption.IsChecked`, itself the
+          // verbatim counterpart of the read at WizardData.cs:668. No write-time derivation.
+          IsChecked: o.selected,
         })),
       });
       byPage.set(g.page, list);
     }
-    const pages: TtmpModPackPageJson[] = [...byPage.keys()]
+    const pages: TtmpModPackPageJsonWrite[] = [...byPage.keys()]
       .sort((a, b) => a - b)
       .map((p) => ({ PageIndex: p, ModGroups: byPage.get(p)! }));
     mpl.ModPackPages = pages;

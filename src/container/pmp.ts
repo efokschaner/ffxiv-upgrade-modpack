@@ -10,11 +10,12 @@ import {
   type ModpackGroup,
   type ModpackOption,
 } from "../model/modpack";
+import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
 import {
   type PmpGroupJsonRaw,
-  type PmpMetaJson,
   type PmpMetaJsonRaw,
+  type PmpMetaJsonWrite,
   type PmpOptionJsonRaw,
   parsePmpGroup,
   parsePmpMeta,
@@ -144,6 +145,11 @@ function optionFromJson(
     description: o.Description,
     image: o.Image,
     priority: o.Priority ?? 0, // multi-option-only field; absent on other subtypes
+    // Placeholder only. `Selected` is not an option-level field in the C# either: FromPMPGroup
+    // derives it from the OWNING GROUP's Type + DefaultSettings and the option's INDEX
+    // (WizardData.cs:805-813), neither of which is in scope here — so both call sites below
+    // overwrite this.
+    selected: false,
     files: modFiles,
     fileSwaps: o.FileSwaps,
     manipulations: o.Manipulations,
@@ -190,6 +196,13 @@ export function readPmp(bytes: Uint8Array): ModpackData {
 
   const groups: ModpackGroup[] = [];
   // default_mod.json -> a leading single-option group named "Default".
+  const defaultOption = optionFromJson(defaultMod, filesByKey, referencedKeys);
+  // WizardData.cs:1118-1138 — FromPmp's synthesized fake group is Type "Single" with exactly one
+  // option, and its DefaultSettings is never assigned (only the [JsonIgnore] SelectedSettings is,
+  // :1130), so it stays at the PMPGroupJson field default of 0. FromPMPGroup's Single index match
+  // (:807) therefore selects option 0. Set explicitly rather than left to a derivation, since we
+  // synthesize this group directly instead of routing it back through the group loop below.
+  defaultOption.selected = true;
   groups.push({
     name: "Default",
     description: "",
@@ -198,12 +211,60 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
-    options: [optionFromJson(defaultMod, filesByKey, referencedKeys)],
+    options: [defaultOption],
   });
 
   for (const name of groupNames) {
     const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
     const g = parsePmpGroup(gRaw);
+    // WizardData.cs:805-813 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a
+    // Single group, a BITMASK otherwise. `group.OptionType = pGroup.Type == "Single" ? Single :
+    // Multi` (:769), so an Imc/Combining group takes the bitmask branch exactly like a real Multi.
+    //
+    // DefaultSettings -> ulong via CustomUInt64Converter (PMP.cs:1558-1571), which reinterprets a
+    // negative JSON number as its 64-bit two's-complement UNSIGNED value (the documented "-1 meant
+    // 2^64-1" shim, :1564-1565). BigInt.asUintN(64, ...) reproduces that; JS's 32-bit `|` would not.
+    const rawSettings = BigInt.asUintN(
+      64,
+      BigInt(Math.trunc(g.DefaultSettings)),
+    );
+    const options = g.Options.map((o, idx) => {
+      const opt = optionFromJson(o, filesByKey, referencedKeys);
+      // `idx & 63` reproduces .NET's SHIFT-COUNT MASKING, not a bounds clamp. C# writes
+      // `var bit = 1UL << idx;` (WizardData.cs:811) on a 64-bit operand, and the C# language
+      // specification requires the shift count to be masked to its low 6 bits — the compiler emits
+      // an explicit `and 63` to guarantee it, whereas ECMA-335 leaves `shl` with a count at or
+      // above the operand width unspecified, so the guarantee is C#'s and not the IL's. `idx == 64`
+      // computes `1UL << 0` and option 64 ALIASES option 0's bit (65 aliases 1, and so on). JS
+      // BigInt has no such masking: a bare `1n << 64n` is 2^64, which ANDs to zero against the
+      // 64-bit `rawSettings` and would silently deselect every option past 63.
+      //
+      // We REPRODUCE the aliasing rather than throwing. AGENTS.md's "fail loud, never silently
+      // diverge" governs a code path the port "does not yet reproduce faithfully" — that is not
+      // this: .NET's masking is fully specified and transcribes to a single `& 63`, so we can be
+      // exactly faithful here at no cost. That puts the case under "reproduce TexTools faithfully,
+      // including its bugs" instead, and throwing would additionally REFUSE a 65+-option pack that
+      // TexTools upgrades without complaint — a strictly worse outcome for the user, with none of
+      // the evidence AGENTS.md requires for a deliberate user-benefit divergence.
+      // Registered as docs/TEXTOOLS_BUGS.md #17.
+      opt.selected =
+        g.Type === "Single"
+          ? rawSettings === BigInt(idx)
+          : (rawSettings & (1n << BigInt(idx & 63))) !== 0n;
+      return opt;
+    });
+    // WizardData.cs:857-860 — FromPMPGroup's tail. Same "none selected" backstop as the TTMP seam
+    // (which is a DIFFERENT C# symbol, FromWizardGroup:755-757, so it is transcribed there
+    // separately rather than shared). It never clamps a group with more than one selected. The
+    // `length > 0` guard stands in for the zero-option early return at :851-855, unported — see
+    // docs/backlog/2026-07-20-empty-group-not-dropped.md.
+    if (
+      g.Type === "Single" &&
+      options.length > 0 &&
+      !options.some((o) => o.selected)
+    ) {
+      options[0]!.selected = true;
+    }
     groups.push({
       name: g.Name,
       description: g.Description,
@@ -212,9 +273,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       priority: g.Priority,
       selectionType: g.Type,
       defaultSettings: g.DefaultSettings,
-      options: g.Options.map((o) =>
-        optionFromJson(o, filesByKey, referencedKeys),
-      ),
+      options,
       // Carry the full original group JSON so group-level extras (Imc Identifier/
       // DefaultEntry/AllVariants/OnlyAttributes, etc.) round-trip verbatim.
       raw: gRaw,
@@ -310,60 +369,45 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** Port of WizardData.WritePmp's Version reformat (WizardData.cs:1474-1475 + :1494):
- * `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0"); pmp.Meta.Version =
- * ver.ToString();`. .NET's `Version.TryParse` requires AT LEAST `major.minor` — a bare `"1"` fails
- * to parse — and accepts up to 4 dot-separated non-negative-integer components
- * (`major.minor[.build[.revision]]`); anything else (blank, extra text, a negative/non-numeric
- * component) fails too. A failed parse falls back to `new Version("1.0")`, i.e. `"1.0"`.
- * `Version.ToString()` re-renders exactly the components that were present in the parsed value —
- * `"1.2"` stays 2-field, `"1.2.3"` stays 3-field, etc. — it does not pad to 4 fields. */
-export function reformatPmpVersion(source: string): string {
-  const m = /^(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(source.trim());
-  if (!m) return "1.0";
-  return [m[1], m[2], m[3], m[4]].filter((p) => p !== undefined).join(".");
-}
-
-/** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604), reconstructed from the read-time
- * derivation `FromPMPGroup` performs per option (`Selected`, WizardData.cs:805-813) plus its
- * Single-type "nothing selected" fixup (WizardData.cs:857-860). `ToPmpGroup` writes
- * `pg.DefaultSettings = Selection` (:949) rather than the source value: our domain model has no
- * per-option `Selected` flag -- only the group's raw `defaultSettings` source value -- so this
- * recomputes exactly what those two C# passes would have left on `Options[i].Selected` before
- * `Selection`'s getter reads it back.
+/** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604). `ToPmpGroup` writes
+ * `pg.DefaultSettings = Selection` (WizardData.cs:949) rather than carrying the source value
+ * through, so a written group's `DefaultSettings` is always regenerated from the per-option
+ * `Selected` flags.
  *
- * `defaultSettings` -> ulong: `CustomUInt64Converter` (PMP.cs:1558-1571) reinterprets a JSON token
- * Newtonsoft parsed as a negative number as its 64-bit two's-complement UNSIGNED value (the
- * documented "-1 meant 2^64-1" bug-compatibility shim, PMP.cs:1564-1565) -- reproduced here via
- * `BigInt.asUintN(64, ...)` rather than JS's 32-bit `|`, since a real ulong can exceed 32 bits.
- * `optionType` mirrors `group.OptionType = pGroup.Type == "Single" ? Single : Multi`
- * (WizardData.cs:769) -- an Imc (or hypothetical "Combining") group's Type is never "Single", so it
- * takes the Multi/bitmask branch exactly like a real Multi group.
+ * This used to RECONSTRUCT those flags from the group's raw `defaultSettings`, because the domain
+ * model had none. It now reads the real `selected` flags, which `readPmp`/`readTtmp2` derive at the
+ * same seam the two C# loaders do (`FromPMPGroup`, WizardData.cs:805-813 + the "none selected"
+ * fixup :857-860; `FromWizardGroup`, :755-757) -- so this is the getter itself, nothing more.
  *
- * Caps at Number precision (2^53) for the Multi/bitmask accumulator: a real PMP group is never
- * remotely close to 53 options, so `Number(total)` staying exact for any input this codebase's
- * corpus/tests can produce is a safe simplification, not a silently-wrong answer for a case that
- * actually occurs -- and the domain model types `defaultSettings`/`DefaultSettings` as `number`
- * throughout, not `bigint`, so returning a `bigint` here would just push the same cap elsewhere. */
-function computeSelection(
-  defaultSettings: number,
-  optionType: string,
-  optionCount: number,
-): number {
-  const raw = BigInt.asUintN(64, BigInt(Math.trunc(defaultSettings)));
-  if (optionType === "Single") {
-    // FromPMPGroup: Selected[i] = (raw == i) for i in 0..optionCount-1 (WizardData.cs:807). The
-    // read-time fixup forces Options[0].Selected when NONE matched (WizardData.cs:857-860), so an
-    // out-of-range (or negative) source value always regenerates 0 here, matching Selection's
-    // `FirstOrDefault` "-> return 0" branch (WizardData.cs:585-588) applied to Options[0].
-    return raw < BigInt(optionCount) ? Number(raw) : 0;
+ * Single (WizardData.cs:582-589): `Options.FirstOrDefault(x => x.Selected)`, `return 0` when none
+ * matched, else `Options.IndexOf(op)` -- `findIndex` is both in one call (`IndexOf` on a list of
+ * reference-typed options finds the very element `FirstOrDefault` returned). Note the C# does NOT
+ * clamp a Single group carrying several selected options; the first wins, as here.
+ *
+ * Multi (WizardData.cs:593-602), which also covers Imc/Combining groups since
+ * `group.OptionType = pGroup.Type == "Single" ? Single : Multi` (WizardData.cs:769) gives every
+ * non-"Single" type the bitmask branch: OR bit i for each selected option, i < Options.Count.
+ * `i & 63` reproduces .NET's 6-bit masking of `1UL << i`'s shift count on a 64-bit operand
+ * (docs/TEXTOOLS_BUGS.md #17), matching the read side's identical `idx & 63` so the two derivations
+ * alias in step rather than one aliasing and the other overflowing past 2^63.
+ *
+ * The `Number(total)` return is exact only below 2^53 -- a bound a 54-plus-option group can exceed
+ * with or WITHOUT the mask -- but that is no reason the masking is unobservable: masking LOWERS the
+ * result, it does not raise it, so it moves an aliased shape toward the exactly-representable range
+ * rather than out of it. A 65-option Multi group with option 64 selected and option 0 not returns
+ * exactly `1` here, versus `Number(2n ** 64n)` unmasked -- exact, and trivially distinguishable
+ * (pinned by test/container/pmp-write.test.ts). The domain model types
+ * `defaultSettings`/`DefaultSettings` as `number` throughout, not `bigint`, so returning a `bigint`
+ * would just push the width question elsewhere -- and a real PMP group is never remotely close to
+ * 53 options. */
+function groupSelection(g: ModpackGroup): number {
+  if (g.selectionType === "Single") {
+    const i = g.options.findIndex((o) => o.selected);
+    return i < 0 ? 0 : i;
   }
-  // Multi (and Imc/Combining, which also get OptionType=Multi -- see this function's doc comment):
-  // Selection ORs bit i only for i < Options.Count (WizardData.cs:594-601) -- every bit at or past
-  // the option count is masked off, however wide the source value was.
   let total = 0n;
-  for (let i = 0; i < optionCount; i++) {
-    if ((raw & (1n << BigInt(i))) !== 0n) total |= 1n << BigInt(i);
+  for (let i = 0; i < g.options.length; i++) {
+    if (g.options[i]?.selected) total |= 1n << BigInt(i & 63);
   }
   return Number(total);
 }
@@ -413,7 +457,11 @@ function optionToJson(
 
   if (includeMeta) {
     base.Name = o.name.trim(); // WizardData.cs:928 -- `option.Name = option.Name.Trim();`
-    base.Description = o.description;
+    // WizardData.cs · WizardOptionEntry.ToPmpOption · 543-544 — `op.Name = Name ?? ""; op.Description
+    // = Description ?? "";`. The PMP export path coalesces where the TTMP path (TTMPWriter.cs ·
+    // AddOption · 144) does not, so `o.description`'s nullability is absorbed HERE rather than by the
+    // model — see ModpackOption.description (src/model/modpack.ts) for why the asymmetry is kept.
+    base.Description = o.description ?? "";
     // WizardHelpers.WriteImage (WizardData.cs:545/:953/:1497) re-encodes a REFERENCED image into a
     // fresh 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than
     // passing the source value through — unported (no image encoder here; see
@@ -590,12 +638,20 @@ export function writePmp(
   // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This carries the
   // source value verbatim, which diverges from the golden whenever meta actually carries an image
   // (no corpus pack does, so the corpus alone doesn't expose this).
-  const meta: PmpMetaJson = {
+  // `PmpMetaJsonWrite`, not `PmpMetaJson`: WritePmp assigns Name/Author/Website/Description verbatim
+  // (WizardData.cs:1490-1493) — no `?? ""`, unlike the option/group seams — and meta.json is
+  // serialized with Newtonsoft defaults (PMP.cs:850), so a null from a TTMP-sourced model is written
+  // as an explicit `null`. See the type's doc comment in manifest-types.ts.
+  const meta: PmpMetaJsonWrite = {
     FileVersion: 3, // PMP._WriteFileVersion (PMP.cs:45)
     Name: data.meta.name,
     Author: data.meta.author,
     Description: data.meta.description,
-    Version: reformatPmpVersion(data.meta.version),
+    // WritePmp reformats the version through .NET Version semantics before assigning it
+    // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
+    // WizardData.cs · WritePmp · 1474-1475; `pmp.Meta.Version = ver.ToString()`, :1494), so a
+    // source spelling "1" is written "1.0". See src/util/dotnet-version.ts for the .NET contract.
+    Version: reformatDotnetVersion(data.meta.version),
     Website: data.meta.url,
     Image: data.meta.image,
     ModTags: data.meta.tags,
@@ -765,12 +821,10 @@ export function writePmp(
         Priority: g.priority,
         Type: g.selectionType,
         // WizardData.cs:949 (`pg.DefaultSettings = Selection;`) -- regenerated, not carried through
-        // verbatim; see computeSelection's doc comment.
-        DefaultSettings: computeSelection(
-          g.defaultSettings,
-          g.selectionType,
-          g.options.length,
-        ),
+        // verbatim; see groupSelection's doc comment. (`pg.SelectedSettings = Selection` on the
+        // next line, :950, is deliberately not modelled: the field is `[JsonIgnore]`
+        // (PMP.cs:1399-1400) with no ShouldSerialize, so it never reaches a group json.)
+        DefaultSettings: groupSelection(g),
         Options: g.options.map((o) =>
           optionToJson(o, true, hasStandardFields, isMultiOption, zipPaths),
         ),

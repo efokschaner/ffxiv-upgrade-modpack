@@ -187,6 +187,7 @@ describe("writePmp model-building fallback (no raw)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   "chara/equipment/foo.tex",
@@ -212,6 +213,7 @@ describe("writePmp model-building fallback (no raw)", () => {
               description: "the red one",
               image: "red.png",
               priority: 2,
+              selected: false,
               files: filesMap([
                 [
                   "chara/equipment/red.tex",
@@ -417,6 +419,7 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
           description: "",
           image: "",
           priority: 0,
+          selected: false,
           files: filesMap([
             [gamePath, { data, storage: FileStorageType.RawUncompressed }],
           ]),
@@ -609,6 +612,7 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
               fileSwaps: {},
               manipulations: [],
@@ -629,6 +633,7 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   "chara/x.tex",
@@ -675,23 +680,24 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
   });
 });
 
-describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578-604/:805-813/:857-860)", () => {
+describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578-604)", () => {
   // TexTools never carries a source DefaultSettings value through verbatim: ToPmpGroup writes
   // `pg.DefaultSettings = Selection` (:949), and `Selection` is a GETTER recomputed from each
-  // option's `Selected` flag, which FromPMPGroup derives from the SOURCE value at read time
-  // (:805-813). Our domain model has no per-option Selected flag, only the group's raw
-  // `defaultSettings` -- so writePmp must reconstruct exactly what those two C# passes would have
-  // left before re-deriving Selection from it.
+  // option's `Selected` flag. These cases drive that getter directly off the model's `selected`
+  // flags; the READ-side derivation that populates them (FromPMPGroup :805-813 plus the "none
+  // selected" backstop :857-860) is pinned separately by pmp-selected.test.ts.
   function modeledGroup(
     selectionType: "Single" | "Multi",
-    optionCount: number,
-    defaultSettings: number,
+    selected: boolean[],
+    defaultSettings = 0,
   ): ModpackData {
+    const optionCount = selected.length;
     const options = Array.from({ length: optionCount }, (_, i) => ({
       name: `Opt${i}`,
       description: "",
       image: "",
       priority: 0,
+      selected: selected[i] ?? false,
       files: filesMap([
         [
           `chara/${i}.tex`,
@@ -732,6 +738,7 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]),
               fileSwaps: {},
               manipulations: [],
@@ -761,36 +768,55 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
     return parseEntry<PmpGroupJson>(entries, groupName).DefaultSettings;
   }
 
-  it("Single, source index out of range (>= Options.Count) -> the read-time fixup forces Options[0].Selected, so Selection regenerates 0", () => {
-    // FromPMPGroup: Selected[i] = (DefaultSettings == idx) for idx in 0..Options.Count-1. A source
-    // value of 5 on a 2-option group matches nothing, so the fixup at :857-860 forces
-    // Options[0].Selected = true, and Selection's getter (:582-589) returns IndexOf(Options[0]) = 0.
-    const out = writePmp(modeledGroup("Single", 2, 5));
-    expect(readGroupDefaultSettings(out)).toBe(0);
-  });
-
-  it("Single, source index in range -> Selection round-trips the same index", () => {
-    const out = writePmp(modeledGroup("Single", 3, 2));
+  it("Single -> the index of the selected option (:589 `Options.IndexOf(op)`)", () => {
+    const out = writePmp(modeledGroup("Single", [false, false, true]));
     expect(readGroupDefaultSettings(out)).toBe(2);
   });
 
-  it("Multi, legacy -1 source value -> every bit past the option count is masked off by Selection's own loop bound", () => {
-    // CustomUInt64Converter (PMP.cs:1558-1571) reinterprets a JSON `-1` token as ulong.MaxValue (the
-    // documented "TexTools was previously writing -1 instead of 2^64-1" bug-compat shim,
-    // PMP.cs:1564-1565) -- i.e. every one of its 64 bits is set. FromPMPGroup's bit-test Selected[i]
-    // = (DefaultSettings & (1UL << i)) != 0 therefore selects EVERY option, but Selection's own
-    // getter (:594-601) only ORs bits for i < Options.Count -- so a 3-option Multi group regenerates
-    // 0b111 = 7, not -1 and not ulong.MaxValue.
-    const out = writePmp(modeledGroup("Multi", 3, -1));
-    expect(readGroupDefaultSettings(out)).toBe(0b111);
+  it("Single with nothing selected -> 0 (:585-588 `FirstOrDefault` == null)", () => {
+    // Neither reader can normally leave a Single group in this state (both apply the "none
+    // selected" backstop), but the getter's own null branch returns 0 regardless.
+    const out = writePmp(modeledGroup("Single", [false, false]));
+    expect(readGroupDefaultSettings(out)).toBe(0);
   });
 
-  it("Multi, a source bit beyond Options.Count is masked off even for an in-range positive value", () => {
-    // Source 0b1011 (bits 0,1,3) on a 3-option (bits 0..2) group: FromPMPGroup selects options 0,1
-    // (bit 3 has no corresponding option, so Selected[3] is simply never assigned/read), and
-    // Selection's own loop bound (i < Options.Count) can never OR bit 3 back in either way.
-    const out = writePmp(modeledGroup("Multi", 3, 0b1011));
-    expect(readGroupDefaultSettings(out)).toBe(0b011);
+  it("Single with several selected -> the FIRST one wins; the getter does not clamp (:584)", () => {
+    const out = writePmp(modeledGroup("Single", [false, true, true]));
+    expect(readGroupDefaultSettings(out)).toBe(1);
+  });
+
+  it("Multi -> a bitmask ORing bit i per selected option (:593-602)", () => {
+    const out = writePmp(modeledGroup("Multi", [true, false, true, true]));
+    expect(readGroupDefaultSettings(out)).toBe(0b1101);
+  });
+
+  it("Multi with nothing selected -> 0, with no backstop", () => {
+    const out = writePmp(modeledGroup("Multi", [false, false, false]));
+    expect(readGroupDefaultSettings(out)).toBe(0);
+  });
+
+  // docs/TEXTOOLS_BUGS.md #17, the WRITE half. `Selection`'s `var bit = 1UL << i;`
+  // (WizardData.cs:598) masks its shift count to the low 6 bits on a 64-bit operand exactly as
+  // `FromPMPGroup`'s read-side `1UL << idx` (:811) does, so option 64 contributes bit 0.
+  //
+  // The shape is chosen so masked and unmasked genuinely DIFFER. For most shapes they coincide:
+  // option `i & 63` is itself in range and usually already contributes that bit, so ORing it twice
+  // changes nothing. Here option 0 is deliberately NOT selected and option 64 IS, so bit 0 comes
+  // from the aliasing alone: masked -> exactly 1; unmasked -> `Number(1n << 64n)` == 2^64. This
+  // case CANNOT be reached by reading a PMP and writing it back — the read side's identical mask
+  // makes options 0 and 64 always agree — so the ModpackData is built directly.
+  it("Multi: option 64 aliases onto bit 0 on the WRITE side too (.NET shift-count masking)", () => {
+    const selected = Array.from({ length: 65 }, () => false);
+    selected[64] = true; // option 0 stays FALSE — bit 0 can only come from the aliasing
+    const out = writePmp(modeledGroup("Multi", selected));
+    expect(readGroupDefaultSettings(out)).toBe(1);
+  });
+
+  it("the source group's own defaultSettings is ignored -- Selection is regenerated from the flags", () => {
+    // ToPmpGroup assigns `pg.DefaultSettings = Selection` (:949), never the value it read. A legacy
+    // `-1` source (CustomUInt64Converter's ulong.MaxValue shim, PMP.cs:1558-1571) must not survive.
+    const out = writePmp(modeledGroup("Multi", [false, true, false], -1));
+    expect(readGroupDefaultSettings(out)).toBe(0b010);
   });
 });
 
@@ -824,6 +850,7 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
           description: "",
           image: "",
           priority: 0,
+          selected: false,
           files: filesMap(
             files.map((f) => [
               f.gamePath,
@@ -920,6 +947,7 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]),
               fileSwaps: {},
               manipulations: [],
@@ -940,6 +968,7 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // content-free, but the group still has >0 OPTIONS -> kept
               fileSwaps: {},
               manipulations: [],
@@ -1234,6 +1263,7 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
               fileSwaps: {},
               manipulations: [],
@@ -1254,6 +1284,7 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   "chara/x.tex",
@@ -1320,6 +1351,7 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
               fileSwaps: {},
               manipulations: [],
@@ -1340,6 +1372,7 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   gamePath,

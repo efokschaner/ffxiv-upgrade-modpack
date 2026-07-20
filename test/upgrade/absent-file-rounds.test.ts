@@ -27,6 +27,7 @@ function optionOf(files: Array<[string, ModpackFile]>): ModpackOption {
     description: "",
     image: "",
     priority: 0,
+    selected: false,
     files: filesMap(files),
     fileSwaps: {},
     manipulations: [],

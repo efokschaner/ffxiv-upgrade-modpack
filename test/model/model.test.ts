@@ -36,6 +36,7 @@ describe("model", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               fileSwaps: {},
               manipulations: [],
               files: filesMap([
@@ -53,6 +54,7 @@ describe("model", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               fileSwaps: {},
               manipulations: [],
               files: filesMap([

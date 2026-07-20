@@ -21,6 +21,7 @@ function opt(files: Record<string, Uint8Array>): ModpackOption {
     description: "",
     image: "",
     priority: 0,
+    selected: false,
     fileSwaps: {},
     manipulations: [],
     files: new Map<string, ModpackFile>(
@@ -88,6 +89,7 @@ describe("updateEyeMask", () => {
       description: "",
       image: "",
       priority: 0,
+      selected: false,
       fileSwaps: {},
       manipulations: [],
       files: new Map<string, ModpackFile>([
@@ -130,6 +132,7 @@ function pack(files: Record<string, Uint8Array>) {
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: new Map(

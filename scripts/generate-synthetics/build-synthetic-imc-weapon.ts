@@ -42,21 +42,23 @@
 //       byte-right and our /resave path does not yet reach. That item is a SEAM defect, not a
 //       correctness one, and this pack now demonstrates both halves of it in one fixture.
 //
-// The remaining entries in both baselines are `.mpl` MANIFEST diffs from two writer gaps:
+// The remaining entries in both baselines are `.mpl` MANIFEST diffs from one writer gap:
 //
-//   - docs/backlog/2026-07-13-resave-ttmp2-missing-mpl-fields.md
-//       `IsChecked`, `ModsJsons[].ModPackEntry`, `SimpleModsList` — keys TexTools always writes and
-//       writeTtmp2 omits, so they show up as [added] on the golden side.
 //   - docs/backlog/2026-07-13-resave-ttmp2-name-category.md
 //       `ModsJsons[].Name` / `.Category` — TexTools RE-DERIVES both from the game path (resolving
 //       this fixture's weapon path to a real item) where we round-trip what the source declared.
 //
 // Nothing here is specific to this fixture: ANY ttmp2 pack with a real (non-noop) /upgrade golden
-// hits both. This pack is simply the first SYNTHETIC ttmp2 to get a non-noop golden — every earlier
+// hits it. This pack is simply the first SYNTHETIC ttmp2 to get a non-noop golden — every earlier
 // synthetic .ttmp2 uses a gamePath /upgrade ignores, so those packs no-op and the harness skips the
 // manifest diff entirely — and therefore the first synthetic to run the TTMP manifest comparison at
-// all. When those two backlog items are closed, this pack's baseline should empty out along with
-// the real packs'; delete its entry then rather than re-blessing.
+// all. When that backlog item is closed, this pack's baseline should empty out along with the real
+// packs'; delete its entry then rather than re-blessing.
+//
+// A third gap used to live here — `IsChecked` / `ModsJsons[].ModPackEntry` / `SimpleModsList`, keys
+// TexTools always writes and writeTtmp2 omitted. This pack was its primary reproduction target and
+// it SHIPPED on 2026-07-20 (see docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md);
+// those entries are gone from both baselines.
 
 import { IMC_TABLE } from "../../src/meta/reference/imc-table";
 import { serializeMeta } from "../../src/meta/serialize";

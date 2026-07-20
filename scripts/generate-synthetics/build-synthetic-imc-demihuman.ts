@@ -53,16 +53,18 @@
 //       grown IMC entries (36 bytes) — the same growth this pack tests, which our /upgrade path
 //       gets byte-right and our /resave path does not yet reach. A SEAM defect, not a correctness
 //       one.
-//   - docs/backlog/2026-07-13-resave-ttmp2-missing-mpl-fields.md
-//       `IsChecked`, `ModsJsons[].ModPackEntry`, `SimpleModsList` — keys TexTools always writes and
-//       writeTtmp2 omits, so they show up as [added] on the golden side.
 //   - docs/backlog/2026-07-13-resave-ttmp2-name-category.md
 //       `ModsJsons[].Name` / `.Category` — TexTools RE-DERIVES both from the game path where we
 //       round-trip what the source declared.
 //
 // Nothing there is specific to this fixture: ANY ttmp2 pack with a real (non-noop) /upgrade golden
-// hits all three. When those items are closed, this pack's baseline should empty out along with the
+// hits both. When those items are closed, this pack's baseline should empty out along with the
 // real packs'; delete its entry then rather than re-blessing.
+//
+// A third gap used to be listed here — `IsChecked` / `ModsJsons[].ModPackEntry` / `SimpleModsList`,
+// keys TexTools always writes and writeTtmp2 omitted. It SHIPPED on 2026-07-20 (see
+// docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md); those entries are gone
+// from both baselines.
 
 import { IMC_TABLE } from "../../src/meta/reference/imc-table";
 import { serializeMeta } from "../../src/meta/serialize";

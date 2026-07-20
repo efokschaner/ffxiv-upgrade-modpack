@@ -101,17 +101,27 @@ ranks a large, well-understood build (the UI) below small, unbounded correctness
    unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
    design §8.4's thin-coverage note.
 
-7. **The three `writeTtmp2` manifest items** — [missing `.mpl` fields](backlog/2026-07-13-resave-ttmp2-missing-mpl-fields.md),
-   [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md),
-   [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). Together these are
-   **~5431 of the 5811 entries in `.upgrade-baseline` (93%), across 58 of 70 packs** — by count, by
-   far the largest divergence from the golden. Ranked here rather than higher because the impact is
-   mostly cosmetic (`ModPackEntry: null`, `Description: null` vs `""`, file ordering), though
-   `IsChecked` drives default option selection in the importer and so is functional. **They were
-   previously filed under *Unprioritized → `/resave` findings***, behind that section's caveat that a
-   `/resave` divergence is not automatically an `/upgrade` bug — true in general, but the
-   `.upgrade-baseline` data shows these three specifically *do* reach `/upgrade`. Moved here
-   2026-07-20; the remaining `/resave` findings stay where they are.
+7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+   and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
+   entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
+   `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
+   (83%), across 42 packs**, by count still by far the largest divergence from the golden. Ranked
+   here rather than higher because the impact is cosmetic (re-derived display strings, file
+   ordering). **They were previously filed under *Unprioritized → `/resave` findings***, behind that
+   section's caveat that a `/resave` divergence is not automatically an `/upgrade` bug — true in
+   general, but the `.upgrade-baseline` data shows these specifically *do* reach `/upgrade`. Moved
+   here 2026-07-20; the remaining `/resave` findings stay where they are. Their third sibling, the
+   missing `.mpl` fields (`IsChecked`, `ModPackEntry`, the null `SimpleModsList`/`ModPackPages`
+   sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
+   entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
+
+8. [`.mpl` top-level key order — Newtonsoft emits `MinimumFrameworkVersion` first, we emit it 7th](backlog/2026-07-20-mpl-key-order-field-before-properties.md)
+   — it is the only public **field** on `ModPackJson` (ModPackJson.cs:61); every other member is a
+   property, and Newtonsoft's default contract orders fields before properties. Confirmed against a
+   real cached golden. Purely cosmetic by the ranking rubric (#4), but listed here rather than in
+   Unprioritized because of *how* it hid: the harness compares manifests **semantically**
+   (`jsonPointerDiff`), so no corpus check or ratchet entry can ever see a key-order divergence — the
+   fix is a one-line move plus the top-level assertion the existing key-order unit test is missing.
 
 ## Unprioritized
 
@@ -169,10 +179,11 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — same shape: `reconstructMeta` is *correct* (byte-identical on `/upgrade`), only its seam is wrong.
 - [`writeTtmp2` re-emits a simple pack as simple; TexTools always writes a wizard pack](backlog/2026-07-13-resave-ttmp2-simple-pack.md)
   — `WriteModpack` has no simple-pack writer at all. 13 packs. Decide deliberately whether to match.
-- **Three `writeTtmp2` manifest items moved to the Prioritized list** (2026-07-20): missing `.mpl` fields,
-  `Name`/`Category` re-derivation, and option file order. They were filed here on the reasoning at the
-  top of this section — that a `/resave` divergence need not be an `/upgrade` bug — but they are
-  ~5431 of the 5811 `.upgrade-baseline` entries, so for these three that caveat does not hold.
+- **Two `writeTtmp2` manifest items moved to the Prioritized list** (2026-07-20): `Name`/`Category`
+  re-derivation and option file order. They were filed here on the reasoning at the top of this
+  section — that a `/resave` divergence need not be an `/upgrade` bug — but they are 2490 of the 3002
+  `.upgrade-baseline` entries, so for these two that caveat does not hold. (A third, the missing
+  `.mpl` fields, moved with them and has since shipped.)
 - [`/resave`'s `diffArchives` call never forwards `confirmDivergence`](backlog/2026-07-18-resave-confirmdivergence-not-forwarded.md)
   — unlike `corpus-upgrade.ts`, so a `DIVERGENCE_RULES` entry that would *confirm* a payload-member
   mismatch under `/upgrade` is merely baseline-suppressed under `/resave` instead — not documented,
@@ -231,6 +242,18 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   read it now. Kept deliberately (it mirrors `XivDependencyRootInfo.Slot`), but the weapon/monster
   value is a **fabricated placeholder** (`"body"`) where the C# leaves `Slot` unset — inert only
   while nothing reads it. Decide: drop the field, or type it `string | null` and return null there.
+- [`ModpackGroup.defaultSettings` is now write-only](backlog/2026-07-20-modpack-group-defaultsettings-unread.md)
+  — giving `ModpackOption` a real `selected` flag turned `groupSelection` into the direct port of the
+  `Selection` getter (`WizardData.cs:578-604`), removing the field's last consumer; every load path
+  still assigns it and nothing in `src/` reads it. Same shape as the `MetaRoot.slot` item above, but
+  **milder**: the stored value is honest rather than a fabricated placeholder, so it is inert, not a
+  trap. Decide: drop it, or keep it as the mirrored `PMPGroupJson.DefaultSettings` member.
+- [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+  — `FromWizardGroup`/`FromPMPGroup` `return null` for a group with no options (`WizardData.cs:749-753`,
+  `:851-855`), so it never enters the wizard model; `readTtmp2`/`readPmp` keep it with `options: []`.
+  Latent — no corpus pack carries one, so it has no baseline entry, which is why it sits here rather
+  than under the `/resave` findings: it came from reading the C# beside the Single-group backstop two
+  lines below, not from an oracle diff. Two `*-selected.test.ts` tests currently pin *our* shape.
 - [Audit the port for TexTools bugs we already reproduce](backlog/2026-07-12-textools-bug-register-audit.md)
   — `docs/TEXTOOLS_BUGS.md` was seeded, not swept. Adjudicate the remaining candidates (EQP set-0
   omission, `PlayableRaces` race-order, `MakePMPPathSafe`'s platform-dependent invalid-char set)

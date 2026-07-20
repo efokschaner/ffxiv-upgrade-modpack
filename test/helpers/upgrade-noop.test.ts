@@ -26,6 +26,7 @@ function option(
     description: "",
     image: "",
     priority: 0,
+    selected: false,
     files: new Map(Object.entries(files)),
     fileSwaps: {},
     manipulations,

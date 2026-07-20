@@ -32,6 +32,7 @@ function oneFilePack(path: string, bytes: Uint8Array): ModpackData {
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: filesMap([
@@ -89,6 +90,7 @@ describe("compareInnerFilesByteIdentical", () => {
                 description: "",
                 image: "",
                 priority: 0,
+                selected: false,
                 fileSwaps: {},
                 manipulations: [],
                 files: filesMap([
@@ -103,6 +105,7 @@ describe("compareInnerFilesByteIdentical", () => {
                 description: "",
                 image: "",
                 priority: 0,
+                selected: false,
                 fileSwaps: {},
                 manipulations: [],
                 files: filesMap([

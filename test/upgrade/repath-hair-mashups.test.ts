@@ -44,6 +44,7 @@ function option(
     description: "",
     image: "",
     priority: 0,
+    selected: false,
     fileSwaps: {},
     manipulations: [],
     files: new Map(files),

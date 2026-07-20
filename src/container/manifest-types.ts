@@ -11,11 +11,25 @@ export interface TtmpModsJson {
 }
 export interface TtmpModOptionJson {
   Name: string;
-  Description: string;
+  // NULLABLE all the way to serialization. `ModOptionJson.Description` (ModPackJson.cs ·
+  // ModOptionJson · 159-198) is an uninitialized C# `string`, so an absent key deserializes to
+  // `null`; nothing coalesces it thereafter — load copies it verbatim (`wizOp.Description =
+  // o.Description`, WizardData.cs · FromWizardGroup · 663), TTMP export copies it verbatim
+  // (`Description = Description`, · WizardOptionEntry.ToModOption · 414) and TTMPWriter copies it
+  // verbatim again (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144). With
+  // Newtonsoft's default NullValueHandling.Include (see the write-view note below) that `null`
+  // reaches the output `.mpl` as an explicit `null`. Only the PMP path coalesces, and it does so at
+  // its own seam (`op.Description = Description ?? ""`, WizardData.cs · ToPmpOption · 543-544).
+  Description: string | null;
   ImagePath: string;
   ModsJsons: TtmpModsJson[];
   GroupName: string;
   SelectionType: string;
+  // ModOptionJson.IsChecked (ModPackJson.cs:189-198) — a plain C# `bool` behind a
+  // NotifyPropertyChanged setter, so an absent key deserializes to `false`. Optional here to
+  // model that absence; FromWizardGroup copies it to WizardOptionEntry.Selected verbatim
+  // (WizardData.cs:668).
+  IsChecked?: boolean;
 }
 export interface TtmpModGroupJson {
   GroupName: string;
@@ -28,15 +42,97 @@ export interface TtmpModPackPageJson {
 }
 export interface ModPackJson {
   TTMPVersion: string;
-  Name: string;
-  Author: string;
+  // Name/Author/Description/Url are NULLABLE for the same reason as ModOptionJson.Description
+  // above: uninitialized C# `string` members of `ModPackJson` (ModPackJson.cs · ModPackJson ·
+  // 24-118), read verbatim into WizardMetaEntry (WizardData.cs · WizardMetaEntry.FromTtmp ·
+  // 1052-1069 — the `= ""` field initializers at :1015-1020 are OVERWRITTEN by those assignments,
+  // so they offer no protection), written back verbatim (· WriteWizardPack · 1332-1346; the
+  // `ClearNulls()` at :1334 prunes empty pages/groups/options and touches no string but
+  // `FolderPath`, :1239/:1254), and
+  // emitted as explicit `null` by Newtonsoft's default NullValueHandling.Include.
+  Name: string | null;
+  Author: string | null;
+  // `Version` is the ONE exception — never null. WriteWizardPack forces it non-null with
+  // `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`
+  // (WizardData.cs:1335-1337) and the TTMPWriter ctor re-guards it
+  // (`modPackData.Version ?? new Version(1, 0, 0, 0)`, TTMPWriter.cs · TTMPWriter · 61).
   Version: string;
-  Description: string;
-  Url: string;
+  Description: string | null;
+  Url: string | null;
   MinimumFrameworkVersion?: string;
   ModPackPages?: TtmpModPackPageJson[] | null;
   SimpleModsList?: TtmpModsJson[] | null;
 }
+
+// WRITE-SIDE VIEW of the types above.
+//
+// WHY A SEPARATE LAYER, rather than making these keys required on the interfaces above: those
+// interfaces model the READ-PATH DOCUMENT — the `.mpl` as it arrives from an arbitrary pack, where
+// a genuinely old or third-party file may legitimately omit any of these keys, and `readTtmp2` has
+// to answer for that absence (`mpl.MinimumFrameworkVersion ?? "1.0.0.0"`, `o.IsChecked ?? false`,
+// ttmp2.ts). Tightening them there would misdescribe what we may be handed on read. The write path
+// has the opposite obligation — it always emits the full key set — so it gets its own view.
+// `TTMPWriter` is not so loose: it serializes real C# class INSTANCES with a bare
+// `JsonConvert.SerializeObject(_modPackJson)` (TTMPWriter.cs · Write · 324) — Newtonsoft
+// defaults, so `NullValueHandling.Include`. An unassigned member is therefore written as an
+// explicit `"Field": null`, never omitted, and `ModPackJson.cs` carries no `[JsonProperty]`,
+// `[JsonIgnore]` or `ShouldSerialize*` anywhere to change that. So TexTools' key SET is fixed:
+// every member of every class is present in the output, whatever its value.
+//
+// These aliases restate that as types — each key TexTools always writes is REQUIRED here, so the
+// writer cannot silently drop one — while leaving the tolerant document types (and their other
+// consumers) untouched. Same two-layer split as the `Pmp*Json` / `Pmp*JsonRaw` pair below, in the
+// other direction: there the extra layer models what may be ABSENT on read, here what must be
+// PRESENT on write.
+//
+// NOTE ON THE INTERSECTIONS BELOW: each one narrows an OPTIONAL base key to a required, more
+// specific type, which works only while the base key stays optional. If a base key were ever
+// re-typed as required with a different type, the intersection would silently collapse that
+// member to `never` rather than erroring here — the failure would surface as a confusing
+// assignability error at the `writeTtmp2` literal instead.
+//
+// NOTE: these types fix the key set, not the key ORDER. Newtonsoft emits members in reflection
+// order, i.e. the C# DECLARATION order, so `writeTtmp2`'s object literals are spelled in that
+// order deliberately; `test/container/ttmp2-write.test.ts` pins it, since the corpus harness
+// compares manifests semantically (parsed JSON) and would never catch a reordering.
+
+/** ModsJson (ModPackJson.cs · ModsJson · 217-263) as TTMPWriter emits it. */
+export type TtmpModsJsonWrite = TtmpModsJson & {
+  // ModPackJson.cs · ModsJson.ModPackEntry · 259-262 — `public ModPack? ModPackEntry { get; set; }`.
+  // NEITHER `AddFile` overload assigns it (TTMPWriter.cs · AddFile · 168-177, the wizard overload;
+  // · AddFile · 198-207, the simple/backup one), and nothing else touches the ModsJson afterwards
+  // except `_writeMPD`, which sets only ModSize/ModOffset (:278-279). So it is always null on
+  // write — and, per the NullValueHandling note above, always physically present as `null`.
+  ModPackEntry: null;
+};
+
+/** ModOptionJson (ModPackJson.cs · ModOptionJson · 154-215) as TTMPWriter emits it. */
+export type TtmpModOptionJsonWrite = TtmpModOptionJson & {
+  ModsJsons: TtmpModsJsonWrite[];
+  // TTMPWriter.cs · AddOption · 141-150 — `IsChecked = modOption.IsChecked`, a verbatim copy with
+  // no write-time derivation, mirroring the verbatim read at WizardData.cs:668.
+  IsChecked: boolean;
+};
+
+/** ModGroupJson (ModPackJson.cs · ModGroupJson · 133-152) as TTMPWriter emits it. */
+export type TtmpModGroupJsonWrite = TtmpModGroupJson & {
+  OptionList: TtmpModOptionJsonWrite[];
+};
+
+/** ModPackPageJson (ModPackJson.cs · ModPackPageJson · 120-131) as TTMPWriter emits it. */
+export type TtmpModPackPageJsonWrite = TtmpModPackPageJson & {
+  ModGroups: TtmpModGroupJsonWrite[];
+};
+
+/** ModPackJson (ModPackJson.cs · ModPackJson · 24-118) as TTMPWriter emits it. */
+export type ModPackJsonWrite = ModPackJson & {
+  // TTMPWriter's ctor initializes exactly ONE of these — `ModPackPages = new()` for a wizard pack,
+  // else `SimpleModsList = new()` (TTMPWriter.cs · TTMPWriter · 74-77) — and leaves the other at
+  // its `null` default. Both names therefore always appear in the output, one of them as `null`.
+  // Required (not optional) here so the writer must spell BOTH, whichever branch it takes.
+  ModPackPages: TtmpModPackPageJsonWrite[] | null;
+  SimpleModsList: TtmpModsJsonWrite[] | null;
+};
 
 // Legacy v1 .ttmp NDJSON line — reference/.../DataContainers/OriginalModPackJson.cs
 export interface OriginalModPackJson {
@@ -86,6 +182,31 @@ export interface PmpMetaJson {
   ModTags: string[] | null; // C# `List<string> ModTags;` — uninitialized, so absent -> null
 }
 export type PmpMetaJsonRaw = Partial<PmpMetaJson>;
+
+/** WRITE-SIDE VIEW of `PmpMetaJson`, in the same spirit as the `Ttmp*JsonWrite` aliases above.
+ *
+ * `PmpMetaJson` describes the document as READ, where `parsePmpMeta`'s `?? ""` has already applied
+ * the C# field initializers — so nothing downstream of a read ever sees a null. The WRITE path can:
+ * `WizardData.WritePmp` assigns `pmp.Meta.Name/Author/Website/Description` VERBATIM from the
+ * WizardMetaEntry (WizardData.cs · WritePmp · 1490-1493) with no `?? ""` — unlike the per-OPTION and
+ * per-GROUP seams, which do coalesce (`op.Description = Description ?? ""` · ToPmpOption · 543-544;
+ * `pg.Name = (Name ?? "").Trim()` · ToPmpGroup · 946-947) — and `SavePMP` serializes meta.json with a
+ * bare `JsonConvert.SerializeObject(pmp.Meta, Formatting.Indented)` (PMP.cs · SavePMP · 850), i.e.
+ * Newtonsoft defaults, so NullValueHandling.Include. A null therefore reaches meta.json as an
+ * explicit `null` rather than being omitted or flattened to `""`.
+ *
+ * Only a TTMP-sourced model can carry those nulls in the first place: LoadPMP deserializes meta.json
+ * with `NullValueHandling.Ignore` (PMP.cs:137-139), which leaves an explicit null at the field
+ * initializer's `""`, exactly as `parsePmpMeta` models. */
+export type PmpMetaJsonWrite = Omit<
+  PmpMetaJson,
+  "Name" | "Author" | "Description" | "Website"
+> & {
+  Name: string | null;
+  Author: string | null;
+  Description: string | null;
+  Website: string | null;
+};
 
 /** Applies PMPMetaJson's field initializers (PMP.cs:1369-1381). */
 export function parsePmpMeta(raw: PmpMetaJsonRaw): PmpMetaJson {
