@@ -399,11 +399,17 @@ export function reformatPmpVersion(source: string): string {
  * non-"Single" type the bitmask branch: OR bit i for each selected option, i < Options.Count.
  * `i & 63` reproduces .NET's 6-bit masking of `1UL << i`'s shift count on a 64-bit operand
  * (docs/TEXTOOLS_BUGS.md #17), matching the read side's identical `idx & 63` so the two derivations
- * alias in step rather than one aliasing and the other overflowing past 2^63. The `Number(total)`
- * return caps exactness at 2^53 well before option 64 makes the masking observable, but the domain
- * model types `defaultSettings`/`DefaultSettings` as `number` throughout, not `bigint`, so returning
- * a `bigint` would just push the same cap elsewhere -- and a real PMP group is never remotely close
- * to 53 options. */
+ * alias in step rather than one aliasing and the other overflowing past 2^63.
+ *
+ * The `Number(total)` return is exact only below 2^53 -- a bound a 54-plus-option group can exceed
+ * with or WITHOUT the mask -- but that is no reason the masking is unobservable: masking LOWERS the
+ * result, it does not raise it, so it moves an aliased shape toward the exactly-representable range
+ * rather than out of it. A 65-option Multi group with option 64 selected and option 0 not returns
+ * exactly `1` here, versus `Number(2n ** 64n)` unmasked -- exact, and trivially distinguishable
+ * (pinned by test/container/pmp-write.test.ts). The domain model types
+ * `defaultSettings`/`DefaultSettings` as `number` throughout, not `bigint`, so returning a `bigint`
+ * would just push the width question elsewhere -- and a real PMP group is never remotely close to
+ * 53 options. */
 function groupSelection(g: ModpackGroup): number {
   if (g.selectionType === "Single") {
     const i = g.options.findIndex((o) => o.selected);

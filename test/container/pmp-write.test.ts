@@ -795,6 +795,23 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
     expect(readGroupDefaultSettings(out)).toBe(0);
   });
 
+  // docs/TEXTOOLS_BUGS.md #17, the WRITE half. `Selection`'s `var bit = 1UL << i;`
+  // (WizardData.cs:598) masks its shift count to the low 6 bits on a 64-bit operand exactly as
+  // `FromPMPGroup`'s read-side `1UL << idx` (:811) does, so option 64 contributes bit 0.
+  //
+  // The shape is chosen so masked and unmasked genuinely DIFFER. For most shapes they coincide:
+  // option `i & 63` is itself in range and usually already contributes that bit, so ORing it twice
+  // changes nothing. Here option 0 is deliberately NOT selected and option 64 IS, so bit 0 comes
+  // from the aliasing alone: masked -> exactly 1; unmasked -> `Number(1n << 64n)` == 2^64. This
+  // case CANNOT be reached by reading a PMP and writing it back — the read side's identical mask
+  // makes options 0 and 64 always agree — so the ModpackData is built directly.
+  it("Multi: option 64 aliases onto bit 0 on the WRITE side too (.NET shift-count masking)", () => {
+    const selected = Array.from({ length: 65 }, () => false);
+    selected[64] = true; // option 0 stays FALSE — bit 0 can only come from the aliasing
+    const out = writePmp(modeledGroup("Multi", selected));
+    expect(readGroupDefaultSettings(out)).toBe(1);
+  });
+
   it("the source group's own defaultSettings is ignored -- Selection is regenerated from the flags", () => {
     // ToPmpGroup assigns `pg.DefaultSettings = Selection` (:949), never the value it read. A legacy
     // `-1` source (CustomUInt64Converter's ulong.MaxValue shim, PMP.cs:1558-1571) must not survive.

@@ -239,6 +239,12 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   read it now. Kept deliberately (it mirrors `XivDependencyRootInfo.Slot`), but the weapon/monster
   value is a **fabricated placeholder** (`"body"`) where the C# leaves `Slot` unset — inert only
   while nothing reads it. Decide: drop the field, or type it `string | null` and return null there.
+- [`ModpackGroup.defaultSettings` is now write-only](backlog/2026-07-20-modpack-group-defaultsettings-unread.md)
+  — giving `ModpackOption` a real `selected` flag turned `groupSelection` into the direct port of the
+  `Selection` getter (`WizardData.cs:578-604`), removing the field's last consumer; every load path
+  still assigns it and nothing in `src/` reads it. Same shape as the `MetaRoot.slot` item above, but
+  **milder**: the stored value is honest rather than a fabricated placeholder, so it is inert, not a
+  trap. Decide: drop it, or keep it as the mirrored `PMPGroupJson.DefaultSettings` member.
 - [Audit the port for TexTools bugs we already reproduce](backlog/2026-07-12-textools-bug-register-audit.md)
   — `docs/TEXTOOLS_BUGS.md` was seeded, not swept. Adjudicate the remaining candidates (EQP set-0
   omission, `PlayableRaces` race-order, `MakePMPPathSafe`'s platform-dependent invalid-char set)

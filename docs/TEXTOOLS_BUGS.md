@@ -518,10 +518,14 @@ path the port cannot yet reproduce faithfully, and this one it can, in one `& 63
 also refuse a pack TexTools upgrades fine. Pinned by `test/container/pmp-selected.test.ts`
 ("Multi: option 64 aliases option 0"). The write side reproduces it too: `groupSelection` in the
 same file (the direct port of `Selection`, replacing the earlier `computeSelection` simulation)
-masks identically, `1n << BigInt(i & 63)`, so both derivations alias in step. Its `number` return
-caps exactness at 2^53 regardless — well before option 64 makes the masking observable — but the
-mask keeps the two sides transcribed from the same shift rather than one aliasing and the other
-overflowing past 2^63; see its doc comment.
+masks identically, `1n << BigInt(i & 63)`, so both derivations alias in step. Its `number` return is
+exact only below 2^53 — a bound a 54-plus-option group can exceed with or *without* the mask — but
+that is no reason the masking is unobservable: masking **lowers** the result, it does not raise it.
+A 65-option Multi group with option 64 selected and option 0 not returns exactly `1` masked, versus
+`Number(2n ** 64n)` unmasked; both are perfectly distinguishable, and it is the masked one that
+stays inside the exactly-representable range. The mask also keeps the two sides transcribed from the
+same shift rather than one aliasing and the other overflowing past 2^63; see its doc comment. Pinned
+by `test/container/pmp-write.test.ts` ("Multi: option 64 aliases onto bit 0 on the WRITE side too").
 
 **Upstream fix:** reject (or explicitly truncate, with a warning) a group whose `Options.Count`
 exceeds 64, in both `FromPMPGroup` and `Selection` — the encoding genuinely cannot carry more, so
