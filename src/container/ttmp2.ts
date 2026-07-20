@@ -18,9 +18,11 @@ import { readZip, writeZip } from "../zip/zip";
 import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
   ModPackJson,
-  TtmpModGroupJson,
-  TtmpModPackPageJson,
+  ModPackJsonWrite,
+  TtmpModGroupJsonWrite,
+  TtmpModPackPageJsonWrite,
   TtmpModsJson,
+  TtmpModsJsonWrite,
 } from "./manifest-types";
 
 function fileFromMod(
@@ -235,7 +237,9 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   const files = allFiles(data);
   const { blob, place } = buildBlob(files.map((e) => e.file));
 
-  const modOf = (gamePath: string, f: ModpackFile) => ({
+  // Key order is ModsJson's C# declaration order (ModPackJson.cs · ModsJson · 222-262), which is
+  // the order Newtonsoft emits (reflection order). See manifest-types.ts's write-view note.
+  const modOf = (gamePath: string, f: ModpackFile): TtmpModsJsonWrite => ({
     Name: f.ttmp?.name ?? "",
     Category: f.ttmp?.category ?? "",
     FullPath: gamePath,
@@ -243,9 +247,12 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
     ModSize: place.get(f)!.size,
     DatFile: f.ttmp?.datFile ?? "",
     IsDefault: f.ttmp?.isDefault ?? false,
+    // Never assigned by either TTMPWriter.AddFile overload (:168-177, :198-207), so always null —
+    // and present rather than omitted, per Newtonsoft's default NullValueHandling.Include (:324).
+    ModPackEntry: null,
   });
 
-  const mpl: ModPackJson = {
+  const mpl: ModPackJsonWrite = {
     TTMPVersion: data.isSimple ? "2.1s" : "2.1w",
     Name: data.meta.name,
     Author: data.meta.author,
@@ -253,12 +260,18 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
     Description: data.meta.description,
     Url: data.meta.url,
     MinimumFrameworkVersion: data.meta.minimumFrameworkVersion,
+    // TTMPWriter's ctor initializes exactly ONE of these (TTMPWriter.cs · TTMPWriter · 74-77) and
+    // leaves the other at null; the bare JsonConvert.SerializeObject at :324 uses Newtonsoft's
+    // default NullValueHandling.Include, so BOTH names always appear, one of them as `null`.
+    // Initialized here so the unused one is written; the branch below overwrites its own.
+    ModPackPages: null,
+    SimpleModsList: null,
   };
 
   if (data.isSimple) {
     mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));
   } else {
-    const byPage = new Map<number, TtmpModGroupJson[]>();
+    const byPage = new Map<number, TtmpModGroupJsonWrite[]>();
     for (const g of data.groups) {
       // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
       // Groups.") as its first statement, before it builds the ModGroup or visits any option.
@@ -278,18 +291,23 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
       list.push({
         GroupName: g.name,
         SelectionType: selectionType,
+        // Key order is ModOptionJson's C# declaration order (ModPackJson.cs · ModOptionJson ·
+        // 159-198) — note ModsJsons sits FOURTH, before GroupName/SelectionType.
         OptionList: g.options.map((o) => ({
           Name: o.name,
           Description: o.description,
           ImagePath: o.image,
+          ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
           GroupName: g.name,
           SelectionType: selectionType,
-          ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
+          // TTMPWriter.cs · AddOption · 148 — `IsChecked = modOption.IsChecked`, itself the
+          // verbatim counterpart of the read at WizardData.cs:668. No write-time derivation.
+          IsChecked: o.selected,
         })),
       });
       byPage.set(g.page, list);
     }
-    const pages: TtmpModPackPageJson[] = [...byPage.keys()]
+    const pages: TtmpModPackPageJsonWrite[] = [...byPage.keys()]
       .sort((a, b) => a - b)
       .map((p) => ({ PageIndex: p, ModGroups: byPage.get(p)! }));
     mpl.ModPackPages = pages;

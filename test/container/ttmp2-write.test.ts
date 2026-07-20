@@ -7,6 +7,7 @@ import {
   type ModpackFile,
   ModpackFormat,
 } from "../../src/model/modpack";
+import { readZip } from "../../src/zip/zip";
 import {
   filesMap,
   makeTtmp2Simple,
@@ -102,5 +103,85 @@ describe("writeTtmp2 round-trip", () => {
       ],
     };
     expect(() => writeTtmp2(data)).toThrow(/cannot write a file with no bytes/);
+  });
+});
+
+function mpl(bytes: Uint8Array): Record<string, unknown> {
+  const entries = readZip(bytes);
+  const name = [...entries.keys()].find((k) =>
+    k.toLowerCase().endsWith(".mpl"),
+  )!;
+  // biome-ignore lint/suspicious/noExplicitAny: a raw manifest document, asserted key by key
+  return JSON.parse(new TextDecoder().decode(entries.get(name)!)) as any;
+}
+
+describe("writeTtmp2 .mpl fidelity", () => {
+  it("writes IsChecked on every option", () => {
+    const data = readTtmp2(makeTtmp2Wizard().bytes);
+    data.groups[0]!.options[0]!.selected = true;
+    data.groups[0]!.options[1]!.selected = false;
+    // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+    const out = mpl(writeTtmp2(data)) as any;
+    expect(
+      // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+      out.ModPackPages[0].ModGroups[0].OptionList.map((o: any) => o.IsChecked),
+    ).toEqual([true, false]);
+  });
+
+  it("writes ModPackEntry: null on every mods json", () => {
+    // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+    const out = mpl(writeTtmp2(readTtmp2(makeTtmp2Wizard().bytes))) as any;
+    const mods = out.ModPackPages[0].ModGroups[0].OptionList.flatMap(
+      // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+      (o: any) => o.ModsJsons,
+    );
+    expect(mods.length).toBeGreaterThan(0);
+    for (const m of mods) {
+      expect(m).toHaveProperty("ModPackEntry");
+      expect(m.ModPackEntry).toBeNull();
+    }
+  });
+
+  it("spells the unused list as an explicit null (both directions)", () => {
+    const wizard = mpl(writeTtmp2(readTtmp2(makeTtmp2Wizard().bytes)));
+    expect(wizard).toHaveProperty("SimpleModsList");
+    expect(wizard.SimpleModsList).toBeNull();
+    expect(Array.isArray(wizard.ModPackPages)).toBe(true);
+
+    const simple = mpl(writeTtmp2(readTtmp2(makeTtmp2Simple().bytes)));
+    expect(simple).toHaveProperty("ModPackPages");
+    expect(simple.ModPackPages).toBeNull();
+    expect(Array.isArray(simple.SimpleModsList)).toBe(true);
+  });
+
+  // Newtonsoft emits members in reflection order, so the golden .mpl spells each object in the
+  // C# class's DECLARATION order. Pinned here because the corpus harness compares the manifest
+  // semantically (parsed JSON, test/helpers/upgrade-archive-diff.ts), so no golden diff would
+  // ever catch a key-order regression. Expected values transcribed from ModPackJson.cs —
+  // ModOptionJson :159-198 and ModsJson :222-262 — and confirmed against a real cached
+  // ConsoleTools /upgrade golden.
+  it("spells option and mods-json keys in the C# declaration order", () => {
+    // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+    const out = mpl(writeTtmp2(readTtmp2(makeTtmp2Wizard().bytes))) as any;
+    const option = out.ModPackPages[0].ModGroups[0].OptionList[0];
+    expect(Object.keys(option)).toEqual([
+      "Name",
+      "Description",
+      "ImagePath",
+      "ModsJsons",
+      "GroupName",
+      "SelectionType",
+      "IsChecked",
+    ]);
+    expect(Object.keys(option.ModsJsons[0])).toEqual([
+      "Name",
+      "Category",
+      "FullPath",
+      "ModOffset",
+      "ModSize",
+      "DatFile",
+      "IsDefault",
+      "ModPackEntry",
+    ]);
   });
 });

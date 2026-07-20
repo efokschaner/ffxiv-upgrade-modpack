@@ -43,6 +43,66 @@ export interface ModPackJson {
   SimpleModsList?: TtmpModsJson[] | null;
 }
 
+// WRITE-SIDE VIEW of the types above.
+//
+// The interfaces above model the .mpl DOCUMENT, where any key may be absent (an old or
+// hand-authored pack), which is what `readTtmp2` parses and what the synthetic pack builders
+// emit. `TTMPWriter` is not so loose: it serializes real C# class INSTANCES with a bare
+// `JsonConvert.SerializeObject(_modPackJson)` (TTMPWriter.cs · Write · 324) — Newtonsoft
+// defaults, so `NullValueHandling.Include`. An unassigned member is therefore written as an
+// explicit `"Field": null`, never omitted, and `ModPackJson.cs` carries no `[JsonProperty]`,
+// `[JsonIgnore]` or `ShouldSerialize*` anywhere to change that. So TexTools' key SET is fixed:
+// every member of every class is present in the output, whatever its value.
+//
+// These aliases restate that as types — each key TexTools always writes is REQUIRED here, so the
+// writer cannot silently drop one — while leaving the tolerant document types (and their other
+// consumers) untouched. Same two-layer split as the `Pmp*Json` / `Pmp*JsonRaw` pair below, in the
+// other direction: there the extra layer models what may be ABSENT on read, here what must be
+// PRESENT on write.
+//
+// NOTE: these types fix the key set, not the key ORDER. Newtonsoft emits members in reflection
+// order, i.e. the C# DECLARATION order, so `writeTtmp2`'s object literals are spelled in that
+// order deliberately; `test/container/ttmp2-write.test.ts` pins it, since the corpus harness
+// compares manifests semantically (parsed JSON) and would never catch a reordering.
+
+/** ModsJson (ModPackJson.cs · ModsJson · 217-263) as TTMPWriter emits it. */
+export type TtmpModsJsonWrite = TtmpModsJson & {
+  // ModPackJson.cs · ModsJson.ModPackEntry · 259-262 — `public ModPack? ModPackEntry { get; set; }`.
+  // NEITHER `AddFile` overload assigns it (TTMPWriter.cs · AddFile · 168-177, the wizard overload;
+  // · AddFile · 198-207, the simple/backup one), and nothing else touches the ModsJson afterwards
+  // except `_writeMPD`, which sets only ModSize/ModOffset (:278-279). So it is always null on
+  // write — and, per the NullValueHandling note above, always physically present as `null`.
+  ModPackEntry: null;
+};
+
+/** ModOptionJson (ModPackJson.cs · ModOptionJson · 154-215) as TTMPWriter emits it. */
+export type TtmpModOptionJsonWrite = TtmpModOptionJson & {
+  ModsJsons: TtmpModsJsonWrite[];
+  // TTMPWriter.cs · AddOption · 141-150 — `IsChecked = modOption.IsChecked`, a verbatim copy with
+  // no write-time derivation, mirroring the verbatim read at WizardData.cs:668.
+  IsChecked: boolean;
+};
+
+/** ModGroupJson (ModPackJson.cs · ModGroupJson · 133-152) as TTMPWriter emits it. */
+export type TtmpModGroupJsonWrite = TtmpModGroupJson & {
+  OptionList: TtmpModOptionJsonWrite[];
+};
+
+/** ModPackPageJson (ModPackJson.cs · ModPackPageJson · 120-131) as TTMPWriter emits it. */
+export type TtmpModPackPageJsonWrite = TtmpModPackPageJson & {
+  ModGroups: TtmpModGroupJsonWrite[];
+};
+
+/** ModPackJson (ModPackJson.cs · ModPackJson · 24-118) as TTMPWriter emits it. */
+export type ModPackJsonWrite = ModPackJson & {
+  // TTMPWriter's ctor initializes exactly ONE of these — `ModPackPages = new()` for a wizard pack,
+  // else `SimpleModsList = new()` (TTMPWriter.cs · TTMPWriter · 74-77) — and leaves the other at
+  // its `null` default. Both names therefore always appear in the output, one of them as `null`.
+  // Required (not optional) here so the writer must spell BOTH, whichever branch it takes.
+  ModPackPages: TtmpModPackPageJsonWrite[] | null;
+  SimpleModsList: TtmpModsJsonWrite[] | null;
+};
+
 // Legacy v1 .ttmp NDJSON line — reference/.../DataContainers/OriginalModPackJson.cs
 export interface OriginalModPackJson {
   Name: string;
