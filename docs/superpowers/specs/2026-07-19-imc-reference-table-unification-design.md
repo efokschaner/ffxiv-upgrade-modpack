@@ -1,11 +1,16 @@
 # IMC reference table unification — covering every root type through one ported code path
 
-Filed 2026-07-19 · Status: **design approved, implementation in progress.**
+Filed 2026-07-19 · Status: **implemented 2026-07-19.**
 
-This closes the top prioritized backlog item, "NonSet (weapon/monster/demihuman) IMC reference
-table" (`docs/backlog/2026-07-10-nonset-imc-reference-table.md`, filed 2026-07-10) — a **silent
-divergence / fail-loud violation**: a weapon or monster `.meta` whose IMC segment *would* grow
-against the base game passes through unchanged, with no throw and no test catching it.
+This closed the top prioritized backlog item, "NonSet (weapon/monster/demihuman) IMC reference
+table" (filed 2026-07-10; deleted with this work, per the backlog's own ship-and-delete rule) — a
+**silent divergence / fail-loud violation**: a weapon or monster `.meta` whose IMC segment *would*
+grow against the base game passed through unchanged, with no throw and no test catching it.
+
+**Implementation notes are inline below**, marked `Implemented:`, at each section whose prediction
+the work confirmed or corrected. The design held: nothing in §2 or §3 needed rework, and §4's two
+obligations were both met. The one thing the implementation *disproved* was not in this spec at all
+but in a fixture comment it produced — see §4.2.
 
 ## 1. The problem (as filed)
 
@@ -84,6 +89,11 @@ are still absent after applying it): `w0201/b0166`, `w0501/b0126`, `w1501/b0128`
 `w2804/b0002`, `w3002/b0001`, `w3103/b0001`, `m9004/b0001`, `m9005/b0001`. These are the `[]`
 (seed-nothing) rows of §3.2, and they are why that row has to exist.
 
+> **Implemented:** both halves held exactly. The redirect is ported in
+> `scripts/lib/imc-entries.ts` (`isImcSharingWeapon` / `rawImcFilePath`), applied to the *folder's*
+> primary id only, matching `XivDependencyRoot.cs:1119`. The generated `src/meta/reference/imc-table.ts`
+> carries **exactly 9** `[]` rows out of 15695 keys — the predicted set, unchanged.
+
 ## 3. Design
 
 ### 3.1 One extractor, ported from the executed symbols
@@ -131,10 +141,22 @@ the silent divergence.
   comment, which this change invalidates.
 - `src/meta/reconstruct.ts` — key on `gamePath`; replace the equipment/accessory-scoped throw with
   the unconditional key-absent throw of §3.2.
-- `docs/BACKLOG.md` + `docs/backlog/2026-07-10-nonset-imc-reference-table.md` — delete the item and
-  its index entry, and update every citation of it (`scripts/extract-meta-reference.ts` header and
-  `parseImcFile` throw, `src/meta/root.ts`, `src/meta/reconstruct.ts`, `imc-table.ts`'s generated
-  header) in the same change, per the backlog's own deletion rule.
+- `docs/BACKLOG.md` + the backlog item file — delete the item and its index entry, and update every
+  citation of it (`scripts/extract-meta-reference.ts` header and `parseImcFile` throw,
+  `src/meta/root.ts`, `src/meta/reconstruct.ts`, `imc-table.ts`'s generated header) in the same
+  change, per the backlog's own deletion rule.
+
+> **Implemented:** all three landed. `src/meta/root.ts` gained the demihuman branch with
+> `estType: null`; `src/meta/reconstruct.ts` keys on `gamePath.toLowerCase()` and throws
+> unconditionally on a key miss. The item and every citation of it are gone.
+>
+> One consequence the spec did not anticipate: removing the `itemType`/`primaryId`/`slot` key left
+> **`MetaRoot.slot` read by no production code at all** — `reconstruct.ts` is `parseMetaRoot`'s only
+> consumer in `src/` and never touches it. The field was kept (it mirrors
+> `XivDependencyRootInfo.Slot`) rather than removed, and the decision is filed as
+> `docs/backlog/2026-07-19-metaroot-slot-unread.md`. Note the weapon/monster **placeholder** slot was
+> *not* deleted as this section proposed: it is inert but fabricated, and that backlog item is where
+> its fate gets decided.
 
 ### 3.4 TexTools bug candidates surfaced
 
@@ -160,6 +182,14 @@ not, so the next reader does not re-open it:
    out-of-bounds read instead of TexTools' short list. §4.2's unit tests pin both the boundary
    (nothing dropped at exact length) and the truncated case (dropped).
 
+> **Implemented:** candidate 1 is registered as `docs/TEXTOOLS_BUGS.md` **entry 16**, status
+> `not reached` — we execute `GetEntries`, not `GetFullImcInfo`, so we reproduce nothing. Candidate 2
+> was **confirmed, not overturned**: the zero-margin arithmetic is exactly what the real files show,
+> the guard never fired anywhere in the 15695-key extraction, and both synthetics' goldens agree with
+> our entry counts byte-for-byte. It is recorded in the same register entry (rather than a separate
+> one) precisely so a future reader meets the rejection alongside the bug. The guard is ported at
+> `scripts/lib/imc-entries.ts` (`readImcEntries`) and pinned by `test/scripts/imc-entries.test.ts`.
+
 ## 4. How this is proven
 
 Two independent obligations, both required.
@@ -172,6 +202,11 @@ the regression signal for the refactor, and it is a strong one: ~7775 existing k
 different algorithm, checked against cached ConsoleTools goldens.
 
 The script's existing golden spot-check (`e6137_top` 2→3, `e0724_top` 4→7) is retained and re-keyed.
+
+> **Implemented:** held. No corpus byte moved and **no ratchet baseline moved** — the only baselines
+> added are the two new synthetic packs' own. The equipment/accessory half re-derived to **7776**
+> keys (the estimate was ~7775) out of 15695 total, the rest being 4063 weapon, 2117 monster and
+> 1740 demihuman roots that did not exist in the table before.
 
 ### 4.2 The new behaviour gets a golden, not an assertion
 
@@ -204,6 +239,24 @@ synthetic unit test. Two new packs under `scripts/generate-synthetics/`, both fl
 Cases neither pack can reach — `ImcType.Unknown`, the EOF-drop guard on a hand-built file — fall to
 synthetic unit tests beside the code, derived from the C# and cited as such.
 
+> **Implemented:** both packs exist, both flow through the `/upgrade` harness against real
+> ConsoleTools goldens, and **both `.meta` payloads are byte-identical to their golden** — the
+> weapon pack growing its IMC segment 1→2 entries and the demihuman pack 2→8 in the correct slot
+> column. Neither pack's `/upgrade` baseline contains a single payload entry: no divergence rule, no
+> tolerance, no fuzz. The `AnyChanges` mechanism worked as designed — the hand-built EW 256-entry
+> colorset `.mtrl` forces the write in both. The unreachable cases are covered by
+> `test/scripts/imc-entries.test.ts` and `test/meta/reconstruct-imc.test.ts`.
+>
+> **What the implementation disproved.** Not a claim of this spec, but of the weapon fixture's own
+> first draft, and worth recording where the next reader will look: that comment asserted *"TexTools
+> emits ModsJsons ordered by FullPath."* **It does not.** There is no `OrderBy` on the `ModsJsons`
+> write path in `TTMP.cs`; the emitted order simply falls out of the collection the load path built.
+> The demihuman pack is what exposed it — both its paths share the `…/e0001/` prefix, after which
+> `d1001e0001_top.meta` would sort *before* `material/…` (`'d' < 'm'`), yet the golden still emits
+> the `.mtrl` first and the `.meta` second. Authoring that fixture meta-first cost two spurious
+> `ModsJsons[*]/FullPath` mismatches. The weapon pack's original ordering happened to be right for
+> the wrong reason. Both builders now state the ordering as **empirical, not cited**.
+
 ## 5. Cost and non-goals
 
 Extraction grows from ~1555 ConsoleTools spawns to ~8000. Pre-filtering candidate paths through
@@ -214,6 +267,12 @@ monster `.imc` files are 16 bytes, so the generated table grows far less than th
 
 Non-goals: the `human` primary type (`Imc.UsesImc` excludes it), and any change to how IMC entries
 are *serialized* — this spec only widens and re-derives the base seed.
+
+> **Implemented:** the estimate held — 15695 roots resolving to ~8000 distinct `.imc` paths, of which
+> the game-index pre-filter spared the spawns for the paths the game does not actually have (the 9
+> `[]` rows of §2.3 / §3.2 are the roots those resolve to). The extractor runs an 8-way
+> concurrency pool (`scripts/extract-meta-reference.ts`) because ~0.9s per ConsoleTools spawn is what
+> dominates wall time; a serial run was not viable at this root count.
 
 ## 6. Branch note
 

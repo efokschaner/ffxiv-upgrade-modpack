@@ -14,8 +14,8 @@ import type { EstEntry, ItemMeta } from "./types";
 // port of the ItemMetadata.cs · CreateFromRaw · 233-247 seed + PMP's ManipulationsToMetadata/
 // ApplyToMetadata grow-to-fit).
 export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
-  // root.ts (Task 4 + Task 8b) now recognizes every root shape the corpus exercises
-  // (equipment/accessory/hair/face/weapon/monster), so parsing runs unconditionally: this
+  // root.ts now recognizes every root shape we support
+  // (equipment/accessory/hair/face/weapon/monster/demihuman), so parsing runs unconditionally: this
   // restores fail-loud validation (a genuinely-unrecognized root, e.g. human body/tail/ear,
   // throws here) rather than the Task-5 scaffold that gated parsing on `mod.eqdp || mod.est`
   // being present so weapon/monster (IMC-only metas) could no-op past parseMetaRoot's throw.

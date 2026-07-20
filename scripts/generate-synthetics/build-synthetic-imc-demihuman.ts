@@ -2,9 +2,11 @@
 // DELIBERATELY SHORT — two entries where the base game's
 // chara/demihuman/d1001/obj/equipment/e0001/e0001.imc yields eight for the `top` column.
 //
-// Why demihuman gets its own pack rather than riding on the weapon one. The backlog item this
-// closes (docs/backlog/2026-07-10-nonset-imc-reference-table.md) grouped demihuman with
-// weapon/monster as "NonSet", and it is not: d1001e0001.imc has TypeIdentifier 31 (ImcType.Set),
+// Why demihuman gets its own pack rather than riding on the weapon one. The backlog item this work
+// closed grouped demihuman with weapon/monster as "NonSet" (see
+// docs/superpowers/specs/2026-07-19-imc-reference-table-unification-design.md §2.1, which records
+// the item's claim and disproves it), and it is not: d1001e0001.imc has TypeIdentifier 31
+// (ImcType.Set),
 // the same five-slot subset layout as equipment, so its entries are SLOT-SELECTED by a 30-byte
 // stride rather than read sequentially — XivDependencyRoot.GetImcEntryPaths
 // (XivDependencyRoot.cs:1186-1191) sizes the stride as `subEntrySize * 5` for anything but NonSet

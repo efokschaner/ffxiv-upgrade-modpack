@@ -39,23 +39,17 @@ inputs the corpus doesn't happen to cover — robustness and our "fail loud, nev
 rule; **(c)** the real-corpus byte-divergences keeping already-shipped rounds off byte-zero.
 Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [NonSet (weapon/monster/demihuman) IMC reference table](backlog/2026-07-10-nonset-imc-reference-table.md)
-   — **silent divergence (fail-loud violation).** `IMC_TABLE` is exhaustive over equipment/accessory
-   but Set-only, so a NonSet meta that *would* grow its IMC silently passes through — wrong output
-   with no throw and no test catching it. Needs a NonSet `.imc` parser, its own extraction pass, and
-   the NonSet column selection; at minimum make it fail loud until then.
-
-2. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
+1. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
    — **silent divergence (fail-loud violation), cheap fix.** `parsePmpGroup` defaults `Options` to
    `[]`, silently dropping the group's files, where C# throws `Unimplemented PMP group type`. Inverts
    our fail-loud rule; flip it to a throw after the corpus scan the item calls for.
 
-3. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
+2. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
    — **mechanical real-corpus correctness win.** We emit at the convention path instead of the
    canonical override. Fix is mechanical: re-run `scripts/extract-index-overrides.ts` against a game
    install.
 
-4. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+3. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
@@ -177,6 +171,11 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 - [F6 — "real data in padding" throw](backlog/2026-07-08-sqpack-block-padding-throw.md) — omitted
   because C#'s throw is gated on whole-`.dat` context our single-file block reader doesn't carry.
   Malformed-input-only + latent.
+- [`MetaRoot.slot` is no longer read by any production code](backlog/2026-07-19-metaroot-slot-unread.md)
+  — re-keying `IMC_TABLE` on the `.meta` root path removed the field's last consumer, so only tests
+  read it now. Kept deliberately (it mirrors `XivDependencyRootInfo.Slot`), but the weapon/monster
+  value is a **fabricated placeholder** (`"body"`) where the C# leaves `Slot` unset — inert only
+  while nothing reads it. Decide: drop the field, or type it `string | null` and return null there.
 - [Audit the port for TexTools bugs we already reproduce](backlog/2026-07-12-textools-bug-register-audit.md)
   — `docs/TEXTOOLS_BUGS.md` was seeded, not swept. Adjudicate the remaining candidates (EQP set-0
   omission, `PlayableRaces` race-order, `MakePMPPathSafe`'s platform-dependent invalid-char set)

@@ -1,15 +1,19 @@
 // Builds test/corpus/synthetic/imc-weapon.ttmp2: a weapon .meta whose IMC segment is DELIBERATELY
 // SHORT — one entry where the base game's chara/weapon/w2021/obj/body/b0001/b0001.imc carries two.
 //
-// This is the case docs/backlog/2026-07-10-nonset-imc-reference-table.md was filed for and no real
-// corpus mod exercises: the load path re-materializes the .meta, base-seeding ImcEntries from the
+// This is the NonSet base-seed case no real corpus mod exercises, and the one
+// docs/superpowers/specs/2026-07-19-imc-reference-table-unification-design.md §4.2 exists to pin:
+// the load path re-materializes the .meta, base-seeding ImcEntries from the
 // game (ItemMetadata.cs · CreateFromRaw · 238-241) so the segment GROWS to the base entry count,
 // with the mod's own entry winning at index 0. Before the IMC table covered weapon roots, ours
 // passed the short segment straight through — silently, with no throw and nothing to catch it.
 // This pack is the golden that catches it.
 //
-// The .mtrl is not incidental. /upgrade writes a pack only `if (data.AnyChanges)`
-// (ModpackUpgrader.cs:216), and .meta reconstruction is a LOAD/WRITE behaviour, not a transform
+// The .mtrl is not incidental. /upgrade writes a pack only
+// `if (data.AnyChanges || rewriteOnNoChanges)` (ModpackUpgrader.cs:216) — and ConsoleTools calls the
+// two-argument overload, `UpgradeModpack(src, dest)` (Program.cs:179), so `rewriteOnNoChanges` takes
+// its `false` default (ModpackUpgrader.cs:212) and only `AnyChanges` can make it write.
+// .meta reconstruction is a LOAD/WRITE behaviour, not a transform
 // round — a meta-only pack no-ops, ConsoleTools emits nothing, and the harness would fall back to
 // diffing against the untouched input, which has no oracle behind it (see
 // docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md §2). The EW 256-entry
@@ -93,10 +97,16 @@ const meta = serializeMeta({
   gmp: null,
 });
 
-// Order matters only as diff hygiene: TexTools emits ModsJsons ordered by FullPath, and
-// "…/material/…" sorts before "…/w2021b0001.meta". Authoring the fixture in that order keeps the
-// golden diff focused on this pack's subject (the .meta payload) instead of also reporting a
-// ModsJsons ordering difference that has nothing to do with IMC growth.
+// Order matters only as diff hygiene, and it is EMPIRICAL rather than cited: the .meta goes LAST.
+// The TTMP wizard writer applies no sort of its own (there is no OrderBy on the ModsJsons write
+// path in TTMP.cs), so the emitted order falls out of the collection the upgrade load path built,
+// and observation is the only honest source for it — the ConsoleTools golden for this pack emits
+// the .mtrl first and the .meta second. The sibling build-synthetic-imc-demihuman.ts observed the
+// same order on a root where a FullPath sort would predict the opposite, confirming it is not a
+// sort. (An earlier draft of this file claimed TexTools ordered ModsJsons by FullPath; it does not
+// — that claim happened to agree with the observation here only by coincidence.) Authoring the
+// fixture .meta-last keeps the golden diff focused on this pack's subject (the .meta payload)
+// instead of also reporting a ModsJsons ordering difference unrelated to IMC growth.
 writeTtmp2Files("imc-weapon.ttmp2", "IMC Weapon Repro", [
   {
     gamePath:

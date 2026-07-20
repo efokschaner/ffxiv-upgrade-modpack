@@ -33,3 +33,20 @@ this item yet: the 6-byte delta is exactly **one IMC entry**, because the pack s
 halves of this item's thesis (reconstruction correct, seam wrong) in one 2-file fixture, buildable on
 a fresh clone via `npm run synthetics` with no third-party mod. Worth using as the regression fixture
 when the seam is moved.
+
+**2026-07-19 (Task 5, the demihuman IMC growth synthetic):** a **second** synthetic reproduces the
+same seam on a structurally different root, and both should be used when the seam is moved.
+`test/corpus/synthetic/imc-demihuman.ttmp2`
+(`scripts/generate-synthetics/build-synthetic-imc-demihuman.ts`) is blessed into its `/resave`
+baseline with one payload entry,
+`chara/demihuman/d1001/obj/equipment/e0001/d1001e0001_top.meta … "102 vs 138 bytes"`. The 36-byte
+delta is exactly **six grown IMC entries** (6 × 6 bytes): the pack ships a 2-entry IMC segment
+against a base-game root seeding 8. Its `/upgrade` payload diff is likewise **empty**.
+
+Why it is worth keeping alongside the weapon pack rather than treating it as a duplicate: the weapon
+root is `ImcType.NonSet` and read **sequentially** (6-byte stride, no slot), while `d1001e0001.imc`
+is `ImcType.Set` and **slot-selected** (30-byte stride plus a per-slot byte offset —
+`XivDependencyRoot.cs:1186-1191`). So the two packs exercise the seam over both entry-addressing
+shapes the reconstruction supports, and a seam move that regressed only the slot-selected read would
+be caught by the demihuman pack alone. Neither is equipment or accessory, so neither overlaps the 62
+real-corpus `.meta` diffs above in root type.
