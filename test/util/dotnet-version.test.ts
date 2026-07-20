@@ -50,8 +50,10 @@ describe("reformatDotnetVersion", () => {
     expect(reformatDotnetVersion("1 . 2")).toBe("1.2");
     expect(reformatDotnetVersion(" 1.2 ")).toBe("1.2");
     expect(reformatDotnetVersion("\t1.\r\n2\f")).toBe("1.2");
-    // Whitespace is allowed between the sign and the digits as well.
-    expect(reformatDotnetVersion("+ 1.2")).toBe("1.2");
+    // ...but NOT between the sign and its digits: .NET's leading-white loop closes once a sign has
+    // been consumed unless `NumberNegativePattern == 2`, and InvariantCulture's is 1, so this is
+    // rejected and falls back.
+    expect(reformatDotnetVersion("+ 1.2")).toBe("1.0");
     // "-0" parses to 0, which is not `< 0`, so Version accepts it.
     expect(reformatDotnetVersion("-0.2")).toBe("0.2");
   });

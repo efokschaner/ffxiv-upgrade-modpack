@@ -26,9 +26,11 @@
  * - `NumberStyles.Integer` = `AllowLeadingWhite | AllowTrailingWhite | AllowLeadingSign`. So a
  *   component may be surrounded by whitespace (`"1 . 2"` parses) and may carry a LEADING sign
  *   (`"+1.2"` parses). It permits no decimal point, no thousands separator, and no TRAILING sign.
- * - .NET's number parser also allows whitespace BETWEEN the sign and the digits: its leading-white
- *   state stays open after a sign for non-currency parses whose `NumberNegativePattern != 2`, and
- *   InvariantCulture's is 1. So `"+ 1.2"` parses too.
+ * - .NET's number parser does NOT allow whitespace BETWEEN the sign and the digits: its
+ *   leading-white loop breaks out once a sign has been consumed, unless the parse is a currency one
+ *   or the culture's `NumberNegativePattern == 2` (the `"- n"` pattern). InvariantCulture's is 1
+ *   (`"-n"`), so `int.TryParse("+ 1", NumberStyles.Integer, InvariantCulture, out _)` is false and
+ *   `"+ 1.2"` falls back. A sign must be IMMEDIATELY followed by its digits.
  * - "Whitespace" to that parser is `Number.IsWhite`: `0x20` or `0x09..0x0D` — NOT JS's `\s`, which
  *   additionally matches NBSP, the Unicode space separators and BOM. The character class below is
  *   written out longhand for exactly that reason: a U+00A0-prefixed component falls back.
@@ -37,8 +39,8 @@
  * - A leading `-` parses fine as a negative int and is then rejected by `v < 0` — with the single
  *   exception of `"-0"`, which parses to `0` and is NOT `< 0`, so .NET accepts it and renders `0`. */
 
-/** `[white][sign][white]digits[white]`, per the `NumberStyles.Integer` contract above. */
-const COMPONENT = /^[ \t\n\v\f\r]*([+-]?)[ \t\n\v\f\r]*([0-9]+)[ \t\n\v\f\r]*$/;
+/** `[white][sign]digits[white]`, per the `NumberStyles.Integer` contract above. */
+const COMPONENT = /^[ \t\n\v\f\r]*([+-]?)([0-9]+)[ \t\n\v\f\r]*$/;
 const INT32_MAX = 2147483647;
 
 /** `Version.ParseComponent`: `int.TryParse(..., NumberStyles.Integer, InvariantCulture)` then
