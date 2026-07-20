@@ -680,24 +680,24 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
   });
 });
 
-describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578-604/:805-813/:857-860)", () => {
+describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578-604)", () => {
   // TexTools never carries a source DefaultSettings value through verbatim: ToPmpGroup writes
   // `pg.DefaultSettings = Selection` (:949), and `Selection` is a GETTER recomputed from each
-  // option's `Selected` flag, which FromPMPGroup derives from the SOURCE value at read time
-  // (:805-813). Our domain model has no per-option Selected flag, only the group's raw
-  // `defaultSettings` -- so writePmp must reconstruct exactly what those two C# passes would have
-  // left before re-deriving Selection from it.
+  // option's `Selected` flag. These cases drive that getter directly off the model's `selected`
+  // flags; the READ-side derivation that populates them (FromPMPGroup :805-813 plus the "none
+  // selected" backstop :857-860) is pinned separately by pmp-selected.test.ts.
   function modeledGroup(
     selectionType: "Single" | "Multi",
-    optionCount: number,
-    defaultSettings: number,
+    selected: boolean[],
+    defaultSettings = 0,
   ): ModpackData {
+    const optionCount = selected.length;
     const options = Array.from({ length: optionCount }, (_, i) => ({
       name: `Opt${i}`,
       description: "",
       image: "",
       priority: 0,
-      selected: false,
+      selected: selected[i] ?? false,
       files: filesMap([
         [
           `chara/${i}.tex`,
@@ -768,36 +768,38 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
     return parseEntry<PmpGroupJson>(entries, groupName).DefaultSettings;
   }
 
-  it("Single, source index out of range (>= Options.Count) -> the read-time fixup forces Options[0].Selected, so Selection regenerates 0", () => {
-    // FromPMPGroup: Selected[i] = (DefaultSettings == idx) for idx in 0..Options.Count-1. A source
-    // value of 5 on a 2-option group matches nothing, so the fixup at :857-860 forces
-    // Options[0].Selected = true, and Selection's getter (:582-589) returns IndexOf(Options[0]) = 0.
-    const out = writePmp(modeledGroup("Single", 2, 5));
-    expect(readGroupDefaultSettings(out)).toBe(0);
-  });
-
-  it("Single, source index in range -> Selection round-trips the same index", () => {
-    const out = writePmp(modeledGroup("Single", 3, 2));
+  it("Single -> the index of the selected option (:589 `Options.IndexOf(op)`)", () => {
+    const out = writePmp(modeledGroup("Single", [false, false, true]));
     expect(readGroupDefaultSettings(out)).toBe(2);
   });
 
-  it("Multi, legacy -1 source value -> every bit past the option count is masked off by Selection's own loop bound", () => {
-    // CustomUInt64Converter (PMP.cs:1558-1571) reinterprets a JSON `-1` token as ulong.MaxValue (the
-    // documented "TexTools was previously writing -1 instead of 2^64-1" bug-compat shim,
-    // PMP.cs:1564-1565) -- i.e. every one of its 64 bits is set. FromPMPGroup's bit-test Selected[i]
-    // = (DefaultSettings & (1UL << i)) != 0 therefore selects EVERY option, but Selection's own
-    // getter (:594-601) only ORs bits for i < Options.Count -- so a 3-option Multi group regenerates
-    // 0b111 = 7, not -1 and not ulong.MaxValue.
-    const out = writePmp(modeledGroup("Multi", 3, -1));
-    expect(readGroupDefaultSettings(out)).toBe(0b111);
+  it("Single with nothing selected -> 0 (:585-588 `FirstOrDefault` == null)", () => {
+    // Neither reader can normally leave a Single group in this state (both apply the "none
+    // selected" backstop), but the getter's own null branch returns 0 regardless.
+    const out = writePmp(modeledGroup("Single", [false, false]));
+    expect(readGroupDefaultSettings(out)).toBe(0);
   });
 
-  it("Multi, a source bit beyond Options.Count is masked off even for an in-range positive value", () => {
-    // Source 0b1011 (bits 0,1,3) on a 3-option (bits 0..2) group: FromPMPGroup selects options 0,1
-    // (bit 3 has no corresponding option, so Selected[3] is simply never assigned/read), and
-    // Selection's own loop bound (i < Options.Count) can never OR bit 3 back in either way.
-    const out = writePmp(modeledGroup("Multi", 3, 0b1011));
-    expect(readGroupDefaultSettings(out)).toBe(0b011);
+  it("Single with several selected -> the FIRST one wins; the getter does not clamp (:584)", () => {
+    const out = writePmp(modeledGroup("Single", [false, true, true]));
+    expect(readGroupDefaultSettings(out)).toBe(1);
+  });
+
+  it("Multi -> a bitmask ORing bit i per selected option (:593-602)", () => {
+    const out = writePmp(modeledGroup("Multi", [true, false, true, true]));
+    expect(readGroupDefaultSettings(out)).toBe(0b1101);
+  });
+
+  it("Multi with nothing selected -> 0, with no backstop", () => {
+    const out = writePmp(modeledGroup("Multi", [false, false, false]));
+    expect(readGroupDefaultSettings(out)).toBe(0);
+  });
+
+  it("the source group's own defaultSettings is ignored -- Selection is regenerated from the flags", () => {
+    // ToPmpGroup assigns `pg.DefaultSettings = Selection` (:949), never the value it read. A legacy
+    // `-1` source (CustomUInt64Converter's ulong.MaxValue shim, PMP.cs:1558-1571) must not survive.
+    const out = writePmp(modeledGroup("Multi", [false, true, false], -1));
+    expect(readGroupDefaultSettings(out)).toBe(0b010);
   });
 });
 

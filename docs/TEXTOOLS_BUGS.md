@@ -516,10 +516,12 @@ arbitrary-precision and does **not** mask, so a bare `1n << BigInt(idx)` would e
 aliasing it. We chose reproduction over a fail-loud throw: AGENTS.md's "fail loud" rule covers a
 path the port cannot yet reproduce faithfully, and this one it can, in one `& 63`; throwing would
 also refuse a pack TexTools upgrades fine. Pinned by `test/container/pmp-selected.test.ts`
-("Multi: option 64 aliases option 0"). `computeSelection` in the same file carries the same
-unmasked shift on the write side, deliberately unpatched — it is slated for deletion in favour of
-reading the read-time `selected` flag, and its `Number` return caps it well before option 64
-anyway; see its doc comment.
+("Multi: option 64 aliases option 0"). The write side reproduces it too: `groupSelection` in the
+same file (the direct port of `Selection`, replacing the earlier `computeSelection` simulation)
+masks identically, `1n << BigInt(i & 63)`, so both derivations alias in step. Its `number` return
+caps exactness at 2^53 regardless — well before option 64 makes the masking observable — but the
+mask keeps the two sides transcribed from the same shift rather than one aliasing and the other
+overflowing past 2^63; see its doc comment.
 
 **Upstream fix:** reject (or explicitly truncate, with a warning) a group whose `Options.Count`
 exceeds 64, in both `FromPMPGroup` and `Selection` — the encoding genuinely cannot carry more, so

@@ -379,60 +379,39 @@ export function reformatPmpVersion(source: string): string {
   return [m[1], m[2], m[3], m[4]].filter((p) => p !== undefined).join(".");
 }
 
-/** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604), reconstructed from the read-time
- * derivation `FromPMPGroup` performs per option (`Selected`, WizardData.cs:805-813) plus its
- * Single-type "nothing selected" fixup (WizardData.cs:857-860). `ToPmpGroup` writes
- * `pg.DefaultSettings = Selection` (:949) rather than the source value, so this RECONSTRUCTS, from
- * the group's raw `defaultSettings` source value alone, what those two C# passes would have left on
- * `Options[i].Selected` before `Selection`'s getter reads it back.
+/** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604). `ToPmpGroup` writes
+ * `pg.DefaultSettings = Selection` (WizardData.cs:949) rather than carrying the source value
+ * through, so a written group's `DefaultSettings` is always regenerated from the per-option
+ * `Selected` flags.
  *
- * SLATED FOR REMOVAL -- do not build on it. This reconstruction is now redundant: `readPmp` (above)
- * performs that same `FromPMPGroup` derivation at read time and stores the result on each option's
- * `selected` flag, so `Selection`'s getter can be transcribed directly against
- * `g.options[i].selected` instead of being re-derived from `defaultSettings` here. The two agree
- * today, but keeping a second, independent derivation of the same fact invites them to drift.
+ * This used to RECONSTRUCT those flags from the group's raw `defaultSettings`, because the domain
+ * model had none. It now reads the real `selected` flags, which `readPmp`/`readTtmp2` derive at the
+ * same seam the two C# loaders do (`FromPMPGroup`, WizardData.cs:805-813 + the "none selected"
+ * fixup :857-860; `FromWizardGroup`, :755-757) -- so this is the getter itself, nothing more.
  *
- * It also carries the same latent .NET shift-masking divergence the read-time derivation just had
- * fixed (see `readPmp`'s `idx & 63` and docs/TEXTOOLS_BUGS.md #17): the Multi loop below tests
- * `1n << BigInt(i)` where C#'s `Selection` getter uses `1UL << i` (WizardData.cs:598), whose shift
- * count .NET masks to 6 bits -- so from `i == 64` on, C# re-reads/re-sets the LOW bits while we walk
- * off past 2^63. Deliberately NOT patched here: the `Number(total)` cap below (see next paragraph)
- * already makes this function wrong well before option 64, so a 64-bit-exact shift would be
- * misleading precision on a value that cannot survive the return type. The correct fix is the
- * removal above, which inherits the read side's already-faithful masking.
+ * Single (WizardData.cs:582-589): `Options.FirstOrDefault(x => x.Selected)`, `return 0` when none
+ * matched, else `Options.IndexOf(op)` -- `findIndex` is both in one call (`IndexOf` on a list of
+ * reference-typed options finds the very element `FirstOrDefault` returned). Note the C# does NOT
+ * clamp a Single group carrying several selected options; the first wins, as here.
  *
- * `defaultSettings` -> ulong: `CustomUInt64Converter` (PMP.cs:1558-1571) reinterprets a JSON token
- * Newtonsoft parsed as a negative number as its 64-bit two's-complement UNSIGNED value (the
- * documented "-1 meant 2^64-1" bug-compatibility shim, PMP.cs:1564-1565) -- reproduced here via
- * `BigInt.asUintN(64, ...)` rather than JS's 32-bit `|`, since a real ulong can exceed 32 bits.
- * `optionType` mirrors `group.OptionType = pGroup.Type == "Single" ? Single : Multi`
- * (WizardData.cs:769) -- an Imc (or hypothetical "Combining") group's Type is never "Single", so it
- * takes the Multi/bitmask branch exactly like a real Multi group.
- *
- * Caps at Number precision (2^53) for the Multi/bitmask accumulator: a real PMP group is never
- * remotely close to 53 options, so `Number(total)` staying exact for any input this codebase's
- * corpus/tests can produce is a safe simplification, not a silently-wrong answer for a case that
- * actually occurs -- and the domain model types `defaultSettings`/`DefaultSettings` as `number`
- * throughout, not `bigint`, so returning a `bigint` here would just push the same cap elsewhere. */
-function computeSelection(
-  defaultSettings: number,
-  optionType: string,
-  optionCount: number,
-): number {
-  const raw = BigInt.asUintN(64, BigInt(Math.trunc(defaultSettings)));
-  if (optionType === "Single") {
-    // FromPMPGroup: Selected[i] = (raw == i) for i in 0..optionCount-1 (WizardData.cs:807). The
-    // read-time fixup forces Options[0].Selected when NONE matched (WizardData.cs:857-860), so an
-    // out-of-range (or negative) source value always regenerates 0 here, matching Selection's
-    // `FirstOrDefault` "-> return 0" branch (WizardData.cs:585-588) applied to Options[0].
-    return raw < BigInt(optionCount) ? Number(raw) : 0;
+ * Multi (WizardData.cs:593-602), which also covers Imc/Combining groups since
+ * `group.OptionType = pGroup.Type == "Single" ? Single : Multi` (WizardData.cs:769) gives every
+ * non-"Single" type the bitmask branch: OR bit i for each selected option, i < Options.Count.
+ * `i & 63` reproduces .NET's 6-bit masking of `1UL << i`'s shift count on a 64-bit operand
+ * (docs/TEXTOOLS_BUGS.md #17), matching the read side's identical `idx & 63` so the two derivations
+ * alias in step rather than one aliasing and the other overflowing past 2^63. The `Number(total)`
+ * return caps exactness at 2^53 well before option 64 makes the masking observable, but the domain
+ * model types `defaultSettings`/`DefaultSettings` as `number` throughout, not `bigint`, so returning
+ * a `bigint` would just push the same cap elsewhere -- and a real PMP group is never remotely close
+ * to 53 options. */
+function groupSelection(g: ModpackGroup): number {
+  if (g.selectionType === "Single") {
+    const i = g.options.findIndex((o) => o.selected);
+    return i < 0 ? 0 : i;
   }
-  // Multi (and Imc/Combining, which also get OptionType=Multi -- see this function's doc comment):
-  // Selection ORs bit i only for i < Options.Count (WizardData.cs:594-601) -- every bit at or past
-  // the option count is masked off, however wide the source value was.
   let total = 0n;
-  for (let i = 0; i < optionCount; i++) {
-    if ((raw & (1n << BigInt(i))) !== 0n) total |= 1n << BigInt(i);
+  for (let i = 0; i < g.options.length; i++) {
+    if (g.options[i]?.selected) total |= 1n << BigInt(i & 63);
   }
   return Number(total);
 }
@@ -842,12 +821,10 @@ export function writePmp(
         Priority: g.priority,
         Type: g.selectionType,
         // WizardData.cs:949 (`pg.DefaultSettings = Selection;`) -- regenerated, not carried through
-        // verbatim; see computeSelection's doc comment.
-        DefaultSettings: computeSelection(
-          g.defaultSettings,
-          g.selectionType,
-          g.options.length,
-        ),
+        // verbatim; see groupSelection's doc comment. (`pg.SelectedSettings = Selection` on the
+        // next line, :950, is deliberately not modelled: the field is `[JsonIgnore]`
+        // (PMP.cs:1399-1400) with no ShouldSerialize, so it never reaches a group json.)
+        DefaultSettings: groupSelection(g),
         Options: g.options.map((o) =>
           optionToJson(o, true, hasStandardFields, isMultiOption, zipPaths),
         ),
