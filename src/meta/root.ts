@@ -119,10 +119,11 @@ export function parseMetaRoot(gamePath: string): MetaRoot {
   // extension, so _slotRegex (XivDependencyGraph.cs:238, this file's header) never matches them:
   // the real XivDependencyRootInfo.Slot is left unset (ExtractRootInfo, XivDependencyGraph.cs:
   // 679-689, only assigns info.Slot when _slotRegex matches). `slot` here is a placeholder filled
-  // from the SecondaryType ("body") instead of the real (unset) Slot. Nothing in this codebase
-  // reads `MetaRoot.slot` for any root type any more: the sole consumer, reconstruct.ts's IMC
-  // base-seed lookup, is keyed on the whole `.meta` root path (IMC_TABLE), not on
-  // itemType/primaryId/slot, so this placeholder is inert.
+  // from the SecondaryType ("body") instead of the real (unset) Slot. No production code in this
+  // codebase reads `MetaRoot.slot` for any root type any more: the sole consumer, reconstruct.ts's
+  // IMC base-seed lookup, is keyed on the whole `.meta` root path (IMC_TABLE), not on
+  // itemType/primaryId/slot, so this placeholder is inert. (Tests still read it — see
+  // docs/backlog/2026-07-19-metaroot-slot-unread.md.)
   const weapon = gamePath.match(
     /^chara\/weapon\/w(\d+)\/obj\/(\w+)\/[a-z]\d+\/w\d+[a-z]\d+\.meta$/,
   );

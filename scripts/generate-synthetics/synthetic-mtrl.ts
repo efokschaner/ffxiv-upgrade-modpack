@@ -1,8 +1,11 @@
 // Shared .mtrl payload builder for the synthetic modpack builders in this directory. Test
 // scaffolding, not ported business logic — it exists so a fixture whose real point is something
 // else (an absent Files key, a short IMC segment) can carry one payload that genuinely upgrades,
-// which is what makes ConsoleTools /upgrade write a pack at all (`if (data.AnyChanges)`,
-// ModpackUpgrader.cs:216) instead of no-opping.
+// which is what makes ConsoleTools /upgrade write a pack at all: it writes only
+// `if (data.AnyChanges || rewriteOnNoChanges)` (ModpackUpgrader.cs:216), and ConsoleTools calls the
+// two-argument overload, `UpgradeModpack(src, dest)` (Program.cs:179), so `rewriteOnNoChanges` takes
+// its `false` default (ModpackUpgrader.cs:212) and only `AnyChanges` can make it write, instead of
+// no-opping.
 
 import { SAMPLER_NORMAL_MAP_0 } from "../../src/mtrl/types";
 import { ByteBuilder } from "../../src/util/binary";

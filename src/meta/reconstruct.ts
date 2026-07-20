@@ -155,10 +155,19 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
     if (base === undefined) {
       // The table is exhaustive over item_sets.db for every type Imc.UsesImc accepts, and records
       // a genuinely-absent .imc as [] (not as a miss). So a miss means a root we have no data for
-      // — one added to the game after the last regen, or one item_sets.db never listed. The
-      // golden's base seed (ItemMetadata.cs · CreateFromRaw · 238-241, reading the real .imc from
-      // the game) is something we cannot reproduce, and passing the mod's IMC through could ship a
-      // possibly-under-grown segment. Fail loud instead of guessing.
+      // — one added to the game after the last regen, or one item_sets.db never listed. It also
+      // means a root outside Imc.UsesImc's five types altogether: parseMetaRoot can return
+      // itemType: "other" for hair/face roots, and the table has no `human` keys at all —
+      // correctly, since Imc.UsesImc excludes XivItemType.human (Imc.cs:76-80) and
+      // GetRawImcFilePath returns null for it (XivDependencyRoot.cs:1093-1098). A hair/face .meta
+      // that carried an IMC segment would hit this throw rather than silently reproducing one.
+      // That is believed unreachable in practice — Penumbra's ImcIdentifier only admits the five
+      // UsesImc object types, and TexTools itself never writes an IMC segment for anything else —
+      // but if it ever is reached, fail-loud is this project's sanctioned posture for a seed we
+      // have no way to faithfully reproduce, so this is a documented, deliberate gap rather than a
+      // bug to fix. The golden's base seed (ItemMetadata.cs · CreateFromRaw · 238-241, reading the
+      // real .imc from the game) is something we cannot reproduce, and passing the mod's IMC
+      // through could ship a possibly-under-grown segment. Fail loud instead of guessing.
       throw new Error(
         `meta: ${gamePath} has no IMC_TABLE entry (unknown root, not in the item_sets.db-derived ` +
           "table; regenerate imc-table.ts or investigate — cannot faithfully reproduce the base " +
