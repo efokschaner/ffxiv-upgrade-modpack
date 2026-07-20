@@ -47,7 +47,8 @@ export interface ModPackJson {
   // 24-118), read verbatim into WizardMetaEntry (WizardData.cs · WizardMetaEntry.FromTtmp ·
   // 1052-1069 — the `= ""` field initializers at :1015-1020 are OVERWRITTEN by those assignments,
   // so they offer no protection), written back verbatim (· WriteWizardPack · 1332-1346; the
-  // `ClearNulls()` at :1334 prunes empty pages/groups/options and never touches a string), and
+  // `ClearNulls()` at :1334 prunes empty pages/groups/options and touches no string but
+  // `FolderPath`, :1239/:1254), and
   // emitted as explicit `null` by Newtonsoft's default NullValueHandling.Include.
   Name: string | null;
   Author: string | null;

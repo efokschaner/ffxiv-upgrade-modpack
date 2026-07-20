@@ -103,8 +103,9 @@ export interface ModpackMeta {
   // verbatim from the `.mpl` (WizardData.cs · WizardMetaEntry.FromTtmp · 1052-1069) and
   // WriteWizardPack passes them straight back out (· WriteWizardPack · 1332-1346). The `= ""` field
   // initializers on WizardMetaEntry (:1015-1020) are OVERWRITTEN by that load, so they give no
-  // protection, and `ClearNulls()` (:1234-1266, called at :1334) prunes pages/groups/options only —
-  // never a string. So a null spelled in the source survives to serialization.
+  // protection, and `ClearNulls()` (:1234-1266, called at :1334) prunes pages/groups/options and
+  // nulls only the `FolderPath` strings (:1239, :1254) — never one of these. So a null spelled in
+  // the source survives to serialization.
   name: string | null;
   author: string | null;
   // `version` is NOT nullable: WriteWizardPack forces it non-null via
