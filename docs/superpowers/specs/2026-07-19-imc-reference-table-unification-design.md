@@ -70,10 +70,19 @@ where we currently do not.
 `GetRawImcFilePath` (`XivDependencyRoot.cs · GetRawImcFilePath · 1093-1126`) resolves the `.imc` from
 the *secondary* type/id when `SecondaryType != null`, and for weapons applies
 `Imc.ImcSharingWeaponTypes` (`Imc.cs:53-59`): offhand fists/twinfangs/daggers/glaives take
-`PrimaryId -= 50`, redirecting to the mainhand's folder. Probing the naive path for all 6528
-weapon/monster/demihuman roots found 9 apparently-missing `.imc` files; 7 are exactly these offhand
-cases, and resolve once the quirk is ported. The remaining 2 (`monster/9004`, `monster/9005`) are
-genuinely absent.
+`PrimaryId -= 50`, redirecting to the mainhand's folder.
+
+Measured against `item_sets.db` and the game index, that redirect fires for exactly **one** root —
+the offhand ranges of `GetWeaponType` (`XivItemType.cs:184-250`: `350<id≤400`, `1650<id≤1700`,
+`1850<id≤1900`, `2650<id≤2700`, `3050<id≤3100`, `3150<id≤3200`) barely intersect the root list. It
+still must be ported: for that root both the own-path and the redirected `.imc` exist and are
+different files, so omitting the redirect reads the wrong base seed silently — exactly the class of
+bug this spec exists to remove. But it is a one-root quirk, not a bulk correction.
+
+Separately, 9 of the 6528 roots have no `.imc` at all, and the redirect does not change that (all 9
+are still absent after applying it): `w0201/b0166`, `w0501/b0126`, `w1501/b0128`, `w2133/b0003`,
+`w2804/b0002`, `w3002/b0001`, `w3103/b0001`, `m9004/b0001`, `m9005/b0001`. These are the `[]`
+(seed-nothing) rows of §3.2, and they are why that row has to exist.
 
 ## 3. Design
 
