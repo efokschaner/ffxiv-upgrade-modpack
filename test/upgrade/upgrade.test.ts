@@ -54,6 +54,7 @@ function sampleData(): ModpackData {
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: filesMap([
@@ -139,6 +140,7 @@ function modpackWithSingleFile(
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: filesMap([[gamePath, { data, storage }]]),
@@ -367,6 +369,7 @@ function buildColorsetPack(
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: filesMap([

@@ -84,6 +84,7 @@ describe("writeTtmp2 round-trip", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               fileSwaps: {},
               manipulations: [],
               files: filesMap([

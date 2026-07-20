@@ -187,6 +187,7 @@ describe("writePmp model-building fallback (no raw)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   "chara/equipment/foo.tex",
@@ -212,6 +213,7 @@ describe("writePmp model-building fallback (no raw)", () => {
               description: "the red one",
               image: "red.png",
               priority: 2,
+              selected: false,
               files: filesMap([
                 [
                   "chara/equipment/red.tex",
@@ -417,6 +419,7 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
           description: "",
           image: "",
           priority: 0,
+          selected: false,
           files: filesMap([
             [gamePath, { data, storage: FileStorageType.RawUncompressed }],
           ]),
@@ -609,6 +612,7 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
               fileSwaps: {},
               manipulations: [],
@@ -629,6 +633,7 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   "chara/x.tex",
@@ -692,6 +697,7 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
       description: "",
       image: "",
       priority: 0,
+      selected: false,
       files: filesMap([
         [
           `chara/${i}.tex`,
@@ -732,6 +738,7 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]),
               fileSwaps: {},
               manipulations: [],
@@ -824,6 +831,7 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
           description: "",
           image: "",
           priority: 0,
+          selected: false,
           files: filesMap(
             files.map((f) => [
               f.gamePath,
@@ -920,6 +928,7 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]),
               fileSwaps: {},
               manipulations: [],
@@ -940,6 +949,7 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // content-free, but the group still has >0 OPTIONS -> kept
               fileSwaps: {},
               manipulations: [],
@@ -1234,6 +1244,7 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
               fileSwaps: {},
               manipulations: [],
@@ -1254,6 +1265,7 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   "chara/x.tex",
@@ -1320,6 +1332,7 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
               fileSwaps: {},
               manipulations: [],
@@ -1340,6 +1353,7 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
               description: "",
               image: "",
               priority: 0,
+              selected: false,
               files: filesMap([
                 [
                   gamePath,

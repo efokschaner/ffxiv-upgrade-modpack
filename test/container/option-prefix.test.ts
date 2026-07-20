@@ -33,6 +33,7 @@ function option(
     description: "",
     image: "",
     priority: 0,
+    selected: false,
     files: filesMap(opts.files ?? [file()]),
     fileSwaps: opts.fileSwaps ?? {},
     manipulations: [],

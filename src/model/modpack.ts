@@ -62,6 +62,13 @@ export interface ModpackOption {
   description: string;
   image: string;
   priority: number;
+  /** Mirrors `WizardOptionEntry.Selected` (WizardData.cs:281-321) — a plain `bool` field with no
+   *  initializer, so `false` by default. NOT an exclusivity flag: the C# setter does IMC-only
+   *  mutual exclusion (:297-319) and nothing at all for Single groups (Single radio behaviour is a
+   *  WPF binding, not a model invariant), so a Single group CAN legally carry several selected
+   *  options. The only fixup either reader applies is the "none selected" backstop
+   *  (WizardData.cs:755-757 / :857-860), which never clamps a group that has more than one. */
+  selected: boolean;
   files: Map<string, ModpackFile>; // keyed by gamePath, insertion order (mirrors C#'s
   // WizardStandardOptionData.Files = Dictionary<string, FileStorageInformation>, WizardData.cs:71)
   fileSwaps: Record<string, string>; // PMP only; {} for TTMP

@@ -144,6 +144,11 @@ function optionFromJson(
     description: o.Description,
     image: o.Image,
     priority: o.Priority ?? 0, // multi-option-only field; absent on other subtypes
+    // Placeholder only. `Selected` is not an option-level field in the C# either: FromPMPGroup
+    // derives it from the OWNING GROUP's Type + DefaultSettings and the option's INDEX
+    // (WizardData.cs:805-813), neither of which is in scope here — so both call sites below
+    // overwrite this.
+    selected: false,
     files: modFiles,
     fileSwaps: o.FileSwaps,
     manipulations: o.Manipulations,
@@ -190,6 +195,13 @@ export function readPmp(bytes: Uint8Array): ModpackData {
 
   const groups: ModpackGroup[] = [];
   // default_mod.json -> a leading single-option group named "Default".
+  const defaultOption = optionFromJson(defaultMod, filesByKey, referencedKeys);
+  // WizardData.cs:1118-1138 — FromPmp's synthesized fake group is Type "Single" with exactly one
+  // option, and its DefaultSettings is never assigned (only the [JsonIgnore] SelectedSettings is,
+  // :1130), so it stays at the PMPGroupJson field default of 0. FromPMPGroup's Single index match
+  // (:807) therefore selects option 0. Set explicitly rather than left to a derivation, since we
+  // synthesize this group directly instead of routing it back through the group loop below.
+  defaultOption.selected = true;
   groups.push({
     name: "Default",
     description: "",
@@ -198,12 +210,42 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
-    options: [optionFromJson(defaultMod, filesByKey, referencedKeys)],
+    options: [defaultOption],
   });
 
   for (const name of groupNames) {
     const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
     const g = parsePmpGroup(gRaw);
+    // WizardData.cs:805-813 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a
+    // Single group, a BITMASK otherwise. `group.OptionType = pGroup.Type == "Single" ? Single :
+    // Multi` (:769), so an Imc/Combining group takes the bitmask branch exactly like a real Multi.
+    //
+    // DefaultSettings -> ulong via CustomUInt64Converter (PMP.cs:1558-1571), which reinterprets a
+    // negative JSON number as its 64-bit two's-complement UNSIGNED value (the documented "-1 meant
+    // 2^64-1" shim, :1564-1565). BigInt.asUintN(64, ...) reproduces that; JS's 32-bit `|` would not.
+    const rawSettings = BigInt.asUintN(
+      64,
+      BigInt(Math.trunc(g.DefaultSettings)),
+    );
+    const options = g.Options.map((o, idx) => {
+      const opt = optionFromJson(o, filesByKey, referencedKeys);
+      opt.selected =
+        g.Type === "Single"
+          ? rawSettings === BigInt(idx)
+          : (rawSettings & (1n << BigInt(idx))) !== 0n;
+      return opt;
+    });
+    // WizardData.cs:857-860 — FromPMPGroup's tail. Same "none selected" backstop as the TTMP seam
+    // (which is a DIFFERENT C# symbol, FromWizardGroup:755-757, so it is transcribed there
+    // separately rather than shared). It never clamps a group with more than one selected. The
+    // `length > 0` guard stands in for the zero-option early return at :851-855, unported.
+    if (
+      g.Type === "Single" &&
+      options.length > 0 &&
+      !options.some((o) => o.selected)
+    ) {
+      options[0]!.selected = true;
+    }
     groups.push({
       name: g.Name,
       description: g.Description,
@@ -212,9 +254,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       priority: g.Priority,
       selectionType: g.Type,
       defaultSettings: g.DefaultSettings,
-      options: g.Options.map((o) =>
-        optionFromJson(o, filesByKey, referencedKeys),
-      ),
+      options,
       // Carry the full original group JSON so group-level extras (Imc Identifier/
       // DefaultEntry/AllVariants/OnlyAttributes, etc.) round-trip verbatim.
       raw: gRaw,

@@ -94,6 +94,7 @@ function dataWith(selectionType: string): ModpackData {
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: filesMap([

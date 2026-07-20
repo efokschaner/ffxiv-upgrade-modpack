@@ -73,6 +73,10 @@ export function readLegacyTtmp(
     description: "",
     image: "",
     priority: 0,
+    // GetLegacyModpackMpl synthesizes a "0.1s" ModPackJson carrying a SimpleModsList
+    // (TTMP.cs:453-462), so a legacy pack loads through FromSimpleTtmp, whose one fake option is
+    // built with `IsChecked = true` (WizardData.cs:1218-1221) and copied to Selected at :668.
+    selected: true,
     fileSwaps: {},
     manipulations: [],
     files,

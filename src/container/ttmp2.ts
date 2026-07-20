@@ -111,6 +111,9 @@ export function readTtmp2(
       description: "",
       image: "",
       priority: 0,
+      // WizardData.cs:1218-1221 — FromSimpleTtmp synthesizes its one fake ModOptionJson with
+      // `IsChecked = true`, which FromWizardGroup then copies to Selected (:668).
+      selected: true,
       fileSwaps: {},
       manipulations: [],
       files: filesFromMods(mpl.SimpleModsList, mpd, loadFix),
@@ -151,11 +154,28 @@ export function readTtmp2(
           description: o.Description ?? "",
           image: o.ImagePath ?? "",
           priority: 0,
+          // WizardData.cs:668 — `wizOp.Selected = o.IsChecked;`, verbatim, with no clamping. An
+          // absent key leaves C#'s plain `bool` field at its `false` default
+          // (ModOptionJson.IsChecked, ModPackJson.cs:189-198).
+          selected: o.IsChecked ?? false,
           fileSwaps: {},
           manipulations: [],
           files: filesFromMods(o.ModsJsons, mpd, loadFix),
         })),
       });
+      // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
+      // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
+      // selected option. The `length > 0` guard stands in for the zero-option early return at
+      // :749-753 (C# returns null for an empty group; we do not port that pruning yet), so an
+      // option-less group cannot crash here.
+      const built = groups[groups.length - 1]!;
+      if (
+        built.selectionType === "Single" &&
+        built.options.length > 0 &&
+        !built.options.some((o) => o.selected)
+      ) {
+        built.options[0]!.selected = true;
+      }
     }
   }
   return { sourceFormat: ModpackFormat.Ttmp2, isSimple: false, meta, groups };

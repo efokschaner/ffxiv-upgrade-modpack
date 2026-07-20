@@ -104,6 +104,7 @@ function rawPack(files: Record<string, Uint8Array>): ModpackData {
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: new Map(
@@ -137,6 +138,7 @@ function addOption(
     description: "",
     image: "",
     priority: 0,
+    selected: false,
     fileSwaps: {},
     manipulations: [],
     files: new Map([[gamePath, file]]),
@@ -345,6 +347,7 @@ function rawPackTtmp2(): ModpackData {
             description: "",
             image: "",
             priority: 0,
+            selected: false,
             fileSwaps: {},
             manipulations: [],
             files: filesMap([

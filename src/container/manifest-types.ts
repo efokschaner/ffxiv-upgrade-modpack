@@ -16,6 +16,11 @@ export interface TtmpModOptionJson {
   ModsJsons: TtmpModsJson[];
   GroupName: string;
   SelectionType: string;
+  // ModOptionJson.IsChecked (ModPackJson.cs:189-198) — a plain C# `bool` behind a
+  // NotifyPropertyChanged setter, so an absent key deserializes to `false`. Optional here to
+  // model that absence; FromWizardGroup copies it to WizardOptionEntry.Selected verbatim
+  // (WizardData.cs:668).
+  IsChecked?: boolean;
 }
 export interface TtmpModGroupJson {
   GroupName: string;
