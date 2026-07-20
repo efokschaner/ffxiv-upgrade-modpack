@@ -32,23 +32,86 @@ cold by someone with no context.
 
 ## Prioritized
 
-Roughly highest-priority first, ranked toward a **robust and fully functional** port (prioritization
-pass 2026-07-17). The ordering follows three tiers: **(a)** the transform rounds the pipeline still
-*stubs / throws* on — functional completeness; **(b)** crashes and **silent divergences** on real
-inputs the corpus doesn't happen to cover — robustness and our "fail loud, never silently diverge"
-rule; **(c)** the real-corpus byte-divergences keeping already-shipped rounds off byte-zero.
-Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+Roughly highest-priority first (prioritization pass **2026-07-20**, superseding 2026-07-17).
 
-1. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
-   — **mechanical real-corpus correctness win.** We emit at the convention path instead of the
-   canonical override. Fix is mechanical: re-run `scripts/extract-index-overrides.ts` against a game
-   install.
+**The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
+TexTools does — the port's functional completeness and the site are the *same* goal, not competing
+ones, so this is one list rather than "port work" and "product work". Items are ordered by
+**probability × severity that a user gets a wrong or failed modpack**, which sorts the failure modes:
+
+1. **Silent wrong output** — worst. The user ships a broken mod and never learns. Our "fail loud,
+   never silently diverge" rule exists for this, and every violation of it outranks everything below.
+2. **Hard crash or refusal** — bad, but honest.
+3. **Doesn't exist yet** — blocking, but carries no correctness *unknowns*.
+4. **Cosmetic divergence from the golden** — real ("byte-parity is the definition of correct"), but
+   lowest user impact.
+
+Note this deliberately ranks a *silent* gap above a *loud* one even when the loud one is bigger, and
+ranks a large, well-understood build (the UI) below small, unbounded correctness holes. Reference:
+`src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+
+1. [T4 — `index-path-overrides` is corpus-scoped and silently falls back](backlog/2026-07-10-index-path-overrides-e0208.md)
+   — **the one bundled reference table that is corpus-derived, with a silent miss.** 11 entries, no
+   completeness claim; `material.ts:144-147` keeps the convention path on a miss with no throw or
+   warning, so a base-game material our corpus never saw gets the wrong `_id.tex` path silently, with
+   a blast radius unknowable from the ratchet. **The fix is a redesign, not the re-run this item used
+   to prescribe** — the extractor enumerates the corpus, not the game (see the item). Previously
+   ranked #1 as a "mechanical real-corpus correctness win"; same rank, but that framing understated
+   both the risk and the work.
 
 2. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
-   NPOT-normalize and T2's NPOT resize still throw and remain open. Real cases exist.
+   NPOT-normalize and T2's NPOT resize still throw and remain open. Real cases exist. Ranks here
+   rather than lower because in the hair path the throw is *swallowed* by the reproduced TexTools
+   catch-all (`unclaimed-hair.ts:197`), making it a silent partial upgrade rather than a loud failure.
+
+3. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
+   — the **second** silent-fallback table, same rule violation as #1, milder effect. A hair material
+   may bind a sampler path outside the bundled hair/zear/tail texture namespace (a `chara/common/…`
+   mashup, or an id > 500); the oracle answers a hard `false`, silently suppressing a rename TexTools
+   would perform.
+
+4. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
+   first, so it is described here rather than filed.)* `unclaimed-hair.ts:197-204` faithfully
+   reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing both the
+   modeled `TextureResizeUnsupported` gap and genuine parse failures. Reproducing it is **correct** —
+   but TexTools writes a `Trace` line and a webpage writes nothing, so the page would report success
+   on a partial upgrade. This is the one place where faithfully matching TexTools' behaviour still
+   leaves the *user* worse off, which makes a warnings channel a port-level requirement rather than
+   UI polish. Note it is not a divergence: the transform behaviour stays identical, we only surface
+   what was skipped.
+
+5. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+   33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
+   is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
+   there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
+   (it currently emits no HTML page); a **Web Worker** (`upgradeModpack` is synchronous and
+   CPU-bound, so it freezes the tab); **lazy-loading the reference tables** (~3.23 MB of `src/` is
+   eagerly-evaluated generated tables, `imc-table.ts` alone 2.34 MB constructing a `Map` at module
+   load); and surfacing the fail-loud guards as user-facing "this modpack isn't supported because…"
+   messages. One hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI
+   must **not** offer an output-format picker. Should start in parallel with 1-5, not after them.
+
+6. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
+   machine, gitignored, with no CI. Code coverage is strong (92.98% lines / 84.6% branches — the 0%
+   files are re-export barrels), so the residual risk is **data and inputs, not code paths**, which
+   is exactly what more packs buy and coverage cannot. This is the only entry that finds the
+   unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
+   design §8.4's thin-coverage note.
+
+7. **The three `writeTtmp2` manifest items** — [missing `.mpl` fields](backlog/2026-07-13-resave-ttmp2-missing-mpl-fields.md),
+   [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md),
+   [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). Together these are
+   **~5431 of the 5811 entries in `.upgrade-baseline` (93%), across 58 of 70 packs** — by count, by
+   far the largest divergence from the golden. Ranked here rather than higher because the impact is
+   mostly cosmetic (`ModPackEntry: null`, `Description: null` vs `""`, file ordering), though
+   `IsChecked` drives default option selection in the importer and so is functional. **They were
+   previously filed under *Unprioritized → `/resave` findings***, behind that section's caveat that a
+   `/resave` divergence is not automatically an `/upgrade` bug — true in general, but the
+   `.upgrade-baseline` data shows these three specifically *do* reach `/upgrade`. Moved here
+   2026-07-20; the remaining `/resave` findings stay where they are.
 
 ## Unprioritized
 
@@ -106,13 +169,10 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — same shape: `reconstructMeta` is *correct* (byte-identical on `/upgrade`), only its seam is wrong.
 - [`writeTtmp2` re-emits a simple pack as simple; TexTools always writes a wizard pack](backlog/2026-07-13-resave-ttmp2-simple-pack.md)
   — `WriteModpack` has no simple-pack writer at all. 13 packs. Decide deliberately whether to match.
-- [`writeTtmp2` omits `.mpl` fields TexTools always writes](backlog/2026-07-13-resave-ttmp2-missing-mpl-fields.md)
-  — `IsChecked`, `ModPackEntry: null`, an explicit `SimpleModsList: null`, and `Description: null`
-  where we write `""`. 36 packs.
-- [`writeTtmp2` round-trips `ModsJsons[].Name`/`Category`; TexTools re-derives them](backlog/2026-07-13-resave-ttmp2-name-category.md)
-  — from the game path, yielding `Unknown` for a path it can't classify.
-- [`writeTtmp2` emits an option's files in a different order](backlog/2026-07-13-resave-ttmp2-option-file-order.md)
-  — 20 packs; confirm it is *only* order before fixing.
+- **Three `writeTtmp2` manifest items moved to the Prioritized list** (2026-07-20): missing `.mpl` fields,
+  `Name`/`Category` re-derivation, and option file order. They were filed here on the reasoning at the
+  top of this section — that a `/resave` divergence need not be an `/upgrade` bug — but they are
+  ~5431 of the 5811 `.upgrade-baseline` entries, so for these three that caveat does not hold.
 - [`/resave`'s `diffArchives` call never forwards `confirmDivergence`](backlog/2026-07-18-resave-confirmdivergence-not-forwarded.md)
   — unlike `corpus-upgrade.ts`, so a `DIVERGENCE_RULES` entry that would *confirm* a payload-member
   mismatch under `/upgrade` is merely baseline-suppressed under `/resave` instead — not documented,
