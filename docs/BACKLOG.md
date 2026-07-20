@@ -113,6 +113,14 @@ ranks a large, well-understood build (the UI) below small, unbounded correctness
    `.upgrade-baseline` data shows these three specifically *do* reach `/upgrade`. Moved here
    2026-07-20; the remaining `/resave` findings stay where they are.
 
+8. [`.mpl` top-level key order — Newtonsoft emits `MinimumFrameworkVersion` first, we emit it 7th](backlog/2026-07-20-mpl-key-order-field-before-properties.md)
+   — it is the only public **field** on `ModPackJson` (ModPackJson.cs:61); every other member is a
+   property, and Newtonsoft's default contract orders fields before properties. Confirmed against a
+   real cached golden. Purely cosmetic by the ranking rubric (#4), but listed here rather than in
+   Unprioritized because of *how* it hid: the harness compares manifests **semantically**
+   (`jsonPointerDiff`), so no corpus check or ratchet entry can ever see a key-order divergence — the
+   fix is a one-line move plus the top-level assertion the existing key-order unit test is missing.
+
 ## Unprioritized
 
 ### PMP write path
