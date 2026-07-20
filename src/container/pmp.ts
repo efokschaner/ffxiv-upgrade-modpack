@@ -231,8 +231,10 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     const options = g.Options.map((o, idx) => {
       const opt = optionFromJson(o, filesByKey, referencedKeys);
       // `idx & 63` reproduces .NET's SHIFT-COUNT MASKING, not a bounds clamp. C# writes
-      // `var bit = 1UL << idx;` (WizardData.cs:811) on a 64-bit operand, and the ECMA-335 `shl`
-      // semantics C# specifies for `ulong` mask the shift count to its low 6 bits — so `idx == 64`
+      // `var bit = 1UL << idx;` (WizardData.cs:811) on a 64-bit operand, and the C# language
+      // specification requires the shift count to be masked to its low 6 bits — the compiler emits
+      // an explicit `and 63` to guarantee it, whereas ECMA-335 leaves `shl` with a count at or
+      // above the operand width unspecified, so the guarantee is C#'s and not the IL's. `idx == 64`
       // computes `1UL << 0` and option 64 ALIASES option 0's bit (65 aliases 1, and so on). JS
       // BigInt has no such masking: a bare `1n << 64n` is 2^64, which ANDs to zero against the
       // 64-bit `rawSettings` and would silently deselect every option past 63.

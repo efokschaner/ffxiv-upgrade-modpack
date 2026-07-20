@@ -483,7 +483,7 @@ set, so it is a behavioural fix for that function's own consumers, not a cosmeti
 
 ## 17. `FromPMPGroup`'s Multi bitmask aliases option 64 onto option 0 (unmasked shift count)
 
-**Status:** reproduced · **Where:** `WizardData.cs:810-811` (and the mirror-image getter,
+**Status:** reproduced · **Where:** `WizardData.cs:811-812` (and the mirror-image getter,
 `WizardData.cs:598`) — see `src/container/pmp.ts`, `readPmp`'s Multi branch
 
 `FromPMPGroup` derives a Multi-type group's per-option `Selected` from `DefaultSettings` by testing
