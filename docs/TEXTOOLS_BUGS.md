@@ -478,3 +478,47 @@ dropped), and the arithmetic is confirmed against real ConsoleTools output by th
 **Upstream fix:** `Vfx = vfx` at `Imc.cs:384`. Note this *changes* the values `GetFullImcInfo`
 returns for any NonSet item whose default entry has a non-zero vfx byte differing from its material
 set, so it is a behavioural fix for that function's own consumers, not a cosmetic one.
+
+---
+
+## 17. `FromPMPGroup`'s Multi bitmask aliases option 64 onto option 0 (unmasked shift count)
+
+**Status:** reproduced · **Where:** `WizardData.cs:810-811` (and the mirror-image getter,
+`WizardData.cs:598`) — see `src/container/pmp.ts`, `readPmp`'s Multi branch
+
+`FromPMPGroup` derives a Multi-type group's per-option `Selected` from `DefaultSettings` by testing
+one bit per option index:
+
+```csharp
+var bit = 1UL << idx;                              // :811
+wizOp.Selected = (pGroup.DefaultSettings & bit) != 0;
+```
+
+`DefaultSettings` is a `ulong`, so the shift is a 64-bit `shl`, and both C# and ECMA-335 specify
+that the shift count is **masked to the low 6 bits** for a 64-bit operand. `idx` is the plain
+`0..Options.Count-1` loop counter with no bound of its own, so a group with **65 or more options**
+wraps: option 64 tests `1UL << 0`, option 65 tests `1UL << 1`, and so on. Those options become
+mirrors of options 0..N — their selection state is not read from any bit of their own (there is
+none; the field is only 64 bits wide) but silently aliased onto an earlier option's.
+
+Nothing about the PMP format caps a group at 64 options: `PMPGroupJson.Options` (`PMP.cs:1405`) is
+an unbounded list, and `DefaultSettings` is a fixed-width `ulong` (`:1404`). So the format admits
+groups the selection encoding cannot represent, and the C# neither rejects them nor truncates them
+— it wraps, which is the defect. The write-side getter `WizardGroupEntry.Selection` (`:594-601`)
+has the identical unmasked `1UL << i`, so a round-trip folds the aliased options' state back down
+onto the low bits as well.
+
+**Us:** `readPmp` reproduces the aliasing exactly, as `1n << BigInt(idx & 63)`. JS `BigInt` is
+arbitrary-precision and does **not** mask, so a bare `1n << BigInt(idx)` would evaluate to 2^64 and
+`&` to zero against the 64-bit `rawSettings` — silently deselecting every option past 63 instead of
+aliasing it. We chose reproduction over a fail-loud throw: AGENTS.md's "fail loud" rule covers a
+path the port cannot yet reproduce faithfully, and this one it can, in one `& 63`; throwing would
+also refuse a pack TexTools upgrades fine. Pinned by `test/container/pmp-selected.test.ts`
+("Multi: option 64 aliases option 0"). `computeSelection` in the same file carries the same
+unmasked shift on the write side, deliberately unpatched — it is slated for deletion in favour of
+reading the read-time `selected` flag, and its `Number` return caps it well before option 64
+anyway; see its doc comment.
+
+**Upstream fix:** reject (or explicitly truncate, with a warning) a group whose `Options.Count`
+exceeds 64, in both `FromPMPGroup` and `Selection` — the encoding genuinely cannot carry more, so
+silently aliasing is the worst of the three options.

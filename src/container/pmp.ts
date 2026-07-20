@@ -229,10 +229,25 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     );
     const options = g.Options.map((o, idx) => {
       const opt = optionFromJson(o, filesByKey, referencedKeys);
+      // `idx & 63` reproduces .NET's SHIFT-COUNT MASKING, not a bounds clamp. C# writes
+      // `var bit = 1UL << idx;` (WizardData.cs:811) on a 64-bit operand, and the ECMA-335 `shl`
+      // semantics C# specifies for `ulong` mask the shift count to its low 6 bits — so `idx == 64`
+      // computes `1UL << 0` and option 64 ALIASES option 0's bit (65 aliases 1, and so on). JS
+      // BigInt has no such masking: a bare `1n << 64n` is 2^64, which ANDs to zero against the
+      // 64-bit `rawSettings` and would silently deselect every option past 63.
+      //
+      // We REPRODUCE the aliasing rather than throwing. AGENTS.md's "fail loud, never silently
+      // diverge" governs a code path the port "does not yet reproduce faithfully" — that is not
+      // this: .NET's masking is fully specified and transcribes to a single `& 63`, so we can be
+      // exactly faithful here at no cost. That puts the case under "reproduce TexTools faithfully,
+      // including its bugs" instead, and throwing would additionally REFUSE a 65+-option pack that
+      // TexTools upgrades without complaint — a strictly worse outcome for the user, with none of
+      // the evidence AGENTS.md requires for a deliberate user-benefit divergence.
+      // Registered as docs/TEXTOOLS_BUGS.md #17.
       opt.selected =
         g.Type === "Single"
           ? rawSettings === BigInt(idx)
-          : (rawSettings & (1n << BigInt(idx))) !== 0n;
+          : (rawSettings & (1n << BigInt(idx & 63))) !== 0n;
       return opt;
     });
     // WizardData.cs:857-860 — FromPMPGroup's tail. Same "none selected" backstop as the TTMP seam
@@ -367,10 +382,24 @@ export function reformatPmpVersion(source: string): string {
 /** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604), reconstructed from the read-time
  * derivation `FromPMPGroup` performs per option (`Selected`, WizardData.cs:805-813) plus its
  * Single-type "nothing selected" fixup (WizardData.cs:857-860). `ToPmpGroup` writes
- * `pg.DefaultSettings = Selection` (:949) rather than the source value: our domain model has no
- * per-option `Selected` flag -- only the group's raw `defaultSettings` source value -- so this
- * recomputes exactly what those two C# passes would have left on `Options[i].Selected` before
- * `Selection`'s getter reads it back.
+ * `pg.DefaultSettings = Selection` (:949) rather than the source value, so this RECONSTRUCTS, from
+ * the group's raw `defaultSettings` source value alone, what those two C# passes would have left on
+ * `Options[i].Selected` before `Selection`'s getter reads it back.
+ *
+ * SLATED FOR REMOVAL -- do not build on it. This reconstruction is now redundant: `readPmp` (above)
+ * performs that same `FromPMPGroup` derivation at read time and stores the result on each option's
+ * `selected` flag, so `Selection`'s getter can be transcribed directly against
+ * `g.options[i].selected` instead of being re-derived from `defaultSettings` here. The two agree
+ * today, but keeping a second, independent derivation of the same fact invites them to drift.
+ *
+ * It also carries the same latent .NET shift-masking divergence the read-time derivation just had
+ * fixed (see `readPmp`'s `idx & 63` and docs/TEXTOOLS_BUGS.md #17): the Multi loop below tests
+ * `1n << BigInt(i)` where C#'s `Selection` getter uses `1UL << i` (WizardData.cs:598), whose shift
+ * count .NET masks to 6 bits -- so from `i == 64` on, C# re-reads/re-sets the LOW bits while we walk
+ * off past 2^63. Deliberately NOT patched here: the `Number(total)` cap below (see next paragraph)
+ * already makes this function wrong well before option 64, so a 64-bit-exact shift would be
+ * misleading precision on a value that cannot survive the return type. The correct fix is the
+ * removal above, which inherits the read side's already-faithful masking.
  *
  * `defaultSettings` -> ulong: `CustomUInt64Converter` (PMP.cs:1558-1571) reinterprets a JSON token
  * Newtonsoft parsed as a negative number as its 64-bit two's-complement UNSIGNED value (the

@@ -139,7 +139,7 @@ export function readTtmp2(
   const groups: ModpackGroup[] = [];
   for (const page of mpl.ModPackPages ?? []) {
     for (const g of page.ModGroups) {
-      groups.push({
+      const built: ModpackGroup = {
         name: g.GroupName,
         description: "",
         image: "",
@@ -162,13 +162,13 @@ export function readTtmp2(
           manipulations: [],
           files: filesFromMods(o.ModsJsons, mpd, loadFix),
         })),
-      });
+      };
+      groups.push(built);
       // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
       // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
       // selected option. The `length > 0` guard stands in for the zero-option early return at
       // :749-753 (C# returns null for an empty group; we do not port that pruning yet), so an
       // option-less group cannot crash here.
-      const built = groups[groups.length - 1]!;
       if (
         built.selectionType === "Single" &&
         built.options.length > 0 &&
