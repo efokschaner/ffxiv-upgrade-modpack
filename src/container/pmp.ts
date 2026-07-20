@@ -13,8 +13,8 @@ import {
 import { readZip, writeZip } from "../zip/zip";
 import {
   type PmpGroupJsonRaw,
-  type PmpMetaJson,
   type PmpMetaJsonRaw,
+  type PmpMetaJsonWrite,
   type PmpOptionJsonRaw,
   parsePmpGroup,
   parsePmpMeta,
@@ -482,7 +482,11 @@ function optionToJson(
 
   if (includeMeta) {
     base.Name = o.name.trim(); // WizardData.cs:928 -- `option.Name = option.Name.Trim();`
-    base.Description = o.description;
+    // WizardData.cs · WizardOptionEntry.ToPmpOption · 543-544 — `op.Name = Name ?? ""; op.Description
+    // = Description ?? "";`. The PMP export path coalesces where the TTMP path (TTMPWriter.cs ·
+    // AddOption · 144) does not, so `o.description`'s nullability is absorbed HERE rather than by the
+    // model — see ModpackOption.description (src/model/modpack.ts) for why the asymmetry is kept.
+    base.Description = o.description ?? "";
     // WizardHelpers.WriteImage (WizardData.cs:545/:953/:1497) re-encodes a REFERENCED image into a
     // fresh 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than
     // passing the source value through — unported (no image encoder here; see
@@ -659,7 +663,11 @@ export function writePmp(
   // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This carries the
   // source value verbatim, which diverges from the golden whenever meta actually carries an image
   // (no corpus pack does, so the corpus alone doesn't expose this).
-  const meta: PmpMetaJson = {
+  // `PmpMetaJsonWrite`, not `PmpMetaJson`: WritePmp assigns Name/Author/Website/Description verbatim
+  // (WizardData.cs:1490-1493) — no `?? ""`, unlike the option/group seams — and meta.json is
+  // serialized with Newtonsoft defaults (PMP.cs:850), so a null from a TTMP-sourced model is written
+  // as an explicit `null`. See the type's doc comment in manifest-types.ts.
+  const meta: PmpMetaJsonWrite = {
     FileVersion: 3, // PMP._WriteFileVersion (PMP.cs:45)
     Name: data.meta.name,
     Author: data.meta.author,

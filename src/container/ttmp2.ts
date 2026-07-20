@@ -95,12 +95,18 @@ export function readTtmp2(
     needsMdlFix: ttmpNeedsMdlFix(mpl.TTMPVersion),
   });
 
+  // WizardMetaEntry.FromTtmp (WizardData.cs:1052-1069) assigns Name/Author/Url/Description VERBATIM
+  // — no `?? ""` — and the `= ""` initializers on those fields (:1015-1020) are overwritten by these
+  // very assignments, so a `.mpl` that spells `null` (or omits the key: an uninitialized C# `string`
+  // deserializes to `null`) keeps a null all the way to the write. `?? null` normalizes our
+  // `undefined`-for-absent to C#'s `null`-for-absent. `version` is the exception: WriteWizardPack
+  // forces it non-null (:1335-1337), so it keeps its coalesce.
   const meta = {
-    name: mpl.Name ?? "",
-    author: mpl.Author ?? "",
+    name: mpl.Name ?? null,
+    author: mpl.Author ?? null,
     version: mpl.Version ?? "",
-    description: mpl.Description ?? "",
-    url: mpl.Url ?? "",
+    description: mpl.Description ?? null,
+    url: mpl.Url ?? null,
     image: "",
     tags: [],
     minimumFrameworkVersion: mpl.MinimumFrameworkVersion ?? "1.0.0.0",
@@ -153,7 +159,10 @@ export function readTtmp2(
         defaultSettings: 0,
         options: g.OptionList.map((o) => ({
           name: o.Name,
-          description: o.Description ?? "",
+          // WizardData.cs:663 — `wizOp.Description = o.Description;`, verbatim, no coalesce. An
+          // ABSENT key is `undefined` here but `null` in C# (an uninitialized `string` field,
+          // ModPackJson.cs · ModOptionJson · 159-198), so normalize to null rather than to "".
+          description: o.Description ?? null,
           image: o.ImagePath ?? "",
           priority: 0,
           // WizardData.cs:668 — `wizOp.Selected = o.IsChecked;`, verbatim, with no clamping. An

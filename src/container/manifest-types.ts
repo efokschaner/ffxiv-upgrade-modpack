@@ -11,7 +11,16 @@ export interface TtmpModsJson {
 }
 export interface TtmpModOptionJson {
   Name: string;
-  Description: string;
+  // NULLABLE all the way to serialization. `ModOptionJson.Description` (ModPackJson.cs ·
+  // ModOptionJson · 159-198) is an uninitialized C# `string`, so an absent key deserializes to
+  // `null`; nothing coalesces it thereafter — load copies it verbatim (`wizOp.Description =
+  // o.Description`, WizardData.cs · FromWizardGroup · 663), TTMP export copies it verbatim
+  // (`Description = Description`, · WizardOptionEntry.ToModOption · 414) and TTMPWriter copies it
+  // verbatim again (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144). With
+  // Newtonsoft's default NullValueHandling.Include (see the write-view note below) that `null`
+  // reaches the output `.mpl` as an explicit `null`. Only the PMP path coalesces, and it does so at
+  // its own seam (`op.Description = Description ?? ""`, WizardData.cs · ToPmpOption · 543-544).
+  Description: string | null;
   ImagePath: string;
   ModsJsons: TtmpModsJson[];
   GroupName: string;
@@ -33,11 +42,22 @@ export interface TtmpModPackPageJson {
 }
 export interface ModPackJson {
   TTMPVersion: string;
-  Name: string;
-  Author: string;
+  // Name/Author/Description/Url are NULLABLE for the same reason as ModOptionJson.Description
+  // above: uninitialized C# `string` members of `ModPackJson` (ModPackJson.cs · ModPackJson ·
+  // 24-118), read verbatim into WizardMetaEntry (WizardData.cs · WizardMetaEntry.FromTtmp ·
+  // 1052-1069 — the `= ""` field initializers at :1015-1020 are OVERWRITTEN by those assignments,
+  // so they offer no protection), written back verbatim (· WriteWizardPack · 1332-1346; the
+  // `ClearNulls()` at :1334 prunes empty pages/groups/options and never touches a string), and
+  // emitted as explicit `null` by Newtonsoft's default NullValueHandling.Include.
+  Name: string | null;
+  Author: string | null;
+  // `Version` is the ONE exception — never null. WriteWizardPack forces it non-null with
+  // `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`
+  // (WizardData.cs:1335-1337) and the TTMPWriter ctor re-guards it
+  // (`modPackData.Version ?? new Version(1, 0, 0, 0)`, TTMPWriter.cs · TTMPWriter · 61).
   Version: string;
-  Description: string;
-  Url: string;
+  Description: string | null;
+  Url: string | null;
   MinimumFrameworkVersion?: string;
   ModPackPages?: TtmpModPackPageJson[] | null;
   SimpleModsList?: TtmpModsJson[] | null;
@@ -161,6 +181,31 @@ export interface PmpMetaJson {
   ModTags: string[] | null; // C# `List<string> ModTags;` — uninitialized, so absent -> null
 }
 export type PmpMetaJsonRaw = Partial<PmpMetaJson>;
+
+/** WRITE-SIDE VIEW of `PmpMetaJson`, in the same spirit as the `Ttmp*JsonWrite` aliases above.
+ *
+ * `PmpMetaJson` describes the document as READ, where `parsePmpMeta`'s `?? ""` has already applied
+ * the C# field initializers — so nothing downstream of a read ever sees a null. The WRITE path can:
+ * `WizardData.WritePmp` assigns `pmp.Meta.Name/Author/Website/Description` VERBATIM from the
+ * WizardMetaEntry (WizardData.cs · WritePmp · 1490-1493) with no `?? ""` — unlike the per-OPTION and
+ * per-GROUP seams, which do coalesce (`op.Description = Description ?? ""` · ToPmpOption · 543-544;
+ * `pg.Name = (Name ?? "").Trim()` · ToPmpGroup · 946-947) — and `SavePMP` serializes meta.json with a
+ * bare `JsonConvert.SerializeObject(pmp.Meta, Formatting.Indented)` (PMP.cs · SavePMP · 850), i.e.
+ * Newtonsoft defaults, so NullValueHandling.Include. A null therefore reaches meta.json as an
+ * explicit `null` rather than being omitted or flattened to `""`.
+ *
+ * Only a TTMP-sourced model can carry those nulls in the first place: LoadPMP deserializes meta.json
+ * with `NullValueHandling.Ignore` (PMP.cs:137-139), which leaves an explicit null at the field
+ * initializer's `""`, exactly as `parsePmpMeta` models. */
+export type PmpMetaJsonWrite = Omit<
+  PmpMetaJson,
+  "Name" | "Author" | "Description" | "Website"
+> & {
+  Name: string | null;
+  Author: string | null;
+  Description: string | null;
+  Website: string | null;
+};
 
 /** Applies PMPMetaJson's field initializers (PMP.cs:1369-1381). */
 export function parsePmpMeta(raw: PmpMetaJsonRaw): PmpMetaJson {

@@ -59,7 +59,16 @@ export type RawUncompressedFile = Extract<
 
 export interface ModpackOption {
   name: string;
-  description: string;
+  /** `string | null`, because the TTMP path copies it verbatim end to end with no coalesce — load
+   *  (`wizOp.Description = o.Description`, WizardData.cs · FromWizardGroup · 663), export
+   *  (`Description = Description`, · WizardOptionEntry.ToModOption · 414) and write
+   *  (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144) — and the manifest
+   *  serializer includes nulls, so a null description survives a TexTools round-trip as a literal
+   *  `"Description": null`. The PMP path is deliberately NOT symmetric: it coalesces at its own seam
+   *  (`op.Description = Description ?? ""`, WizardData.cs · WizardOptionEntry.ToPmpOption · 543-544),
+   *  which `optionToJson` (src/container/pmp.ts) reproduces — so the model does not force a value
+   *  here and flatten the TTMP side to match. */
+  description: string | null;
   image: string;
   priority: number;
   /** Mirrors `WizardOptionEntry.Selected` (WizardData.cs:281-321) — a plain `bool` field with no
@@ -90,11 +99,20 @@ export interface ModpackGroup {
 }
 
 export interface ModpackMeta {
-  name: string;
-  author: string;
+  // Name/Author/Description/Url are `string | null`: WizardMetaEntry.FromTtmp assigns all four
+  // verbatim from the `.mpl` (WizardData.cs · WizardMetaEntry.FromTtmp · 1052-1069) and
+  // WriteWizardPack passes them straight back out (· WriteWizardPack · 1332-1346). The `= ""` field
+  // initializers on WizardMetaEntry (:1015-1020) are OVERWRITTEN by that load, so they give no
+  // protection, and `ClearNulls()` (:1234-1266, called at :1334) prunes pages/groups/options only —
+  // never a string. So a null spelled in the source survives to serialization.
+  name: string | null;
+  author: string | null;
+  // `version` is NOT nullable: WriteWizardPack forces it non-null via
+  // `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`
+  // (WizardData.cs:1335-1337), re-guarded in the TTMPWriter ctor (TTMPWriter.cs · TTMPWriter · 61).
   version: string;
-  description: string;
-  url: string;
+  description: string | null;
+  url: string | null;
   image: string;
   tags: string[];
   minimumFrameworkVersion: string;

@@ -7,7 +7,7 @@ import {
   type ModpackFile,
   ModpackFormat,
 } from "../../src/model/modpack";
-import { readZip } from "../../src/zip/zip";
+import { readZip, writeZip } from "../../src/zip/zip";
 import {
   filesMap,
   makeTtmp2Simple,
@@ -183,5 +183,91 @@ describe("writeTtmp2 .mpl fidelity", () => {
       "IsDefault",
       "ModPackEntry",
     ]);
+  });
+});
+
+/** Rebuild a `.ttmp2` with its `.mpl` document mutated — the only way to exercise the READ seam,
+ *  which is where the coalescing lived. */
+function withMpl(
+  bytes: Uint8Array,
+  // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+  mutate: (doc: any) => void,
+): Uint8Array {
+  const entries = readZip(bytes);
+  const name = [...entries.keys()].find((k) =>
+    k.toLowerCase().endsWith(".mpl"),
+  )!;
+  const doc = JSON.parse(new TextDecoder().decode(entries.get(name)!));
+  mutate(doc);
+  entries.set(name, new TextEncoder().encode(JSON.stringify(doc)));
+  return writeZip(entries, { store: true });
+}
+
+// TexTools' TTMP path never coalesces these strings, and `JsonConvert.SerializeObject` runs with
+// Newtonsoft defaults (NullValueHandling.Include, TTMPWriter.cs · Write · 324), so a source `.mpl`
+// that spells `null` round-trips as `null` rather than being flattened to `""`. Our readers used to
+// normalize everything to `""`, which diverged from the golden on exactly those packs.
+describe("writeTtmp2 null fidelity", () => {
+  // Load copies verbatim (`wizOp.Description = o.Description`, WizardData.cs · FromWizardGroup ·
+  // 663), export copies verbatim (`Description = Description`, · ToModOption · 414), and the writer
+  // copies verbatim again (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144).
+  // So a null in, a null out — no `?? ""` anywhere along that chain.
+  it("round-trips a null option Description as null, and '' as ''", () => {
+    const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
+      const list = doc.ModPackPages[0].ModGroups[0].OptionList;
+      list[0].Description = null;
+      list[1].Description = "";
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+    const out = mpl(writeTtmp2(readTtmp2(src))) as any;
+    const list = out.ModPackPages[0].ModGroups[0].OptionList;
+    expect(list[0].Description).toBeNull();
+    expect(list[1].Description).toBe("");
+  });
+
+  // An ABSENT Description key is a different input with the same outcome: C#'s `string` field has no
+  // initializer on ModOptionJson (ModPackJson.cs · ModOptionJson · 159-198), so Newtonsoft leaves it
+  // `null` and the same verbatim chain writes `null`.
+  it("writes an absent option Description as null", () => {
+    const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
+      // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+      for (const o of doc.ModPackPages[0].ModGroups[0].OptionList as any[]) {
+        delete o.Description;
+      }
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
+    const out = mpl(writeTtmp2(readTtmp2(src))) as any;
+    expect(
+      out.ModPackPages[0].ModGroups[0].OptionList[0].Description,
+    ).toBeNull();
+  });
+
+  // WizardMetaEntry.FromTtmp (WizardData.cs · FromTtmp · 1052-1069) assigns all five verbatim with
+  // no `?? ""`; WriteWizardPack (· WriteWizardPack · 1332-1346) passes Name/Author/Url/Description
+  // straight through. `ClearNulls()` at :1334 touches only pages/groups/options, never a string, and
+  // the `= ""` field initializers (:1015-1020) are overwritten by the load assignments.
+  it("round-trips null top-level Name/Author/Description/Url", () => {
+    const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
+      doc.Name = null;
+      doc.Author = null;
+      doc.Description = null;
+      doc.Url = null;
+    });
+    const out = mpl(writeTtmp2(readTtmp2(src)));
+    expect(out.Name).toBeNull();
+    expect(out.Author).toBeNull();
+    expect(out.Description).toBeNull();
+    expect(out.Url).toBeNull();
+  });
+
+  // `Version` is the exception: WriteWizardPack forces it non-null via `Version.TryParse(...)` +
+  // `ver ??= new Version("1.0")` (WizardData.cs:1335-1337), re-guarded in the TTMPWriter ctor
+  // (TTMPWriter.cs · TTMPWriter · 61). It must never come out null.
+  it("never writes a null Version", () => {
+    const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
+      doc.Version = null;
+    });
+    const out = mpl(writeTtmp2(readTtmp2(src)));
+    expect(out.Version).not.toBeNull();
   });
 });
