@@ -182,6 +182,21 @@ synthetic unit test. Two new packs under `scripts/generate-synthetics/`, both fl
 - **weapon** — a `.meta` for a weapon root carrying a deliberately short IMC segment (fewer entries
   than the base file's `1 + subsetCount`), so the upgrade must grow it from `IMC_TABLE`. This is the
   exact case that silently passes through today.
+
+  **Each pack must also force `AnyChanges`.** `/upgrade` writes only `if (data.AnyChanges ||
+  rewriteOnNoChanges)` (`ModpackUpgrader.cs:216`, `rewriteOnNoChanges` defaulting false —
+  see `2026-07-19-upgrade-noop-branch-oracle-design.md` §2). `.meta` reconstruction is a *load/write*
+  behaviour, not a transform round, so it does not set `AnyChanges` on its own: a meta-only pack
+  no-ops, ConsoleTools writes nothing, the harness falls back to comparing against the untouched
+  input, and our grown IMC reads as a divergence from a reference that never had an oracle behind it.
+  Each pack therefore also carries a hand-built Endwalker 256-entry-colorset `.mtrl` — the same
+  `AnyChanges` trigger, and for the same documented reason, as
+  `build-synthetic-absent-file-upgraded.ts` (`DoesMtrlNeedDawntrailUpdate`,
+  `EndwalkerUpgrade.cs:550`).
+
+  These are TTMP2 packs, not PMPs: a PMP materializes `.meta` from `Manipulations` at load
+  (`PMP.cs:1141-1164`), so a PMP fixture would pin hand-written manipulation JSON, whereas a TTMP2
+  carries the serialized `.meta` bytes `serializeMeta` produces directly.
 - **demihuman** — a `.meta` for a demihuman root, which moves from "`parseMetaRoot` throws" to
   "works". A functional gain beyond the filed item; it gets an oracle rather than our own expectation,
   and it also pins the §3.4.2 entry-count arithmetic against real ConsoleTools output.
