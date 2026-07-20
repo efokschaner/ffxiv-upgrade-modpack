@@ -10,6 +10,7 @@
 // (UpdateUnclaimedHairAccessory, EndwalkerUpgrade.cs:1522-1716).
 import type { ModpackFile, ModpackOption } from "../model/modpack";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
+import { base64ToBytes } from "../util/base64";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "./reference/hair-materials";
 import type {
   HairMaterialEntry,
@@ -209,13 +210,13 @@ export function updateUnclaimedHairTextures(
       // the `hairset == TailRegexes` and the `MaterialFlags & HideBackfaces == 0` C# conditions.
       if (isTail && !entry.hideBackfaces && entry.tailRewriteMtrlBase64) {
         const canon = parseMtrl(
-          new Uint8Array(Buffer.from(entry.tailRewriteMtrlBase64, "base64")),
+          base64ToBytes(entry.tailRewriteMtrlBase64),
           matPath,
         );
         canon.materialFlags |= 0x01; // EMaterialFlags1.HideBackfaces (XivMtrl.cs:43)
         // Rip constants from standard hair to better match usages (EndwalkerUpgrade.cs:1510-1512).
         const sample = parseMtrl(
-          new Uint8Array(Buffer.from(SAMPLE_HAIR_MTRL_BASE64, "base64")),
+          base64ToBytes(SAMPLE_HAIR_MTRL_BASE64),
           "chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl",
         );
         canon.shaderConstants = sample.shaderConstants;

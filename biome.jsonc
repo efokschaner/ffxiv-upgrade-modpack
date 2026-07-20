@@ -55,6 +55,47 @@
       }
     }
   },
+  // src/ is the SHIPPING half of the codebase: it is bundled into the static site and must run in a
+  // browser, where Node's builtins and globals do not exist. test/ and scripts/ are Node-only by
+  // design (the corpus harness, the ConsoleTools oracle, the extract-* generators) and are exempt.
+  //
+  // This is enforcement, not style: a Node API in src/ typechecks AND passes the whole suite, because
+  // the tests themselves run under Node — where `Buffer`, `process` et al. resolve fine — and only
+  // throws once the code reaches a browser. No test we could reasonably write closes that gap; the
+  // linter is the only layer that sees it. (A `Buffer.from` did reach a shipped user path this way.)
+  //
+  // Both are raised to "error": as warnings they would not fail `npm run lint`, which is the point.
+  "overrides": [
+    {
+      "includes": ["src/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            // Bans `node:*` / bare builtin imports (fs, path, crypto, zlib, os, child_process).
+            // Browser-safe equivalents already exist in-repo where these were needed: fflate for
+            // zlib, src/util/sha1.ts hand-implements SHA-1 rather than using node:crypto.
+            "noNodejsModules": "error"
+          },
+          "style": {
+            // Node GLOBALS need a separate rule — they are not imports, so noNodejsModules cannot
+            // see them. This is the half that catches `Buffer.from(...)`.
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "Buffer": "Node-only global, absent in the browser. Use Uint8Array, or src/util/base64.ts's base64ToBytes for base64.",
+                  "process": "Node-only global, absent in the browser. src/ must not read env or argv.",
+                  "__dirname": "Node/CJS-only, absent in the browser and in ESM. Bundle the data instead of reading it from disk.",
+                  "__filename": "Node/CJS-only, absent in the browser and in ESM.",
+                  "global": "Node-only global, absent in the browser. Use globalThis if you genuinely need it."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {
