@@ -494,8 +494,10 @@ var bit = 1UL << idx;                              // :811
 wizOp.Selected = (pGroup.DefaultSettings & bit) != 0;
 ```
 
-`DefaultSettings` is a `ulong`, so the shift is a 64-bit `shl`, and both C# and ECMA-335 specify
-that the shift count is **masked to the low 6 bits** for a 64-bit operand. `idx` is the plain
+`DefaultSettings` is a `ulong`, so the shift is a 64-bit `shl`, and the C# language specification
+requires the shift count to be **masked to the low 6 bits** for a 64-bit operand — the compiler
+emits an explicit `and 63` to guarantee it. (ECMA-335 itself leaves `shl` with a count at or above
+the operand width *unspecified*; the guarantee is C#'s, not the IL's.) `idx` is the plain
 `0..Options.Count-1` loop counter with no bound of its own, so a group with **65 or more options**
 wraps: option 64 tests `1UL << 0`, option 65 tests `1UL << 1`, and so on. Those options become
 mirrors of options 0..N — their selection state is not read from any bit of their own (there is
