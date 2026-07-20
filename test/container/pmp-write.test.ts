@@ -1055,7 +1055,9 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
     const members = readZip(out);
 
     const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
-    expect(Object.keys(dm.Files)).toEqual([present, second]);
+    // Key SET, not order: `Files` is a JSON object no consumer reads order-sensitively (it ports a
+    // C# Dictionary). See AGENTS.md, "JSON manifests are compared semantically, not by byte".
+    expect(Object.keys(dm.Files).sort()).toEqual([present, second].sort());
     expect(members.get(presentZipPath)).toEqual(new Uint8Array([1, 2, 3, 4]));
     expect(members.get(`default/${second}`)).toEqual(new Uint8Array([9, 9]));
   });

@@ -154,35 +154,39 @@ describe("writeTtmp2 .mpl fidelity", () => {
     expect(Array.isArray(simple.SimpleModsList)).toBe(true);
   });
 
-  // Newtonsoft emits members in reflection order, so the golden .mpl spells each object in the
-  // C# class's DECLARATION order. Pinned here because the corpus harness compares the manifest
-  // semantically (parsed JSON, test/helpers/upgrade-archive-diff.ts), so no golden diff would
-  // ever catch a key-order regression. Expected values transcribed from ModPackJson.cs —
-  // ModOptionJson :159-198 and ModsJson :222-262 — and confirmed against a real cached
-  // ConsoleTools /upgrade golden.
-  it("spells option and mods-json keys in the C# declaration order", () => {
+  // The `.mpl` is JSON, read back by JsonConvert.DeserializeObject<ModPackJson> (TTMP.cs:143,395,
+  // 600) and by Penumbra's parser — so the key SET is load-bearing (a missing or extra key changes
+  // what every consumer sees) while the key ORDER is not observable to any of them. This asserts
+  // the set only, deliberately order-insensitive; see AGENTS.md, "JSON manifests are compared
+  // semantically, not by byte". Expected members transcribed from ModPackJson.cs — ModOptionJson
+  // :159-198 and ModsJson :222-262.
+  it("emits exactly the C# member set for option and mods-json objects", () => {
     // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
     const out = mpl(writeTtmp2(readTtmp2(makeTtmp2Wizard().bytes))) as any;
     const option = out.ModPackPages[0].ModGroups[0].OptionList[0];
-    expect(Object.keys(option)).toEqual([
-      "Name",
-      "Description",
-      "ImagePath",
-      "ModsJsons",
-      "GroupName",
-      "SelectionType",
-      "IsChecked",
-    ]);
-    expect(Object.keys(option.ModsJsons[0])).toEqual([
-      "Name",
-      "Category",
-      "FullPath",
-      "ModOffset",
-      "ModSize",
-      "DatFile",
-      "IsDefault",
-      "ModPackEntry",
-    ]);
+    expect(Object.keys(option).sort()).toEqual(
+      [
+        "Name",
+        "Description",
+        "ImagePath",
+        "ModsJsons",
+        "GroupName",
+        "SelectionType",
+        "IsChecked",
+      ].sort(),
+    );
+    expect(Object.keys(option.ModsJsons[0]).sort()).toEqual(
+      [
+        "Name",
+        "Category",
+        "FullPath",
+        "ModOffset",
+        "ModSize",
+        "DatFile",
+        "IsDefault",
+        "ModPackEntry",
+      ].sort(),
+    );
   });
 });
 

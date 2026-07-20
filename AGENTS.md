@@ -37,6 +37,21 @@ intuition** when the two conflict:
   right" or "our own tests pass" is not the bar — matching TexTools byte-for-byte is. This
   still governs quirks and apparent bugs *that do not harm the user*: reproduce them
   faithfully and note the quirk rather than correcting it.
+
+  **One scoped exception, by format: JSON manifests are compared *semantically*, not by byte.**
+  The `.mpl`, `default_mod.json`, group and `meta.json` documents are read by JSON parsers on
+  every consumer that matters (TexTools' own `JsonConvert.DeserializeObject<ModPackJson>`,
+  `TTMP.cs:143,395,600`; Penumbra likewise), and nothing content-addresses their bytes — dedup
+  keys on payload content, the golden cache on `sha256(input pack)`. So **key order and other
+  byte-level spelling that no parser can observe is not a divergence and is not a gap**; the
+  harness comparing manifests with `jsonPointerDiff` is the correct oracle, not a blind spot.
+  Key *set* and key *values* remain strictly in scope. Operator's call, 2026-07-20.
+
+  This exception is **exactly as wide as the JSON**. For the proprietary binary formats — `.mdl`,
+  `.tex`, `.mtrl`, `.meta`, SqPack blocks — there is no parser-normalizing layer to hide behind,
+  so reader and writer must match TexTools byte-for-byte, ordering and padding included. When
+  something looks like a byte-parity gap, ask first *which consumer can observe these bytes* — if
+  the answer is "a JSON parser", there is nothing to fix.
 - **Ask what TexTools does, first.** When deciding how something should behave, the
   question is never "what's the best design?" but "what does TexTools /
   xivModdingFramework do here?" — then reproduce it, from the symbol the oracle

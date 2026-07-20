@@ -178,6 +178,11 @@ committed to `master` or `develop`; no CI). We build our own, anchored on a **re
 > the container-only layer is validated by a **self round-trip** (our reader→writer→reader, byte-identical
 > inner files), which passed 32/32 on the real corpus and needs no oracle. This resolves the open decision
 > below: **byte-identical for our own round-trip; semantic/structural for oracle diffs.**
+>
+> *Refined 2026-07-20 — see §6.1.* "Semantic for oracle diffs" is right about the **compression layer**
+> (compare decompressed content, never raw compressed payloads) but is not the whole criterion: once
+> decompressed, a binary game file is compared **byte-identically**, and it is the **JSON manifests**
+> that stay semantic all the way down. §6.1 states the criterion per data class.
 
 Layers (strongest first):
 1. **End-to-end golden diff.** Run `ConsoleTools /upgrade <pack> <golden>` over a corpus of real
@@ -193,8 +198,36 @@ Layers (strongest first):
 This pairs with TDD at implementation time: round-trip + component goldens become the failing tests
 written first.
 
-**Open decision:** byte-identical vs. semantic/structural equivalence as the pass criterion (byte-identical
-is easier to automate but brittle to incidental ordering / timestamps).
+### 6.1 What "equal" means, by data class
+
+**Resolved 2026-07-20** (operator's call), closing the open decision this section used to carry. The
+answer is not one criterion but one **per data class**, and the dividing line is *which consumer can
+observe the bytes*:
+
+| Data class | Criterion | Why |
+| --- | --- | --- |
+| JSON manifests — `.mpl`, `default_mod.json`, `group_NNN*.json`, `meta.json` | **Semantic** (parse, then deep-compare) | Every consumer reads them through a JSON parser: TexTools' own `JsonConvert.DeserializeObject<ModPackJson>` (`TTMP.cs:143,395,600`), Penumbra likewise. Key order and other byte-level spelling are unobservable. |
+| Proprietary binary — `.mdl`, `.tex`, `.mtrl`, `.meta`, SQPack blocks | **Byte-identical** (on decompressed content) | No parser-normalizing layer stands between our bytes and the game. Ordering, padding and layout are all load-bearing. |
+| Our own reader→writer round-trip | **Byte-identical** | Self-consistency: `decode(encode(x)) != x` is our codec contradicting itself, with no TexTools output involved. |
+
+For JSON manifests this means **key order is not a divergence and not a gap** — a reordered document
+is the same document to every parser that reads it. The key *set* and the key *values* remain strictly
+in scope: a missing, extra or wrong-valued key changes what every consumer sees, and that is what the
+`.mpl` manifest-fidelity work pinned. Applies symmetrically to golden diffs and to unit tests: the
+harness routes manifests to `jsonPointerDiff` via `isManifest`
+(`test/helpers/upgrade-archive-diff.ts`), taking the strict complement for the payload byte-diff, and
+no unit test asserts key order or byte equality on a JSON document.
+
+The trap this closes: because manifests are compared semantically, a key-order difference is
+invisible to every corpus check and ratchet — so it is tempting to read that invisibility as a blind
+spot and re-add strictness at the unit level. It is not a blind spot; it is the criterion working as
+designed. Do not "fix" it. (One such test existed and was loosened to a key-set assertion on
+2026-07-20.)
+
+The rule as applied day-to-day lives in `AGENTS.md` under the byte-parity principle; this section is
+the decision record behind it. Note it does **not** widen the *divergence* machinery — a divergence is
+a difference a consumer *can* see, which we then confirm with a rule; this is about differences no
+consumer can see, which are not differences at all.
 
 ---
 
