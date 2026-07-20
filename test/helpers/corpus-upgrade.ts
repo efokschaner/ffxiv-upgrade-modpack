@@ -69,10 +69,6 @@ export function registerUpgradeCheck(pack: string): void {
   describe(`upgrade golden: ${name}`, () => {
     it("matches ConsoleTools /upgrade within the ratchet baseline", () => {
       const bytes = new Uint8Array(readFileSync(pack));
-      // ONE load of the source, reused three ways below (upgrade input, no-op reference, and the
-      // source ExtraFiles key set). Safe because upgradeModpack cloneModpack()s and never mutates
-      // its argument (src/upgrade/upgrade.ts). Re-loading cost ~3s per big PMP, three times over.
-      const source = loadModpack(name, bytes);
       const golden = upgradeGoldenCached(name, bytes);
       if (golden === null) {
         throw new Error(
@@ -86,12 +82,23 @@ export function registerUpgradeCheck(pack: string): void {
       // unlike corpus-resave.ts's loud-skip: a /resave oracle error is environmental — a TexTools
       // CMP-read crash unrelated to our port — whereas a /upgrade oracle error is transform logic
       // our port is expected to reproduce. See spec §3 + docs/backlog/2026-07-11-expected-failure-golden.md.)
+      //
+      // `loadModpack` runs INSIDE the assertion, not before it. ConsoleTools' /upgrade covers
+      // load+transform in one call (HandleUpgrade -> WizardData.FromModpack -> UpgradeModpack), so a
+      // pack the oracle refuses at LOAD is refused just as legitimately by our loader — e.g. an
+      // unrecognized PMP group `Type`, which throws inside `PMP.LoadPMP` (see parsePmpGroup). Loading
+      // outside this branch made such a throw escape the assertion and fail the test as an error
+      // instead of passing as the matched failure it is.
       if (golden.kind === "error") {
         assertMatchedUpgradeFailure(name, golden.message, () =>
-          upgradeModpack(source),
+          upgradeModpack(loadModpack(name, bytes)),
         );
         return;
       }
+      // ONE load of the source, reused three ways below (upgrade input, no-op reference, and the
+      // source ExtraFiles key set). Safe because upgradeModpack cloneModpack()s and never mutates
+      // its argument (src/upgrade/upgrade.ts). Re-loading cost ~3s per big PMP, three times over.
+      const source = loadModpack(name, bytes);
       const oursModel = upgradeModpack(source);
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
