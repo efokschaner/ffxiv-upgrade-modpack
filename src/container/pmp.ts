@@ -254,7 +254,8 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     // WizardData.cs:857-860 — FromPMPGroup's tail. Same "none selected" backstop as the TTMP seam
     // (which is a DIFFERENT C# symbol, FromWizardGroup:755-757, so it is transcribed there
     // separately rather than shared). It never clamps a group with more than one selected. The
-    // `length > 0` guard stands in for the zero-option early return at :851-855, unported.
+    // `length > 0` guard stands in for the zero-option early return at :851-855, unported — see
+    // docs/backlog/2026-07-20-empty-group-not-dropped.md.
     if (
       g.Type === "Single" &&
       options.length > 0 &&

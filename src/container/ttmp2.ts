@@ -179,8 +179,9 @@ export function readTtmp2(
       // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
       // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
       // selected option. The `length > 0` guard stands in for the zero-option early return at
-      // :749-753 (C# returns null for an empty group; we do not port that pruning yet), so an
-      // option-less group cannot crash here.
+      // :749-753 (C# returns null for an empty group; we do not port that pruning yet — see
+      // docs/backlog/2026-07-20-empty-group-not-dropped.md), so an option-less group cannot crash
+      // here.
       if (
         built.selectionType === "Single" &&
         built.options.length > 0 &&

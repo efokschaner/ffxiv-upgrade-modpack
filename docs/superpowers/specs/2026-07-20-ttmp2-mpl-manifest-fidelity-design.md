@@ -20,9 +20,19 @@ this spec's §1 for the finding it recorded.
 >   `DefaultSettings` bitmask read and reproduced faithfully.
 > - §5's `SelectedSettings` conclusion ("no action") was **confirmed correct** in implementation.
 >
-> Post-change baselines: `.upgrade-baseline` 5811 → 3002 entries (2809 removed, 0 added, 0
-> modified); `.resave-baseline` → 2328. Both remaining sets are attributable to the two sibling
-> items in §5's last bullet plus the simple-pack item.
+> Post-change baselines: `.upgrade-baseline` 5811 → 3002 entries over the branch, across **two
+> blesses** — stated separately because the aggregate hides a `modified` class that the second bless
+> alone does not show:
+>
+> - **After Task 2: 5811 → 3369** (2425 removed, 0 added, **17 modified**). The 17 are all
+>   `TTMPL.mpl#/ModPackPages` relabelled `added` → `mismatch`: now that we correctly write the key as
+>   `null`, the diff is a value mismatch rather than an absent key on those packs — the ones where
+>   TexTools emits a wizard pack and we emit simple (`docs/backlog/2026-07-13-resave-ttmp2-simple-pack.md`).
+>   Not a regression; the same underlying divergence, more precisely classified.
+> - **After Task 6: 3369 → 3002** (367 removed, 0 added, 0 modified).
+>
+> `.resave-baseline` → 2328. Both remaining sets are attributable to the two sibling items in §5's
+> last bullet plus the simple-pack item.
 **Depends on:** `2026-07-08-modpack-serialization-parity-design.md`,
 `2026-07-04-upgrade-golden-harness-design.md`, `2026-07-12-pmp-writer-regeneration-design.md`
 (which introduced `computeSelection`, retired here).
