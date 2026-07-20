@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readPmp, reformatPmpVersion, writePmp } from "../../src/container/pmp";
+import { readPmp, writePmp } from "../../src/container/pmp";
 import { readZip, writeZip } from "../../src/zip/zip";
 
 const enc = new TextEncoder();
@@ -239,17 +239,5 @@ describe("pmp group manifest drops foreign keys (PMPGroupJson, PMP.cs:1387-1408,
     // The typed fields survive untouched.
     expect(grp.Name).toBe("Foreign");
     expect(grp.Type).toBe("Single");
-  });
-});
-
-describe("reformatPmpVersion (WizardData.cs:1474-1475/:1494)", () => {
-  it("re-renders exactly the components .NET's Version.TryParse would have parsed", () => {
-    expect(reformatPmpVersion("1.2")).toBe("1.2");
-    expect(reformatPmpVersion("1.2.3")).toBe("1.2.3");
-    expect(reformatPmpVersion("1.2.3.4")).toBe("1.2.3.4");
-    // Version.TryParse requires AT LEAST major.minor -- a bare "1" fails to parse.
-    expect(reformatPmpVersion("1")).toBe("1.0");
-    expect(reformatPmpVersion("")).toBe("1.0");
-    expect(reformatPmpVersion("not a version")).toBe("1.0");
   });
 });

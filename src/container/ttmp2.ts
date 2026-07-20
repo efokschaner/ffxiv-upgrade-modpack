@@ -14,6 +14,7 @@ import {
 import { ttmpNeedsMdlFix } from "../upgrade/model";
 import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { concatBytes, fnv1aKey } from "../util/binary";
+import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
 import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
@@ -265,7 +266,17 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
     TTMPVersion: data.isSimple ? "2.1s" : "2.1w",
     Name: data.meta.name,
     Author: data.meta.author,
-    Version: data.meta.version,
+    // WriteWizardPack normalizes the version through .NET Version semantics BEFORE the
+    // ModPackData it hands to the TTMPWriter ctor is stringified
+    // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
+    // WizardData.cs · WriteWizardPack · 1335-1337, assigned at :1343; `Version = version.ToString()`,
+    // TTMPWriter.cs · TTMPWriter · 61-69), so a source spelling "1" is written "1.0". Every .ttmp2
+    // write in the oracle routes through WriteWizardPack (WizardData.cs · WriteModpack · 1318-1321),
+    // so this applies to the simple and wizard shapes alike.
+    // NOTE: the ctor's own `modPackData.Version ?? new Version(1, 0, 0, 0)` (TTMPWriter.cs:61) is
+    // UNREACHABLE from this path — `ver ??=` already guaranteed non-null — so it changes no output
+    // here. It matters only to TTMPWriter's other callers (TTMP.cs:319, :359).
+    Version: reformatDotnetVersion(data.meta.version),
     Description: data.meta.description,
     Url: data.meta.url,
     MinimumFrameworkVersion: data.meta.minimumFrameworkVersion,

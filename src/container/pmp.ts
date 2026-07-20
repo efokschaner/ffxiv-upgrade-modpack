@@ -10,6 +10,7 @@ import {
   type ModpackGroup,
   type ModpackOption,
 } from "../model/modpack";
+import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
 import {
   type PmpGroupJsonRaw,
@@ -365,20 +366,6 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** Port of WizardData.WritePmp's Version reformat (WizardData.cs:1474-1475 + :1494):
- * `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0"); pmp.Meta.Version =
- * ver.ToString();`. .NET's `Version.TryParse` requires AT LEAST `major.minor` — a bare `"1"` fails
- * to parse — and accepts up to 4 dot-separated non-negative-integer components
- * (`major.minor[.build[.revision]]`); anything else (blank, extra text, a negative/non-numeric
- * component) fails too. A failed parse falls back to `new Version("1.0")`, i.e. `"1.0"`.
- * `Version.ToString()` re-renders exactly the components that were present in the parsed value —
- * `"1.2"` stays 2-field, `"1.2.3"` stays 3-field, etc. — it does not pad to 4 fields. */
-export function reformatPmpVersion(source: string): string {
-  const m = /^(\d+)\.(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(source.trim());
-  if (!m) return "1.0";
-  return [m[1], m[2], m[3], m[4]].filter((p) => p !== undefined).join(".");
-}
-
 /** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604). `ToPmpGroup` writes
  * `pg.DefaultSettings = Selection` (WizardData.cs:949) rather than carrying the source value
  * through, so a written group's `DefaultSettings` is always regenerated from the per-option
@@ -657,7 +644,11 @@ export function writePmp(
     Name: data.meta.name,
     Author: data.meta.author,
     Description: data.meta.description,
-    Version: reformatPmpVersion(data.meta.version),
+    // WritePmp reformats the version through .NET Version semantics before assigning it
+    // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
+    // WizardData.cs · WritePmp · 1474-1475; `pmp.Meta.Version = ver.ToString()`, :1494), so a
+    // source spelling "1" is written "1.0". See src/util/dotnet-version.ts for the .NET contract.
+    Version: reformatDotnetVersion(data.meta.version),
     Website: data.meta.url,
     Image: data.meta.image,
     ModTags: data.meta.tags,
