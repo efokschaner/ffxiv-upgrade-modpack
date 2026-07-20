@@ -31,7 +31,7 @@ the class's only public **field**:
 
 Every other member (`TTMPVersion`, `Name`, `Author`, `Version`, `Description`, `Url`,
 `ModPackPages`, `SimpleModsList`) is an auto-**property**. `TTMPWriter.Write` serializes the
-instance with a bare `JsonConvert.SerializeObject(_modPackJson)` (`Mods/FileTypes/TTMP.cs` ·
+instance with a bare `JsonConvert.SerializeObject(_modPackJson)` (`Mods/TTMPWriter.cs` ·
 `TTMPWriter.Write` · 324), and Newtonsoft's `DefaultContractResolver` builds a type's member list
 fields-first, then properties (each group in declaration order), absent `[JsonProperty(Order=…)]` —
 and `ModPackJson.cs` carries no ordering attribute anywhere. So the single field is hoisted to the
