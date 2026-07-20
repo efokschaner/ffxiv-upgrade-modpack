@@ -13,7 +13,13 @@ export type EstType = "Head" | "Body" | "Hair" | "Face" | null;
 export interface MetaRoot {
   primaryId: number;
   slot: string;
-  itemType: "equipment" | "accessory" | "other" | "weapon" | "monster";
+  itemType:
+    | "equipment"
+    | "accessory"
+    | "other"
+    | "weapon"
+    | "monster"
+    | "demihuman";
   estType: EstType;
   // The character race parsed from the `c####` path prefix, for Hair/Face roots only; null for
   // equipment/accessory (whose EST is race-iterated over all PLAYABLE_RACES, not keyed on one race).
@@ -83,19 +89,40 @@ export function parseMetaRoot(gamePath: string): MetaRoot {
       race: Number.parseInt(face[2]!, 10),
     };
   }
+  // Demihuman roots: PrimaryExtractionRegex (XivDependencyGraph.cs:250, this file's header)
+  // matches these with PrimaryType = demihuman, PrimaryId = the d#### id, SecondaryType =
+  // "equipment", SecondaryId = the e#### id, and _slotRegex (XivDependencyGraph.cs:238, this
+  // file's header) takes the `_xxx` filename suffix as the Slot (validated against
+  // XivItemTypes.GetAvailableSlots(equipment) at ExtractRootInfo, XivDependencyGraph.cs:684-685,
+  // since SecondaryType is equipment). Unlike weapon/monster below, these DO carry a real slot.
+  // estType is null: Est.GetEstType (Est.cs:63-95) returns Invalid for every PrimaryType that is
+  // not human or equipment (demihuman falls into the final `else`, Est.cs:91-94).
+  const demihuman = gamePath.match(
+    /^chara\/demihuman\/d(\d+)\/obj\/equipment\/e\d+\/d\d+e\d+_(\w+)\.meta$/,
+  );
+  if (demihuman) {
+    return {
+      primaryId: Number.parseInt(demihuman[1]!, 10),
+      slot: demihuman[2]!,
+      itemType: "demihuman",
+      estType: null,
+      race: null,
+    };
+  }
   // Weapon/monster roots: PrimaryExtractionRegex
   // (XivDependencyGraph.cs:250, this file's header) matches these paths with PrimaryType =
   // weapon/monster, PrimaryId = the w####/m#### model number, SecondaryType = "body",
   // SecondaryId = the b#### id. Verified shapes against the real corpus:
   //   chara/weapon/w2021/obj/body/b0001/w2021b0001.meta   (Persona 3 Evoker.ttmp2)
   //   chara/monster/m8045/obj/body/b0001/m8045b0001.meta  ([Atelier Jaque] Balloon of Stars.ttmp2)
-  // Unlike equipment/accessory filenames, these have no `_xxx` suffix before the extension, so
-  // _slotRegex (line 238 above) never matches them: the real XivDependencyRootInfo.Slot is left
-  // unset (weapon/monster have no XivItemTypes.GetAvailableSlots entries at all). `slot` is
-  // therefore a placeholder here, filled from the SecondaryType ("body"), and nothing reads it for
-  // these roots: IMC_TABLE is keyed on the .meta root path (not on itemType/primaryId/slot), and
-  // its extractor already applied the real, unset Slot when decoding the entries — see
-  // src/meta/reference/imc-table.ts's header.
+  // Unlike equipment/accessory/demihuman filenames, these have no `_xxx` suffix before the
+  // extension, so _slotRegex (XivDependencyGraph.cs:238, this file's header) never matches them:
+  // the real XivDependencyRootInfo.Slot is left unset (ExtractRootInfo, XivDependencyGraph.cs:
+  // 679-689, only assigns info.Slot when _slotRegex matches). `slot` here is a placeholder filled
+  // from the SecondaryType ("body") instead of the real (unset) Slot. Nothing in this codebase
+  // reads `MetaRoot.slot` for any root type any more: the sole consumer, reconstruct.ts's IMC
+  // base-seed lookup, is keyed on the whole `.meta` root path (IMC_TABLE), not on
+  // itemType/primaryId/slot, so this placeholder is inert.
   const weapon = gamePath.match(
     /^chara\/weapon\/w(\d+)\/obj\/(\w+)\/[a-z]\d+\/w\d+[a-z]\d+\.meta$/,
   );

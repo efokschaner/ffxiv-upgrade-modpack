@@ -80,6 +80,19 @@ describe("parseMetaRoot", () => {
       race: null,
     });
   });
+  it("parses a demihuman equipment root", () => {
+    const root = parseMetaRoot(
+      "chara/demihuman/d1001/obj/equipment/e0001/d1001e0001_top.meta",
+    );
+    expect(root).toEqual({
+      primaryId: 1001,
+      slot: "top",
+      itemType: "demihuman",
+      // Est.GetEstType (Est.cs:63-95): anything that is not human or equipment -> Invalid.
+      estType: null,
+      race: null,
+    });
+  });
   it("throws on an unrecognized path", () => {
     expect(() =>
       parseMetaRoot("chara/human/c0201/obj/tail/t0001/c0201t0001_til.meta"),
