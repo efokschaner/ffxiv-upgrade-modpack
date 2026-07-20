@@ -315,7 +315,7 @@ describe("reconstructMeta EST reconstruction", () => {
 
 describe("reconstructMeta IMC reconstruction", () => {
   it("grows the mod's IMC to the base game's variant count, mod entries kept and base filling the extra (e6137_top: mod 2 + base variant 2 = 3)", () => {
-    const base = IMC_TABLE["equipment/6137/top"]!;
+    const base = IMC_TABLE["chara/equipment/e6137/e6137_top.meta"]!;
     expect(base.length).toBe(3); // real reference-table fact asserted, not assumed
     const mod: ItemMeta = {
       version: 2,
@@ -339,7 +339,7 @@ describe("reconstructMeta IMC reconstruction", () => {
   });
 
   it("grows the mod's IMC to the base game's variant count (e0724_top: mod 4 + base variants 4-6 = 7)", () => {
-    const base = IMC_TABLE["equipment/724/top"]!;
+    const base = IMC_TABLE["chara/equipment/e0724/e0724_top.meta"]!;
     expect(base.length).toBe(7); // real reference-table fact asserted, not assumed
     const mod: ItemMeta = {
       version: 2,
@@ -366,7 +366,7 @@ describe("reconstructMeta IMC reconstruction", () => {
   });
 
   it("a mod IMC variant at an index the base also carries overrides the base seed (mod wins)", () => {
-    const base = IMC_TABLE["equipment/6137/top"]!;
+    const base = IMC_TABLE["chara/equipment/e6137/e6137_top.meta"]!;
     const overriding = new Uint8Array([42, 42, 42, 42, 42, 42]);
     const mod: ItemMeta = {
       version: 2,
@@ -388,7 +388,9 @@ describe("reconstructMeta IMC reconstruction", () => {
   });
 
   it("fails loud on an equipment IMC segment when IMC_TABLE has no entry for the key (out-of-corpus Set item -- base seed can't be reproduced, ItemMetadata.cs:238-241)", () => {
-    expect(IMC_TABLE["equipment/999999/top"]).toBeUndefined();
+    expect(
+      IMC_TABLE["chara/equipment/e999999/e999999_top.meta"],
+    ).toBeUndefined();
     const imc = [new Uint8Array([1, 2, 3, 4, 5, 6])];
     const mod: ItemMeta = {
       version: 2,
@@ -403,7 +405,9 @@ describe("reconstructMeta IMC reconstruction", () => {
   });
 
   it("fails loud on an accessory IMC segment when IMC_TABLE has no entry for the key (out-of-corpus Set item)", () => {
-    expect(IMC_TABLE["accessory/999999/ear"]).toBeUndefined();
+    expect(
+      IMC_TABLE["chara/accessory/a999999/a999999_ear.meta"],
+    ).toBeUndefined();
     const imc = [new Uint8Array([1, 2, 3, 4, 5, 6])];
     const mod: ItemMeta = {
       version: 2,
@@ -417,11 +421,17 @@ describe("reconstructMeta IMC reconstruction", () => {
     expect(() => reconstructMeta(mod, mod.path)).toThrow(/IMC_TABLE/);
   });
 
-  it("passes a weapon's IMC segment through unchanged (NonSet, not in the Set-only IMC_TABLE)", () => {
+  // NonSet roots (weapon/monster/demihuman) are seeded from IMC_TABLE exactly like Set roots:
+  // Imc.UsesImc accepts them (Imc.cs · UsesImc · 74-85) and the table is keyed on the .meta root
+  // path, so they grow to the base entry count rather than passing through.
+  it("grows a weapon's IMC segment from the base seed (NonSet root, keyed on the .meta path)", () => {
+    const key = "chara/weapon/w2021/obj/body/b0001/w2021b0001.meta";
+    const base = IMC_TABLE[key]!;
+    expect(base.length).toBeGreaterThan(1);
     const imc = [new Uint8Array([1, 0, 0, 0, 0, 0])];
     const mod: ItemMeta = {
       version: 2,
-      path: "chara/weapon/w2021/obj/body/b0001/w2021b0001.meta",
+      path: key,
       imc,
       eqp: null,
       eqdp: null,
@@ -429,23 +439,29 @@ describe("reconstructMeta IMC reconstruction", () => {
       gmp: null,
     };
     const out = reconstructMeta(mod, mod.path);
-    expect(out.imc).toEqual(imc);
+    expect(out.imc).toHaveLength(base.length);
+    expect(out.imc![0]).toEqual(imc[0]);
+    expect(out.imc![1]).toEqual(new Uint8Array(base[1]!));
     expect(out.eqdp).toBeNull();
     expect(out.est).toBeNull();
   });
 
-  it("passes a monster's IMC segment through unchanged (NonSet, not in the Set-only IMC_TABLE)", () => {
+  it("grows a monster's IMC segment from the base seed (NonSet root)", () => {
+    const key = "chara/monster/m8045/obj/body/b0001/m8045b0001.meta";
+    const base = IMC_TABLE[key]!;
     const imc = [new Uint8Array([2, 0, 0, 0, 0, 0])];
     const mod: ItemMeta = {
       version: 2,
-      path: "chara/monster/m8045/obj/body/b0001/m8045b0001.meta",
+      path: key,
       imc,
       eqp: null,
       eqdp: null,
       est: null,
       gmp: null,
     };
-    expect(reconstructMeta(mod, mod.path).imc).toEqual(imc);
+    const out = reconstructMeta(mod, mod.path);
+    expect(out.imc).toHaveLength(Math.max(1, base.length));
+    expect(out.imc![0]).toEqual(imc[0]);
   });
 
   it("leaves a meta with no IMC segment untouched", () => {

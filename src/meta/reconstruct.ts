@@ -10,9 +10,9 @@ import type { EstEntry, ItemMeta } from "./types";
 // below (base seed from EST_TABLE + mod overrides, port of Est.GetExtraSkeletonEntries). EQP/GMP
 // are opaque bytes the mod always supplies (base seed proven never consulted across the corpus,
 // see Task 7 brief), so they pass through unchanged via the `{ ...mod }` spread. IMC is
-// reconstructed below (base seed from IMC_TABLE + mod overrides, port of the
-// ItemMetadata.cs:238-241 GetFullImcInfo seed + PMP's ManipulationsToMetadata/ApplyToMetadata
-// grow-to-fit).
+// reconstructed below (base seed from IMC_TABLE, keyed on the .meta root path, + mod overrides —
+// port of the ItemMetadata.cs · CreateFromRaw · 233-247 seed + PMP's ManipulationsToMetadata/
+// ApplyToMetadata grow-to-fit).
 export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
   // root.ts (Task 4 + Task 8b) now recognizes every root shape the corpus exercises
   // (equipment/accessory/hair/face/weapon/monster), so parsing runs unconditionally: this
@@ -147,43 +147,36 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
 
   let imc = mod.imc;
   if (imc) {
-    // Base-seed key mirrors Imc.GetFullImcInfo's (itemType, primaryId) lookup + the `slot` column
-    // selection XivDependencyRoot.GetImcEntryPaths performs (Imc.cs:189-238, 351-451) -- see
-    // imc-table.ts's header for the exact extraction. IMC_TABLE is exhaustive over base-game
-    // equipment/accessory (every item_sets.db root), but Set-only: it never carries a
-    // weapon/monster (NonSet) key, so the lookup below misses for those and falls to the
-    // pass-through branch -- documented, ratchet-guarded
-    // (docs/backlog/2026-07-10-nonset-imc-reference-table.md).
-    const key = `${root.itemType}/${root.primaryId}/${root.slot}`;
+    // Base seed keyed on the .meta root path itself — the key IMC_TABLE is generated under
+    // (item_sets.db `roots.root_path`). Lowercased at both ends so a path-case difference is a
+    // hit, never a silent miss. See imc-table.ts's header for the extraction and its provenance.
+    const key = gamePath.toLowerCase();
     const base = IMC_TABLE[key];
-    if (base) {
-      // ItemMetadata.cs:238-241 seeds ImcEntries from the base game before the PMP apply
-      // (ManipulationsToMetadata's IMC handling) overwrites each variant the mod supplies, in
-      // place, by index -- the base's own trailing variants (indices past the mod's own count)
-      // are left untouched, i.e. the result grows to max(mod.length, base.length), with the mod's
-      // variant winning wherever both exist.
-      const count = Math.max(imc.length, base.length);
-      const grown: Uint8Array[] = [];
-      for (let i = 0; i < count; i++) {
-        grown.push(i < imc.length ? imc[i]! : new Uint8Array(base[i]!));
-      }
-      imc = grown;
-    }
-    // else: no base entry for this key. For weapon/monster (NonSet) roots, IMC_TABLE never
-    // carries a key at all (it's Set-only) -- pass mod.imc through unchanged, verified byte-exact
-    // against the corpus (see comment above). For equipment/accessory (Set) roots the table is
-    // exhaustive over item_sets.db, so a miss means a genuinely unknown item (e.g. one added to the
-    // game after the table was last regenerated, or one with no .imc): the golden's base seed
-    // (ItemMetadata.cs:238-241 GetFullImcInfo, reading the real item's .imc from the game) is
-    // something IMC_TABLE cannot reproduce, and silently passing the mod's IMC through could ship a
-    // possibly-under-grown IMC. Fail loud instead of guessing.
-    else if (root.itemType === "equipment" || root.itemType === "accessory") {
+    if (base === undefined) {
+      // The table is exhaustive over item_sets.db for every type Imc.UsesImc accepts, and records
+      // a genuinely-absent .imc as [] (not as a miss). So a miss means a root we have no data for
+      // — one added to the game after the last regen, or one item_sets.db never listed. The
+      // golden's base seed (ItemMetadata.cs · CreateFromRaw · 238-241, reading the real .imc from
+      // the game) is something we cannot reproduce, and passing the mod's IMC through could ship a
+      // possibly-under-grown segment. Fail loud instead of guessing.
       throw new Error(
-        `meta: ${gamePath} has no IMC_TABLE entry for key "${key}" (unknown Set item, not in the ` +
-          "item_sets.db-derived table; regenerate imc-table.ts or investigate — cannot " +
-          "faithfully reproduce the base IMC seed, ItemMetadata.cs:238-241)",
+        `meta: ${gamePath} has no IMC_TABLE entry (unknown root, not in the item_sets.db-derived ` +
+          "table; regenerate imc-table.ts or investigate — cannot faithfully reproduce the base " +
+          "IMC seed, ItemMetadata.cs · CreateFromRaw · 238-241)",
       );
     }
+    // ItemMetadata.cs · CreateFromRaw · 238-241 seeds ImcEntries from the base game before the PMP
+    // apply (ManipulationsToMetadata's IMC handling) overwrites each entry the mod supplies, in
+    // place, by index -- the base's own trailing entries (indices past the mod's own count) are
+    // left untouched, i.e. the result grows to max(mod.length, base.length), with the mod's entry
+    // winning wherever both exist. A base of [] (no .imc in the game) therefore passes the mod's
+    // IMC through unchanged, with no special case.
+    const count = Math.max(imc.length, base.length);
+    const grown: Uint8Array[] = [];
+    for (let i = 0; i < count; i++) {
+      grown.push(i < imc.length ? imc[i]! : new Uint8Array(base[i]!));
+    }
+    imc = grown;
   }
 
   // ItemMetadata.Serialize omits the EQP segment entirely when PrimaryType == equipment &&

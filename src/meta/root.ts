@@ -91,12 +91,11 @@ export function parseMetaRoot(gamePath: string): MetaRoot {
   //   chara/monster/m8045/obj/body/b0001/m8045b0001.meta  ([Atelier Jaque] Balloon of Stars.ttmp2)
   // Unlike equipment/accessory filenames, these have no `_xxx` suffix before the extension, so
   // _slotRegex (line 238 above) never matches them: the real XivDependencyRootInfo.Slot is left
-  // unset (weapon/monster have no XivItemTypes.GetAvailableSlots entries at all). We still need a
-  // `slot` string for the IMC_TABLE lookup key, so we use the SecondaryType ("body") in its place.
-  // This is a safe placeholder, not a faithfulness gap: IMC_TABLE (Task 8a) is Set-only
-  // (equipment/accessory) and never carries a weapon/monster key, so reconstructMeta's lookup for
-  // these roots always misses and falls through to its documented IMC pass-through branch
-  // regardless of the exact slot string used here.
+  // unset (weapon/monster have no XivItemTypes.GetAvailableSlots entries at all). `slot` is
+  // therefore a placeholder here, filled from the SecondaryType ("body"), and nothing reads it for
+  // these roots: IMC_TABLE is keyed on the .meta root path (not on itemType/primaryId/slot), and
+  // its extractor already applied the real, unset Slot when decoding the entries — see
+  // src/meta/reference/imc-table.ts's header.
   const weapon = gamePath.match(
     /^chara\/weapon\/w(\d+)\/obj\/(\w+)\/[a-z]\d+\/w\d+[a-z]\d+\.meta$/,
   );
