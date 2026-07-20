@@ -32,7 +32,8 @@ cold by someone with no context.
 
 ## Prioritized
 
-Roughly highest-priority first (prioritization pass **2026-07-20**, superseding 2026-07-17).
+Roughly highest-priority first (prioritization pass **2026-07-20b**, superseding 2026-07-20 and
+2026-07-17).
 
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
@@ -49,6 +50,14 @@ ones, so this is one list rather than "port work" and "product work". Items are 
 Note this deliberately ranks a *silent* gap above a *loud* one even when the loud one is bigger, and
 ranks a large, well-understood build (the UI) below small, unbounded correctness holes. Reference:
 `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
+
+**Deploying changes the probability term** (new in the 2026-07-20b pass). Most "latent — no corpus
+pack reaches it" items were triaged against 70 packs on one machine. A public webpage accepts
+arbitrary uploads, so corpus silence stops being decent evidence of rarity and becomes merely
+*absence of evidence*. When re-ranking, give a latent item a probability bump if its trigger is
+something a mod author could plausibly author by hand (an empty group, a hand-edited manifest, a
+non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
+unchanged by deployment; only probability moves.
 
 1. [T4 — `index-path-overrides` is corpus-scoped and silently falls back](backlog/2026-07-10-index-path-overrides-e0208.md)
    — **the one bundled reference table that is corpus-derived, with a silent miss.** 11 entries, no
@@ -101,7 +110,18 @@ ranks a large, well-understood build (the UI) below small, unbounded correctness
    unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
    design §8.4's thin-coverage note.
 
-7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+7. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+   — **the highest-severity item that no corpus pack reaches.** Rubric class #1: a group TexTools
+   drops from the wizard model entirely survives our TTMP read and gets re-emitted, so the user's
+   upgraded pack carries a group the golden does not, with no diff to warn us (no baseline entry
+   exists — it came from reading the C#, not from an oracle). Ranked here rather than lower on the
+   **deploying-changes-the-probability-term** note above: a zero-option group is hand-authorable, and
+   corpus silence is the only thing holding its probability down. Cheap to close and cheap to prove —
+   a synthetic pack with an authored empty group gets a real ConsoleTools golden. Note the PMP half
+   is already masked downstream by `groupHasData` (by the same predicate C# uses), so the genuinely
+   open surface is the TTMP path. **Moved here from *Unprioritized → Other ported code*, 2026-07-20b.**
+
+8. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -114,14 +134,6 @@ ranks a large, well-understood build (the UI) below small, unbounded correctness
    missing `.mpl` fields (`IsChecked`, `ModPackEntry`, the null `SimpleModsList`/`ModPackPages`
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
-
-8. [`.mpl` top-level key order — Newtonsoft emits `MinimumFrameworkVersion` first, we emit it 7th](backlog/2026-07-20-mpl-key-order-field-before-properties.md)
-   — it is the only public **field** on `ModPackJson` (ModPackJson.cs:61); every other member is a
-   property, and Newtonsoft's default contract orders fields before properties. Confirmed against a
-   real cached golden. Purely cosmetic by the ranking rubric (#4), but listed here rather than in
-   Unprioritized because of *how* it hid: the harness compares manifests **semantically**
-   (`jsonPointerDiff`), so no corpus check or ratchet entry can ever see a key-order divergence — the
-   fix is a one-line move plus the top-level assertion the existing key-order unit test is missing.
 
 ## Unprioritized
 
@@ -248,12 +260,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   still assigns it and nothing in `src/` reads it. Same shape as the `MetaRoot.slot` item above, but
   **milder**: the stored value is honest rather than a fabricated placeholder, so it is inert, not a
   trap. Decide: drop it, or keep it as the mirrored `PMPGroupJson.DefaultSettings` member.
-- [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
-  — `FromWizardGroup`/`FromPMPGroup` `return null` for a group with no options (`WizardData.cs:749-753`,
-  `:851-855`), so it never enters the wizard model; `readTtmp2`/`readPmp` keep it with `options: []`.
-  Latent — no corpus pack carries one, so it has no baseline entry, which is why it sits here rather
-  than under the `/resave` findings: it came from reading the C# beside the Single-group backstop two
-  lines below, not from an oracle diff. Two `*-selected.test.ts` tests currently pin *our* shape.
 - [Audit the port for TexTools bugs we already reproduce](backlog/2026-07-12-textools-bug-register-audit.md)
   — `docs/TEXTOOLS_BUGS.md` was seeded, not swept. Adjudicate the remaining candidates (EQP set-0
   omission, `PlayableRaces` race-order, `MakePMPPathSafe`'s platform-dependent invalid-char set)
