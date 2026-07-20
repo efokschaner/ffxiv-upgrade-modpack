@@ -1,5 +1,7 @@
-// Rebuilds every synthetic modpack under test/corpus/synthetic/ (all gitignored, so a fresh clone
-// starts empty and regenerates them here). Run via `npm run synthetics`.
+// Rebuilds every synthetic modpack under test/corpus/ (all gitignored, so a fresh clone starts empty
+// and regenerates them here). Most land in test/corpus/synthetic/; the ones ConsoleTools /upgrade is
+// expected to ERROR on go to test/corpus/upgrade-error/ instead (see corpus-roots.ts). Run via
+// `npm run synthetics`.
 //
 // Each builder writes its pack as an import side effect, so it also still runs standalone, e.g.
 // `npx tsx scripts/generate-synthetics/build-synthetic-f1.ts`.
@@ -19,3 +21,4 @@ import "./build-synthetic-file-swaps";
 import "./build-synthetic-default-only";
 import "./build-synthetic-imc-weapon";
 import "./build-synthetic-imc-demihuman";
+import "./build-synthetic-pmp-group-type";

@@ -39,17 +39,12 @@ inputs the corpus doesn't happen to cover — robustness and our "fail loud, nev
 rule; **(c)** the real-corpus byte-divergences keeping already-shipped rounds off byte-zero.
 Reference: `src/upgrade/upgrade.ts`, `reference/.../Mods/EndwalkerUpgrade.cs`.
 
-1. [Unrecognized PMP group `Type` yields an empty group](backlog/2026-07-12-pmp-unknown-group-type.md)
-   — **silent divergence (fail-loud violation), cheap fix.** `parsePmpGroup` defaults `Options` to
-   `[]`, silently dropping the group's files, where C# throws `Unimplemented PMP group type`. Inverts
-   our fail-loud rule; flip it to a throw after the corpus scan the item calls for.
-
-2. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
+1. [T4 — `index-path-overrides` missing `e0208` (and likely more)](backlog/2026-07-10-index-path-overrides-e0208.md)
    — **mechanical real-corpus correctness win.** We emit at the convention path instead of the
    canonical override. Fix is mechanical: re-run `scripts/extract-index-overrides.ts` against a game
    install.
 
-3. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+2. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`

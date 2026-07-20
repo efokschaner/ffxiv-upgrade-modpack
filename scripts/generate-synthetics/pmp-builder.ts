@@ -19,17 +19,23 @@ import type {
   PmpOptionJsonRaw,
 } from "../../src/container/manifest-types";
 
-const OUT_DIR = join(
+const CORPUS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "..",
   "test",
   "corpus",
-  "synthetic",
 );
 
-/** Payload bytes. The content is irrelevant to every synthetic here: each sits at a gamePath
- * /upgrade ignores, so ConsoleTools no-ops and the harness compares our output against the input. */
+/** Corpus root a synthetic lands in. `synthetic` is the default (the full assets/golden/upgrade/
+ * resave unit set); `upgrade-error` is for packs ConsoleTools /upgrade is EXPECTED to error on,
+ * which are scoped to the `upgrade` check alone — see test/helpers/corpus-roots.ts. */
+export type SyntheticRoot = "synthetic" | "upgrade-error";
+
+/** Payload bytes. The content is irrelevant to every synthetic here. For the `synthetic`-root packs
+ * each sits at a gamePath /upgrade ignores, so ConsoleTools no-ops and the harness compares our
+ * output against the input; the `upgrade-error`-root packs never get that far (the oracle errors
+ * during load), so their payload is pure filler. */
 export const DUMMY_PAYLOAD = new Uint8Array([0, 1, 2, 3]);
 
 /** Pinned zip mtime. fflate stamps `Date.now()` into every entry when `mtime` is omitted, which made
@@ -110,8 +116,12 @@ function encodeJson(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value, null, 2));
 }
 
-/** Zips `pack` into test/corpus/synthetic/<fileName> (gitignored, like the real corpus). */
-export function writePmp(fileName: string, pack: SyntheticPack): void {
+/** Zips `pack` into test/corpus/<root>/<fileName> (gitignored, like the real corpus). */
+export function writePmp(
+  fileName: string,
+  pack: SyntheticPack,
+  root: SyntheticRoot = "synthetic",
+): void {
   const members: Record<string, Uint8Array> = {
     "meta.json": encodeJson(pack.meta),
     "default_mod.json": encodeJson(pack.defaultMod),
@@ -123,8 +133,9 @@ export function writePmp(fileName: string, pack: SyntheticPack): void {
     members[zipPath] = bytes;
   }
 
-  mkdirSync(OUT_DIR, { recursive: true });
-  const out = join(OUT_DIR, fileName);
+  const outDir = join(CORPUS_DIR, root);
+  mkdirSync(outDir, { recursive: true });
+  const out = join(outDir, fileName);
   writeFileSync(out, zipSync(members, { mtime: FIXED_MTIME }));
   console.log("wrote", out);
 }

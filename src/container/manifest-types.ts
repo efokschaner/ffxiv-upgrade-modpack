@@ -154,10 +154,36 @@ export interface PmpGroupJson {
 }
 export type PmpGroupJsonRaw = Partial<PmpGroupJson>;
 
+/** The three `Type` discriminators JsonSubtypes resolves to a real subtype (PMP.cs:1384-1386).
+ * Anything else — including an absent key — leaves the BASE `PMPGroupJson`, whose `Options` throws. */
+const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc"]);
+
 /** Applies PMPGroupJson's field initializers (:1387-1404). `Options` defaults to `[]`: each subtype
- * initializes `OptionData = new()` (:1413/:1421/:1434), though note the base's virtual `Options`
- * THROWS for an unrecognized `Type` (:1407) — we do not reproduce that throw (pre-existing). */
+ * initializes `OptionData = new()` (:1413/:1421/:1434).
+ *
+ * An unrecognized `Type` is a LOAD FAILURE, not an empty group. JsonSubtypes has no
+ * `FallBackSubType` here (contrast PmpManipulation.cs:21), so an unknown or absent discriminator
+ * deserializes into the base class rather than throwing at deserialization — and the base's virtual
+ * `Options` throws `NotImplementedException($"Unimplemented PMP group type: {Type}")` (:1407) at the
+ * first access. Two unconditional accesses follow inside `LoadPMP` itself — `GetHeaderImage`'s group
+ * loop (:1351-1357, short-circuits on an earlier Image, so not always the reporting frame) and the
+ * `allPmpFiles` scan (:185-187, no short-circuit) — so the load ALWAYS fails, before any transform.
+ * Empirically confirmed against ConsoleTools /upgrade for both an unknown and an absent `Type`; the
+ * synthetic packs that pin it are `pmp-group-type-{unknown,absent}.pmp` (test/corpus/upgrade-error).
+ *
+ * We throw here, at parse, rather than at a lazily-flattened `Options` access: the port flattens the
+ * subtype hierarchy into one interface, so parse IS our subtype-resolution seam, and `readPmp` calls
+ * this for every group — same outcome (load refuses the pack), one frame earlier. The message is
+ * byte-identical to the C# one, which `assertMatchedUpgradeFailure` requires: it substring-matches
+ * our thrown message against the oracle's captured trace. An absent `Type` yields the trailing-colon
+ * message because the C# field initializes to `""` (:1397) — and `LoadPMP` deserializes groups with
+ * `NullValueHandling.Ignore` (:160-163), so an explicitly-null `Type` is skipped and keeps that `""`
+ * too. Our `?? ""` reproduces both. */
 export function parsePmpGroup(raw: PmpGroupJsonRaw): PmpGroupJson {
+  const type = raw.Type ?? "";
+  if (!KNOWN_PMP_GROUP_TYPES.has(type)) {
+    throw new Error(`Unimplemented PMP group type: ${type}`);
+  }
   return {
     ...raw, // keep Imc/Combining-only extras (Identifier, DefaultEntry, AllVariants, …)
     Version: raw.Version ?? 0,
@@ -166,7 +192,7 @@ export function parsePmpGroup(raw: PmpGroupJsonRaw): PmpGroupJson {
     Image: raw.Image ?? "",
     Page: raw.Page ?? 0,
     Priority: raw.Priority ?? 0,
-    Type: raw.Type ?? "",
+    Type: type,
     DefaultSettings: raw.DefaultSettings ?? 0,
     Options: raw.Options ?? [],
   };
