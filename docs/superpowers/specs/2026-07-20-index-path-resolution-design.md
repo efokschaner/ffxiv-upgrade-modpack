@@ -100,16 +100,25 @@ if (stolen !== undefined && !ID_TEX_MEMBERSHIP.has(idPath))   // gate B
 ### 3.2 The two bundled tables (generated; lazy-loadable)
 
 - **`INDEX_TABLE`** — one entry per enumerated base material that has an index sampler:
-  `hash(materialPath) → value`, where `value` is **compressed**:
-  - *Regular (index path is in the material's own root under `/texture/`):* **one bit** — keep-or-drop the
-    trailing variant letter. The runtime reconstructs
-    `{root}/texture/v{NN}_{name±letter}_id.tex` from the material-path string + the bit.
-  - *Exception (cross-root / non-conforming):* the **full index path string** in a small side map. The known
-    population is hair-accessory (`_acc`) materials whose index sampler points at a shared
-    `chara/common/texture/id_N.tex` (the corpus `tightandfirmmaxfilia` case).
-  - The extractor emits raw `(materialPath, indexPath)` pairs; the encoder classifies each as regular/bit
-    or exception and **verifies** the bit reconstruction round-trips, so the compression can never silently
-    corrupt a value.
+  `hash(materialPath) → value`, where `value` is **compressed**. The index path is almost always
+  `{root}/texture/v{VER}_{name±letter}_id.tex` — everything but `VER` and the letter is derivable from the
+  material path — so:
+  - *Regular:* store the pair **`(VER, keepLetterBit)`** in a packed, hash-keyed table (10-byte records:
+    `folderHash u32, fileHash u32, version u16` with the keep-letter flag in the version's high bit). The
+    runtime reconstructs `{root}/texture/v{VER}_{name±letter}_id.tex` from the material-path string + these
+    two values. **`VER` is NOT the material's folder version** — empirically they diverge for the majority
+    of equipment (e.g. `e0001/material/v0002 → texture/v01_…`, `v0001 → v18_…`); the index-texture version
+    tracks a separate grouping not derivable from the path, which is exactly why it must be stored. (An
+    earlier draft assumed `VER == folderVersion` and stored only a bit; measurement over the full game
+    falsified that — see the plan's Task 3.)
+  - *Exception (cross-root / non-conforming):* the **full index path string** in a small side map — only the
+    ~1.9k materials whose index sampler does not match the `{root}/texture/v{VER}_{name±letter}_id.tex`
+    shape at all, chiefly accessory/hair `_acc` materials pointing at a shared `chara/common/texture/id_N.tex`
+    (the corpus `tightandfirmmaxfilia` case).
+  - The extractor emits raw `(materialPath, indexPath)` pairs; the encoder derives `(VER, keepLetter)` by
+    parsing the observed index path and **verifies** the reconstruction round-trips to the exact observed
+    string before choosing the packed bucket — anything that does not round-trip falls to the full-string
+    exception map, so the compression can never silently corrupt a value.
 - **`ID_TEX_MEMBERSHIP`** — the `(folderHash, fileHash)` set of base-game `_id.tex` paths, for gate B.
 
 Provenance headers cite `EndwalkerUpgrade.cs:923-936` (the behaviour) and the extractor (the data source),

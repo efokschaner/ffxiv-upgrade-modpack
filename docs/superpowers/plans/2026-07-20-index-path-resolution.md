@@ -38,8 +38,8 @@ existing `src/sqpack` decoders and `src/mtrl` / `src/mdl` parsers, Biome, the cu
 - `scripts/lib/game-index.ts` — **modify**: add offset retention + `read(gamePath)` native dat reader.
 - `scripts/extract-index-table.ts` — **create**: the item-seeded enumerator (replaces `extract-index-overrides.ts`).
 - `scripts/extract-index-overrides.ts` — **delete**.
-- `src/upgrade/reference/index-table.ts` — **create (generated)**: packed `DROP`/`KEEP` hash sets,
-  `EXCEPTIONS` map, `ID_TEX_MEMBERSHIP` packed set.
+- `src/upgrade/reference/index-table.ts` — **create (generated)**: `INDEX_PACKED` (10-byte
+  hash+version+bit records), `INDEX_EXCEPTIONS` map (true cross-root cases), `ID_TEX_PACKED` set.
 - `src/upgrade/reference/index-path-overrides.ts` — **delete**.
 - `src/upgrade/reference/index-path-reconstruct.ts` — **create**: `reconstructIndexPath(materialPath,
   keepLetter)` — the one pure regular-case reconstruction, imported by **both** the extractor (Task 3) and
@@ -204,33 +204,50 @@ git commit -m "feat(scripts): item-seeded index-table enumerator core (no emissi
 
 ```ts
 // src/upgrade/reference/index-path-reconstruct.ts
-// The regular-case base-material index path, derived from the material path per the naming convention
-// TexTools' stolen path follows (EndwalkerUpgrade.cs:923-936 reads it from the material; the extractor
-// stores only the one non-derivable bit — keepLetter — and this reconstructs the rest). Shared by
+// The regular-case base-material index path, derived from the material path plus the two non-derivable
+// values the extractor stores per material: the texture VERSION number and the keep-variant-letter bit.
+// TexTools reads this whole path from the base material (EndwalkerUpgrade.cs:923-936); we store only what
+// cannot be derived from the material path string. NOTE: `version` is the index-TEXTURE version prefix,
+// which is NOT the material's own folder version (they diverge for most equipment — see Task 3). Shared by
 // scripts/extract-index-table.ts (encoder) and index-path-resolver.ts (runtime).
-// mt_c0201e0194_top_a.mtrl in .../material/v0001/  ->  .../texture/v01_c0201e0194_top[_a]_id.tex
-export function reconstructIndexPath(materialPath: string, keepLetter: boolean): string | null {
-  const m = materialPath.match(/^(.*)\/material\/v(\d{4})\/mt_(.+)\.mtrl$/);
+// mt_c0201e0194_top_a.mtrl + (version 1, keepLetter false)  ->  .../texture/v01_c0201e0194_top_id.tex
+export function reconstructIndexPath(
+  materialPath: string,
+  version: number,
+  keepLetter: boolean,
+): string | null {
+  const m = materialPath.match(/^(.*)\/material\/v\d{4}\/mt_(.+)\.mtrl$/);
   if (!m) return null;
-  const [, root, ver, name] = m;
-  const nn = String(Number(ver)).padStart(2, "0");                 // v0001 -> 01 ; v0012 -> 12
+  const [, root, name] = m;
+  const vv = String(version).padStart(2, "0");                     // 1 -> "01" ; 18 -> "18" ; 100 -> "100"
   const body = keepLetter ? name! : name!.replace(/_[a-z]$/, "");
-  return `${root}/texture/v${nn}_${body}_id.tex`;
+  return `${root}/texture/v${vv}_${body}_id.tex`;
 }
 ```
 
   The extractor imports it: `import { reconstructIndexPath } from "../src/upgrade/reference/index-path-reconstruct";`
 
-- [ ] **Step 2: Classify each pair.** For each `(materialPath, indexPath)`: if
-  `reconstructIndexPath(materialPath, false) === indexPath` → DROP set; else if `(…, true) === indexPath` →
-  KEEP set; else → `EXCEPTIONS[materialPath] = indexPath`. Log the DROP/KEEP/EXCEPTION counts.
+- [ ] **Step 2: Classify each pair by deriving `(version, keepLetter)`.** For each
+  `(materialPath, indexPath)`: parse the observed index path with
+  `/^(.*)\/texture\/v(\d+)_(.+)_id\.tex$/`. If it matches, its root equals the material's root, and its
+  name equals the material name (keepLetter=true) or the material name minus a trailing `_[a-z]`
+  (keepLetter=false) — i.e. `reconstructIndexPath(materialPath, version, keepLetter) === indexPath` for the
+  parsed `version` and that `keepLetter` — record a **regular** entry `(materialPath, version, keepLetter)`.
+  Otherwise record `EXCEPTIONS[materialPath] = indexPath` (the true cross-root / non-conforming ~1.9k, e.g.
+  `chara/common/texture/id_N.tex`). Log the regular vs exception counts (and the max version seen).
 
-- [ ] **Step 3: Pack the sets.** Port the pack format from `extract-hair-texture-index.ts:87-101`: for each
-  path in a set, `computeHash(folder)`/`computeHash(file)` → LE u32 pairs → base64. Sort for a stable diff.
-  Do the same for `ID_TEX_PACKED` (from `idTexPaths`).
+- [ ] **Step 3: Pack the regular table.** Emit fixed 10-byte records — `computeHash(folder)` u32,
+  `computeHash(file)` u32, then a u16 holding `version | (keepLetter ? 0x8000 : 0)` (version ≤ 0x7fff, and
+  the extractor asserts this — the observed max is well under 100). Sort by `(folderHash, fileHash)` for a
+  stable diff; base64. This mirrors `extract-hair-texture-index.ts:87-101` but with the extra u16 per
+  record. Pack `ID_TEX_PACKED` from `idTexPaths` in the plain 8-byte `(folderHash, fileHash)` form
+  (identical to `hair-texture-index.ts`).
 
 - [ ] **Step 4: Emit** `src/upgrade/reference/index-table.ts` with a GENERATED header citing
-  `EndwalkerUpgrade.cs:923-936` and this extractor. Export the four members above.
+  `EndwalkerUpgrade.cs:923-936` and this extractor, exporting: `INDEX_PACKED: string` (the 10-byte records),
+  `INDEX_EXCEPTIONS: Record<string, string>` (materialPath → full indexPath), and `ID_TEX_PACKED: string`.
+  Exclude the file from Biome formatting in `biome.jsonc` (it exceeds the 1 MiB `files.maxSize`; same
+  pattern as `imc-table.ts`).
 
 - [ ] **Step 5: Completeness cross-check (fail-loud).** After building `pairs`, assert every base material
   referenced by the local corpus is covered. Reuse the corpus-scan approach: for each corpus input with a
@@ -263,8 +280,8 @@ git commit -m "feat(reference): generate complete compressed index-table + id_te
 - Test: `test/upgrade/index-path-resolver.test.ts`
 
 **Interfaces:**
-- Consumes: `INDEX_DROP_PACKED`, `INDEX_KEEP_PACKED`, `INDEX_EXCEPTIONS`, `ID_TEX_PACKED` from
-  `index-table.ts`.
+- Consumes: `INDEX_PACKED`, `INDEX_EXCEPTIONS`, `ID_TEX_PACKED` from `index-table.ts`; `reconstructIndexPath`
+  from `index-path-reconstruct.ts`.
 - Produces: `resolveStolenIndexPath(materialPath: string): string | undefined` (the base material's index
   path, or `undefined` if not a base material with an index sampler) and `idTexExists(path: string):
   boolean`.
@@ -301,10 +318,14 @@ Run: `npm test -- index-path-resolver`
 Expected: FAIL (cannot find module).
 
 - [ ] **Step 3: Implement the resolver** mirroring `hair-texture-exists.ts` (duplicate the `computeHash`
-  CRC32 — the codebase already keeps a per-table copy; note the shared origin in a comment). Decode the two
-  packed sets into `Set<string>` of `"fh:xh"`, check `EXCEPTIONS` first, then KEEP, then DROP, reconstructing
-  with `reconstructIndexPath` **imported from** `./index-path-reconstruct` (the same module the extractor
-  uses — do not re-implement it). `idTexExists` decodes `ID_TEX_PACKED` and does the membership check like
+  CRC32 — the codebase already keeps a per-table copy; note the shared origin in a comment). Decode
+  `INDEX_PACKED` into a `Map<string, { version: number; keepLetter: boolean }>` keyed by `"fh:xh"` (read
+  each 10-byte record: folderHash u32, fileHash u32, then u16 → `version = u16 & 0x7fff`,
+  `keepLetter = (u16 & 0x8000) !== 0`). `resolveStolenIndexPath`: check `INDEX_EXCEPTIONS[materialPath]`
+  first (return it); else hash the material path, look up the map; on a hit reconstruct via
+  `reconstructIndexPath(materialPath, rec.version, rec.keepLetter)` **imported from**
+  `./index-path-reconstruct` (the same module the extractor uses — do not re-implement it); else
+  `undefined`. `idTexExists` decodes `ID_TEX_PACKED` into a `Set<string>` and does the membership check like
   `hairTextureExists`.
 
 ```ts

@@ -1,7 +1,11 @@
-// Enumerator core for the base-game material -> index-sampler (_id.tex) path table — extraction
-// tooling only (NOT shipped port code), same status as scripts/lib/game-index.ts and
-// scripts/lib/imc-entries.ts. THIS FILE EMITS NO TABLE (that is Task 3); it builds two in-memory
-// collections (`pairs`, `idTexPaths`) and logs counts. The smoke run is the acceptance gate.
+// Enumerator + encoder for the base-game material -> index-sampler (_id.tex) path table —
+// extraction tooling only (NOT shipped port code), same status as scripts/lib/game-index.ts and
+// scripts/lib/imc-entries.ts. Builds two in-memory collections (`pairs`, `idTexPaths`), classifies
+// each pair against the regular-case reconstruction (index-path-reconstruct.ts), packs the result,
+// and writes the generated src/upgrade/reference/index-table.ts. A `--experimental-sqlite` full run
+// (no INDEX_LIMIT) also cross-checks completeness against the local corpus (see the corpus scan
+// below) and fails loud on any real enumeration miss. The smoke run (INDEX_LIMIT set) skips both the
+// cross-check and the emission — it only proves the enumeration walk itself works on a subset.
 //
 // This reproduces a narrow slice of TexTools' dependency graph — the model->material->texture edges
 // XivCache.GetChildFiles walks (XivDependencyGraph.cs · GetChildFiles · 398-435: a model's children
@@ -24,18 +28,27 @@
 //      probing every existing material/v{NNNN}/ folder is exactly right and needs no IMC parsing.
 //   5. Mtrl -> index sampler (src/mtrl, mirroring the sampler scan in extract-index-overrides.ts:65-71).
 //
+// Hair/tail/ear/accessory CUSTOMIZATION materials are not items and so have no item_sets.db root at
+// all; they are enumerated separately by the same fixed-name existence probe
+// scripts/extract-hair-materials.ts:81-102 already established (single material/v0001/ folder per
+// part, RACES x ID_MAX grid) — see the dedicated block right before Step 5 below.
+//
 // Regenerate on a machine with FFXIV installed; needs node's --experimental-sqlite for the
 // item_sets.db enumeration:
 //   $env:NODE_OPTIONS="--experimental-sqlite"; npx tsx scripts/extract-index-table.ts
 // Smoke run (fast, ~pins the e0194 canary): prefix with `$env:INDEX_LIMIT=50;`.
 
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadModpack } from "../src/index";
 import { readEditableModel } from "../src/mdl/model/read-model";
 import { parseMdl } from "../src/mdl/parse";
+import { allFiles } from "../src/model/modpack";
 import { parseMtrl } from "../src/mtrl/mtrl";
 import { samplerIdToTexUsage, XivTexType } from "../src/mtrl/shader";
-import { GameIndex } from "./lib/game-index";
+import { reconstructIndexPath } from "../src/upgrade/reference/index-path-reconstruct";
+import { computeHash, GameIndex } from "./lib/game-index";
 import { isImcSharingWeapon } from "./lib/imc-entries";
 
 // The game's sqpack folder, read in-process by GameIndex as the FileExists / read oracle
@@ -64,10 +77,14 @@ const INDEX_LIMIT = process.env.INDEX_LIMIT
   : Number.POSITIVE_INFINITY;
 const SMOKE = INDEX_LIMIT !== Number.POSITIVE_INFINITY;
 
-// Material version-folder probe bound. Base-game equipment tops out well below this; the fail-loud
-// guard below trips if any material exists at exactly v{MAX} so the bound gets raised rather than
-// silently truncating.
-const MAX_MATERIAL_VERSION = 64;
+// Material version-folder probe bound. IMC's MaterialSet field is a single byte (Imc.cs), so 255 is
+// the true upper bound of what version folder could ever exist; a handful of legacy equipment sets
+// (found via the Task 3 completeness cross-check hitting the previous bound of 64 — e.g. e0009,
+// e0011, e0016, e0023, e0025, e0029, w2199) genuinely have material variants well past 64, so the
+// probe must cover the type's full range rather than the "low double digits" most sets use. The
+// fail-loud guard below trips if any material exists at exactly v{MAX} so the bound gets raised
+// rather than silently truncating.
+const MAX_MATERIAL_VERSION = 255;
 
 // Full IDRaceDictionary race grid (Character.cs:530-571), copied from
 // scripts/extract-hair-texture-index.ts:16-55. These are the XivRace.GetRaceCode() strings
@@ -283,6 +300,36 @@ for (const r of roots) {
   }
 }
 
+// Hair/tail/ear/accessory CUSTOMIZATION materials are not items, so they never appear in
+// item_sets.db and are wholly absent from the roots walk above (found via the completeness
+// cross-check below hitting a real corpus material: a hair "_acc" accessory material carrying an
+// index sampler pointing at the shared chara/common/texture/id_*.tex namespace — the known
+// EXCEPTIONS population this table is expected to hold). Each part lives at a SINGLE fixed
+// material/v0001/ folder (no per-item version-folder growth, unlike equipment/accessory items), so
+// this reuses the exact vetted formulaic probe scripts/extract-hair-materials.ts:81-102 already
+// established over the same RACES x ID_MAX(500, Character.cs:335 _SCAN_LIMIT) grid — existence-probe
+// only, then fold hits into the SAME presentMaterials set so Step 5 below reads/classifies them
+// identically to every other material.
+const HAIR_PART_FORMATS: Array<(race: string, id: string) => string> = [
+  (race, id) =>
+    `chara/human/c${race}/obj/hair/h${id}/material/v0001/mt_c${race}h${id}_hir_a.mtrl`,
+  (race, id) =>
+    `chara/human/c${race}/obj/tail/t${id}/material/v0001/mt_c${race}t${id}_a.mtrl`,
+  (race, id) =>
+    `chara/human/c${race}/obj/zear/z${id}/material/v0001/mt_c${race}z${id}_a.mtrl`,
+  (race, id) =>
+    `chara/human/c${race}/obj/hair/h${id}/material/v0001/mt_c${race}h${id}_acc_b.mtrl`,
+];
+const HAIR_ID_MAX = 500; // _SCAN_LIMIT (Character.cs:335), same bound extract-hair-materials.ts uses.
+for (const fmt of HAIR_PART_FORMATS) {
+  for (const race of RACES) {
+    for (let i = 1; i <= HAIR_ID_MAX; i++) {
+      const matPath = fmt(race, pad4(i));
+      if (gameIndex.fileExists(matPath)) presentMaterials.add(matPath);
+    }
+  }
+}
+
 // Step 5: material -> index sampler.
 for (const matPath of presentMaterials) {
   const mtrlBytes = gameIndex.read(matPath);
@@ -310,6 +357,275 @@ if (SMOKE) {
   console.log(
     `e0194 canary: ${e0194Mat} -> ${pairs.get(e0194Mat) ?? "MISSING"}`,
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Task 3 Step 5: completeness cross-check (fail-loud). The enumerated `pairs` domain IS the runtime
+// resolver's existence oracle (AGENTS.md): a lookup miss must mean "genuinely not a base material
+// with an index sampler", never "the roots/models/materials walk above forgot a namespace". Prove
+// that by scanning every `.mtrl` gamePath the LOCAL corpus (real + synthetic + upgrade-error, all
+// gitignored — see test/helpers/corpus-roots.ts) references: for any such path that IS a base-game
+// material (gameIndex.fileExists) but is NOT already in `pairs`, read + parse it and check whether
+// it actually carries an index sampler. A base material with genuinely no index sampler is a
+// faithful miss (convention applies); a base material WITH one that we failed to enumerate is a
+// real gap in the walk above. Skipped in SMOKE mode: a partial root subset cannot cover the whole
+// corpus and would just be noisy (mirrors the IMC_LIMIT smoke-skips-validation pattern in
+// extract-meta-reference.ts).
+if (!SMOKE) {
+  // corpus-roots.ts reads __dirname at module scope (Vite-only global); shim it before the dynamic
+  // import, exactly as extract-meta-reference.ts does for the same reason (a static import would
+  // evaluate the module-scope read before this shim runs).
+  (globalThis as unknown as { __dirname: string }).__dirname = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "test",
+    "helpers",
+  );
+  const { corpusPacks, isUpgradeErrorPack } = await import(
+    "../test/helpers/corpus-roots"
+  );
+
+  const corpusMtrlPaths = new Set<string>();
+  for (const pack of corpusPacks()) {
+    // upgrade-error packs are deliberately malformed (see corpus-roots.ts): they exist to prove
+    // our /upgrade throws exactly where ConsoleTools does, not to supply real material references,
+    // so a container-level load failure here is expected and not a completeness gap.
+    if (isUpgradeErrorPack(pack)) continue;
+    const bytes = new Uint8Array(readFileSync(pack));
+    let data: ReturnType<typeof loadModpack>;
+    try {
+      data = loadModpack(pack, bytes);
+    } catch (err) {
+      problems.push(
+        `completeness: failed to load corpus pack ${pack}: ${(err as Error).message}`,
+      );
+      continue;
+    }
+    for (const { gamePath } of allFiles(data)) {
+      if (gamePath.endsWith(".mtrl")) corpusMtrlPaths.add(gamePath);
+    }
+  }
+
+  let rechecked = 0;
+  for (const matPath of corpusMtrlPaths) {
+    if (pairs.has(matPath)) continue; // already enumerated with an index sampler
+    if (!gameIndex.fileExists(matPath)) continue; // not a base-game material at all (mod-only path)
+    rechecked++;
+    const mtrlBytes = gameIndex.read(matPath);
+    const mtrl = parseMtrl(mtrlBytes, matPath);
+    const idx = mtrl.textures.find(
+      (t) =>
+        t.sampler &&
+        samplerIdToTexUsage(t.sampler.samplerIdRaw, mtrl) === XivTexType.Index,
+    );
+    if (idx) {
+      problems.push(
+        `completeness: ${matPath} has an index sampler (${idx.texturePath}) but is missing from ` +
+          "the enumerated pairs table (roots/models/materials walk gap)",
+      );
+    }
+  }
+  console.log(
+    `Completeness cross-check: ${corpusMtrlPaths.size} distinct corpus .mtrl gamePaths, ` +
+      `${rechecked} base-game materials outside pairs re-checked, ` +
+      `${problems.length} problem(s).`,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Task 3 Steps 2-4: classify, pack, and emit the generated table. Skipped in SMOKE mode (Task 2's
+// established behaviour: "no table emitted" over a partial root subset).
+//
+// Generalized encoding (operator decision 2026-07-20, post-full-run finding): the index-TEXTURE
+// version prefix is NOT the material's own folder version -- for most equipment, multiple material
+// variant folders share one canonical index texture (e.g. v0002-v0004 of a set all point at texture
+// v01), so a single keep/drop-letter BIT keyed to the material's own folder version (the original
+// Task 3 design) only round-trips ~48% of pairs; the rest fell into EXCEPTIONS as full uncompressed
+// strings. Storing the actual observed `version` alongside the letter bit (both non-derivable from
+// the material path, both cheap to pack per entry) instead compresses the vast majority, cutting the
+// table from ~2.6 MiB to well under 1 MiB.
+if (!SMOKE) {
+  // Step 2: classify each pair by deriving (version, keepLetter) from the OBSERVED index path, then
+  // verifying reconstructIndexPath(matPath, version, keepLetter) reproduces it exactly.
+  // reconstructIndexPath itself is keyed off the material's own root, so a match here already implies
+  // the parsed index-path root equals the material's root -- no separate root-equality check needed.
+  // A non-match (root mismatch, e.g. cross-root hair `_acc` -> chara/common/texture/id_*.tex; or a
+  // shape that doesn't even parse as v{N}_..._id.tex) is recorded as an EXCEPTION, storing the full
+  // observed path verbatim (always correct, just uncompressed).
+  const INDEX_PATH_RE = /^(.*)\/texture\/v(\d+)_(.+)_id\.tex$/;
+  const regular: Array<{
+    matPath: string;
+    version: number;
+    keepLetter: boolean;
+  }> = [];
+  const exceptions: Record<string, string> = {};
+  let maxVersion = 0;
+  for (const [matPath, indexPath] of pairs) {
+    const m = indexPath.match(INDEX_PATH_RE);
+    const version = m ? Number(m[2]) : null;
+    let keepLetter: boolean | null = null;
+    if (version !== null) {
+      if (reconstructIndexPath(matPath, version, false) === indexPath)
+        keepLetter = false;
+      else if (reconstructIndexPath(matPath, version, true) === indexPath)
+        keepLetter = true;
+    }
+    if (keepLetter !== null && version !== null) {
+      // Fail-loud: the packed u16 reserves its top bit for keepLetter, leaving 15 bits (0x7fff) for
+      // version. Observed max is well under 100, so this should never fire; if it does, the format
+      // needs to grow rather than silently truncate.
+      if (version > 0x7fff) {
+        problems.push(
+          `version ${version} for ${matPath} exceeds 0x7fff (u16 top bit is the keepLetter flag)`,
+        );
+      }
+      regular.push({ matPath, version, keepLetter });
+      if (version > maxVersion) maxVersion = version;
+    } else {
+      exceptions[matPath] = indexPath;
+    }
+  }
+  console.log(
+    `Classification: regular=${regular.length} EXCEPTIONS=${Object.keys(exceptions).length} ` +
+      `(maxVersion=${maxVersion})`,
+  );
+  // DEBUG: sample a handful of exceptions for the report -- the known populations are (a) hair
+  // `_acc` accessory materials (cross-root, chara/common/texture/id_*.tex) and (b) any index path
+  // whose shape doesn't parse as v{N}_..._id.tex at all.
+  const sampleKeys = Object.keys(exceptions).slice(0, 15);
+  console.log(
+    `Sample EXCEPTIONS entries (${sampleKeys.length} of ${Object.keys(exceptions).length}):`,
+  );
+  for (const k of sampleKeys) console.log(`  ${k} -> ${exceptions[k]}`);
+
+  // Round-trip self-check (coordinator-requested): decode each packed (version, keepLetter) back out
+  // of its u16 encoding and confirm reconstructIndexPath reproduces the ORIGINAL observed index path
+  // byte-for-byte. This is a cheap guard against a bit-packing/masking mistake (as opposed to the
+  // classification loop above, which only proves the pre-encoding values are correct).
+  let roundTripChecked = 0;
+  for (const { matPath, version, keepLetter } of regular) {
+    const packed16 = (version & 0x7fff) | (keepLetter ? 0x8000 : 0);
+    const decodedVersion = packed16 & 0x7fff;
+    const decodedKeepLetter = (packed16 & 0x8000) !== 0;
+    const reconstructed = reconstructIndexPath(
+      matPath,
+      decodedVersion,
+      decodedKeepLetter,
+    );
+    const original = pairs.get(matPath)!;
+    if (reconstructed !== original) {
+      problems.push(
+        `round-trip: ${matPath} packed (version=${version} keepLetter=${keepLetter}) decodes to ` +
+          `(version=${decodedVersion} keepLetter=${decodedKeepLetter}) reconstructing "${reconstructed}", ` +
+          `expected "${original}"`,
+      );
+    }
+    roundTripChecked++;
+  }
+  console.log(
+    `Round-trip self-check: ${roundTripChecked} regular entries verified lossless.`,
+  );
+
+  // Step 3: pack the regular table as fixed 10-byte records -- (folderHash,fileHash) LE uint32 pairs
+  // of the MATERIAL path (same convention as extract-hair-texture-index.ts:87-101), followed by a u16
+  // holding `version | (keepLetter ? 0x8000 : 0)`. Sort by (folderHash, fileHash) for a stable diff.
+  function packRegular(
+    entries: Array<{ matPath: string; version: number; keepLetter: boolean }>,
+  ): string {
+    const rows: [number, number, number][] = entries.map(
+      ({ matPath, version, keepLetter }) => {
+        const slash = matPath.lastIndexOf("/");
+        const folderHash = computeHash(matPath.slice(0, slash));
+        const fileHash = computeHash(matPath.slice(slash + 1));
+        const flags = (version & 0x7fff) | (keepLetter ? 0x8000 : 0);
+        return [folderHash, fileHash, flags];
+      },
+    );
+    rows.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const out = Buffer.alloc(rows.length * 10);
+    rows.forEach(([f, x, flags], i) => {
+      out.writeUInt32LE(f >>> 0, i * 10);
+      out.writeUInt32LE(x >>> 0, i * 10 + 4);
+      out.writeUInt16LE(flags & 0xffff, i * 10 + 8);
+    });
+    return out.toString("base64");
+  }
+
+  // ID_TEX_PACKED stays the plain 8-byte (folderHash,fileHash) form -- identical to
+  // extract-hair-texture-index.ts:87-101 / HAIR_TEX_INDEX_PACKED, unchanged by this generalization.
+  function packHashPairs(paths: string[]): string {
+    const hashed: [number, number][] = paths.map((p) => {
+      const slash = p.lastIndexOf("/");
+      return [computeHash(p.slice(0, slash)), computeHash(p.slice(slash + 1))];
+    });
+    hashed.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const out = Buffer.alloc(hashed.length * 8);
+    hashed.forEach(([f, x], i) => {
+      out.writeUInt32LE(f >>> 0, i * 8);
+      out.writeUInt32LE(x >>> 0, i * 8 + 4);
+    });
+    return out.toString("base64");
+  }
+
+  const indexPacked = packRegular(regular);
+  const idTexPacked = packHashPairs([...idTexPaths]);
+
+  // Step 4: emit the generated module. Only when the completeness cross-check AND the round-trip
+  // self-check found no problems -- a known-incomplete or lossy encoding must not silently overwrite
+  // a good committed table.
+  if (problems.length === 0) {
+    const exceptionKeys = Object.keys(exceptions).sort();
+    const exceptionsBody = exceptionKeys
+      .map((k) => `  ${JSON.stringify(k)}: ${JSON.stringify(exceptions[k])},`)
+      .join("\n");
+    const out =
+      "// GENERATED — regenerate via `npx tsx scripts/extract-index-table.ts`. Do not edit by hand.\n" +
+      "//\n" +
+      "// Base-game material -> index (_id.tex) sampler path, compressed. Backs TexTools' idPath\n" +
+      "// refinement (EndwalkerUpgrade.cs:923-936): when an upgraded material overwrites a base-game\n" +
+      "// material, the generated index sampler steals THAT material's own index path rather than\n" +
+      "// deriving one by naming convention. Enumerated by scripts/extract-index-table.ts (item-seeded\n" +
+      "// walk: item_sets.db roots -> models -> materials -> index sampler, existence-probed for\n" +
+      "// version folders); see that file for full provenance and the corpus completeness cross-check\n" +
+      "// that guards this table's coverage.\n" +
+      "//\n" +
+      "// INDEX_PACKED: one 10-byte record per REGULAR material -- (folderHash,fileHash) LE uint32 of\n" +
+      "// the MATERIAL path, then a u16 = `version | (keepLetter ? 0x8000 : 0)`. `version` is the\n" +
+      "// index-TEXTURE's own version prefix (e.g. 18 in v18_..._id.tex) -- NOT the material's folder\n" +
+      "// version, which usually differs (many material variant folders share one canonical index\n" +
+      "// texture). `keepLetter` is whether the index path keeps the material's trailing variant\n" +
+      "// letter. Neither is derivable from the material path string alone, so both are stored; the\n" +
+      "// runtime resolver reconstructs the full index path via reconstructIndexPath(materialPath,\n" +
+      "// version, keepLetter) (index-path-reconstruct.ts).\n" +
+      "// INDEX_EXCEPTIONS: materials whose index path does not fit ANY (version, keepLetter) pair the\n" +
+      "// regular reconstruction can produce, keyed by the full material path with the full index path\n" +
+      "// as the value (~1.9k entries, mostly hair `_acc` accessory materials whose index sampler\n" +
+      "// points at a shared chara/common/texture/id_*.tex, i.e. genuinely cross-root). Correctness is\n" +
+      "// unaffected either way: this map always stores the literal path read from the base-game\n" +
+      "// material.\n" +
+      "// ID_TEX_PACKED: (folderHash,fileHash) pairs for every base-game _id.tex path observed during\n" +
+      "// enumeration, for gate B (!FileExists(idPath)) in the runtime resolver.\n" +
+      `export const INDEX_PACKED = ${JSON.stringify(indexPacked)};\n` +
+      "export const INDEX_EXCEPTIONS: Record<string, string> = {\n" +
+      exceptionsBody +
+      "\n};\n" +
+      `export const ID_TEX_PACKED = ${JSON.stringify(idTexPacked)};\n`;
+    const outPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "..",
+      "src",
+      "upgrade",
+      "reference",
+      "index-table.ts",
+    );
+    writeFileSync(outPath, out);
+    console.log(
+      `wrote ${pairs.size} index entries (regular=${regular.length} ` +
+        `EXCEPTIONS=${exceptionKeys.length}) to ${outPath}`,
+    );
+  } else {
+    console.log("\nNot writing index-table.ts due to problems above.");
+  }
 }
 
 if (problems.length > 0) {
