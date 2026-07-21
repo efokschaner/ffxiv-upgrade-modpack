@@ -128,6 +128,20 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
+8. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+   — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
+   (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
+   name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
+   dedup **numbering** bug but aren't — our resized/decoded texture bytes fall into a different
+   content-hash equality class in `ResolveDuplicates` (`PmpExtensions.cs:518,537-550`), shifting the
+   `common/{idx}` assignment (100 % of those basenames are themselves payload-divergent `.tex`, across
+   Marcellus / Romeo & Juliet / Constellation Crown). **Ranked last: cosmetic** (Penumbra keys on the
+   redirect table, so a renumbering is runtime-equivalent) **and not independent work** — it is
+   *derivative of #1*, carrying no fix of its own but a verification gate: it burns down as the `.tex`
+   payload bulk (design §8.3) does, and only a `common/N` entry that *survives* byte-matching textures
+   is a genuine numbering-input divergence that would then earn its own investigation against
+   `resolve-duplicates.ts`. Filed 2026-07-21 from the trace that also re-scoped the orphan item below.
+
 ## Unprioritized
 
 ### PMP write path
@@ -156,18 +170,7 @@ unchanged by deployment; only probability moves.
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression. **Traced
   2026-07-21** (C# path is `WritePmp`, PMP.cs:830-868): this is only **~5** baselined `structure`
   entries (`added`/`removed` shaped). The other ~42 are a *different*, tex-payload-shadow phenomenon —
-  next item.
-- [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
-  — the ~42 non-orphan `structure` baseline entries. ~22 are `diffPayloadMembers`
-  (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip
-  member name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like
-  a dedup **numbering** bug but aren't — our resized/decoded texture bytes fall into a different
-  content-hash equality class in `ResolveDuplicates` (`PmpExtensions.cs:518,537-550`), shifting the
-  `common/{idx}` assignment (100 % of those basenames are themselves payload-divergent `.tex`, across
-  Marcellus / Romeo & Juliet / Constellation Crown). Cosmetic (Penumbra keys on the redirect table),
-  derivative of the `.tex` burndown (design §8.3), **not** an independent `resolve-duplicates.ts` bug.
-  No fix — a verification gate: re-bless once textures byte-match; only a `common/N` entry that
-  *survives* that is a genuine numbering-input divergence worth its own investigation.
+  now item 8 in the *Prioritized* list above.
 - [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
   — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
   separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw
