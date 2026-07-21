@@ -203,16 +203,23 @@ const IS_META = /\.meta$/;
  * PMPExtensions.MetadataToManipulations (PmpExtensions.cs:417-467), which emits one manipulation
  * per PRESENT segment: Gmp (:422), Eqp (:429), Est (:436), Eqdp (:446), Imc (:456).
  *
- * The three collection segments gate on `Count > 0`, not merely non-null, so a present-but-empty
- * EST/EQDP/IMC segment yields nothing — mirrored with `.size`/`.length` rather than a bare
- * null-check. The two opaque-byte segments gate on null alone.
+ * EST and IMC gate on `Count > 0`, not merely non-null, so a present-but-empty EST/IMC segment
+ * yields nothing — mirrored with `.size`/`.length` rather than a bare null-check. EQDP's `Count > 0`
+ * gate (:446) can never be false in the C#: the dictionary it tests comes from DeserializeEqdpData,
+ * which unconditionally backfills every missing Eqp.PlayableRaces race after parsing
+ * (ItemMetadata.cs:779-788), so a present EQDP segment always has >= 18 entries there. Our
+ * deserializeMeta does not backfill (that expansion lives downstream in reconstructMeta,
+ * src/meta/reconstruct.ts:24-47), so mirroring the literal `Count > 0` text would silently drop a
+ * `.meta` carrying a zero-size EQDP segment that TexTools keeps — hence EQDP below is a bare
+ * non-null check, matching the C#'s EFFECTIVE gate rather than its literal one. The two opaque-byte
+ * segments (Gmp, Eqp) gate on null alone, no backfill involved.
  */
 function yieldsManipulations(m: ItemMeta): boolean {
   return (
     m.gmp !== null || // PmpExtensions.cs:422
     m.eqp !== null || // :429
     (m.est !== null && m.est.size > 0) || // :436
-    (m.eqdp !== null && m.eqdp.size > 0) || // :446
+    m.eqdp !== null || // :446 + ItemMetadata.cs:779-788 (present segment always backfills to >= 18)
     (m.imc !== null && m.imc.length > 0) // :456
   );
 }
@@ -237,15 +244,21 @@ function metadataRound(option: ModpackOption): void {
     const meta = deserializeMeta(bytes); // ItemMetadata.Deserialize, ItemMetadata.cs:869-921
     if (!yieldsManipulations(meta)) {
       // DROP. The round-trip is read -> manipulations -> write: PMP.ManipulationsToMetadata
-      // (PMP.cs:1258-1295) groups manipulations by root and only materializes+Serializes a root
-      // that appears in that grouping, so a meta yielding zero manipulations is simply never
-      // written back (WizardData.cs:463-482 adds a file per `manips.Metadatas` entry — and there
-      // is none). Reproduced here by removing the file from the option.
+      // (PMP.cs:1253-1295) groups manipulations by root (`byRoot`, :1256) and only
+      // materializes+Serializes a root that appears in that grouping, so a meta yielding zero
+      // manipulations is simply never written back (WizardData.cs:463-482 adds a file per
+      // `manips.Metadatas` entry — and there is none). Reproduced here by removing the file from
+      // the option.
+      //
+      // Read-side half of the same argument: WizardData.cs:685-691 deserializes a `.meta`
+      // straight into `data.Manipulations` (never `data.Files`) when loading a pack, so a meta
+      // that yields zero manipulations there never becomes a `Files` entry either — the round
+      // trip is airtight on both ends, not just the write side.
       //
       // This is what makes housing/furniture packs work: `bgcommon/hou/**/{i,o}####.meta` carries
       // no segment at all, because housing uses no IMC (Imc.UsesImc returns false for
-      // indoor/outdoor, Variants/FileTypes/Imc.cs:74-85; GetRawImcFilePath returns "" for it,
-      // XivDependencyRoot.cs:1093-1095) and the other four segments are chara-only concepts.
+      // indoor/outdoor, Variants/FileTypes/Imc.cs:74-85; GetRawImcFilePath returns null for it,
+      // XivDependencyRoot.cs:1093-1097) and the other four segments are chara-only concepts.
       // Verified over the corpus: every housing meta in `raykie Gym Equipment Posing Props` and
       // `SM-Cherry Blossom Upscale` deserializes to zero segments, and `raykie`'s /upgrade golden
       // contains zero `.meta` references.

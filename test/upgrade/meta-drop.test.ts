@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { upgradeModpack } from "../../src/index";
+import { deserializeMeta } from "../../src/meta/deserialize";
 import { serializeMeta } from "../../src/meta/serialize";
 import type { ItemMeta } from "../../src/meta/types";
 import {
@@ -7,7 +8,11 @@ import {
   type ModpackData,
   ModpackFormat,
 } from "../../src/model/modpack";
-import { encodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
+import {
+  decodeSqPackFile,
+  encodeSqPackFile,
+  SqPackType,
+} from "../../src/sqpack/sqpack";
 import { filesMap } from "../helpers/make-packs";
 
 // A .meta with no segments at all -- byte-identical in shape to the real housing metas in the
@@ -126,13 +131,31 @@ describe("metadataRound: manipulation-less .meta files are dropped", () => {
   });
 
   it("drops a meta whose segments are all present-but-empty", () => {
-    // PmpExtensions.cs:436,446,456 gate EST/EQDP/IMC on `Count > 0`, not merely non-null.
+    // EST and IMC gate on `Count > 0` for real (PmpExtensions.cs:436,456) because their C#
+    // deserializers -- v2 DeserializeEstData (ItemMetadata.cs:834-844) and DeserializeImcData
+    // (:715-728) -- have no backfill, unlike EQDP (see the companion "present-but-empty EQDP"
+    // test below), so an empty EST/IMC segment really is empty on both sides.
     const path = "chara/equipment/e0208/e0208_met.meta";
     const out = upgradeModpack(
-      packWithFiles([
-        [path, metaBytes(path, { imc: [], eqdp: new Map(), est: new Map() })],
-      ]),
+      packWithFiles([[path, metaBytes(path, { imc: [], est: new Map() })]]),
     );
     expect(outFiles(out).size).toBe(0);
+  });
+
+  it("keeps a meta whose only segment is a present-but-empty EQDP, and backfills it to 18 races", () => {
+    // EQDP's `Count > 0` gate (PmpExtensions.cs:446) can never be false in the C#: DeserializeEqdpData
+    // unconditionally backfills every missing Eqp.PlayableRaces race after parsing
+    // (ItemMetadata.cs:779-788), so a PRESENT segment always yields >= 18 entries there, even when the
+    // mod's own segment carried zero. yieldsManipulations mirrors that EFFECTIVE gate with a bare
+    // non-null check -- this pins the regression a literal `.size > 0` port would reintroduce (a
+    // present-but-empty EQDP meta silently dropped, where TexTools keeps and backfills it).
+    const path = "chara/equipment/e0208/e0208_met.meta";
+    const out = upgradeModpack(
+      packWithFiles([[path, metaBytes(path, { eqdp: new Map() })]]),
+    );
+    expect([...outFiles(out).keys()]).toEqual([path]);
+    const decoded = decodeSqPackFile(outFiles(out).get(path)!.data!);
+    const reconstructed = deserializeMeta(decoded.data);
+    expect(reconstructed.eqdp?.size).toBe(18);
   });
 });
