@@ -36,6 +36,7 @@ import { parseMdl } from "../src/mdl/parse";
 import { parseMtrl } from "../src/mtrl/mtrl";
 import { samplerIdToTexUsage, XivTexType } from "../src/mtrl/shader";
 import { GameIndex } from "./lib/game-index";
+import { isImcSharingWeapon } from "./lib/imc-entries";
 
 // The game's sqpack folder, read in-process by GameIndex as the FileExists / read oracle
 // (same constant as scripts/extract-hair-texture-index.ts:12-13).
@@ -249,11 +250,21 @@ for (const r of roots) {
     const mdl = parseMdl(modelBytes, modelPath);
     const rm = readEditableModel(modelBytes, mdl);
 
-    // Step 4: version-folder expansion by existence probe. rootFolder is the model path up to and
-    // including the ".../" before "model/" — i.e. the same GetRootFolder() the model path was built
-    // from (GetMaterialPath's basePath, XivDependencyRoot.cs:274,288). MaterialFolderWithVariant is
-    // "{root}material/v{N:D4}/" (:262).
-    const rootFolder = getRootFolder(r);
+    // Step 4: version-folder expansion by existence probe. rootFolder is the same GetRootFolder()
+    // GetMaterialPath uses for its basePath (XivDependencyRoot.cs:274,288); MaterialFolderWithVariant
+    // is "{root}material/v{N:D4}/" (:262).
+    //
+    // Weapon IMC-sharing redirect (XivDependencyRoot.cs:275-284): for an offhand whose weapon type is
+    // in Imc.ImcSharingWeaponTypes (isImcSharingWeapon, ported in scripts/lib/imc-entries.ts), the
+    // material FOLDER is the mainhand's root (primaryId - 50) while the material BASENAME still embeds
+    // the offhand's own id — the C# `nInfo` is a struct COPY, so `nInfo.PrimaryId -= 50` shifts only
+    // the folder, not `materialName`. So probe under the shifted root but keep the offhand model's
+    // materialList basenames unchanged. The offhand MODEL path is NOT shifted (GetModelPath uses the
+    // unshifted root), so model enumeration above is left as-is.
+    const rootFolder =
+      r.primaryType === "weapon" && isImcSharingWeapon(r.primaryId)
+        ? getRootFolder({ ...r, primaryId: r.primaryId - 50 })
+        : getRootFolder(r);
     for (const rawName of rm.pathData.materialList) {
       const basename = rawName.startsWith("/") ? rawName.slice(1) : rawName;
       for (let v = 1; v <= MAX_MATERIAL_VERSION; v++) {
