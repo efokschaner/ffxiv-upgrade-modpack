@@ -113,8 +113,10 @@ if (stolen !== undefined && !ID_TEX_MEMBERSHIP.has(idPath))   // gate B
     falsified that — see the plan's Task 3.)
   - *Exception (cross-root / non-conforming):* the **full index path string** in a small side map — only the
     ~1.9k materials whose index sampler does not match the `{root}/texture/v{VER}_{name±letter}_id.tex`
-    shape at all, chiefly accessory/hair `_acc` materials pointing at a shared `chara/common/texture/id_N.tex`
-    (the corpus `tightandfirmmaxfilia` case).
+    shape at all. Measured over the full game this population is **dominated by monster (~42%) and
+    human-customization hair/tail/ear (~28%) materials**, with ~54% of all exceptions pointing at the shared
+    `chara/common/texture/id_N.tex` namespace (the corpus `tightandfirmmaxfilia` case) and the rest other
+    cross-root / non-conforming index paths — not the "chiefly hair `_acc`" an earlier draft assumed.
   - The extractor emits raw `(materialPath, indexPath)` pairs; the encoder derives `(VER, keepLetter)` by
     parsing the observed index path and **verifies** the reconstruction round-trips to the exact observed
     string before choosing the packed bucket — anything that does not round-trip falls to the full-string

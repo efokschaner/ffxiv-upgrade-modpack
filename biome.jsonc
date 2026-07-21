@@ -15,8 +15,8 @@
     //   - est-table.ts / imc-table.ts — scripts/extract-meta-reference.ts (~1.2 MB of packed arrays)
     //   - hair-materials.ts — scripts/extract-hair-materials.ts (one line per DT hair/tail/ear/accessory material)
     //   - eye-materials.ts — scripts/extract-eye-materials.ts (one line per DT iris material)
-    //   - index-table.ts — scripts/extract-index-table.ts (base64 packed hash sets + one line per
-    //     EXCEPTIONS entry, ~2.6 MB — also exceeds Biome's default 1 MiB files.maxSize)
+    //   - index-table.ts — scripts/extract-index-table.ts (base64 packed hash+version records + one
+    //     line per EXCEPTIONS entry; machine-emitted and byte-reproducible, must not be reformatted)
     // Listed by exact filename (not the whole reference folder) so any hand-written file added there is still linted.
     "includes": [
       "**",

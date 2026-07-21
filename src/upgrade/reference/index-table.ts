@@ -18,8 +18,8 @@
 // version, keepLetter) (index-path-reconstruct.ts).
 // INDEX_EXCEPTIONS: materials whose index path does not fit ANY (version, keepLetter) pair the
 // regular reconstruction can produce, keyed by the full material path with the full index path
-// as the value (~1.9k entries, mostly hair `_acc` accessory materials whose index sampler
-// points at a shared chara/common/texture/id_*.tex, i.e. genuinely cross-root). Correctness is
+// as the value (~1.9k entries -- NOT mostly hair; dominated by monster (~42%) and hair/tail/ear
+// (~28%) materials, ~54% pointing at the shared chara/common/texture/id_*.tex namespace). Correctness is
 // unaffected either way: this map always stores the literal path read from the base-game
 // material.
 // ID_TEX_PACKED: (folderHash,fileHash) pairs for every base-game _id.tex path observed during
