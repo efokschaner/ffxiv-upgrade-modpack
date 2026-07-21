@@ -389,9 +389,14 @@ if (stolen !== undefined && !idTexExists(idPath)) {
 - [ ] **Step 2: Typecheck + full suite** (the corpus `upgrade` check exercises this on real packs).
 
 Run: `npm run typecheck; npm test`
-Expected: typecheck clean. The corpus `upgrade` check may now FAIL on the affected packs because the output
-*changed* (it now matches the golden where it previously diverged into a baseline entry) — that is expected
-and handled by the re-bless in Task 6. No **new** unrelated failures.
+Expected: typecheck clean, and the corpus `upgrade` check **still PASSES**. The ratchet passes a pack while
+its actual diff is a **subset** of its baseline (AGENTS.md), so fixing index paths (a *smaller* diff — the
+output now matches the golden where it previously diverged) keeps every affected pack a subset of its
+existing baseline → still green, just with now-loose baselines that Task 6 tightens via re-bless. What would
+be a real problem is a **regression**: any pack whose diff is now *not* a subset of its baseline (a new,
+non-baselined divergence). If that happens, STOP and report it — it means the resolver emits a path the
+golden does not, not a re-bless situation. (Full `npm test` spawns ConsoleTools over the corpus and takes
+several minutes — run it once, in the foreground.)
 
 - [ ] **Step 3: Commit.**
 
