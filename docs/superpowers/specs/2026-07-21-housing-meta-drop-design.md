@@ -1,8 +1,12 @@
 # Housing/`bgcommon` `.meta` drop — Design & handoff
 
 **Date:** 2026-07-21
-**Status:** Design ready; implementation not started. Blocked only on a one-command empirical
-confirmation (see §6) that was itself blocked by a transient shell-tooling outage during authoring.
+**Status:** Implemented 2026-07-21. §6's empirical check was run and confirmed the premise — all six
+housing metas across both corpus packs deserialize to **zero** segments, so only the drop path is
+reachable from the corpus. Two corrections found during implementation, applied in the shipped code:
+§4's segment list must gate EST/EQDP/IMC on **non-empty**, not merely non-null
+(`PmpExtensions.cs:436,446,456` use `Count > 0`); and §4 step 3 required **no new code** — an IMC
+segment makes the predicate true, so control falls through to `parseMetaRoot`'s existing throw.
 **Backlog item:** [`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md`](../../backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md)
 (prioritized #1).
 **Builds on:** the metadata round design

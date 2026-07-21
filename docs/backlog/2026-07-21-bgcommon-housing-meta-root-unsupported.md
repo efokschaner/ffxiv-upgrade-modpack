@@ -38,7 +38,15 @@ and `HousingExtractionRegex2` (`:263`), dispatched at `ExtractRootInfo` (`XivDep
 Both carry housing metas; both upgrade in TexTools without error. We crash on both. So the throw is a
 gap, not a reproduced behaviour.
 
-## The fix — DROP, not reconstruct (design done)
+## RESOLVED 2026-07-21 — fixed by the manipulation-less drop
+
+**Shipped.** `metadataRound.fixOne` (`src/upgrade/upgrade.ts`) now drops any `.meta` that yields zero
+Penumbra manipulations, ported from `PMPExtensions.MetadataToManipulations`
+(`PmpExtensions.cs:417-467`) plus `PMP.ManipulationsToMetadata`'s by-root materialization
+(`PMP.cs:1258-1295`). No housing support was added to `parseMetaRoot` and no housing base-data table
+was needed. Regression cover: `test/upgrade/meta-drop.test.ts` plus the `raykie` /
+`SM-Cherry Blossom Upscale` corpus goldens. The companion furniture `.mdl` gap
+(`2026-07-21-furniture-bgparts-mdl-overrun.md`) remains open.
 
 **Traced 2026-07-21; full design + handoff in
 [`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md`](../superpowers/specs/2026-07-21-housing-meta-drop-design.md).**
