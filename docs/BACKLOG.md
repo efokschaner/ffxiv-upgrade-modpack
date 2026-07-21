@@ -152,8 +152,22 @@ unchanged by deployment; only probability moves.
 - [PMP writer drops unreferenced source zip members TexTools retains](backlog/2026-07-17-pmp-writer-orphan-member-retention.md)
   — ConsoleTools leaves the original source members in the rewritten archive after re-pointing every
   `Files` entry; ours emits only referenced members, so each orphan is a `structure`/`added` diff.
-  The corpus-wide "container-manifest structure" gap (design §8.3), baselined on real packs and the
-  synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression.
+  A slice of the "container-manifest structure" gap (design §8.3), baselined on real packs and the
+  synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression. **Traced
+  2026-07-21** (C# path is `WritePmp`, PMP.cs:830-868): this is only **~5** baselined `structure`
+  entries (`added`/`removed` shaped). The other ~42 are a *different*, tex-payload-shadow phenomenon —
+  next item.
+- [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+  — the ~42 non-orphan `structure` baseline entries. ~22 are `diffPayloadMembers`
+  (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip
+  member name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like
+  a dedup **numbering** bug but aren't — our resized/decoded texture bytes fall into a different
+  content-hash equality class in `ResolveDuplicates` (`PmpExtensions.cs:518,537-550`), shifting the
+  `common/{idx}` assignment (100 % of those basenames are themselves payload-divergent `.tex`, across
+  Marcellus / Romeo & Juliet / Constellation Crown). Cosmetic (Penumbra keys on the redirect table),
+  derivative of the `.tex` burndown (design §8.3), **not** an independent `resolve-duplicates.ts` bug.
+  No fix — a verification gate: re-bless once textures byte-match; only a `common/N` entry that
+  *survives* that is a genuine numbering-input divergence worth its own investigation.
 - [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
   — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
   separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw
