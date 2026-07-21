@@ -184,9 +184,20 @@ narrow (operator decision 2026-07-20 — the fail-loud corpus cross-check, not a
 - The extractor **exits non-zero** if any base material referenced anywhere in the local corpus is outside
   the enumerated set or did not receive a table entry (the pattern `extract-index-overrides.ts:179-184`
   already uses). A forgotten namespace is caught at build time against real data, not at a user's upload.
-- **Documented residual risk:** completeness is bounded by the item-seed + model-formula coverage. There is
-  no reversible hash→path source for materials, so a root type absent from both `item_sets.db` and the hair
-  grid, and touched by no corpus pack, is the honest boundary. Stated at the extractor header and here.
+- **Residual boundary — narrowed by verification.** Completeness is bounded by the item-seed +
+  model-formula coverage (there is no reversible hash→path source for materials). The `roots` table carries
+  three `primary_type`s the enumerator deliberately does **not** walk — `human` non-hair (face/body/iris/
+  skin), `indoor` and `outdoor` (housing) — and their exclusion was checked against the game rather than
+  assumed: every probed base material of those types carries **no index sampler** (human skin/iris/face use
+  skin shaders; furniture/paintings use `bg` shaders, none of which bind `g_SamplerIndex`). The steal only
+  ever *diverges* from the naming convention when the base material **has** an index sampler, so for these
+  types C#'s own steal hits `idSamp == null` and keeps the convention — identical to our table miss. Their
+  exclusion is therefore a **faithful no-op, not a gap**. (The hair/tail/ear/`_acc` sub-parts that *can*
+  carry an index sampler — e.g. `_acc` → `chara/common/texture/id_*.tex` — are covered by the hair grid;
+  minions and mounts are `monster` roots, fully enumerated.) The honest remaining boundary is only a
+  *future* game-data shape: a new root type, absent from both `item_sets.db` and the hair grid and touched
+  by no corpus pack, that introduces an index sampler where none exists today. Stated at the extractor
+  header and here.
 
 ## 4. What ships / what is deleted
 

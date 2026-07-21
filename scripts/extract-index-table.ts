@@ -219,7 +219,12 @@ function getModelPaths(r: RootRow): string[] {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Step 1: roots table. Read exactly as extract-meta-reference.ts:279-307 does.
+// Step 1: roots table. Read exactly as extract-meta-reference.ts:279-307 does. Minions and mounts are
+// `monster` roots, so they are covered by this filter. The three `roots` types deliberately omitted —
+// `human` non-hair (face/body/iris/skin), `indoor`, `outdoor` (housing) — were checked against the game
+// and carry NO index sampler (skin/iris and `bg` shaders never bind g_SamplerIndex), so the steal's
+// idSamp is always null there and our omission matches C# exactly; see design §3.5. Hair/tail/ear/`_acc`
+// customization (which CAN carry one) is folded in separately below.
 const { DatabaseSync } = await import("node:sqlite");
 const rootsDb = new DatabaseSync(ITEM_SETS_DB, { readOnly: true });
 let roots = rootsDb
