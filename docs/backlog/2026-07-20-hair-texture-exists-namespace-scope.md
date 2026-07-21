@@ -28,13 +28,21 @@ still gated on the candidate). A false negative on the ***candidate*** silently 
 TexTools would perform: no throw, no warning, and the material is re-serialized and written back
 unconditionally at `:98` either way, so the output looks normal.
 
-This is the same rule-violation shape as
-[`index-path-overrides`](2026-07-10-index-path-overrides-e0208.md) — AGENTS.md's *"let the table **be**
-the existence oracle: enumerate exactly the game files that exist, so a lookup **miss** means the file
-is genuinely absent"* — but milder in effect (a skipped rename, not a wrong emitted path). Of the eight
-bundled reference tables, these two are the only ones whose miss is not demonstrably faithful; the rest
-either throw (`imc-table`, 15,695 roots) or enumerate their full domain (`est-table`, `hair-materials`
-1,513, `eye-materials` 339).
+This was the same rule-violation shape as the former `index-path-overrides` table — AGENTS.md's *"let
+the table **be** the existence oracle: enumerate exactly the game files that exist, so a lookup **miss**
+means the file is genuinely absent"* — but milder in effect here (a skipped rename, not a wrong emitted
+path). Of the eight bundled reference tables, these two were the only ones whose miss was not
+demonstrably faithful; the rest either throw (`imc-table`, 15,695 roots) or enumerate their full domain
+(`est-table`, `hair-materials` 1,513, `eye-materials` 339).
+
+**`index-path-overrides` shipped its fix 2026-07-20** (the backlog item file was deleted on shipping,
+per convention) — a complete, item-seeded enumeration over every base-game material with an index
+sampler replaced the 11-entry corpus table. See
+`docs/superpowers/specs/2026-07-20-index-path-resolution-design.md` §3.3 for the enumeration strategy
+(item-seeded: `item_sets.db` roots + hair race×id grid → model → material → sampler, no ConsoleTools
+spawn) and its generator `scripts/extract-index-table.ts`. **That is now the template this item should
+adopt**: enumerate the actual queried domain (option 1 below) the same way, rather than continuing to
+scope by folder.
 
 **Options, in rough order of preference:**
 

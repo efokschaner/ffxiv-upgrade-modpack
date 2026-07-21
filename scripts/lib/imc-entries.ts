@@ -61,7 +61,7 @@ const pad4 = (n: number): string => String(n).padStart(4, "0");
 // Imc.ImcSharingWeaponTypes (Imc.cs:53-59) — FistsOff, TwinfangsOff, DaggersOff, GlaivesOff —
 // expressed as the id ranges XivWeaponTypes.GetWeaponType maps to those members
 // (XivItemType.cs:184-253). An offhand in one of these ranges reads the MAINHAND's .imc.
-function isImcSharingWeapon(primaryId: number): boolean {
+export function isImcSharingWeapon(primaryId: number): boolean {
   return (
     (primaryId > 350 && primaryId <= 400) || // FistsOff
     (primaryId > 1650 && primaryId <= 1700) || // FistsOff

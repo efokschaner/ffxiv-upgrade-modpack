@@ -19,7 +19,10 @@ import {
   HAIR_ADDITIONAL_DATA,
   HAIR_SHADER_CONSTANTS,
 } from "./reference/hair-shader-params";
-import { INDEX_PATH_OVERRIDES } from "./reference/index-path-overrides";
+import {
+  idTexExists,
+  resolveStolenIndexPath,
+} from "./reference/index-path-resolver";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
 const OLD_SHADER_CONSTANT_1 = 0x36080ad0;
@@ -132,18 +135,14 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
     idPath = normalPath.replaceAll("_n.tex", "_id.tex");
   }
 
-  // EndwalkerUpgrade.cs:923-936 idPath refinement: for a mod overwriting a BASE-GAME material, C#
-  // steals that material's OWN index-sampler path (carries the canonical v{NN}_ version prefix and
-  // drops the material-variant letter) instead of the naming convention above. That path is not
-  // derivable from the mod's bytes, so it is bundled as a base-game material->index table extracted
-  // from the game (scripts/extract-index-overrides.ts). Convention holds for every material NOT in it.
-  // NOTE: C#'s refinement also gates on the convention idPath NOT already existing in-game; we apply
-  // the table UNCONDITIONALLY per materialPath (coarser). The table only holds paths where the golden
-  // actually diverged, so this is exact for the corpus; the ratchet would catch a future mod that
-  // reuses one of these base paths with a convention idPath that does resolve in-game.
-  const idPathOverride = INDEX_PATH_OVERRIDES[mtrl.mtrlPath];
-  if (idPathOverride !== undefined) {
-    idPath = idPathOverride;
+  // EndwalkerUpgrade.cs:923-936. Gate A (mod overwrites a base material with an index sampler) is answered by
+  // the resolver's table membership; gate B (!FileExists(convention idPath)) by idTexExists. When both hold,
+  // steal the base material's own index-sampler path. The table is complete over its enumerated domain
+  // (item_sets.db roots + the hair grid; see scripts/extract-index-table.ts and design §3.5 for the
+  // residual boundary), so a miss means "not a base material within that domain" — a faithful convention keep.
+  const stolen = resolveStolenIndexPath(mtrl.mtrlPath);
+  if (stolen !== undefined && !idTexExists(idPath)) {
+    idPath = stolen;
   }
 
   // EndwalkerUpgrade.cs:954-968
