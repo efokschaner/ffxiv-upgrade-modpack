@@ -33,7 +33,9 @@ cold by someone with no context.
 ## Prioritized
 
 Roughly highest-priority first (prioritization pass **2026-07-20b**, superseding 2026-07-20 and
-2026-07-17).
+2026-07-17). **2026-07-21 insertion:** the minion/mount/furniture corpus expansion added three
+corpus-found items at the top (1 `bgcommon` housing-meta crash, 2 silent mount `_id.tex` gap, 3
+furniture `.mdl` overrun), shifting the former 1–8 to 4–11; item 1's top slot is an operator directive.
 
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
@@ -59,7 +61,36 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+1. [`bgcommon` housing/furniture `.meta` roots are unsupported — the whole upgrade throws](backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md)
+   — `parseMetaRoot` throws `unrecognized root path` on `bgcommon/hou/{indoor,outdoor}/…/{i,o}####.meta`,
+   and because `metadataRound` runs `reconstructMeta` on **every** `.meta`, that throw unwinds out of
+   `upgradeModpack` — a furniture pack produces **no output at all**. TexTools parses `bgcommon` housing
+   as a first-class root (`XivDependencyGraph.cs:257` `HousingExtractionRegex`) and never errors on
+   these: `SM-Cherry Blossom Upscale` is a golden `.noop`, `raykie` a full 17.7 MB golden. So we crash
+   where the oracle succeeds, on an entire content class (every furniture mod carrying a `.meta`).
+   **Placed at #1 per operator directive (2026-07-21), which overrides the "silent above loud" ordering
+   note below** — this is a *loud* crash, but its breadth (a whole content class the deployed page will
+   receive) and confirmed divergence earn the top slot. Companion to item 3 (furniture `.mdl`); together
+   they are "bgcommon housing/furniture support". Found by the minion/mount/furniture corpus expansion,
+   2026-07-21.
+
+2. [A mount/monster material's generated `_id` index texture is silently missing from our output](backlog/2026-07-21-monster-index-tex-generation-gap.md)
+   — **the one new item in the worst rubric class: silent wrong output.** `Club Cyberia Motorbike`
+   (mount, monster root `m0242`) upgrades with no error, but our output omits
+   `v01_m0242b0001_n_c_id.tex` that TexTools generates in all 12 options — we emit no `_id` map for the
+   material at all (no rename/dedup counterpart). Not covered by item 5 (`hair-texture-exists`, a *hair*
+   namespace) — this is a *monster* root, and the gap is in round-4 index-map **generation**, not sampler
+   path resolution. Ranked below the housing crash only because it is narrow (one known pack) and the
+   root cause is not yet traced (symptom confirmed, cause TBD). Found 2026-07-21.
+
+3. [Furniture `bgparts` `.mdl` overruns `modelDataSize` — codec throws on a subset](backlog/2026-07-21-furniture-bgparts-mdl-overrun.md)
+   — `parseMdl`'s no-overrun gate throws on some furniture background-part models (`fun_b0_m0613.mdl`
+   1601 > 641; `gar_b0_m0193.mdl` 1118 > 1022), while most furniture models round-trip fine — so a
+   specific non-chara section-size bug (candidate: `furniturePartBoundingBoxCount`), not blanket bg
+   unsupport. The `.mdl`-codec spec anticipated this fail-loud but no item tracked it; the corpus now
+   reaches it (`Crystal-Striking-Goddess`, `raykie`). Companion to item 1. Found 2026-07-21.
+
+4. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
@@ -67,7 +98,7 @@ unchanged by deployment; only probability moves.
    rather than lower because in the hair path the throw is *swallowed* by the reproduced TexTools
    catch-all (`unclaimed-hair.ts:197`), making it a silent partial upgrade rather than a loud failure.
 
-2. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
+5. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
    — the last remaining silent-fallback table of this shape; its sibling (`index-path-overrides`)
    shipped a complete, item-seeded enumeration 2026-07-20
    (`docs/superpowers/specs/2026-07-20-index-path-resolution-design.md`,
@@ -75,7 +106,7 @@ unchanged by deployment; only probability moves.
    sampler path outside the bundled hair/zear/tail texture namespace (a `chara/common/…` mashup, or an
    id > 500); the oracle answers a hard `false`, silently suppressing a rename TexTools would perform.
 
-3. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
+6. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
    first, so it is described here rather than filed.)* `unclaimed-hair.ts:197-204` faithfully
    reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing both the
    modeled `TextureResizeUnsupported` gap and genuine parse failures. Reproducing it is **correct** —
@@ -85,7 +116,7 @@ unchanged by deployment; only probability moves.
    UI polish. Note it is not a divergence: the transform behaviour stays identical, we only surface
    what was skipped.
 
-4. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+7. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -96,14 +127,14 @@ unchanged by deployment; only probability moves.
    messages. One hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI
    must **not** offer an output-format picker. Should start in parallel with 1-4, not after them.
 
-5. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
+8. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
    machine, gitignored, with no CI. Code coverage is strong (92.98% lines / 84.6% branches — the 0%
    files are re-export barrels), so the residual risk is **data and inputs, not code paths**, which
    is exactly what more packs buy and coverage cannot. This is the only entry that finds the
    unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
    design §8.4's thin-coverage note.
 
-6. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+9. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
    — **the highest-severity item that no corpus pack reaches.** Rubric class #1: a group TexTools
    drops from the wizard model entirely survives our TTMP read and gets re-emitted, so the user's
    upgraded pack carries a group the golden does not, with no diff to warn us (no baseline entry
@@ -114,7 +145,7 @@ unchanged by deployment; only probability moves.
    is already masked downstream by `groupHasData` (by the same predicate C# uses), so the genuinely
    open surface is the TTMP path. **Moved here from *Unprioritized → Other ported code*, 2026-07-20b.**
 
-7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+10. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -128,7 +159,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-8. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+11. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -170,7 +201,7 @@ unchanged by deployment; only probability moves.
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression. **Traced
   2026-07-21** (C# path is `WritePmp`, PMP.cs:830-868): this is only **~5** baselined `structure`
   entries (`added`/`removed` shaped). The other ~42 are a *different*, tex-payload-shadow phenomenon —
-  now item 8 in the *Prioritized* list above.
+  now item 11 in the *Prioritized* list above.
 - [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
   — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
   separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw
