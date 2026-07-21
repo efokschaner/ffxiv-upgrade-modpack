@@ -1,7 +1,9 @@
 // Probe (not wired into the suite; needs a local ConsoleTools install + game install; slow):
 // does the canonical index-sampler (_id.tex) path of a base-game material follow a rule derivable
-// from the material path alone, or must it be read from the material file? Backs
-// docs/backlog/2026-07-10-index-path-overrides-e0208.md (T4). For a sample of base-game materials
+// from the material path alone, or must it be read from the material file? Backed the T4
+// index-path-overrides item (shipped 2026-07-20; the backlog item file was deleted on shipping —
+// see docs/superpowers/specs/2026-07-20-index-path-resolution-design.md §2.1, which cites this
+// probe's result as the reason a derivation rule was rejected). For a sample of base-game materials
 // across namespaces, extract via ConsoleTools /extract, read the material's OWN index-sampler
 // Dx11Path, and compare to the rule-derived guess (drop `mt_`, drop the trailing variant letter,
 // add the material folder's `v{NN}_` version prefix). A single BREAK disproves "derivable by rule".

@@ -201,7 +201,7 @@ Provenance: `TextureHelpers.cs`. All byte-exact integer/copy ops, matching the e
 **128×128 DXT1 (BC1), 8 mips**; the pipeline consumes each as decoded **128×128 RGBA** (64 KiB).
 
 - **Form — embed the decoded RGBA as constants, not raw `.tex`.** Every other generated reference
-  table (`hair-materials.ts`, `index-path-overrides.ts`, …) stores the **pre-resolved consumed form**
+  table (`hair-materials.ts`, `index-table.ts`, …) stores the **pre-resolved consumed form**
   — the fields/values the ported logic reads — never raw file bytes needing a runtime parse.
   `eye-base-textures.ts` follows suit: it exports the **decoded RGBA + dims** (e.g.
   `{ width: 128, height: 128, rgba: Uint8Array }` per texture), the exact `GetRawPixels` output

@@ -248,6 +248,15 @@ baseline 1619 → 1203, the remainder being the deferred `.tex` 701 / `.mdl` 453
   (coarser than C#'s convention-existence gate, but exact for the corpus and
   ratchet-guarded).
 
+  **Update 2026-07-20 — superseded.** The 11-entry, corpus-derived table (and its unconditional
+  application, skipping C#'s convention-existence gate) was replaced by a complete, item-seeded
+  enumeration over every base-game material with an index sampler, gated on the convention
+  `_id.tex`'s existence like C# does (closing BACKLOG T4). See
+  `docs/superpowers/specs/2026-07-20-index-path-resolution-design.md` and the runtime resolver
+  `src/upgrade/reference/index-path-resolver.ts` / generator `scripts/extract-index-table.ts`.
+  `src/upgrade/reference/index-path-overrides.ts` and `scripts/extract-index-overrides.ts` are
+  deleted.
+
 - **§3.1 / §5.2 `RepathHairMashups` + hair-DT-path set: NOT NEEDED, not built.**
   All 27 residuals were `chara/equipment` (idPath) materials; **zero** were
   hair/ear/tail. No corpus pack exercises the mashup-hair repath, so

@@ -59,16 +59,7 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. [T4 — `index-path-overrides` is corpus-scoped and silently falls back](backlog/2026-07-10-index-path-overrides-e0208.md)
-   — **the one bundled reference table that is corpus-derived, with a silent miss.** 11 entries, no
-   completeness claim; `material.ts:144-147` keeps the convention path on a miss with no throw or
-   warning, so a base-game material our corpus never saw gets the wrong `_id.tex` path silently, with
-   a blast radius unknowable from the ratchet. **The fix is a redesign, not the re-run this item used
-   to prescribe** — the extractor enumerates the corpus, not the game (see the item). Previously
-   ranked #1 as a "mechanical real-corpus correctness win"; same rank, but that framing understated
-   both the risk and the work.
-
-2. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
+1. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **resolves the
    remaining `TextureResizeUnsupported` throws on NPOT sources** (a functional gap, not just a byte
    diff). The resampler is now wired into the hair round (`updateEndwalkerHairTextures`, closing the
    `Misty_Hairstyle_Female`/`Eliza` baselined resize skips); `createIndexFromNormal`/`upgradeMaskTex`
@@ -76,13 +67,15 @@ unchanged by deployment; only probability moves.
    rather than lower because in the hair path the throw is *swallowed* by the reproduced TexTools
    catch-all (`unclaimed-hair.ts:197`), making it a silent partial upgrade rather than a loud failure.
 
-3. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
-   — the **second** silent-fallback table, same rule violation as #1, milder effect. A hair material
-   may bind a sampler path outside the bundled hair/zear/tail texture namespace (a `chara/common/…`
-   mashup, or an id > 500); the oracle answers a hard `false`, silently suppressing a rename TexTools
-   would perform.
+2. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
+   — the last remaining silent-fallback table of this shape; its sibling (`index-path-overrides`)
+   shipped a complete, item-seeded enumeration 2026-07-20
+   (`docs/superpowers/specs/2026-07-20-index-path-resolution-design.md`,
+   `scripts/extract-index-table.ts`) — the template this item should adopt. A hair material may bind a
+   sampler path outside the bundled hair/zear/tail texture namespace (a `chara/common/…` mashup, or an
+   id > 500); the oracle answers a hard `false`, silently suppressing a rename TexTools would perform.
 
-4. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
+3. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
    first, so it is described here rather than filed.)* `unclaimed-hair.ts:197-204` faithfully
    reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing both the
    modeled `TextureResizeUnsupported` gap and genuine parse failures. Reproducing it is **correct** —
@@ -92,7 +85,7 @@ unchanged by deployment; only probability moves.
    UI polish. Note it is not a divergence: the transform behaviour stays identical, we only surface
    what was skipped.
 
-5. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+4. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -101,16 +94,16 @@ unchanged by deployment; only probability moves.
    eagerly-evaluated generated tables, `imc-table.ts` alone 2.34 MB constructing a `Map` at module
    load); and surfacing the fail-loud guards as user-facing "this modpack isn't supported because…"
    messages. One hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI
-   must **not** offer an output-format picker. Should start in parallel with 1-5, not after them.
+   must **not** offer an output-format picker. Should start in parallel with 1-4, not after them.
 
-6. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
+5. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
    machine, gitignored, with no CI. Code coverage is strong (92.98% lines / 84.6% branches — the 0%
    files are re-export barrels), so the residual risk is **data and inputs, not code paths**, which
    is exactly what more packs buy and coverage cannot. This is the only entry that finds the
    unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
    design §8.4's thin-coverage note.
 
-7. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+6. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
    — **the highest-severity item that no corpus pack reaches.** Rubric class #1: a group TexTools
    drops from the wizard model entirely survives our TTMP read and gets re-emitted, so the user's
    upgraded pack carries a group the golden does not, with no diff to warn us (no baseline entry
@@ -121,7 +114,7 @@ unchanged by deployment; only probability moves.
    is already masked downstream by `groupHasData` (by the same predicate C# uses), so the genuinely
    open surface is the TTMP path. **Moved here from *Unprioritized → Other ported code*, 2026-07-20b.**
 
-8. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries

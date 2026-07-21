@@ -13,8 +13,9 @@
 // every base-game equipment/accessory/weapon/monster/demihuman set, each material that carries an
 // index sampler and read that sampler's real path. TexTools' idPath refinement steals this base-game
 // path verbatim (EndwalkerUpgrade.cs:923-936); a mod's own bytes can't reconstruct it (the canonical
-// v{NN}_ version prefix + dropped variant letter), so it must be bundled. See
-// scripts/extract-index-overrides.ts for the per-corpus ConsoleTools-driven precursor this replaces.
+// v{NN}_ version prefix + dropped variant letter), so it must be bundled. Replaces the deleted
+// scripts/extract-index-overrides.ts (a per-corpus, ConsoleTools-driven, 11-entry precursor); see
+// docs/superpowers/specs/2026-07-20-index-path-resolution-design.md for why it was replaced.
 //
 // The dependency chain, per root:
 //   1. roots table (item_sets.db) -> XivDependencyRootInfo (primary/secondary type+id, slot).
@@ -26,7 +27,8 @@
 //   4. Material version-folder expansion by EXISTENCE PROBE (deliberate substitute for IMC-set
 //      expansion): TexTools' gate A is a pure FileExists(MTRLPath) (EndwalkerUpgrade.cs:926), so
 //      probing every existing material/v{NNNN}/ folder is exactly right and needs no IMC parsing.
-//   5. Mtrl -> index sampler (src/mtrl, mirroring the sampler scan in extract-index-overrides.ts:65-71).
+//   5. Mtrl -> index sampler (src/mtrl; the same sampler-scan idiom the deleted
+//      extract-index-overrides.ts used, see Step 5 below).
 //
 // Hair/tail/ear/accessory CUSTOMIZATION materials are not items and so have no item_sets.db root at
 // all; they are enumerated separately by the same fixed-name existence probe
@@ -334,7 +336,7 @@ for (const fmt of HAIR_PART_FORMATS) {
 for (const matPath of presentMaterials) {
   const mtrlBytes = gameIndex.read(matPath);
   const mtrl = parseMtrl(mtrlBytes, matPath);
-  // Same sampler scan as scripts/extract-index-overrides.ts:65-71.
+  // Same sampler-scan idiom the deleted scripts/extract-index-overrides.ts used.
   const idx = mtrl.textures.find(
     (t) =>
       t.sampler &&

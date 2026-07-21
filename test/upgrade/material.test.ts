@@ -16,7 +16,7 @@ import {
   GLASS_SHADER_KEYS,
 } from "../../src/upgrade/reference/glass-shader-params";
 import { HAIR_ADDITIONAL_DATA } from "../../src/upgrade/reference/hair-shader-params";
-import { INDEX_PATH_OVERRIDES } from "../../src/upgrade/reference/index-path-overrides";
+import { resolveStolenIndexPath } from "../../src/upgrade/reference/index-path-resolver";
 import { EUpgradeTextureUsage } from "../../src/upgrade/upgrade-info";
 
 function tex(path: string, samplerId: number): MtrlTexture {
@@ -75,24 +75,28 @@ describe("upgradeMaterial (colorset branch)", () => {
     });
   });
 
-  it("applies the base-game idPath override for a material in the override table (EndwalkerUpgrade.cs:923-936)", () => {
-    const entry = Object.entries(INDEX_PATH_OVERRIDES)[0];
-    expect(entry).toBeDefined();
-    const [overridePath, overrideIdx] = entry!;
+  it("applies the base-game idPath steal for a material in the enumerated index table (EndwalkerUpgrade.cs:923-936)", () => {
+    // Same base material the index-path-resolver's own unit tests pin (test/upgrade/index-path-resolver.test.ts):
+    // confirmed against the committed index-table.ts, so this doubles as an integration check that
+    // upgradeMaterial actually wires the resolver in, not just that the resolver itself works.
+    const stolenPath =
+      "chara/equipment/e0194/material/v0001/mt_c0201e0194_top_a.mtrl";
+    const stolenIdx = resolveStolenIndexPath(stolenPath);
+    expect(stolenIdx).toBeDefined();
     const m = characterColorsetMtrl();
-    m.mtrlPath = overridePath;
-    // A normal whose CONVENTION idPath ("..._id.tex") would differ from the override, proving the
-    // table wins over the naming convention.
+    m.mtrlPath = stolenPath;
+    // A normal whose CONVENTION idPath ("..._id.tex") would differ from the steal, proving the
+    // resolver wins over the naming convention (gate B: the convention path does not exist in-game).
     m.textures = [tex("chara/x/tex/custom_n.tex", ESamplerId.g_SamplerNormal)];
     const infos = upgradeMaterial(m);
     const idTex = m.textures.find(
       (t) => t.sampler?.samplerIdRaw === ESamplerId.g_SamplerIndex,
     );
-    expect(idTex?.texturePath).toBe(overrideIdx);
+    expect(idTex?.texturePath).toBe(stolenIdx);
     const idInfo = infos.find(
       (i) => i.usage === EUpgradeTextureUsage.IndexMaps,
     );
-    expect(idInfo?.files.index).toBe(overrideIdx);
+    expect(idInfo?.files.index).toBe(stolenIdx);
   });
 
   it("bakes the DX9 '--' marker into the path and clears the flag (EndwalkerUpgrade.cs:757-771)", () => {

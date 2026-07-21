@@ -12,7 +12,7 @@ remove the *directory* (only inner files), so they accumulate across runs.
 
 These left the stale `oracle-*` / `upgrade-*` dirs found on 2026-07-10.
 
-**Occasional offenders:** `scripts/extract-index-overrides.ts` (`idxover-*`) and
+**Occasional offenders:** `scripts/probes/probe-idpath-rule.ts` (`idprobe-*`) and
 `scripts/extract-shader-params.ts` (`shparam-*`) (manual runs), and the test files
 `test/oracle-cache.test.ts` (`oc-*`) / `test/upgrade-harness.test.ts` (`ug-*` / `ub-*`).
 

@@ -1,9 +1,10 @@
 # Faithful index-path (`_id.tex`) resolution — design
 
 Filed: 2026-07-20 · Supersedes the corpus-scoped `INDEX_PATH_OVERRIDES` table.
-Closes backlog item [T4](../../backlog/2026-07-10-index-path-overrides-e0208.md) and its sibling
-consideration [`hair-texture-exists` namespace scope](../../backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
-insofar as it establishes the enumeration pattern both should share.
+Closes backlog item T4 (`index-path-overrides`; shipped 2026-07-20, its item file deleted per
+`docs/BACKLOG.md`'s "when an item ships" convention) and is the template its sibling consideration
+[`hair-texture-exists` namespace scope](../../backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
+should adopt — the item-seeded enumeration pattern (§3.3) both should share.
 
 ## 1. Problem
 
