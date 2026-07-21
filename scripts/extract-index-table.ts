@@ -343,6 +343,13 @@ for (const matPath of presentMaterials) {
       samplerIdToTexUsage(t.sampler.samplerIdRaw, mtrl) === XivTexType.Index,
   );
   if (!idx) continue; // materials with no index sampler record nothing
+  // We record the raw `texturePath`; C# steals `idSamp.Dx11Path` (EndwalkerUpgrade.cs:934).
+  // Dx11Path (XivMtrl.cs:667-680) equals TexturePath UNLESS the sampler's `Flags & 0x8000` (the
+  // DX9->DX11 dual-provision marker) is set, in which case it inserts a `--` before the filename.
+  // That flag only ever appears on legacy diffuse/normal/specular textures that shipped separate DX9
+  // and DX11 variants; an index map (_id.tex) is Dawntrail-only and has no DX9 counterpart, so an
+  // index sampler never sets 0x8000 and Dx11Path === TexturePath here. The shortcut is therefore
+  // exact for this domain, not merely close.
   pairs.set(matPath, idx.texturePath);
   idTexPaths.add(idx.texturePath);
 }
