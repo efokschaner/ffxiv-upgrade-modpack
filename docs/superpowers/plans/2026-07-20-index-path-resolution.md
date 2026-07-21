@@ -41,6 +41,9 @@ existing `src/sqpack` decoders and `src/mtrl` / `src/mdl` parsers, Biome, the cu
 - `src/upgrade/reference/index-table.ts` — **create (generated)**: packed `DROP`/`KEEP` hash sets,
   `EXCEPTIONS` map, `ID_TEX_MEMBERSHIP` packed set.
 - `src/upgrade/reference/index-path-overrides.ts` — **delete**.
+- `src/upgrade/reference/index-path-reconstruct.ts` — **create**: `reconstructIndexPath(materialPath,
+  keepLetter)` — the one pure regular-case reconstruction, imported by **both** the extractor (Task 3) and
+  the runtime resolver (Task 4), so the logic lives in exactly one place (no script/runtime duplication).
 - `src/upgrade/reference/index-path-resolver.ts` — **create**: `resolveStolenIndexPath(materialPath)` +
   `idTexExists(path)` (runtime logic; mirrors `hair-texture-exists.ts`).
 - `src/upgrade/material.ts` — **modify** `:135-147`: port gate A (table membership) + gate B + steal.
@@ -191,13 +194,18 @@ git commit -m "feat(scripts): item-seeded index-table enumerator core (no emissi
   (base64 `(folderHash,fileHash)` pairs, LE u32, like `HAIR_TEX_INDEX_PACKED`), `INDEX_EXCEPTIONS:
   Record<string, string>` (materialPath → full indexPath), `ID_TEX_PACKED: string`.
 
-- [ ] **Step 1: The reconstruction function** (shared by encoder and runtime — define once here, and Task 4
-  re-implements the identical logic in the runtime module; keep them byte-identical). Given a material path,
-  produce the regular-case index path for a given `keepLetter` boolean:
+- [ ] **Step 1: Create the shared reconstruction module** `src/upgrade/reference/index-path-reconstruct.ts`
+  (imported here by the extractor **and** by the runtime resolver in Task 4 — one definition, no
+  duplication). Given a material path, produce the regular-case index path for a given `keepLetter` boolean:
 
 ```ts
+// src/upgrade/reference/index-path-reconstruct.ts
+// The regular-case base-material index path, derived from the material path per the naming convention
+// TexTools' stolen path follows (EndwalkerUpgrade.cs:923-936 reads it from the material; the extractor
+// stores only the one non-derivable bit — keepLetter — and this reconstructs the rest). Shared by
+// scripts/extract-index-table.ts (encoder) and index-path-resolver.ts (runtime).
 // mt_c0201e0194_top_a.mtrl in .../material/v0001/  ->  .../texture/v01_c0201e0194_top[_a]_id.tex
-function reconstructIndexPath(materialPath: string, keepLetter: boolean): string | null {
+export function reconstructIndexPath(materialPath: string, keepLetter: boolean): string | null {
   const m = materialPath.match(/^(.*)\/material\/v(\d{4})\/mt_(.+)\.mtrl$/);
   if (!m) return null;
   const [, root, ver, name] = m;
@@ -206,6 +214,8 @@ function reconstructIndexPath(materialPath: string, keepLetter: boolean): string
   return `${root}/texture/v${nn}_${body}_id.tex`;
 }
 ```
+
+  The extractor imports it: `import { reconstructIndexPath } from "../src/upgrade/reference/index-path-reconstruct";`
 
 - [ ] **Step 2: Classify each pair.** For each `(materialPath, indexPath)`: if
   `reconstructIndexPath(materialPath, false) === indexPath` → DROP set; else if `(…, true) === indexPath` →
@@ -289,8 +299,9 @@ Expected: FAIL (cannot find module).
 - [ ] **Step 3: Implement the resolver** mirroring `hair-texture-exists.ts` (duplicate the `computeHash`
   CRC32 — the codebase already keeps a per-table copy; note the shared origin in a comment). Decode the two
   packed sets into `Set<string>` of `"fh:xh"`, check `EXCEPTIONS` first, then KEEP, then DROP, reconstructing
-  with the **identical** `reconstructIndexPath` from Task 3 Step 1 (copy it verbatim). `idTexExists` decodes
-  `ID_TEX_PACKED` and does the membership check like `hairTextureExists`.
+  with `reconstructIndexPath` **imported from** `./index-path-reconstruct` (the same module the extractor
+  uses — do not re-implement it). `idTexExists` decodes `ID_TEX_PACKED` and does the membership check like
+  `hairTextureExists`.
 
 ```ts
 // Runtime port of EndwalkerUpgrade.cs:923-936's base-material index-path steal. Data: index-table.ts
