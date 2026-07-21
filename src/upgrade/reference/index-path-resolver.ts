@@ -62,16 +62,20 @@ const ID_TEX_ENTRIES = (() => {
 export function resolveStolenIndexPath(
   materialPath: string,
 ): string | undefined {
-  const exception = INDEX_EXCEPTIONS[materialPath];
+  // Fold case first: the C# resolution (FileExists / GetXivMtrl) is case-insensitive and `computeHash`
+  // already lowercases, but a TTMP2 keys on the raw `FullPath` (no lowercasing), so a mixed-case
+  // gamePath could otherwise miss the case-sensitive INDEX_EXCEPTIONS map (its keys, and the
+  // reconstructed output, are lowercase — base-game paths are lowercase). A no-op for the common
+  // already-lowercase case; keeps every resolution path uniformly case-insensitive.
+  const path = materialPath.toLowerCase();
+  const exception = INDEX_EXCEPTIONS[path];
   if (exception !== undefined) return exception;
-  const slash = materialPath.lastIndexOf("/");
+  const slash = path.lastIndexOf("/");
   if (slash < 0) return undefined;
-  const key = `${computeHash(materialPath.slice(0, slash))}:${computeHash(materialPath.slice(slash + 1))}`;
+  const key = `${computeHash(path.slice(0, slash))}:${computeHash(path.slice(slash + 1))}`;
   const rec = TABLE.get(key);
   if (rec === undefined) return undefined;
-  return (
-    reconstructIndexPath(materialPath, rec.version, rec.keepLetter) ?? undefined
-  );
+  return reconstructIndexPath(path, rec.version, rec.keepLetter) ?? undefined;
 }
 
 /** True iff `path` (folder + "/" + file) is in the bundled base-game `_id.tex` set (gate B:
