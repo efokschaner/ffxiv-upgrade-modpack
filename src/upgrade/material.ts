@@ -137,8 +137,9 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
 
   // EndwalkerUpgrade.cs:923-936. Gate A (mod overwrites a base material with an index sampler) is answered by
   // the resolver's table membership; gate B (!FileExists(convention idPath)) by idTexExists. When both hold,
-  // steal the base material's own index-sampler path. Complete over the enumerated domain (see
-  // scripts/extract-index-table.ts) — a miss means genuinely-not-a-base-material, a faithful convention keep.
+  // steal the base material's own index-sampler path. The table is complete over its enumerated domain
+  // (item_sets.db roots + the hair grid; see scripts/extract-index-table.ts and design §3.5 for the
+  // residual boundary), so a miss means "not a base material within that domain" — a faithful convention keep.
   const stolen = resolveStolenIndexPath(mtrl.mtrlPath);
   if (stolen !== undefined && !idTexExists(idPath)) {
     idPath = stolen;
