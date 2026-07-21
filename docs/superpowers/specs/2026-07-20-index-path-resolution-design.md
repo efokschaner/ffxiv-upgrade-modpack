@@ -128,9 +128,14 @@ Strategy **C — item-seeded**, reproducing TexTools' dependency graph most cano
 2. **Models** — derive each root's model path(s) by the known root formulas
    (`XivDependencyRoot.GetRawModelPath` per type), keep those present in the game index.
 3. **Materials** — read each model natively (§3.4) → `pathData.materialList` (the referenced material
-   basenames), and expand across material-set versions using the **existing IMC table**
-   (`Mdl.GetReferencedMaterialPaths` with materialSet `-1` combines the model basename with
-   `{root}/material/v{set:D4}/` for each set the root's IMC declares). Keep those present in the index.
+   basenames), and expand across material **version folders** by existence-probing: for each basename, test
+   `{root}material/v{N:D4}/{basename}` in the game index for `N = 1..MAX` and keep every hit. This is more
+   faithful than an IMC-set expansion *for this purpose*: gate A is a pure `FileExists(MTRLPath)`
+   (`EndwalkerUpgrade.cs:926`), so we want every version folder the game actually has, including any an IMC
+   set does not reference. `MAX` is a generous fixed bound (material-set counts are low double digits) with a
+   **fail-loud** guard — if any material exists at `v{MAX}`, the bound is too low and the extractor errors.
+   (`Mdl.GetReferencedMaterialPaths` is the C# that combines the model basename with
+   `{root}/material/v{set:D4}/`; we substitute existence-probing for its IMC-set source, deliberately.)
 4. **Index sampler** — read each material natively → `parseMtrl` → the index-sampler `texturePath`
    (`samplerIdToTexUsage(...) === XivTexType.Index`). Emit `(materialPath, indexPath)`. Materials with no
    index sampler emit nothing (→ convention at runtime, faithfully).

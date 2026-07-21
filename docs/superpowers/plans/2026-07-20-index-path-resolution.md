@@ -155,11 +155,15 @@ git commit -m "feat(scripts): native SqPack dat reader in GameIndex (no ConsoleT
   `src/mdl/model/read-model.ts`) it, and take `pathData.materialList` — the referenced material basenames
   (e.g. `/mt_c0201e0194_top_a.mtrl`). These carry the real variant letters; do **not** invent them.
 
-- [ ] **Step 4: Material-set expansion.** For each material basename, build full paths across the root's
-  material-set versions: `{rootFolder}material/v{set:D4}/{basename}` for each set the root's IMC declares
-  (reuse the IMC data — the material-set count per root — via the existing `imc-entries.ts` / `IMC_TABLE`;
-  port the `MaterialFolderWithVariant` combination from `GetMaterialPath`, `:262-300`). Keep only material
-  paths present in the index. Deduplicate (many models share materials).
+- [ ] **Step 4: Material version-folder expansion (existence-probing).** For each material basename from the
+  model's `materialList` (strip any leading `/`), build `{rootFolder}material/v{N:D4}/{basename}` for
+  `N = 1..MAX` (use `const MAX_MATERIAL_VERSION = 64`) and keep every path that `gameIndex.fileExists`.
+  Deduplicate across models (many models share materials — use a `Set`). This is a deliberate substitute for
+  an IMC-set expansion: gate A is a pure `FileExists(MTRLPath)` (`EndwalkerUpgrade.cs:926`), so probing every
+  existing version folder is exactly right and needs no IMC parsing. `rootFolder` is the model path up to and
+  including the `.../` before `model/` (e.g. model `chara/equipment/e0194/model/c0201e0194_top.mdl` →
+  rootFolder `chara/equipment/e0194/`). **Fail-loud guard:** if any material exists at `v{MAX_MATERIAL_VERSION:D4}`,
+  push a problem and set `process.exitCode = 1` — the bound is too low and must be raised.
 
 - [ ] **Step 5: Material → index sampler.** For each present material, `GameIndex.read` + `parseMtrl`
   (`src/mtrl/mtrl.ts`), find the index sampler
