@@ -1,6 +1,7 @@
 import { deserializeMeta } from "../meta/deserialize";
 import { reconstructMeta } from "../meta/reconstruct";
 import { serializeMeta } from "../meta/serialize";
+import type { ItemMeta } from "../meta/types";
 import {
   FileStorageType,
   type ModpackData,
@@ -198,12 +199,34 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
 const IS_META = /\.meta$/;
 
 /**
+ * Would this `.meta` produce at least one Penumbra manipulation? Port of the five segment gates in
+ * PMPExtensions.MetadataToManipulations (PmpExtensions.cs:417-467), which emits one manipulation
+ * per PRESENT segment: Gmp (:422), Eqp (:429), Est (:436), Eqdp (:446), Imc (:456).
+ *
+ * The three collection segments gate on `Count > 0`, not merely non-null, so a present-but-empty
+ * EST/EQDP/IMC segment yields nothing — mirrored with `.size`/`.length` rather than a bare
+ * null-check. The two opaque-byte segments gate on null alone.
+ */
+function yieldsManipulations(m: ItemMeta): boolean {
+  return (
+    m.gmp !== null || // PmpExtensions.cs:422
+    m.eqp !== null || // :429
+    (m.est !== null && m.est.size > 0) || // :436
+    (m.eqdp !== null && m.eqdp.size > 0) || // :446
+    (m.imc !== null && m.imc.length > 0) // :456
+  );
+}
+
+/**
  * Metadata round (round 5). Replaces the opaque .meta pass-through: reconstruct each .meta the
  * way ConsoleTools /upgrade does (base-game seed + mod deltas). See
  * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
+ *
+ * A meta that yields no manipulations is DROPPED rather than reconstructed (see `fixOne`); this is
+ * what makes housing/furniture packs upgrade at all.
  */
 function metadataRound(option: ModpackOption): void {
-  function fixOne(path: string, f: ModpackFile): ModpackFile {
+  function fixOne(path: string, f: ModpackFile): ModpackFile | null {
     if (!IS_META.test(path)) return f;
     // No absent-file analogue: PMP .meta files are materialized from manipulations
     // (PMP.cs:1141-1164), never read from a zip member, so a .meta with no bytes is unreachable.
@@ -211,11 +234,42 @@ function metadataRound(option: ModpackOption): void {
     // than a zip member (PMP.cs:891-895), so a PMP `Files` entry naming a `.meta` is not something
     // TexTools or Penumbra produce. Fail loud.
     const { bytes, type } = requireBytes(f, path);
-    const out = serializeMeta(reconstructMeta(deserializeMeta(bytes), path));
+    const meta = deserializeMeta(bytes); // ItemMetadata.Deserialize, ItemMetadata.cs:869-921
+    if (!yieldsManipulations(meta)) {
+      // DROP. The round-trip is read -> manipulations -> write: PMP.ManipulationsToMetadata
+      // (PMP.cs:1258-1295) groups manipulations by root and only materializes+Serializes a root
+      // that appears in that grouping, so a meta yielding zero manipulations is simply never
+      // written back (WizardData.cs:463-482 adds a file per `manips.Metadatas` entry — and there
+      // is none). Reproduced here by removing the file from the option.
+      //
+      // This is what makes housing/furniture packs work: `bgcommon/hou/**/{i,o}####.meta` carries
+      // no segment at all, because housing uses no IMC (Imc.UsesImc returns false for
+      // indoor/outdoor, Variants/FileTypes/Imc.cs:74-85; GetRawImcFilePath returns "" for it,
+      // XivDependencyRoot.cs:1093-1095) and the other four segments are chara-only concepts.
+      // Verified over the corpus: every housing meta in `raykie Gym Equipment Posing Props` and
+      // `SM-Cherry Blossom Upscale` deserializes to zero segments, and `raykie`'s /upgrade golden
+      // contains zero `.meta` references.
+      //
+      // Deliberately NOT a path check: the rule is the ported segment gate, so a segment-less
+      // chara meta drops too — exactly as TexTools drops it. We therefore also do not need
+      // housing in `parseMetaRoot` (root.ts:151), which stays the fail-loud guard for an unknown
+      // root that DOES carry a segment.
+      //
+      // Narrow known deviation: C# reaches `m.Root.Info` unconditionally
+      // (PmpExtensions.cs:420), so a segment-less meta whose path NO XivDependencyGraph regex
+      // matches would NullReferenceException there, where we drop it quietly. Housing and chara
+      // roots both resolve (XivDependencyGraph.cs:257,263,693-702), so this is unreachable for
+      // any root TexTools recognizes.
+      return null;
+    }
+    const out = serializeMeta(reconstructMeta(meta, path));
     return restore(f, out, type ?? SqPackType.Standard);
   }
   const next = new Map<string, ModpackFile>();
-  for (const [path, f] of option.files) next.set(path, fixOne(path, f));
+  for (const [path, f] of option.files) {
+    const fixed = fixOne(path, f);
+    if (fixed !== null) next.set(path, fixed); // dropped -> not carried into the new map
+  }
   option.files = next;
 }
 
