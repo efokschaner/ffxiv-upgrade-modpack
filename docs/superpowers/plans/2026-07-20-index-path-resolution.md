@@ -290,7 +290,7 @@ git commit -m "feat(reference): generate complete compressed index-table + id_te
 - [ ] **Step 1: Write the failing test.**
 
 ```ts
-import { describe, expect, it } from "../helpers/test";
+import { describe, expect, it } from "vitest";
 import { idTexExists, resolveStolenIndexPath } from "../../src/upgrade/reference/index-path-resolver";
 
 describe("index-path-resolver", () => {
