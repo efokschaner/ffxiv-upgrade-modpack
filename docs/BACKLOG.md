@@ -303,3 +303,8 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   entirely (a one-sided orphan inside `common/` is invisible) and never byte-compares a payload
   member no `Files` value names (an `Image`, an `ExtraFiles` entry). Only affects the 2 corpus packs
   on the relaxed path today; doc comment now states both gaps precisely, behaviour unchanged.
+- [Index-path resolver — deferred follow-ups](backlog/2026-07-20-index-extractor-tooling-nits.md) —
+  three low-priority nits from the index-path resolver work: `game-index.ts` extraction-tooling naming/
+  overflow/redundant-read (never shipped, correct on current data), the third copy of the `RACES` grid
+  across `extract-*` scripts, and the one uncovered test direction (gate-B *suppression*, behaviourally
+  hard to observe). None block correctness.
