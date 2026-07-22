@@ -111,13 +111,16 @@ describe("makeTtmpLoadFix: manipulation-less .meta files are dropped at load", (
   it("does not drop a meta whose only segment is EQP, and returns it byte-identical", () => {
     // Sanity: the predicate's null-check arm (PmpExtensions.cs:429) keeps a real chara meta alive.
     // The load seam must not rewrite meta bytes -- metadataRound still owns reconstruction -- so
-    // assert the returned bytes, not just non-null.
+    // assert the returned bytes against an independently-built expectation, not the same `file`
+    // object handed to the fix (comparing against that object would pass trivially for a fix that
+    // just returns its input unchanged, without proving the bytes are actually unmodified).
     const path = "chara/equipment/e0208/e0208_met.meta";
-    const file = metaFile(path, { eqp: new Uint8Array(8) });
+    const over = { eqp: new Uint8Array(8) };
+    const file = metaFile(path, over);
     const fix = makeTtmpLoadFix({ needsTexFix: false, needsMdlFix: false });
     const result = fix(path, file);
     expect(result).not.toBeNull();
-    expect(result!.data).toEqual(file.data);
+    expect(result!.data).toEqual(metaBytes(path, over));
   });
 
   it("drops a meta whose segments are all present-but-empty", () => {
@@ -139,11 +142,14 @@ describe("makeTtmpLoadFix: manipulation-less .meta files are dropped at load", (
     // non-null check -- this pins the regression a literal `.size > 0` port would reintroduce (a
     // present-but-empty EQDP meta silently dropped, where TexTools keeps and backfills it).
     const path = "chara/equipment/e0208/e0208_met.meta";
-    const file = metaFile(path, { eqdp: new Map() });
+    const over = { eqdp: new Map() };
+    const file = metaFile(path, over);
     const fix = makeTtmpLoadFix({ needsTexFix: false, needsMdlFix: false });
     const result = fix(path, file);
     expect(result).not.toBeNull();
-    expect(result!.data).toEqual(file.data);
+    // Independently rebuilt expectation, not the same `file` object the fix was handed -- see the
+    // EQP test above for why that distinction matters.
+    expect(result!.data).toEqual(metaBytes(path, over));
   });
 
   it("drops a manipulation-less .meta even when the tex/mdl gates are on -- the branch is ungated", () => {
@@ -158,12 +164,15 @@ describe("makeTtmpLoadFix: manipulation-less .meta files are dropped at load", (
 
 describe("metadataRound: reconstruction of manipulation-bearing .meta files", () => {
   it("keeps failing loud on an unknown root that DOES carry a segment", () => {
-    // An IMC segment yields a manipulation (PmpExtensions.cs:456), so the load fix keeps the file
-    // and control reaches metadataRound -> reconstructMeta -> parseMetaRoot, which throws. Mirrors
-    // FromImcEntry's direct index into XivItemTypeToPenumbraObject (PmpManipulation.cs:395), which
-    // has no indoor/outdoor key (PmpExtensions.cs:216-224) and so would raise
-    // KeyNotFoundException in C#. This only fires now for a meta that reached the transform at all
-    // -- a segment-less housing meta never gets this far, having been dropped at load.
+    // This test builds a ModpackData directly (packWithFiles) and calls upgradeModpack -- it never
+    // invokes makeTtmpLoadFix at all, so it exercises metadataRound -> reconstructMeta ->
+    // parseMetaRoot in isolation, standing in for "a meta that already survived the load fix" (an
+    // IMC segment yields a manipulation, PmpExtensions.cs:456, so a real load fix would have kept
+    // this file too). parseMetaRoot throws on the unrecognized housing root, mirroring FromImcEntry's
+    // direct index into XivItemTypeToPenumbraObject (PmpManipulation.cs:395), which has no
+    // indoor/outdoor key (PmpExtensions.cs:216-224) and so would raise KeyNotFoundException in C#.
+    // This only fires now for a meta that reached the transform at all -- a segment-less housing meta
+    // never gets this far in the real pipeline, having been dropped at load.
     const path = "bgcommon/hou/indoor/general/0613/i0613.meta";
     expect(() =>
       upgradeModpack(

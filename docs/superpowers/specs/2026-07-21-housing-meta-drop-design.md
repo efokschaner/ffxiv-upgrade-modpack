@@ -3,10 +3,24 @@
 **Date:** 2026-07-21
 **Status:** Implemented 2026-07-21. §6's empirical check was run and confirmed the premise — all six
 housing metas across both corpus packs deserialize to **zero** segments, so only the drop path is
-reachable from the corpus. Two corrections found during implementation, applied in the shipped code:
-§4's segment list must gate EST/EQDP/IMC on **non-empty**, not merely non-null
-(`PmpExtensions.cs:436,446,456` use `Count > 0`); and §4 step 3 required **no new code** — an IMC
-segment makes the predicate true, so control falls through to `parseMetaRoot`'s existing throw.
+reachable from the corpus. Three corrections found during implementation, applied in the shipped code:
+
+1. §4's segment list must gate **EST and IMC** on non-empty, not merely non-null
+   (`PmpExtensions.cs:436,456` use `Count > 0`) — but **not** EQDP. `DeserializeEqdpData`
+   unconditionally backfills all 18 `Eqp.PlayableRaces` after parsing (`ItemMetadata.cs:779-788`), so
+   `PmpExtensions.cs:446`'s `Count > 0` can never be false for a present segment there; the shipped
+   `yieldsManipulations` (`src/meta/manipulations.ts`) mirrors that *effective* gate with a bare
+   non-null check for EQDP instead of porting the literal `Count > 0` text.
+2. §4 step 3 required **no new code** — an IMC segment makes the predicate true, so control falls
+   through to `parseMetaRoot`'s existing throw.
+3. **The drop moved seams.** §4 as originally written put the drop inside `metadataRound.fixOne` (the
+   upgrade transform). A corpus run showed that was the wrong seam — it broke a genuine `/upgrade`
+   no-op pack — so the drop was relocated to the **load** fix (`makeTtmpLoadFix`,
+   `src/upgrade/load-fixes.ts`), with the segment-presence predicate extracted to
+   `yieldsManipulations` (`src/meta/manipulations.ts`). See §4's "Finding from implementation" for the
+   full rationale; `metadataRound` was reverted to its pre-drop shape and still owns reconstruction
+   only.
+
 **Backlog item:** [`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md`](../../backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md)
 (prioritized #1).
 **Builds on:** the metadata round design
@@ -79,34 +93,76 @@ this is TexTools rejecting bad input, not a defect. (Operator confirmed this fra
 ## 4. The faithful design — mirror the round-trip, don't special-case the path
 
 The drop must fall out of a ported rule with **auditable parallels at each step**, not a hardcoded
-`if (path startsWith "bgcommon") drop`. Restructure `metadataRound.fixOne` to mirror the round-trip:
+`if (path startsWith "bgcommon") drop`.
 
 | TexTools step | Ported step | Citation |
 |---|---|---|
 | `ItemMetadata.Deserialize` | `deserializeMeta(bytes)` (exists) | `ItemMetadata.cs:869` ↔ `src/meta/deserialize.ts:22` |
-| `MetadataToManipulations` — emit per present segment | compute "does this meta yield any manipulation?" from the `imc/eqp/gmp/est/eqdp` fields | `PmpExtensions.cs:417-467` |
-| `FromImcEntry` needs `XivItemTypeToPenumbraObject[PrimaryType]` | IMC segment present **and** root has no Penumbra object type (housing) ⇒ **fail loud** (invalid input) | `PmpManipulation.cs:395`, `PmpExtensions.cs:216-223` |
-| `ManipulationsToMetadata` materializes nothing for a manip-less root | **zero manipulations ⇒ drop the file** (remove it from `option.files`) | `PMP.cs:1271`, `WizardData.cs:467-479` |
-| seed + apply + `Serialize` | `reconstructMeta` (existing path), only for metas that yield ≥1 manipulation | `src/meta/reconstruct.ts` |
+| `MetadataToManipulations` — emit per present segment | `yieldsManipulations(meta)` — computed from the `imc/eqp/gmp/est/eqdp` fields | `PmpExtensions.cs:417-467` ↔ `src/meta/manipulations.ts` |
+| `FromImcEntry` needs `XivItemTypeToPenumbraObject[PrimaryType]` | IMC segment present **and** root has no Penumbra object type (housing) ⇒ **fail loud** (invalid input) — reached via `parseMetaRoot`'s existing throw once a manipulation-bearing meta reaches `metadataRound` | `PmpManipulation.cs:395`, `PmpExtensions.cs:216-223` |
+| `ManipulationsToMetadata` materializes nothing for a manip-less root | **zero manipulations ⇒ drop the file at load** — the load fix returns `null`, so the reader never adds the entry to `option.files` in the first place | `PMP.cs:1271`, `WizardData.cs:685-691` ↔ `src/upgrade/load-fixes.ts` |
+| seed + apply + `Serialize` | `reconstructMeta`, unchanged, only for metas that yield ≥1 manipulation | `src/meta/reconstruct.ts` |
 
-Resulting `fixOne` control flow:
+Shipped control flow:
 
-1. `deserializeMeta(bytes)`.
-2. If the meta has **no** representable segment (no `imc`/`eqp`/`gmp`/`est`/`eqdp`) → **drop** the file
-   (return a sentinel so the caller removes it from `option.files`; do not reach `parseMetaRoot`).
-3. If it has an **IMC** segment but the root is unmapped (housing) → **throw** (invalid input; mirrors
-   `FromImcEntry`).
-4. Otherwise → `reconstructMeta` as today.
+1. `makeTtmpLoadFix` (the TTMP per-file load fix, the `.meta` half of `WizardData.cs:685-691`) runs on
+   every `.meta` **before** the reader's last-write-wins collapse: `deserializeMeta(bytes)`, then
+   `yieldsManipulations(meta)`.
+2. If **false** (no representable segment) → the fix returns `null` and the reader drops the entry,
+   mirroring `FromWizardGroup` diverting a manipulation-less meta into `data.Manipulations` and never
+   reaching `data.Files` at all. Housing metas (no segments) drop here, **before** `parseMetaRoot` is
+   ever called.
+3. If **true** → the fix returns the file unchanged; it survives into `option.files` and reaches
+   `metadataRound` → `reconstructMeta` → `parseMetaRoot` as before. A meta with an IMC segment but an
+   unmapped (housing) root hits `parseMetaRoot`'s existing throw (`root.ts:151`) there — mirroring
+   `FromImcEntry`'s `KeyNotFoundException` — with **no new guard needed**, since an IMC segment alone
+   makes the predicate true and lets control fall through to the existing throw.
+4. `metadataRound` → `reconstructMeta` runs unchanged on every surviving `.meta`.
 
-Housing metas (no segments) drop at step 2, before `parseMetaRoot` — so `parseMetaRoot`'s throw
-(`root.ts:151`) survives as the fail-loud guard for a genuinely-unknown *chara-like* root that *does*
-carry segments, which is still the right posture there.
+`parseMetaRoot`'s throw (`root.ts:151`) survives as the fail-loud guard for a genuinely-unknown
+*chara-like* root that *does* carry segments, which is still the right posture there.
+
+### Finding from implementation: the drop belongs at the load seam, not the transform
+
+This design was first shipped **inside `metadataRound.fixOne`** — dropping the entry out of
+`option.files` at the point `upgrade.ts`'s transform maps over it, matching the letter of an earlier
+draft of the table above. A corpus run then falsified that seam: it broke
+`SM-Cherry Blossom Upscale.ttmp2`, a genuine `/upgrade` **no-op** pack, turning a faithful "nothing
+changed" into a reported change.
+
+The reason is `ModpackUpgrader.AnyChanges` (`ModpackUpgrader.cs:25-49`). Its per-option file-set
+baseline (`originals[o]`) is snapshotted from the **load** result (`WizardData.FromModpack`,
+`ModpackUpgrader.cs:58`), *before* any transform runs, and the write is gated on that comparison
+(`UpgradeModpack`, `ModpackUpgrader.cs:212-219`: `WriteModpack` only runs `if (data.AnyChanges ||
+rewriteOnNoChanges)`). In TexTools, a manipulation-less `.meta` was **never part of that baseline** —
+`FromWizardGroup` (`WizardData.cs:685-691`) diverts it into `data.Manipulations` at **load** time, so
+it never touches `data.Files` to begin with. A drop performed inside our **transform**, by contrast,
+removes a file that *was* present in our load-time snapshot — so our `AnyChanges`-equivalent sees a
+file-set change TexTools' own baseline never could, on a pack where TexTools makes none.
+
+The fix: move the drop to the **load** seam, `makeTtmpLoadFix` (`src/upgrade/load-fixes.ts`), with the
+segment-presence predicate extracted to `yieldsManipulations` (`src/meta/manipulations.ts`) so both
+the load fix and any future PMP-side equivalent share one ported rule. `metadataRound`
+(`src/upgrade/upgrade.ts`) was reverted to its pre-drop shape — it still runs `reconstructMeta` on
+every `.meta` it sees, but the load fix now guarantees a manipulation-less `.meta` never reaches it.
+Reconstruction living in the transform rather than the load/write seam is a **separate, pre-existing**
+seam question this change does not resolve, still tracked by
+[`docs/backlog/2026-07-13-resave-meta-reconstruction-seam.md`](../../backlog/2026-07-13-resave-meta-reconstruction-seam.md)
+— `metadataRound` was deliberately reverted rather than folding reconstruction into the load fix too.
+
+Corpus result after the move: `SM-Cherry Blossom Upscale.ttmp2` is 0 diffs / 0 regressions (the no-op
+is faithful again); `raykie Gym Equipment Posing Props V1_0_2.ttmp2` has a newly recorded baseline for
+97 diffs, all owned by the separate, already-filed `bgparts` `.mdl` gap
+(`docs/backlog/2026-07-21-furniture-bgparts-mdl-overrun.md`), not by the meta drop.
 
 ### Notes for the implementer
 
-- **Drop = remove from `option.files`.** `fixOne` currently maps `path → ModpackFile` into a fresh
-  `Map` (`upgrade.ts:217-219`). To drop, skip the entry (don't `set` it). Keep the existing
-  transform-order semantics.
+- **Drop = the load fix returns `null`.** `makeTtmpLoadFix` (`src/upgrade/load-fixes.ts`) runs on each
+  file **before** the reader's last-write-wins collapse into the option's `files` map; returning `null`
+  for a `.meta` means the entry is never added at all, mirroring `FromWizardGroup`'s implicit skip
+  (`WizardData.cs:685-691`) for a manipulation-less file that never reaches `data.Files`. (An earlier
+  version of this fix dropped from `option.files` inside `metadataRound.fixOne` instead — see "Finding
+  from implementation" above for why that seam was wrong.)
 - **`GetFirstRoot` vs `parseMetaRoot`.** TexTools' `ItemMetadata.Deserialize` resolves the housing root
   via `XivCache.GetFirstRoot` (`ItemMetadata.cs:883`) without throwing (the housing regex exists,
   `XivDependencyGraph.cs:257,263`). We deliberately *don't* need to port housing into `parseMetaRoot`,
@@ -114,15 +170,23 @@ carry segments, which is still the right posture there.
   path check.
 - **Keep `/upgrade` goldens byte-exact.** This changes *which files exist* in a furniture pack's output
   (housing metas removed) to match the golden; it must not perturb any chara meta's bytes.
-- **Seam caveat:** the `/resave` findings note (backlog, `2026-07-13-resave-meta-reconstruction-seam.md`)
-  observes `reconstructMeta` lives in our upgrade transform rather than the load seam. This drop is the
-  same round; if the meta round is ever moved to the load seam, the drop moves with it.
+- **Seam caveat (corrected from the original draft).** The drop lives at the **load** seam
+  (`makeTtmpLoadFix`), independent of where `.meta` **reconstruction** happens. An earlier draft of
+  this note said "if the meta round is ever moved to the load seam, the drop moves with it" — that has
+  the causality backwards: implementation showed the drop had to move to the load seam *without*
+  reconstruction following it (see "Finding from implementation" above). Reconstruction
+  (`reconstructMeta`) stays in `metadataRound`/the transform, tracked separately by
+  [`docs/backlog/2026-07-13-resave-meta-reconstruction-seam.md`](../../backlog/2026-07-13-resave-meta-reconstruction-seam.md).
 
 ## 5. Tests
 
 - **Corpus goldens already pin it:** `raykie` must go green (its housing metas dropped, matching the
   0-meta golden) and `SM-Cherry Blossom Upscale` must stay a faithful `/upgrade` no-op. Re-bless is
-  **not** needed if the fix is correct — these should match with an empty baseline.
+  **not** needed if the fix is correct — these should match with an empty baseline. (Shipped result:
+  confirmed — see §4's "Finding from implementation" for the exact corpus outcome.)
+- **Shipped unit coverage:** `test/upgrade/meta-drop.test.ts` pins `makeTtmpLoadFix`'s drop/keep
+  behaviour per segment (including the present-but-empty EST/IMC vs EQDP asymmetry from the Status
+  line above) and `metadataRound`'s continued throw on a manipulation-bearing unknown root.
 - **Synthetic (optional, for the invalid-input guard):** author a pack with a housing `.meta` that
   carries an IMC segment; assert our port throws (matching TexTools' `KeyNotFoundException` abort). This
   pins step 3 and belongs in the `upgrade-error` corpus root iff ConsoleTools also errors on it —
@@ -147,5 +211,7 @@ scaffolding left when the shell tool began erroring on every command mid-session
   `XivDependencyGraph.cs:970-983`.
 - Housing has no Penumbra object type: `PmpExtensions.cs:216-223,33`, `PmpManipulation.cs:390-395`.
 - Housing root is parseable (so `GetFirstRoot` doesn't throw): `XivDependencyGraph.cs:257,263,693-702`.
-- Our code: `src/upgrade/upgrade.ts:205-219`, `src/meta/reconstruct.ts:16-22`, `src/meta/root.ts:151`,
-  `src/meta/deserialize.ts:22`.
+- Our code (as shipped): `src/upgrade/load-fixes.ts` (the drop, in `makeTtmpLoadFix`),
+  `src/meta/manipulations.ts` (`yieldsManipulations`, the shared predicate), `src/upgrade/upgrade.ts`
+  (`metadataRound`, reverted to pre-drop shape — reconstruction only), `src/meta/reconstruct.ts:16-22`,
+  `src/meta/root.ts:151`, `src/meta/deserialize.ts:22`.

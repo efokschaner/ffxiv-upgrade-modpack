@@ -38,15 +38,22 @@ and `HousingExtractionRegex2` (`:263`), dispatched at `ExtractRootInfo` (`XivDep
 Both carry housing metas; both upgrade in TexTools without error. We crash on both. So the throw is a
 gap, not a reproduced behaviour.
 
-## RESOLVED 2026-07-21 — fixed by the manipulation-less drop
+## RESOLVED 2026-07-21 — fixed by the manipulation-less drop, at the load seam
 
-**Shipped.** `metadataRound.fixOne` (`src/upgrade/upgrade.ts`) now drops any `.meta` that yields zero
-Penumbra manipulations, ported from `PMPExtensions.MetadataToManipulations`
+**Shipped.** `makeTtmpLoadFix` (`src/upgrade/load-fixes.ts`) now drops any `.meta` that yields zero
+Penumbra manipulations — determined by the shared predicate `yieldsManipulations`
+(`src/meta/manipulations.ts`), ported from `PMPExtensions.MetadataToManipulations`
 (`PmpExtensions.cs:417-467`) plus `PMP.ManipulationsToMetadata`'s by-root materialization
-(`PMP.cs:1258-1295`). No housing support was added to `parseMetaRoot` and no housing base-data table
-was needed. Regression cover: `test/upgrade/meta-drop.test.ts` plus the `raykie` /
-`SM-Cherry Blossom Upscale` corpus goldens. The companion furniture `.mdl` gap
-(`2026-07-21-furniture-bgparts-mdl-overrun.md`) remains open.
+(`PMP.cs:1258-1295`). The drop lives at the **load** seam, not in `metadataRound`
+(`src/upgrade/upgrade.ts`) — an earlier attempt put it in the transform, but a corpus run showed that
+seam wrong (it broke `SM-Cherry Blossom Upscale.ttmp2`'s `/upgrade` no-op, because the transform-level
+drop is visible to our `ModpackUpgrader.AnyChanges` equivalent where TexTools' load-time diversion
+into `data.Manipulations` never is). See
+[`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md`](../superpowers/specs/2026-07-21-housing-meta-drop-design.md)
+§4's "Finding from implementation" for the full account. No housing support was added to
+`parseMetaRoot` and no housing base-data table was needed. Regression cover:
+`test/upgrade/meta-drop.test.ts` plus the `raykie` / `SM-Cherry Blossom Upscale` corpus goldens. The
+companion furniture `.mdl` gap (`2026-07-21-furniture-bgparts-mdl-overrun.md`) remains open.
 
 **Traced 2026-07-21; full design + handoff in
 [`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md`](../superpowers/specs/2026-07-21-housing-meta-drop-design.md).**
@@ -55,9 +62,10 @@ them as `removed`. The mechanism: every `/upgrade` round-trips each `.meta` thro
 manipulation model, and a meta that yields **zero manipulations is never re-materialized**. A housing
 meta yields zero because it has no representable segment — housing does not use IMC
 (`Imc.UsesImc`, `Variants/FileTypes/Imc.cs:74-85`, returns `false` for indoor/outdoor) and carries no
-chara segments. So the fix needs **no** housing base-data table: `metadataRound.fixOne` drops a meta
-with no representable segment (mirroring `ManipulationsToMetadata` materializing nothing), and keeps
-`reconstructMeta` only for metas that yield ≥1 manipulation. The housing-IMC crash corner is
+chara segments. So the fix needs **no** housing base-data table: `makeTtmpLoadFix` (the load seam, not
+`metadataRound`) drops a meta with no representable segment (mirroring `ManipulationsToMetadata`
+materializing nothing), and `metadataRound` keeps running `reconstructMeta` only for metas that survive
+the drop with ≥1 manipulation. The housing-IMC crash corner is
 **invalid-input** rejection (housing IMC can't exist in-game), **not** a bug — do not register it in
 `TEXTOOLS_BUGS.md`. Companion to the furniture `.mdl` gap
 (`docs/backlog/2026-07-21-furniture-bgparts-mdl-overrun.md`); together they are "bgcommon
@@ -66,5 +74,8 @@ housing/furniture support".
 ## Test that would have caught it
 
 A furniture corpus pack carrying a housing `.meta` — now present (`raykie`, `SM-Cherry Blossom
-Upscale`, and any furniture mod). The fix should drive the `/upgrade` golden green on `raykie` and
-keep `SM-Cherry Blossom Upscale` a faithful no-op.
+Upscale`, and any furniture mod). **Actual outcome:** `SM-Cherry Blossom Upscale` is fully green (0
+diffs / 0 regressions — a faithful `/upgrade` no-op). `raykie` has a newly recorded baseline for 97
+diffs; its `.meta` behaviour is correct (housing metas dropped, matching the golden's zero `.meta`
+references) — the remaining diffs are all owned by the separate, already-filed furniture `bgparts`
+`.mdl` gap (`2026-07-21-furniture-bgparts-mdl-overrun.md`), not by this item.

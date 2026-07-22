@@ -1,6 +1,8 @@
-// TexTools' per-file LOAD fix, ported from WizardData.FromWizardGroup's inner ModsJsons loop
-// (WizardData.cs:700-737) — the fix that runs on each file BEFORE it is collapsed into the option's
-// Files dict. FromWizardGroup is the load path both /upgrade (ModpackUpgrader.cs:58 -> FromModpack)
+// TexTools' per-file LOAD fix, ported from WizardData.FromWizardGroup's inner ModsJsons loop, the
+// whole body guarded by `if (File.Exists(finfo.RealPath))` (WizardData.cs:685-738) — both the
+// `.meta`/`.rgsp` branch (:685-698, this module ports its `.meta` half) and the tex/mdl `else` branch
+// (:699-738) — the fix that runs on each file BEFORE it is collapsed into the option's Files dict.
+// FromWizardGroup is the load path both /upgrade (ModpackUpgrader.cs:58 -> FromModpack)
 // and /resave (Program.cs:204) actually take, so these fixes are part of "load", not "upgrade".
 //
 // `makeTtmpLoadFix` is the factory the TTMP readers call (via the LoadFixFactory seam in
@@ -41,7 +43,12 @@ const IS_META = /\.meta$/;
  *   the subset TexTools loses permanently either way. Dropping HERE rather than in the transform
  *   keeps `ModpackUpgrader.AnyChanges` (ModpackUpgrader.cs:25-49) parity on a no-op pack: its
  *   per-option file-set baseline is captured from the load result, and in TexTools a
- *   manipulation-less `.meta` was never part of that file set to begin with. This is also what
+ *   manipulation-less `.meta` was never part of that file set to begin with. That parity is
+ *   necessarily partial, though: it only covers the manipulation-*less* case — a manipulation-bearing
+ *   `.meta` still gets rewritten by `metadataRound` regardless of whether its bytes actually changed,
+ *   so our port can still report a file change on a pack where TexTools' `AnyChanges` would not (see
+ *   docs/backlog/2026-07-13-resave-meta-reconstruction-seam.md, the open seam-fidelity gap for
+ *   `reconstructMeta` living in the transform rather than load/write). This is also what
  *   makes housing/furniture packs upgrade at all — `bgcommon/hou/**{i,o}####.meta` carries no
  *   segment (housing uses no IMC, chara-only segments don't apply), so `yieldsManipulations` is
  *   false and the file is dropped, exactly as TexTools drops it via the manipulations-only path.
@@ -72,7 +79,8 @@ const IS_META = /\.meta$/;
  *   model no longer kills the whole pack.
  *
  * - Everything else: returned unchanged. (`.rgsp` is NOT handled here — out of scope for this
- *   fix; it still passes through unchanged, which is a known gap, not a divergence.)
+ *   fix; it still passes through unchanged, which is a known gap, not a divergence — see
+ *   docs/backlog/2026-07-21-ttmp-load-rgsp-passthrough.md.)
  */
 export function makeTtmpLoadFix(gates: LoadFixGates): LoadFix {
   return (gamePath, file) => {

@@ -277,6 +277,13 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 - [EQDP reconstruction drops mod rows for non-playable races](backlog/2026-07-10-eqdp-non-playable-races.md)
   — C# keeps every race the mod carries and backfills; we emit exactly the 18 playable ones.
   Unreachable today (game EQDP files are playable-race-scoped).
+- [TTMP load fix does not handle `.rgsp`; it passes through unchanged](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
+  — `makeTtmpLoadFix` ports the `.meta` half of `WizardData.cs:685-698`'s combined `.meta`/`.rgsp`
+  load branch (the 2026-07-21 housing-meta drop) but not the `.rgsp` half; an `.rgsp` file survives
+  our load unchanged instead of being diverted into manipulations like TexTools does. Read-side
+  sibling of the write-side [`2026-07-13-pmp-write-meta-rgsp-manipulations.md`](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)
+  item, but reachable (no format-conversion gate protects it). Not yet confirmed as a real
+  divergence — no corpus pack carrying `.rgsp` has been found.
 
 ### Other ported code
 
