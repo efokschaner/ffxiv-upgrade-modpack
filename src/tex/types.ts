@@ -73,10 +73,15 @@ export function minDimension(format: number): number {
   return isCompressed(format) ? 4 : 1;
 }
 
-// Enum member names exactly as C#'s default `enum.ToString()` renders XivTexFormat (member name,
-// since every value above matches a declared member — XivTexFormat.cs:25-47). Used ONLY to
+// Enum member names exactly as C#'s default `enum.ToString()` renders XivTexFormat — the member
+// name for a declared value, the bare number otherwise (XivTexFormat.cs:25-47). Used ONLY to
 // reproduce the literal text of Tex.GetCompressionFormat's error verbatim
 // (Tex.cs:743, `"Format is currently unsupported: " + format.ToString()`), not for any decoding.
+//
+// Covers every format THIS MODULE declares, which is every one a real .tex can carry. The C# enum
+// additionally declares `INVALID = 0`, which we do not: format 0 would fall through to the numeric
+// fallback and render "0" where C# renders "INVALID". Unreachable — a format only reaches
+// GetCompressionFormat after parseTex read it off disk, and 0 is not a format any writer emits.
 const FORMAT_NAMES: Record<number, string> = {
   [L8]: "L8",
   [A8]: "A8",

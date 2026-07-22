@@ -1,14 +1,37 @@
 # NPOT normalize for `createIndexFromNormal` / `upgradeMaskTex` — Design & handoff
 
 **Date:** 2026-07-21
-**Status:** Design approved, not yet implemented.
+**Status:** **Implemented 2026-07-22.** The index half landed exactly as designed — `Club Cyberia
+Motorbike.ttmp2` now has **zero `added` entries in its entire baseline**, so every file the golden
+carries, we produce. Four findings changed the design during implementation:
+
+1. **§5.1's mask pack became three packs, and the extra one changed a decision.** The original
+   `-a8`/`-dxt5` pair measured the elision as exact for a lossless source and **95.65% of bytes
+   divergent (max delta 116)** for DXT5. An operator question — could a ±1/±2 tolerance confirm it
+   instead of a baseline? — prompted a third pack, `npot-mask-dxt5-smooth`, with realistic smooth
+   content: **max delta 9**. So content, not format, sets the magnitude. See §3.3.
+2. **The mask divergence is shipped and ratcheted, not rule-confirmed** (operator call, 2026-07-22).
+   §6 offered "a `DIVERGENCE_RULES` entry with a measured tolerance versus a baselined mismatch";
+   the measurement supports neither cleanly, and a fixture-calibrated threshold would be actively
+   harmful. See §6 for the reasoning and
+   [`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md).
+3. **Both §3.4 guards were confirmed against the real oracle** by the §5.1 expected-failure packs —
+   and meeting the harness's matched-*reason* bar forced their messages to become TexTools' text
+   verbatim, which is a fidelity gain the design did not anticipate. See §3.4.
+4. **§1's root cause corrected the backlog item's hypothesis**, which blamed a monster-specific
+   material-round branch. The target was enqueued correctly all along.
+
 **Goal:** stop silently dropping a generated `_id.tex` (and silently skipping a gear-mask upgrade)
 when the source texture is non-power-of-two, by porting the Bicubic NPOT pre-step both call sites
 already have in the C#.
 
-**Closes:** [`docs/backlog/2026-07-21-monster-index-tex-generation-gap.md`](../../backlog/2026-07-21-monster-index-tex-generation-gap.md)
-(prioritized #1). **Narrows:** [`docs/backlog/2026-07-10-imagesharp-resampler.md`](../../backlog/2026-07-10-imagesharp-resampler.md)
-(prioritized #4) down to T2's load-time `ValidateTexFileData` resize.
+**Closed:** `docs/backlog/2026-07-21-monster-index-tex-generation-gap.md` (then prioritized #1) —
+deleted 2026-07-22 per `docs/BACKLOG.md`'s shipped-item convention, so this spec is now its durable
+record; the name is left unlinked deliberately, the file is gone.
+**Narrowed:** [`docs/backlog/2026-07-10-imagesharp-resampler.md`](../../backlog/2026-07-10-imagesharp-resampler.md)
+(then #4, now #3) down to T2's load-time `ValidateTexFileData` resize.
+**Filed:** [`docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md)
+— the accepted mask-path divergence (§3.3, §6).
 
 **Builds on:** the texture round design
 ([`2026-07-09-texture-round-design.md`](2026-07-09-texture-round-design.md)) and the eye-mask pixel
@@ -123,6 +146,32 @@ This is why §5.1 adds a synthetic pack whose whole job is to turn that unknown 
 it is built and blessed, the mask half of this change is **unverified against TexTools**, and the code
 comment at the site must say so. Do not let the index side's 12/12 result read as covering both.
 
+#### Outcome (2026-07-22): measured, and the answer was not binary
+
+The packs were built and blessed. Three of them, in the end — the pair became a triple when an
+operator question forced the realistic case to be measured separately from the adversarial one:
+
+| pack | mask | vs golden | max delta |
+|---|---|---|---|
+| `npot-mask-a8` | 400×400 `A8R8G8B8` (→ lossless `BGRA`) | 0 / 1398176 — **byte-identical** | 0 |
+| `npot-mask-dxt5-smooth` | 400×400 DXT5, smooth gradient | 680836 / 1398176 (48.7%) | **9** |
+| `npot-mask-dxt5` | 400×400 DXT5, pseudo-random | 1337354 / 1398176 (95.65%) | **116** |
+
+The generated `_id.tex` is byte-identical in **all three**, independently re-confirming §3.2.
+
+Two things fall out, and both mattered more than the headline number:
+
+1. **The resampler is exonerated.** `-a8` runs the identical Bicubic resize and is exact, so every
+   byte of divergence in the DXT5 packs is the elided round-trip, not our resampler port.
+2. **Content, not format, sets the magnitude.** The error tracks how well the *resampled* image fits
+   BC's per-block endpoint model. 9 for smooth content (what a real gear mask looks like), 116 for
+   noise (where every post-resample 4×4 block has huge internal variance). Real masks sit near the
+   smooth end — but we cannot bound it, because computing the error for a given input *is* the
+   nvtt-compatible encode we lack.
+
+The pack set is only worth this much because each comparison moves exactly one variable: `-a8` vs
+`-dxt5` isolates the round-trip, `-dxt5` vs `-dxt5-smooth` isolates content. Preserve that property.
+
 ### 3.4 Two hard failures the elided step 3 still owns
 
 Eliding the round-trip must not silently swallow the cases where it makes TexTools **fail**. Both are
@@ -195,6 +244,15 @@ material+texture-bearing precedents (`build-synthetic-eye-mask.ts`, `build-synth
    If `-a8` is clean and `-dxt5` is not, the round-trip is the cause; if both diverge equally, the
    resampler is. One combined pack could not tell those apart.
 
+   **A third pack, `-dxt5-smooth`, was added during implementation** (2026-07-22) after the
+   `-dxt5` result came back at 95.65% / max delta 116 and the operator asked whether a ±1/±2
+   tolerance could confirm it instead. `-dxt5` uses pseudo-random bytes — the pathological case for
+   BC — so it measures the ceiling, not the realistic case. `-dxt5-smooth` carries hand-assembled
+   DXT5 blocks encoding a smooth gradient (endpoints varying per block, indices interpolating) and
+   measures **max delta 9**. Keep all three: `-dxt5` vs `-dxt5-smooth` is what isolates *content*
+   as the variable that sets the magnitude, which is what makes the divergence explainable rather
+   than merely large. See §3.3's outcome table and §6.
+
    `.ttmp2` rather than `.pmp` deliberately: `Club Cyberia` empirically proves the TTMP load path
    carries NPOT intact into the texture round, whereas whether PMP's unported `FastValidateTexFile`
    ([`2026-07-13-pmp-load-time-tex-fixup.md`](../../backlog/2026-07-13-pmp-load-time-tex-fixup.md))
@@ -244,22 +302,52 @@ No synthetic for the NPOT *index* path: `Club Cyberia Motorbike` already gives i
 - Watch for collateral: any *other* pack whose baseline changes means an NPOT source we did not know
   about. Investigate rather than bless.
 
-## 6. Risks
+## 6. Risks, and how each resolved
 
-- **The mask elision may not be byte-exact.** §5.1's pack 1 is what tells us. If it diverges, the
-  decision is a `DIVERGENCE_RULES` entry with a measured tolerance (as the `.tex` ±1 rule does) versus
-  a baselined mismatch — decide from the measured histogram shape, and do not widen the global `.tex`
-  tolerance to absorb it.
-- **The `<64` and unsupported-format guards may not match TexTools.** Mitigated by §5.1 packs 2–3.
-- **Blast radius is narrow:** one source file, plus test/scaffolding. No writer, container, or
-  manifest code changes.
+- **The mask elision may not be byte-exact.** *Resolved: it is not, for BC-compressed sources.* This
+  section originally framed the choice as "a `DIVERGENCE_RULES` entry with a measured tolerance versus
+  a baselined mismatch". The measurement (§3.3) supports **neither** cleanly, and the operator
+  adjudicated (2026-07-22) to **ship the elision and ratchet the divergence**, documented at the site
+  and in [`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md).
+
+  A tolerance rule was considered explicitly and rejected on the numbers. ±1/±2 does not survive
+  contact with either DXT5 fixture — even smooth content reaches 9. And ±9 would be **worse than no
+  rule**: the global `.tex` ±1 tolerance is legitimate because it rests on a *provable* bound (BCn
+  decoder rounding is ≤1 by construction), whereas 9 and 116 are merely what two authored fixtures
+  happened to produce. `DIVERGENCE_RULES` predicates apply corpus-wide, so a fixture-calibrated
+  threshold would begin silently absolving unrelated, genuine `.tex` regressions on real packs —
+  trading a documented gap for a blind spot. A *shape* rule fares no better: confirming "these bytes
+  differ exactly as a BC round-trip would explain" requires performing the BC round-trip.
+
+  This is the one divergence on this branch carried by a ratchet rather than a confirmation rule, and
+  it is deliberate. Per AGENTS.md a baseline alone is *not* documentation — hence the site comment on
+  `resizeToPow2ForMerge` and the backlog item, which are.
+
+- **The `<64` and unsupported-format guards may not match TexTools.** *Resolved: both match.* The
+  §5.1 expected-failure packs confirm it against the real oracle, and at a stronger bar than
+  anticipated: `assertMatchedUpgradeFailure` (`test/helpers/corpus-upgrade.ts:44-58`) requires our
+  thrown message to be a literal substring of ConsoleTools' captured trace, so this pins a matched
+  *reason*, not just "both threw". Meeting it required rewriting both guard messages to TexTools'
+  text verbatim (`Tex.cs:659`, `Tex.cs:743`) — a fidelity gain, at the cost of the messages no longer
+  naming which texture failed. That cost is itself TexTools-faithful (no upstream catch re-adds a
+  gamePath) and is the province of prioritized item 6, the diagnostics channel.
+
+- **Blast radius is narrow:** two source files (`src/upgrade/texture.ts`, plus `texFormatName` in
+  `src/tex/types.ts`), the rest test/scaffolding. No writer, container, or manifest code changes.
 
 ## 7. Backlog outcome
 
-- `2026-07-21-monster-index-tex-generation-gap.md` — **delete** (shipped); remove its index entry.
-  Grep for references first, per `docs/BACKLOG.md`'s own rule.
-- `2026-07-10-imagesharp-resampler.md` — narrow to T2's `ValidateTexFileData` resize only, and
-  **correct the falsified claim** that no NPOT source exists in the corpus scan (§1).
-- `docs/BACKLOG.md` — re-rank: item 1 closes, item 4 shrinks. Note that
-  `TextureResizeUnsupported` no longer exists, which affects item 6's description (the diagnostics
-  channel) — it cites the sentinel as one of the two things `unclaimed-hair.ts:197` swallows.
+All done 2026-07-22:
+
+- `2026-07-21-monster-index-tex-generation-gap.md` — **deleted** (shipped), index entry removed, and
+  the two references that cited it updated in the same change per `docs/BACKLOG.md`'s own rule.
+- `2026-07-10-imagesharp-resampler.md` — narrowed to T2's `ValidateTexFileData` resize only, demoted
+  #4 → #3, and its **falsified claim** ("no NPOT source exists anywhere in the ~940-pack scan")
+  corrected in place, with a note on why the over-read matters more than the branch it mis-ranked.
+- `2026-07-22-bc-encoder-merge-pixel-data.md` — **new**, filed under *Unprioritized → Textures* for
+  the accepted mask-path divergence.
+- `docs/BACKLOG.md` — prioritized list re-ranked 2–11 → 1–10, with a dated pass note. Item 5 (the
+  diagnostics channel) updated twice over: `TextureResizeUnsupported` no longer exists, so
+  `unclaimed-hair.ts:197` now swallows only genuine parse failures; and the guards' verbatim
+  TexTools messages no longer name which texture failed, which is a second motivation for that
+  channel.
