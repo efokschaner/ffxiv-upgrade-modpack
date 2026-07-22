@@ -259,6 +259,14 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Textures
 
+- [`MergePixelData`'s BC re-encode is unported, and the NPOT mask path diverges because of it](backlog/2026-07-22-bc-encoder-merge-pixel-data.md)
+  — an **accepted, operator-adjudicated divergence** (2026-07-22), not a silent gap: `resizeToPow2ForMerge`
+  elides the nvtt re-encode `Tex.ResizeXivTx` performs (`Tex.cs:637-706`), which is exact for a lossless
+  source (`A8R8G8B8` → `BGRA`, measured byte-identical) and exact on the index path (quantization absorbs
+  it), but reaches the output bytes on the mask path. Bracketed by three synthetic packs: smooth content
+  max delta **9**, adversarial content max delta **116**. Uniquely on this list it has **no**
+  `DIVERGENCE_RULES` entry — a tolerance was considered and rejected because, unlike the global `.tex` ±1
+  rule, there is no provable bound to pin one to. Closing it means a BC encoder matching TexImpNet/nvtt.
 - [`[Inako] Lilith Wish.pmp` — `/resave` diverges on ~30 eye/face `.tex` payloads](backlog/2026-07-17-lilith-wish-resave-tex-divergence.md)
   — every mismatch is `ours.length === golden.length + 80`, a constant excess regardless of texture
   size (not the known ±1 BC-decode tolerance). Pre-existing writer/codec gap, unrelated to this

@@ -105,7 +105,9 @@ function smoothDxt5Blocks(width: number, height: number): Uint8Array {
       out[o++] = (c0 >> 8) & 0xff;
       out[o++] = c1 & 0xff;
       out[o++] = (c1 >> 8) & 0xff;
-      for (let i = 0; i < 4; i++) out[o++] = 0x1b; // 2-bit indices 0,1,2,3 across each row
+      // 0x1b = 0b00011011; 2-bit indices are packed LSB-first, so each row decodes 3,2,1,0 —
+      // a colour ramp across the block (direction is irrelevant, smoothness is the point).
+      for (let i = 0; i < 4; i++) out[o++] = 0x1b;
     }
   }
   return out;
