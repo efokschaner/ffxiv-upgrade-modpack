@@ -1,4 +1,4 @@
-# `MergePixelData`'s BC re-encode is unported, and the NPOT mask path diverges because of it
+# `MergePixelData`'s BC re-encode is unported, and the NPOT mask and hair paths diverge because of it
 
 **Filed:** 2026-07-22, from the NPOT texture-resize work
 ([`docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`](../superpowers/specs/2026-07-21-npot-texture-resize-design.md)).
@@ -34,18 +34,43 @@ The index path survives because `CreateIndexTexture` (`TextureHelpers.cs:222-260
 normal's alpha and quantizes it into rows of 17, which absorbs the round-trip error.
 `upgradeGearMask` has no such quantization, so on the mask path the error reaches the output bytes.
 
+**The hair path has the same exposure, and it is unmeasured.** `CreateHairMaps`
+(`TextureHelpers.cs:261-286`) is a channel shuffle plus one `RemapByte` — no quantization either — and
+`updateEndwalkerHairTextures`' NPOT pre-step (`EndwalkerUpgrade.cs:1195-1202`) is a `ResizeXivTx` call
+like the other two. So an NPOT hair normal or mask in a BC format diverges by the same unbounded
+amount. No synthetic covers it (no corpus pack has an NPOT hair texture at all), so unlike the mask
+path it is divergent *and* unmeasured. Treat the numbers above as covering both in kind.
+
 **The spread between the last two rows is the real finding.** The magnitude tracks how well the
 *resampled* image fits BC's per-block endpoint model — a property of the content, not the format.
-Smooth content (what a real gear mask looks like) lands at max delta 9 with a hard-decaying histogram
+Smooth content lands at max delta 9 with a hard-decaying histogram
 (370243@1, 195057@2, 83411@3, 26258@4, 4556@5, 1274@6, 33@7, 4@9). Pseudo-random content, where every
-4×4 block has huge post-resample variance, blows out to 116. Real masks should sit near the smooth
-end — but we cannot bound it, because computing the error for a given input *is* the nvtt-compatible
-encode we do not have.
+4×4 block has huge post-resample variance, blows out to 116.
+
+**Read 9 as a floor, not as the realistic figure.** `smoothDxt5Blocks` is near-flat *within* each 4×4
+block (endpoints roughly one step apart), which is about the easiest input BC endpoint fitting can
+get — and it still produces 48.7% differing bytes. A real gear mask has hard material boundaries
+falling inside blocks and will land above 9. We cannot bound it either way, because computing the
+error for a given input *is* the nvtt-compatible encode we do not have.
+
+## Which AGENTS.md rule this departs from
+
+Worth naming, because it is not the obvious one. AGENTS.md's three-part bar for a divergence
+(registered defect + corpus accounting + in-game verification) governs **user-benefit** divergences —
+where we deliberately depart because TexTools is *wrong*. This is not one of those: TexTools is right,
+we simply have no nvtt-compatible encoder.
+
+The rule that actually binds is **"fail loud, never silently diverge"**, which read strictly says a
+BC-sourced NPOT mask should **throw**. We ship lossy output instead. So this is a knowing departure
+from a stated principle, not merely a missing registry entry, and it is recorded that way so it stays
+auditable. The justification is user impact: throwing aborts the *entire pack*, which for content
+anywhere near the smooth end trades a working mod for a ≤9/255 difference in one mask.
 
 ## Why there is no `DIVERGENCE_RULES` entry
 
 `AGENTS.md` requires every intended divergence to be *confirmed* by a rule that verifies the specific
-expected difference and rejects everything else. No such rule is constructible here.
+expected difference and rejects everything else. No such rule is constructible here — with the
+important qualification at the end of this section.
 
 A **tolerance** rule was considered explicitly (operator question, 2026-07-22: "ensure the pixel RGBAs
 are within one or two of the golden like we have done in other validators") and rejected on the
@@ -62,8 +87,12 @@ expressible over them is ≤116 — roughly 45% of an 8-bit channel's range — 
 essentially any output and is not a confirmation in AGENTS.md's sense at all.
 
 That also names the route to a real rule, if one is ever wanted: **give the three packs distinct mask
-gamePaths**, then a smooth-content rule bounded at ≤9 becomes both expressible and meaningful, and the
-adversarial pack keeps its own looser record.
+gamePaths**, then a smooth-content rule bounded at ≤9 becomes expressible, and the adversarial pack
+keeps its own looser record. So the honest statement is not "no rule is constructible" but **"no rule
+is constructible without a change we chose not to make"** — the change costs one builder edit and a
+re-bless. It is deferred, not impossible, and the reason to defer is the floor caveat above: a ≤9
+bound calibrated to a near-flat fixture would be tighter than real content warrants, so it would start
+failing on the first realistic NPOT BC mask anyone uploads.
 
 A **shape** rule fares no better: confirming "these bytes differ exactly as a BC round-trip would
 explain" requires performing the BC round-trip.
@@ -105,10 +134,10 @@ careful reading.
 
 ## Reachability
 
-**Zero corpus packs reach it.** No real pack has an NPOT mask; the three `npot-mask-*` packs are
-authored fixtures. Per `docs/BACKLOG.md`'s "deploying changes the probability term" note, an NPOT
-hand-authored mask is plausible enough for a public upload endpoint that this should not be treated as
-extinct — but it is not a live defect in anything we have seen.
+**Zero corpus packs reach it.** No real pack has an NPOT mask or an NPOT hair texture; the three
+`npot-mask-*` packs are authored fixtures. Per `docs/BACKLOG.md`'s "deploying changes the probability
+term" note, a hand-authored NPOT mask is plausible enough for a public upload endpoint that this
+should not be treated as extinct — but it is not a live defect in anything we have seen.
 
 ## Test that pins it
 

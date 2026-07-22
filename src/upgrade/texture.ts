@@ -74,9 +74,13 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * Already-pow2 input is returned untouched — C# only calls ResizeXivTx inside the NPOT branch,
  * so nothing here runs for a pow2 texture.
  *
- * Note :1205's ResizeImages is NOT a fourth site: it calls TextureHelpers.ResizeImage directly
- * (TextureHelpers.cs:336-337), with no MergePixelData behind it, so neither guard below applies to
- * it and the hair path resizes to the common max size with a bare resizeBicubic instead.
+ * Those three are the TRANSFORM-ROUND sites. Two nearby calls are deliberately not routed here:
+ *   - :1205's ResizeImages is not a resize of this kind at all — it calls TextureHelpers.ResizeImage
+ *     directly (TextureHelpers.cs:336-337) with no MergePixelData behind it, so neither guard below
+ *     applies and the hair path resizes to the common max size with a bare resizeBicubic instead.
+ *   - :2110 (ValidateTexFileData) IS a genuine fourth ResizeXivTx call, but it is LOAD-time and
+ *     wholly unported — see docs/backlog/2026-07-10-fixoldtexdata-load-round.md. When it lands it
+ *     should come through this helper too.
  *
  * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
  * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt; the caller
@@ -94,14 +98,22 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  *     (a 400x400 DXT5 normal) is byte-identical in all 12 options, because CreateIndexTexture
  *     reads only alpha and quantizes it into rows of 17 (TextureHelpers.cs:222-260), which
  *     absorbs the round-trip error.
- *   - Lossy source, non-quantizing consumer (the MASK path): KNOWN DIVERGENT. upgradeGearMask
- *     has no quantization to absorb the error, so it reaches the output bytes. Two of the three
+ *   - Lossy source, non-quantizing consumer — the MASK path (upgradeGearMask) AND the HAIR path
+ *     (createHairMaps, TextureHelpers.cs:261-286, a channel shuffle plus one RemapByte): KNOWN
+ *     DIVERGENT. Neither has quantization to absorb the error, so it reaches the output bytes.
+ *     Only the mask path is measured below — no synthetic exercises an NPOT BC *hair* texture —
+ *     but the exposure is identical in kind, so read these numbers as covering both.
+ *     Two of the three
  *     synthetics bracket the range, and the spread is the finding — the magnitude tracks how well the
  *     RESAMPLED image fits BC's per-block endpoint model, which is a property of the content,
  *     not of the format:
- *       `npot-mask-dxt5-smooth.ttmp2` (smooth gradient, i.e. what a real gear mask looks like):
- *          680836 of 1398176 bytes differ, **max delta 9**, histogram decaying hard
+ *       `npot-mask-dxt5-smooth.ttmp2` (smooth gradient): 680836 of 1398176 bytes differ,
+ *          **max delta 9**, histogram decaying hard
  *          (370243@1, 195057@2, 83411@3, 26258@4, 4556@5, 1274@6, 33@7, 4@9).
+ *          Read 9 as a FLOOR, not as the realistic figure: that fixture is near-flat WITHIN each
+ *          4x4 block (endpoints ~1 step apart), which is close to the easiest input BC endpoint
+ *          fitting can get. A real gear mask has material boundaries falling inside blocks and
+ *          will land above 9.
  *       `npot-mask-dxt5.ttmp2` (pseudo-random bytes, the pathological case — after the resample
  *          every 4x4 block has huge internal variance): 1337354 differ, **max delta 116**.
  *     We cannot bound this in general: computing the error for a given input IS the
@@ -200,7 +212,7 @@ export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
  *  (A8R8G8B8), are byte-exact against the golden. An NPOT mask in a BC format is KNOWN DIVERGENT
  *  and unbounded, because upgradeGearMask has no quantization to absorb the round-trip error that
  *  CreateIndexTexture's does. Both cases are pinned by synthetic packs with real ConsoleTools
- *  goldens (`npot-mask-a8.ttmp2`, `npot-mask-dxt5.ttmp2`). */
+ *  goldens (`npot-mask-a8.ttmp2`, `npot-mask-dxt5.ttmp2`, `npot-mask-dxt5-smooth.ttmp2`). */
 export function upgradeMaskTex(
   maskTexBytes: Uint8Array,
   legacy: boolean,
@@ -223,7 +235,13 @@ export function upgradeMaskTex(
  *  and re-encodes both A8R8G8B8 with mips. `resizeBicubic` (src/tex/imagesharp/resample.ts) is a
  *  no-op when target dims already equal source dims, mirroring `ResizeImage`'s early return
  *  (`TextureHelpers.cs:368`) — so the common case (both inputs already pow2 and equal-sized) stays
- *  byte-exact. */
+ *  byte-exact.
+ *
+ *  CARRIES THE SAME ACCEPTED DIVERGENCE AS upgradeMaskTex — read resizeToPow2ForMerge's third cost
+ *  bullet before changing anything here. createHairMaps has no quantization either, so an NPOT
+ *  hair normal or mask in a BC format diverges from the golden by the same unbounded amount. No
+ *  synthetic covers it (no corpus pack has an NPOT hair texture at all), so unlike the mask path it
+ *  is unmeasured as well as divergent. */
 export function updateEndwalkerHairTextures(
   normalTexBytes: Uint8Array,
   maskTexBytes: Uint8Array,

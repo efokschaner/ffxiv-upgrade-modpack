@@ -98,12 +98,18 @@ describe("createIndexFromNormal", () => {
     );
   });
 
+  // The next two assert the guards' FULL message text, not a fragment, and that is deliberate.
+  // assertMatchedUpgradeFailure (test/helpers/corpus-upgrade.ts) substring-matches our thrown
+  // message against ConsoleTools' captured trace, so these strings must stay byte-identical to the
+  // C# (Tex.cs:659, Tex.cs:743) or the expected-failure packs stop matching. The corpus is
+  // gitignored and empty on a fresh clone, so without these literals nothing in the committed tree
+  // would catch a reword. Same reasoning as test/container/manifest-types.test.ts.
   it("throws when a rounded dimension is under 64 (Tex.cs:656-660)", () => {
     // 40 -> RoundToPowerOfTwo picks 32 (|40-32| = 8 < |64-40| = 24), so MergePixelData's
     // TexImpNet size guard fires on the POST-resize dims.
     const rgba = new Uint8Array(40 * 40 * 4);
     expect(() => createIndexFromNormal(a8r8g8b8Tex(40, 40, rgba))).toThrow(
-      /64x64 Minimum Size/,
+      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
     );
   });
 
@@ -112,7 +118,7 @@ describe("createIndexFromNormal", () => {
     // aborts the whole upgrade rather than resizing it.
     const blocks = new Uint8Array((400 / 4) * (400 / 4) * 16);
     expect(() => createIndexFromNormal(rawTex(DXT3, 400, 400, blocks))).toThrow(
-      /unsupported/i,
+      "Format is currently unsupported: DXT3",
     );
   });
 
@@ -155,14 +161,14 @@ describe("upgradeMaskTex", () => {
   it("throws when a rounded dimension is under 64 (Tex.cs:656-660)", () => {
     const rgba = new Uint8Array(40 * 40 * 4);
     expect(() => upgradeMaskTex(a8r8g8b8Tex(40, 40, rgba), false)).toThrow(
-      /64x64 Minimum Size/,
+      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
     );
   });
 
   it("throws on a format GetCompressionFormat rejects (Tex.cs:718-747)", () => {
     const blocks = new Uint8Array((400 / 4) * (400 / 4) * 16);
     expect(() => upgradeMaskTex(rawTex(DXT3, 400, 400, blocks), false)).toThrow(
-      /unsupported/i,
+      "Format is currently unsupported: DXT3",
     );
   });
 
@@ -269,7 +275,7 @@ describe("updateEndwalkerHairTextures", () => {
         a8r8g8b8Tex(3, 3, nRgba),
         a8r8g8b8Tex(2, 2, mRgba),
       ),
-    ).toThrow(/64x64 Minimum Size/);
+    ).toThrow("Image is too small for DDS Compressor. (64x64 Minimum Size)");
   });
 });
 
@@ -413,7 +419,7 @@ describe("upgradeRemainingTextures", () => {
       ],
     ]);
     expect(() => upgradeRemainingTextures(o, targets)).toThrow(
-      /64x64 Minimum Size/,
+      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
     );
     expect(o.files.has(indexPath)).toBe(false);
   });

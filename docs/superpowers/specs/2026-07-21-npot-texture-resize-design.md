@@ -320,17 +320,36 @@ No synthetic for the NPOT *index* path: `Club Cyberia Motorbike` already gives i
   and in [`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md).
 
   A tolerance rule was considered explicitly and rejected on the numbers. ±1/±2 does not survive
-  contact with either DXT5 fixture — even smooth content reaches 9. And ±9 would be **worse than no
-  rule**: the global `.tex` ±1 tolerance is legitimate because it rests on a *provable* bound (BCn
-  decoder rounding is ≤1 by construction), whereas 9 and 116 are merely what two authored fixtures
-  happened to produce. `DIVERGENCE_RULES` predicates apply corpus-wide, so a fixture-calibrated
-  threshold would begin silently absolving unrelated, genuine `.tex` regressions on real packs —
-  trading a documented gap for a blind spot. A *shape* rule fares no better: confirming "these bytes
-  differ exactly as a BC round-trip would explain" requires performing the BC round-trip.
+  contact with either DXT5 fixture — even smooth content reaches 9. And a larger threshold is wrong
+  for a reason worth stating precisely, **because an earlier draft of this section got it wrong**: it
+  is *not* that `DIVERGENCE_RULES` predicates are corpus-wide and would absolve real packs.
+  `DivergenceRule.predicate` is `(gamePath: string) => boolean`, and all three fixtures sit at the
+  fictional `chara/equipment/e9999/…`, so a path-scoped rule would match these packs and nothing else.
+  The real objection is that **all three fixtures deliberately share one mask gamePath**, so a
+  path-scoped predicate cannot separate the smooth case from the adversarial one; the only bound
+  expressible over them is ≤116, roughly 45% of an 8-bit channel's range, which would confirm
+  essentially any output. A *shape* rule fares no better: confirming "these bytes differ exactly as a
+  BC round-trip would explain" requires performing the BC round-trip.
 
-  This is the one divergence on this branch carried by a ratchet rather than a confirmation rule, and
-  it is deliberate. Per AGENTS.md a baseline alone is *not* documentation — hence the site comment on
-  `resizeToPow2ForMerge` and the backlog item, which are.
+  Stated honestly, then, "no rule is constructible" is really **"no rule is constructible without a
+  change we chose not to make"** — giving the three packs distinct mask gamePaths would make a
+  smooth-content `confirm` expressible. That is deferred rather than impossible, and the reason to
+  defer is §3.3's own caveat: the smooth fixture is near-flat *within* each 4×4 block, so its 9 is a
+  **floor** rather than a realistic figure, and a rule calibrated to it would be tighter than real
+  content warrants. See the backlog item.
+
+  **Which AGENTS.md rule actually governs.** Not the three-part user-benefit bar (registered defect +
+  corpus accounting + in-game verification) — that is for cases where we deliberately depart because
+  TexTools is *wrong*. Here TexTools is right and we simply lack an nvtt-compatible encoder. The rule
+  that binds is **"fail loud, never silently diverge"**, which read strictly says a BC-sourced NPOT
+  mask should *throw*. We ship lossy output instead, so this is a **knowing departure from a stated
+  principle**, not merely the absence of a registry entry — and it is recorded as such so it stays
+  auditable. The justification is user impact: throwing aborts the entire pack, which for content
+  anywhere near the smooth end trades a working mod for a ≤9/255 difference in one mask.
+
+  This is the one divergence in the repo carried by a ratchet rather than a confirmation rule, and it
+  is deliberate. Per AGENTS.md a baseline alone is *not* documentation — hence the site comment on
+  `resizeToPow2ForMerge`, the `DIVERGENCE_RULES` header pointer, and the backlog item, which are.
 
 - **The `<64` and unsupported-format guards may not match TexTools.** *Resolved: both match.* The
   §5.1 expected-failure packs confirm it against the real oracle, and at a stronger bar than
