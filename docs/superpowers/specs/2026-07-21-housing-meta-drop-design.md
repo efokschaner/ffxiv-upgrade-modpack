@@ -21,8 +21,13 @@ reachable from the corpus. Three corrections found during implementation, applie
    full rationale; `metadataRound` was reverted to its pre-drop shape and still owns reconstruction
    only.
 
-**Backlog item:** [`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md`](../../backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md)
-(prioritized #1).
+**Backlog item:** shipped. The item that tracked this
+(`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md`, formerly prioritized #1) was
+deleted from `docs/BACKLOG.md` per this repo's shipped-item convention (`docs/BACKLOG.md`'s "When an
+item ships" rule) — this spec is now the durable record. Its companion,
+[`docs/backlog/2026-07-21-furniture-bgparts-mdl-overrun.md`](../../backlog/2026-07-21-furniture-bgparts-mdl-overrun.md),
+remains open (re-ranked to a top silent-wrong-output item once this fix let furniture packs reach the
+model round — see that file).
 **Builds on:** the metadata round design
 ([`2026-07-10-metadata-round-design.md`](2026-07-10-metadata-round-design.md)) — read its §1 first;
 this design extends the same round.
@@ -122,6 +127,21 @@ Shipped control flow:
 `parseMetaRoot`'s throw (`root.ts:151`) survives as the fail-loud guard for a genuinely-unknown
 *chara-like* root that *does* carry segments, which is still the right posture there.
 
+**Scope of that guard (verified against the C#, 2026-07-21).** It only fires for a
+segment-**bearing** meta — a segment-**less** meta at an unrecognized root has no equivalent guard and
+is silently dropped by step 2 above, same as housing. `MetadataToManipulations` reads `m.Root.Info`
+unconditionally at `PmpExtensions.cs:420`, *before* any segment check, and `ItemMetadata.Deserialize`
+builds `new ItemMetadata(await XivCache.GetFirstRoot(path))` with no null guard
+(`ItemMetadata.cs:883-884`; `GetFirstRoot`, `XivCache.cs:1764-1772`, returns `null` when no root
+regex matches). So for a `.meta` at a path matching **none** of TexTools' root regexes — not just
+housing, whose regex exists and matches (`XivDependencyGraph.cs:257,263`) — TexTools NREs at load,
+unconditionally, regardless of whether the meta carries any segments at all. Our
+`yieldsManipulations` never looks at the path, only the segment fields, so a segment-less meta at such
+a path is silently dropped and the upgrade continues where TexTools would have crashed the whole
+`/upgrade`. This only bites a genuinely malformed/unrecognized path (hand-edited or corrupt input, not
+anything a real game asset produces) — housing is unaffected because its regex matches — so it is
+noted as a residual gap this design does not close, not a fix owed here.
+
 ### Finding from implementation: the drop belongs at the load seam, not the transform
 
 This design was first shipped **inside `metadataRound.fixOne`** — dropping the entry out of
@@ -150,10 +170,26 @@ seam question this change does not resolve, still tracked by
 [`docs/backlog/2026-07-13-resave-meta-reconstruction-seam.md`](../../backlog/2026-07-13-resave-meta-reconstruction-seam.md)
 — `metadataRound` was deliberately reverted rather than folding reconstruction into the load fix too.
 
-Corpus result after the move: `SM-Cherry Blossom Upscale.ttmp2` is 0 diffs / 0 regressions (the no-op
-is faithful again); `raykie Gym Equipment Posing Props V1_0_2.ttmp2` has a newly recorded baseline for
-97 diffs, all owned by the separate, already-filed `bgparts` `.mdl` gap
-(`docs/backlog/2026-07-21-furniture-bgparts-mdl-overrun.md`), not by the meta drop.
+Corpus result after the move: `SM-Cherry Blossom Upscale.ttmp2` is 9 matched, 0 diffs / 0 regressions
+(the no-op is faithful again; no baseline needed). `raykie Gym Equipment Posing Props V1_0_2.ttmp2` is
+22 matched with a newly recorded baseline for 97 diffs — **not** all owned by the `bgparts` `.mdl` gap
+as an earlier draft of this doc claimed. The real split, counted from the baseline JSON:
+
+| Count | Shape | Owner |
+|---|---|---|
+| 9 | `.mdl` `added` | `bgcommon/hou/**/bgparts/*.mdl` gap (`docs/backlog/2026-07-21-furniture-bgparts-mdl-overrun.md`) |
+| 9 | manifest `added` | same gap — the index shift the missing models leave in their options' manifests |
+| 50 | manifest `mismatch` | `Name`/`Category` re-derivation & option file order (`docs/backlog/2026-07-13-resave-ttmp2-name-category.md` and its file-order sibling) |
+| 29 | `.tex` `mismatch` | the texture float-precision bulk (roadmap design §8, `docs/backlog/2026-07-10-imagesharp-resampler.md`) |
+
+Only 18 of the 97 (the `.mdl` gap's slice) trace to this change's companion item; the other 79 are
+pre-existing, unrelated gaps the corpus expansion happened to surface at the same time.
+
+**The decisive evidence for this change itself: the blessed `raykie` baseline contains zero `.meta`
+entries, and so does every other baseline in `test/corpus/.upgrade-baseline/`.** Our meta file-set
+matches the golden's on every corpus pack — none of the 97 diffs, nor any diff on any other corpus
+pack, is a `.meta` entry. That is the strongest available confirmation that the drop implemented here
+is correct.
 
 ### Notes for the implementer
 
@@ -194,14 +230,18 @@ is faithful again); `raykie Gym Equipment Posing Props V1_0_2.ttmp2` has a newly
 - **A found divergence is a coverage gap:** this gap existed because no furniture pack was in the
   corpus. The corpus packs are the regression test; keep them.
 
-## 6. One empirical check to run first (was blocked by tooling)
+## 6. Empirical check performed: do `raykie`'s furniture metas actually carry zero segments?
 
-Confirm `raykie`'s furniture metas deserialize to **zero** segments — if any carried IMC, TexTools
-would *crash* (not drop) and the pack would be an `upgrade-error` case, not a drop. `raykie`'s clean
-golden already implies zero-segment, but verify directly. A scratch decoder was drafted at
-`scripts/_tmp-inspect-meta.ts` (loads the pack, finds `.meta` members, `deserializeMeta`, prints
-present segments). **Clean up that temp file** (and any `scripts/_tmp-*.txt`) — they are untracked
-scaffolding left when the shell tool began erroring on every command mid-session.
+The question mattered because the answer decides which branch of the design applies: if any of
+`raykie`'s furniture metas carried an IMC segment, TexTools would *crash* (not drop) and the pack
+would belong in the `upgrade-error` corpus root, not on the drop path. `raykie`'s clean golden already
+implied zero-segment, but the premise was verified directly rather than assumed, using a scratch
+decoder (loads the pack, finds `.meta` members, runs `deserializeMeta`, prints present segments).
+
+**Result:** confirmed. All six housing metas across both corpus packs (`raykie`,
+`SM-Cherry Blossom Upscale`) deserialize to zero segments, so only the drop path (step 2 in §4) is
+reachable from the corpus; the invalid-input throw (step 3) remains unexercised by any real pack. The
+scratch decoder was scaffolding only and has since been removed from the tree.
 
 ## 7. Provenance summary (verify each against `reference/` before coding)
 
