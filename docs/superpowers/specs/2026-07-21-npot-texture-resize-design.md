@@ -175,14 +175,25 @@ upgrade path always passes a non-null file dictionary. It is unreachable here; d
 
 ### 5.1 Synthetic corpus additions
 
-Three new builders under `scripts/generate-synthetics/`, wired into `build-all.ts`, following the
+Four new packs from two new builders under `scripts/generate-synthetics/`, wired into `build-all.ts`, following the
 material+texture-bearing precedents (`build-synthetic-eye-mask.ts`, `build-synthetic-index-fallback.ts`,
 `build-synthetic-unclaimed-hair.ts`) and reusing `synthetic-mtrl.ts`.
 
-1. **`npot-mask.ttmp2` — essential.** A colorset material with a **power-of-two normal** and an
-   **NPOT, BC-compressed mask** (e.g. 400×400 DXT5). Isolates the mask variable, and the BC format is
-   the point: it exercises the lossy `MergePixelData` round-trip that §3.3 shows *nothing* in the
-   corpus has ever tested. This pack is what converts the mask half from unverified to golden-backed.
+1. **`npot-mask-a8.ttmp2` + `npot-mask-dxt5.ttmp2` — essential.** A colorset material with a
+   **power-of-two normal** (64×64 `A8R8G8B8`, so it never touches the resize path) and an **NPOT
+   mask** at 400×400. This is what converts the mask half from unverified to golden-backed.
+
+   Built as a **pair, differing only in the mask's format**, so that a divergence is attributable
+   rather than merely observed:
+   - **`-a8`** — `A8R8G8B8` mask. `GetCompressionFormat` maps this to `CompressionFormat.BGRA`, so
+     TexTools' `MergePixelData` is **lossless**. Isolates the Bicubic resize alone; should be exact
+     or within the documented resampler tolerance.
+   - **`-dxt5`** — DXT5 mask. Adds the lossy BC round-trip that §3.3 shows *nothing* in the corpus
+     has ever tested, plus our BCn decoder's known ±1 divergence
+     ([`2026-07-16-bcn-decoder-rounding-divergence.md`](../../backlog/2026-07-16-bcn-decoder-rounding-divergence.md)).
+
+   If `-a8` is clean and `-dxt5` is not, the round-trip is the cause; if both diverge equally, the
+   resampler is. One combined pack could not tell those apart.
 
    `.ttmp2` rather than `.pmp` deliberately: `Club Cyberia` empirically proves the TTMP load path
    carries NPOT intact into the texture round, whereas whether PMP's unported `FastValidateTexFile`
