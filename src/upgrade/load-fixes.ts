@@ -13,6 +13,8 @@
 // texfix.ts, ttmpNeedsMdlFix in model.ts — and is computed by the reader; this module only performs
 // the fix the gates select.
 import type { LoadFix, LoadFixGates } from "../container/load-fix";
+import { deserializeMeta } from "../meta/deserialize";
+import { yieldsManipulations } from "../meta/manipulations";
 import { decodeSqPackFile, SqPackType } from "../sqpack/sqpack";
 import { normalizeModel } from "./model";
 import { requireBytes, restore } from "./upgrade";
@@ -20,9 +22,31 @@ import { requireBytes, restore } from "./upgrade";
 const IS_TEX = /\.tex$/;
 const IS_UI = /^ui\//;
 const IS_MDL = /\.mdl$/;
+const IS_META = /\.meta$/;
 
 /**
  * Build the FromWizardGroup per-file load fix for a TTMP pack whose gates are `gates`:
+ *
+ * - `.meta` (WizardData.cs:685-691, `mj.FullPath.EndsWith(".meta") || .EndsWith(".rgsp")`, the
+ *   `.meta` half of that branch): UNGATED — the C# check at :685 has no `needsTexFix`/`needsMdlFix`
+ *   equivalent, and it is a separate `if` from the tex/mdl work, which sits in the `else` at
+ *   :699-738. A `.meta` can never reach the tex/mdl branches in the C#, so this branch runs first
+ *   and returns before either gate is consulted. TexTools deserializes the meta straight into
+ *   `data.Manipulations` (:690-691) and never adds it to `data.Files` at all — so no `.meta`
+ *   survives into the loaded pack there, full stop. We cannot reproduce that half (we have no
+ *   in-memory Manipulations list a later PMP.ManipulationsToMetadata-equivalent could re-serialize
+ *   from for a TTMP pack): instead we keep a manipulation-*bearing* meta as a file, our stand-in for
+ *   those manipulations, later re-materialized by `metadataRound` (mirroring the write-side
+ *   `PMP.ManipulationsToMetadata`, PMP.cs:1253-1295) — and drop only the manipulation-*less* ones,
+ *   the subset TexTools loses permanently either way. Dropping HERE rather than in the transform
+ *   keeps `ModpackUpgrader.AnyChanges` (ModpackUpgrader.cs:25-49) parity on a no-op pack: its
+ *   per-option file-set baseline is captured from the load result, and in TexTools a
+ *   manipulation-less `.meta` was never part of that file set to begin with. This is also what
+ *   makes housing/furniture packs upgrade at all — `bgcommon/hou/**{i,o}####.meta` carries no
+ *   segment (housing uses no IMC, chara-only segments don't apply), so `yieldsManipulations` is
+ *   false and the file is dropped, exactly as TexTools drops it via the manipulations-only path.
+ *   Byte-identical when kept: the load seam must not rewrite meta bytes; `metadataRound` still owns
+ *   reconstruction.
  *
  * - `.tex` when `needsTexFix` (WizardData.cs:701-712): a validity check ONLY. Decode the compressed
  *   Type-4 entry; a decode failure returns `null` to DROP the file (FixOldTexData's catch -> continue
@@ -47,11 +71,20 @@ const IS_MDL = /\.mdl$/;
  *   (WizardData.cs:721-727). This is the drop that closes the model-round-throw divergence: a bad
  *   model no longer kills the whole pack.
  *
- * - Everything else: returned unchanged. (`.meta`/`.rgsp` are handled by a separate seam — our TTMP
- *   port keeps `.meta` as a file, reconstructed later by metadataRound — so they are not touched here.)
+ * - Everything else: returned unchanged. (`.rgsp` is NOT handled here — out of scope for this
+ *   fix; it still passes through unchanged, which is a known gap, not a divergence.)
  */
 export function makeTtmpLoadFix(gates: LoadFixGates): LoadFix {
   return (gamePath, file) => {
+    if (IS_META.test(gamePath)) {
+      // requireBytes (not resolveFile): a TTMP `.meta` always carries a compressed blob at this
+      // seam — WizardData.cs:687's GetUncompressedFile is unguarded too — so a missing-bytes case
+      // here is a corrupt pack, not a legitimate absent-file path. Fail loud, matching
+      // metadataRound's own requireBytes call for the same reason.
+      const { bytes } = requireBytes(file, gamePath);
+      const meta = deserializeMeta(bytes); // ItemMetadata.Deserialize, ItemMetadata.cs:869-921
+      return yieldsManipulations(meta) ? file : null;
+    }
     if (gates.needsTexFix && IS_TEX.test(gamePath)) {
       if (IS_UI.test(gamePath)) return file; // MakeFileStorageInformationDictionary (:1367), not FromWizardGroup — see doc comment above
       try {

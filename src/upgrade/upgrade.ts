@@ -1,7 +1,6 @@
 import { deserializeMeta } from "../meta/deserialize";
 import { reconstructMeta } from "../meta/reconstruct";
 import { serializeMeta } from "../meta/serialize";
-import type { ItemMeta } from "../meta/types";
 import {
   FileStorageType,
   type ModpackData,
@@ -199,41 +198,17 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
 const IS_META = /\.meta$/;
 
 /**
- * Would this `.meta` produce at least one Penumbra manipulation? Port of the five segment gates in
- * PMPExtensions.MetadataToManipulations (PmpExtensions.cs:417-467), which emits one manipulation
- * per PRESENT segment: Gmp (:422), Eqp (:429), Est (:436), Eqdp (:446), Imc (:456).
- *
- * EST and IMC gate on `Count > 0`, not merely non-null, so a present-but-empty EST/IMC segment
- * yields nothing — mirrored with `.size`/`.length` rather than a bare null-check. EQDP's `Count > 0`
- * gate (:446) can never be false in the C#: the dictionary it tests comes from DeserializeEqdpData,
- * which unconditionally backfills every missing Eqp.PlayableRaces race after parsing
- * (ItemMetadata.cs:779-788), so a present EQDP segment always has >= 18 entries there. Our
- * deserializeMeta does not backfill (that expansion lives downstream in reconstructMeta,
- * src/meta/reconstruct.ts:24-47), so mirroring the literal `Count > 0` text would silently drop a
- * `.meta` carrying a zero-size EQDP segment that TexTools keeps — hence EQDP below is a bare
- * non-null check, matching the C#'s EFFECTIVE gate rather than its literal one. The two opaque-byte
- * segments (Gmp, Eqp) gate on null alone, no backfill involved.
- */
-function yieldsManipulations(m: ItemMeta): boolean {
-  return (
-    m.gmp !== null || // PmpExtensions.cs:422
-    m.eqp !== null || // :429
-    (m.est !== null && m.est.size > 0) || // :436
-    m.eqdp !== null || // :446 + ItemMetadata.cs:779-788 (present segment always backfills to >= 18)
-    (m.imc !== null && m.imc.length > 0) // :456
-  );
-}
-
-/**
  * Metadata round (round 5). Replaces the opaque .meta pass-through: reconstruct each .meta the
  * way ConsoleTools /upgrade does (base-game seed + mod deltas). See
  * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
  *
- * A meta that yields no manipulations is DROPPED rather than reconstructed (see `fixOne`); this is
- * what makes housing/furniture packs upgrade at all.
+ * A `.meta` that yields no manipulations never reaches here at all — it is dropped at the LOAD
+ * seam (`makeTtmpLoadFix`, src/upgrade/load-fixes.ts), mirroring WizardData.cs:685-691 where
+ * TexTools deserializes such a meta straight into `data.Manipulations` and never adds it to
+ * `data.Files` in the first place.
  */
 function metadataRound(option: ModpackOption): void {
-  function fixOne(path: string, f: ModpackFile): ModpackFile | null {
+  function fixOne(path: string, f: ModpackFile): ModpackFile {
     if (!IS_META.test(path)) return f;
     // No absent-file analogue: PMP .meta files are materialized from manipulations
     // (PMP.cs:1141-1164), never read from a zip member, so a .meta with no bytes is unreachable.
@@ -242,47 +217,11 @@ function metadataRound(option: ModpackOption): void {
     // TexTools or Penumbra produce. Fail loud.
     const { bytes, type } = requireBytes(f, path);
     const meta = deserializeMeta(bytes); // ItemMetadata.Deserialize, ItemMetadata.cs:869-921
-    if (!yieldsManipulations(meta)) {
-      // DROP. The round-trip is read -> manipulations -> write: PMP.ManipulationsToMetadata
-      // (PMP.cs:1253-1295) groups manipulations by root (`byRoot`, :1256) and only
-      // materializes+Serializes a root that appears in that grouping, so a meta yielding zero
-      // manipulations is simply never written back (WizardData.cs:463-482 adds a file per
-      // `manips.Metadatas` entry — and there is none). Reproduced here by removing the file from
-      // the option.
-      //
-      // Read-side half of the same argument: WizardData.cs:685-691 deserializes a `.meta`
-      // straight into `data.Manipulations` (never `data.Files`) when loading a pack, so a meta
-      // that yields zero manipulations there never becomes a `Files` entry either — the round
-      // trip is airtight on both ends, not just the write side.
-      //
-      // This is what makes housing/furniture packs work: `bgcommon/hou/**/{i,o}####.meta` carries
-      // no segment at all, because housing uses no IMC (Imc.UsesImc returns false for
-      // indoor/outdoor, Variants/FileTypes/Imc.cs:74-85; GetRawImcFilePath returns null for it,
-      // XivDependencyRoot.cs:1093-1097) and the other four segments are chara-only concepts.
-      // Verified over the corpus: every housing meta in `raykie Gym Equipment Posing Props` and
-      // `SM-Cherry Blossom Upscale` deserializes to zero segments, and `raykie`'s /upgrade golden
-      // contains zero `.meta` references.
-      //
-      // Deliberately NOT a path check: the rule is the ported segment gate, so a segment-less
-      // chara meta drops too — exactly as TexTools drops it. We therefore also do not need
-      // housing in `parseMetaRoot` (root.ts:151), which stays the fail-loud guard for an unknown
-      // root that DOES carry a segment.
-      //
-      // Narrow known deviation: C# reaches `m.Root.Info` unconditionally
-      // (PmpExtensions.cs:420), so a segment-less meta whose path NO XivDependencyGraph regex
-      // matches would NullReferenceException there, where we drop it quietly. Housing and chara
-      // roots both resolve (XivDependencyGraph.cs:257,263,693-702), so this is unreachable for
-      // any root TexTools recognizes.
-      return null;
-    }
     const out = serializeMeta(reconstructMeta(meta, path));
     return restore(f, out, type ?? SqPackType.Standard);
   }
   const next = new Map<string, ModpackFile>();
-  for (const [path, f] of option.files) {
-    const fixed = fixOne(path, f);
-    if (fixed !== null) next.set(path, fixed); // dropped -> not carried into the new map
-  }
+  for (const [path, f] of option.files) next.set(path, fixOne(path, f));
   option.files = next;
 }
 
