@@ -7,6 +7,7 @@
 // its `false` default (ModpackUpgrader.cs:212) and only `AnyChanges` can make it write, instead of
 // no-opping.
 
+import { ESamplerId } from "../../src/mtrl/shader";
 import { SAMPLER_NORMAL_MAP_0 } from "../../src/mtrl/types";
 import { ByteBuilder } from "../../src/util/binary";
 
@@ -64,6 +65,71 @@ export function buildEwColorsetMtrl(texturePath: string): Uint8Array {
   b.u32(0x12345678).u32(0x9abcdef0); // shader key
   b.u32(0xcafebabe).u16(0).u16(4); // shader-constant descriptor
   b.u32(SAMPLER_NORMAL_MAP_0).u32(0x00010203).u8(0).bytes([0, 0, 0]); // NormalMap0 sampler on tex 0
+  b.f32(1.5); // float data block
+
+  const out = b.toUint8Array();
+  new DataView(out.buffer).setUint16(fileSizePos, out.length & 0xffff, true);
+  return out;
+}
+
+/** As buildEwColorsetMtrl, but with a SECOND texture bound to g_SamplerMask (ESamplerId,
+ * shader.ts:23) so the colorset round records a GearMaskLegacy target
+ * (EndwalkerUpgrade.cs:973-1006) alongside the IndexMaps one. character.shpk becomes
+ * characterlegacy.shpk during the upgrade (EndwalkerUpgrade.cs:747-751), which is what selects
+ * the Legacy arm; no mask-as-spec shader key is emitted, so `usesMaskAsSpec` (:909) stays false
+ * and the arm is reached. */
+export function buildEwColorsetMaskMtrl(
+  normalTexPath: string,
+  maskTexPath: string,
+): Uint8Array {
+  const uv = "uv1";
+  const shpk = "character.shpk";
+  const maskOffset = normalTexPath.length + 1;
+  const uvOffset = maskOffset + maskTexPath.length + 1;
+  const shaderNameOffset = uvOffset + uv.length + 1;
+  const rawStringBlockSize = shaderNameOffset + shpk.length + 1;
+  const stringBlockSize = Math.ceil(rawStringBlockSize / 4) * 4;
+  const pad = stringBlockSize - rawStringBlockSize;
+
+  const b = new ByteBuilder();
+  b.i32(0x00000301); // signature
+  const fileSizePos = b.length;
+  b.u16(0); // fileSize (backfilled below)
+  b.u16(544); // colorSetDataSize = 512 colorset + 32 EW dye
+  b.u16(stringBlockSize);
+  b.u16(shaderNameOffset);
+  b.u8(2); // texCount
+  b.u8(1); // mapCount
+  b.u8(0); // colorsetCount
+  b.u8(4); // additionalDataSize
+
+  b.u16(0).u16(0); // texture[0]: normal, offset 0, flags 0
+  b.u16(maskOffset).u16(0); // texture[1]: mask
+  b.u16(uvOffset).u16(0); // uvMap[0]
+
+  b.bytes(enc.encode(normalTexPath)).u8(0);
+  b.bytes(enc.encode(maskTexPath)).u8(0);
+  b.bytes(enc.encode(uv)).u8(0);
+  b.bytes(enc.encode(shpk)).u8(0);
+  for (let i = 0; i < pad; i++) b.u8(0);
+
+  b.bytes([0x08, 0, 0, 0]); // additionalData: dye present
+
+  for (let i = 0; i < 256; i++) b.u16((i * 7) & 0xffff); // EW colorset
+  for (let i = 0; i < 32; i++) b.u8((i * 3) & 0xff); // EW dye
+
+  b.u16(4); // shaderConstantsDataSize (1 float)
+  b.u16(1); // shaderKeyCount
+  b.u16(1); // shaderConstantsCount
+  b.u16(2); // textureSamplerCount
+  b.u16(0x0011); // materialFlags
+  b.u16(0x0022); // materialFlags2
+
+  b.u32(0x12345678).u32(0x9abcdef0); // shader key (NOT the mask-as-spec key 0xc8bd1def, so
+  // `usesMaskAsSpec` (EndwalkerUpgrade.cs:909) stays false and the GearMask arm is reached)
+  b.u32(0xcafebabe).u16(0).u16(4); // shader-constant descriptor
+  b.u32(SAMPLER_NORMAL_MAP_0).u32(0x00010203).u8(0).bytes([0, 0, 0]); // normal -> texture 0
+  b.u32(ESamplerId.g_SamplerMask).u32(0x00010203).u8(1).bytes([0, 0, 0]); // g_SamplerMask -> texture 1
   b.f32(1.5); // float data block
 
   const out = b.toUint8Array();

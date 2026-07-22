@@ -68,12 +68,42 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
  * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt; the caller
  * then immediately decodes them again. We have no nvtt-compatible encoder, so we hand the
- * resized RGBA straight on. Measured against the ConsoleTools /upgrade golden for
- * `Club Cyberia Motorbike.ttmp2` (a 400x400 DXT5 normal), our output is BYTE-IDENTICAL in all
- * 12 options — CreateIndexTexture reads only the normal's alpha and quantizes it into rows of
- * 17 (TextureHelpers.cs:222-260), which absorbs the round-trip error. See the design spec §3.2.
- * The mask path (upgradeMaskTex) has NO such quantization and, at time of writing, no corpus
- * pack reaching it — see §3.3 and the synthetic packs built for it.
+ * resized RGBA straight on.
+ *
+ * WHAT THAT ELISION COSTS, MEASURED against real ConsoleTools /upgrade goldens. It depends
+ * entirely on whether MergePixelData's re-encode is lossy for the SOURCE format, and on whether
+ * the consumer quantizes the result:
+ *
+ *   - Lossless source (A8R8G8B8 -> CompressionFormat.BGRA, Tex.cs:739-741): EXACT. The
+ *     `npot-mask-a8.ttmp2` synthetic (400x400 A8R8G8B8 mask) is byte-identical to its golden,
+ *     0 of 1398176 bytes differing.
+ *   - Lossy source, quantizing consumer (the index path): EXACT. `Club Cyberia Motorbike.ttmp2`
+ *     (a 400x400 DXT5 normal) is byte-identical in all 12 options, because CreateIndexTexture
+ *     reads only alpha and quantizes it into rows of 17 (TextureHelpers.cs:222-260), which
+ *     absorbs the round-trip error.
+ *   - Lossy source, non-quantizing consumer (the MASK path): KNOWN DIVERGENT. upgradeGearMask
+ *     has no quantization to absorb the error, so it reaches the output bytes. Two synthetics
+ *     bracket the range, and the spread is the finding — the magnitude tracks how well the
+ *     RESAMPLED image fits BC's per-block endpoint model, which is a property of the content,
+ *     not of the format:
+ *       `npot-mask-dxt5-smooth.ttmp2` (smooth gradient, i.e. what a real gear mask looks like):
+ *          680836 of 1398176 bytes differ, **max delta 9**, histogram decaying hard
+ *          (370243@1, 195057@2, 83411@3, 26258@4, 4556@5, 1274@6, 33@7, 4@9).
+ *       `npot-mask-dxt5.ttmp2` (pseudo-random bytes, the pathological case — after the resample
+ *          every 4x4 block has huge internal variance): 1337354 differ, **max delta 116**.
+ *     We cannot bound this in general: computing the error for a given input IS the
+ *     nvtt-compatible encode we do not have.
+ *
+ * That last case is an ACCEPTED, OPERATOR-ADJUDICATED divergence (2026-07-22), not an oversight:
+ * we emit a correctly-upgraded mask that skipped one lossy recompression cycle rather than
+ * refusing the file. It is deliberately NOT confirmed by a DIVERGENCE_RULES entry, and that was
+ * considered rather than skipped: a tolerance rule needs a PRINCIPLED bound, the way the global
+ * `.tex` +/-1 rule rests on BCn decoder rounding being provably <= 1. There is no such bound here
+ * — 9 and 116 are just what two fixtures happened to produce — so any threshold would be
+ * calibrated to an authored pack, and since DIVERGENCE_RULES predicates apply corpus-wide it
+ * would start absolving unrelated real `.tex` regressions. The three npot-mask-* packs are its
+ * ratchet instead, and docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md tracks the real
+ * fix. See the design spec §3.2/§3.3/§6.
  *
  * NOT elided: the two ways MergePixelData FAILS. Both abort the whole upgrade in C#
  * (EndwalkerUpgrade.cs:1842 has no try/catch; ModpackUpgrader.cs:133-141 rethrows wrapped), so
@@ -134,12 +164,12 @@ export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
  *  (:2086-2089, see resizeToPow2ForMerge), applies the gear-mask channel remap, re-encodes
  *  A8R8G8B8 with mips.
  *
- *  UNVERIFIED AGAINST TEXTOOLS at the time this was written, unlike the index path: the elided
- *  MergePixelData round-trip (see resizeToPow2ForMerge) is proven byte-neutral only where
- *  CreateIndexTexture's row-of-17 quantization absorbs it. upgradeGearMask has no such
- *  quantization, so a lossy source format's round-trip error would reach the output bytes here.
- *  The npot-mask-* synthetic packs (scripts/generate-synthetics/) exist to close that gap with a
- *  real ConsoleTools golden — see the design spec §3.3/§5.1. */
+ *  THIS IS THE PATH THAT PAYS FOR resizeToPow2ForMerge's ELISION — read its third bullet before
+ *  changing anything here. A pow2 mask, and an NPOT mask whose source format is lossless
+ *  (A8R8G8B8), are byte-exact against the golden. An NPOT mask in a BC format is KNOWN DIVERGENT
+ *  and unbounded, because upgradeGearMask has no quantization to absorb the round-trip error that
+ *  CreateIndexTexture's does. Both cases are pinned by synthetic packs with real ConsoleTools
+ *  goldens (`npot-mask-a8.ttmp2`, `npot-mask-dxt5.ttmp2`). */
 export function upgradeMaskTex(
   maskTexBytes: Uint8Array,
   legacy: boolean,
