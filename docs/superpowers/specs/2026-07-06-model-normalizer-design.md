@@ -44,6 +44,8 @@ The re-encode is deterministic and effectively lossless for the game formats (re
 - **Tangents are not recomputed when binormals exist**: `FromRaw`'s `CalculateTangents` takes
   the fast `CalculateTangentsFromBinormalsForPart` path, which derives the (unstored) tangent
   and leaves the stored binormal untouched — so tangent recalc does not affect output bytes.
+  **Correction 2026-07-21:** the "when binormals exist" precondition is no longer universal over
+  the corpus — see R2 in §8.
 
 The residual precision risk is confined to the IEEE-754 half↔float conversion (R3) and the
 float32 radius / bounding-box math (R4); see §8.
@@ -181,6 +183,15 @@ replaced by this normalizer.
   discriminator. **Resolve in the plan.**
 - **R2 — tangent path.** Implement the binormals-present fast path first; the plan adds a corpus
   scan confirming all LoD0 meshes carry binormals (deferring the heavy `CalculateTangentsForMesh`).
+  **R2 FIRED, 2026-07-21.** The corpus scan that discharged this risk no longer holds: the furniture
+  `.mdl` parse fix let `bgcommon/hou/outdoor/general/0112/bgparts/gar_b0_m0112.mdl` reach the scan,
+  and its mesh 0 carries **no** binormals — so the deferred `CalculateTangentsForMesh` is now
+  reachable, and `normalizeModel` runs it silently rather than failing loud (a throw at that seam
+  would drop the file, which is worse). The scan
+  (`test/mdl/model/binormals-present.test.ts`) now asserts the exception set rather than unanimity.
+  Tracked in [`docs/backlog/2026-07-21-unported-tangent-recompute.md`](../../backlog/2026-07-21-unported-tangent-recompute.md);
+  read it before acting on this risk — it explains why the obvious fail-loud is the wrong close, and
+  that no golden oracle covers the one model that reaches it.
 - **R3 — Half↔Float bit-exactness.** Reuse 3a's exact widening; **assert no residual Half
   channels remain** in the v6 output so a `floatToHalf` mismatch cannot bite.
 - **R4 — float32 accumulation order.** Model/water/fog bbox must use `Math.fround` single

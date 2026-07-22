@@ -34,6 +34,11 @@ describe("mdl parse/serialize round-trip", () => {
     expect(serializeMdl(parseMdl(grown))).toEqual(grown);
   });
 
+  it("round-trips a model whose declared boneless-part boxes are absent (Mdl.cs:1003-1014)", () => {
+    const x = buildMinimalMdl(5, false, { count: 3, omitBoxes: true });
+    expect(serializeMdl(parseMdl(x))).toEqual(x);
+  });
+
   it("is exported from the package index", async () => {
     const idx = await import("../../src/index");
     expect(typeof idx.parseMdl).toBe("function");

@@ -57,6 +57,30 @@ describe("parseMdl structural walk", () => {
     expect(() => parseMdl(bytes)).toThrow(/overran modelDataSize/i);
   });
 
+  // Mdl.cs:987-1014. Some mods (the C# blames "certain penumbra MDLs, and very old TexTools MDLs")
+  // declare a non-zero FurniturePartBoundingBoxCount but store none of those boxes: LoD0's geometry
+  // begins right where the first box would. GetXivMdl detects that — VertexDataOffset == preBound —
+  // zeroes the boxes it "read" and seeks the stream back to preBound, so the phantom bytes are never
+  // consumed. Reproduced by real corpus models bgcommon/hou/{outdoor/general/0193/bgparts/
+  // gar_b0_m0193, indoor/general/0613/bgparts/fun_b0_m0613}.mdl.
+  it("does not consume boneless-part boxes when LoD0 geometry starts at preBound", () => {
+    const bytes = buildMinimalMdl(5, false, { count: 3, omitBoxes: true });
+    const mdl = parseMdl(bytes);
+    expect(mdl.modelData.furniturePartBoundingBoxCount).toBe(3);
+    // 4 fixed + 2 per-bone boxes only — the 3 declared furniture boxes are not in the file.
+    expect(mdl.sections.boundingBoxes).toHaveLength(192);
+    expect(mdl.sections.trailing).toHaveLength(0);
+    expect(mdl.geometry).toHaveLength(16);
+  });
+
+  it("still consumes boneless-part boxes when the file really carries them", () => {
+    const bytes = buildMinimalMdl(5, false, { count: 3, omitBoxes: false });
+    const mdl = parseMdl(bytes);
+    expect(mdl.sections.boundingBoxes).toHaveLength(192 + 96);
+    expect(mdl.sections.trailing).toHaveLength(0);
+    expect(mdl.geometry).toHaveLength(16);
+  });
+
   it("captures a trailing gap opaquely (modelDataSize > named sections)", () => {
     // Splice a real 48-byte gap between the named model-data sections and the geometry tail (the
     // fixture's own geometry is only 16 B, too small to grow modelDataSize into), and bump

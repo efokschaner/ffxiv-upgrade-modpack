@@ -185,6 +185,21 @@ as an earlier draft of this doc claimed. The real split, counted from the baseli
 Only 18 of the 97 (the `.mdl` gap's slice) trace to this change's companion item; the other 79 are
 pre-existing, unrelated gaps the corpus expansion happened to surface at the same time.
 
+**Superseded 2026-07-21c** (numbers above are the state at the time of this change; kept as the record
+of what it measured). The `bgparts` gap's *parse* half then shipped — `parseMdl` now reproduces
+`GetXivMdl`'s rewind for models declaring furniture bounding boxes they do not store
+(`Mdl.cs:1003-1014`) — and `raykie`'s baseline fell to **87**:
+
+| Count | Shape | Owner |
+|---|---|---|
+| 6 | `.mdl` `added` | the gap's *writer*-side remainder — `makeUncompressedMdl` still refuses real furniture bounding boxes (2 distinct models × their options) |
+| 3 | `.mdl` `mismatch` | v6-bump seam (`docs/backlog/2026-07-13-resave-mdl-v6-bump-seam.md`) — ours `ver=6` vs golden `ver=5`, identical otherwise; previously invisible because these models never reached our output |
+| 6 | manifest `added` | the index shift the still-missing models leave in their options' manifests |
+| 43 | manifest `mismatch` | `Name`/`Category` re-derivation & option file order (unchanged owners) |
+| 29 | `.tex` `mismatch` | the texture float-precision bulk (unchanged) |
+
+So the `.mdl` gap's slice is now 12 of 87 (was 18 of 97), and it acquired a second, distinct owner.
+
 **The decisive evidence for this change itself: the blessed `raykie` baseline contains zero `.meta`
 entries, and so does every other baseline in `test/corpus/.upgrade-baseline/`.** Our meta file-set
 matches the golden's on every corpus pack — none of the 97 diffs, nor any diff on any other corpus

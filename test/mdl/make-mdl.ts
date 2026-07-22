@@ -7,6 +7,17 @@ function filler(len: number, seed: number): Uint8Array {
   return new Uint8Array(len).map((_, i) => (i * 7 + seed) & 0xff);
 }
 
+/** Shapes the boneless-part ("furniture part") bounding-box block, whose declared count and actual
+ *  presence can disagree in the wild — see Mdl.cs:987-1014 and `parseMdl`'s rewind. `count` is
+ *  written to MdlModelData.FurniturePartBoundingBoxCount; `omitBoxes` builds the file WITHOUT the
+ *  32·count bytes those boxes would occupy (the broken-mod shape). Passing this option also makes
+ *  the builder write a truthful LoD0 VertexDataOffset — the absolute offset where geometry really
+ *  starts — which is what the rewind condition compares against. */
+export interface FurnitureBoxOptions {
+  count: number;
+  omitBoxes: boolean;
+}
+
 /**
  * A hand-built, structurally-complete runtime .mdl: 1 mesh, a 673-byte model-data block, 136-byte
  * vertexInfo, 16-byte geometry. All section counts are chosen so every section is present at a known
@@ -16,6 +27,7 @@ function filler(len: number, seed: number): Uint8Array {
 export function buildMinimalMdl(
   version: number,
   withExtraMeshes = false,
+  furniture?: FurnitureBoxOptions,
 ): Uint8Array {
   const md: MdlModelData = {
     radius: 1.5,
@@ -35,7 +47,7 @@ export function buildMinimalMdl(
     flags2: withExtraMeshes ? HAS_EXTRA_MESHES : 0,
     modelClipOutDistance: 0,
     shadowClipOutDistance: 0,
-    furniturePartBoundingBoxCount: 0,
+    furniturePartBoundingBoxCount: furniture?.count ?? 0,
     terrainShadowPartCount: 0,
     flags3: 0,
     bgChangeMaterialIndex: 0,
@@ -85,12 +97,30 @@ export function buildMinimalMdl(
     new Uint8Array(0), // 18 neckMorphTable (0)
     new Uint8Array(0), // 19 patch72 (0)
     new Uint8Array([0]), // 20 padding: PaddingSize=0 → 1 B
-    filler(32 * (4 + md.boneCount + md.furniturePartBoundingBoxCount), 9), // 21 boundingBoxes (192)
+    filler(
+      32 *
+        (4 +
+          md.boneCount +
+          (furniture?.omitBoxes ? 0 : md.furniturePartBoundingBoxCount)),
+      9,
+    ), // 21 boundingBoxes (192 + 32·count unless omitted)
   ];
-  const modelDataBlock = concatBytes(sections);
 
   const vertexInfo = filler(136 * md.meshCount, 10); // 136 B
   const geometry = filler(16, 11); // 16 B
+
+  if (furniture) {
+    // LoD0 VertexDataOffset (int32 @52 of the LoD0 header) is the absolute offset of the geometry
+    // tail. When the boxes are omitted it lands exactly on `preBound` — the position right after the
+    // fixed + per-bone boxes — which is the condition Mdl.cs:1005 tests for.
+    const blockLength = sections.reduce((n, s) => n + s.length, 0);
+    new DataView(lodHeaders.buffer, lodHeaders.byteOffset).setInt32(
+      52,
+      68 + vertexInfo.length + blockLength,
+      true,
+    );
+  }
+  const modelDataBlock = concatBytes(sections);
 
   const header = new Uint8Array(68);
   const hv = new DataView(header.buffer);

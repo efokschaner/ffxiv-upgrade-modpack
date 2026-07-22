@@ -71,8 +71,27 @@ export function parseMdl(bytes: Uint8Array, filePath = ""): XivMdl {
   // 20. padding: u8 PaddingSize (@+0), then that many bytes.
   const paddingSize = dv.getUint8(r.tell());
   const padding = r.readBytes(1 + paddingSize);
+  // 21. boundingBoxes: 4 fixed boxes, then one per bone, then one per boneless ("furniture") part
+  // (Mdl.cs:961-994). `preBound` (Mdl.cs:987) is the position after the fixed + per-bone boxes.
+  //
+  // Mdl.cs:1003-1014 — "Attempts to catch weird broken mod mdls. This has been known to occur with
+  // both certain penumbra MDLs, and very old TexTools MDLs." Such a file declares a non-zero
+  // FurniturePartBoundingBoxCount but stores none of those boxes: LoD0's vertex data begins exactly
+  // at preBound, where the first box would have been. GetXivMdl detects that, zeroes the boxes it
+  // just read and seeks the stream back to preBound — so those 32·count bytes are never consumed.
+  // We carry bounding boxes as opaque bytes rather than parsed Vector4s, so there is nothing to zero
+  // (the values only ever existed in the reference's in-memory model, never in the file); reproducing
+  // the seek means simply not slicing them. Real corpus models reaching this: bgcommon/hou/
+  // {outdoor/general/0193/bgparts/gar_b0_m0193, indoor/general/0613/bgparts/fun_b0_m0613}.mdl.
+  const preBound = r.tell() + 32 * (4 + md.boneCount);
+  const lod0VertexDataOffset = lodView.getInt32(52, true);
+  const bonelessBoxesAbsent =
+    md.furniturePartBoundingBoxCount !== 0 && lod0VertexDataOffset === preBound;
   const boundingBoxes = r.readBytes(
-    32 * (4 + md.boneCount + md.furniturePartBoundingBoxCount),
+    32 *
+      (4 +
+        md.boneCount +
+        (bonelessBoxesAbsent ? 0 : md.furniturePartBoundingBoxCount)),
   );
 
   const consumed = r.tell();
