@@ -1,6 +1,6 @@
-// Builds test/corpus/synthetic/npot-mask-a8.ttmp2 and npot-mask-dxt5.ttmp2: the mask side's
+// Builds test/corpus/synthetic/npot-mask-{a8,dxt5,dxt5-smooth}.ttmp2: the mask side's
 // oracle for the NPOT Bicubic pre-step (design spec
-// docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md §3.3/§5.1). Both packs share one
+// docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md §3.3/§5.1). All three packs share one
 // option carrying a colorset .mtrl (buildEwColorsetMaskMtrl) with a power-of-two 64x64 A8R8G8B8
 // normal (so IndexMaps generation is trivial and never touches the resize path — the `<64` guard,
 // Tex.cs:656-660, cannot fire) plus an NPOT 400x400 mask, so `upgradeMaskTex`'s NPOT branch
@@ -8,18 +8,25 @@
 // golden for the first time. RoundToPowerOfTwo(400) = 512 (IOUtil.cs:905-930; ties go to the
 // floor, not that this is a tie).
 //
-// The two packs differ ONLY in the mask's compression format, so a divergence is attributable
-// rather than merely observed:
+// The packs differ ONLY in the mask, so a divergence is attributable rather than merely observed.
+// -a8 vs -dxt5 varies the FORMAT and isolates the elided round-trip as the cause; -dxt5 vs
+// -dxt5-smooth varies the CONTENT and isolates what sets its magnitude:
 //   - npot-mask-a8:   mask is A8R8G8B8. Tex.GetCompressionFormat (Tex.cs:718-747) maps this to
 //     CompressionFormat.BGRA, so the MergePixelData round-trip we elide (see resizeToPow2ForMerge's
 //     doc comment) is LOSSLESS for this format. This pack isolates the Bicubic resample alone.
 //   - npot-mask-dxt5: mask is DXT5. MergePixelData re-encodes through nvtt here, which IS lossy —
 //     the round-trip §3.3 establishes nothing else in the corpus has ever exercised — compounded
 //     with our BCn decoder's own documented ±1 rounding divergence
-//     (docs/backlog/2026-07-16-bcn-decoder-rounding-divergence.md).
+//     (docs/backlog/2026-07-16-bcn-decoder-rounding-divergence.md). Content here is pseudo-random,
+//     the ADVERSARIAL end of the range.
+//   - npot-mask-dxt5-smooth: same DXT5 format, but hand-assembled blocks encoding a SMOOTH
+//     gradient — the realistic end, standing in for what a real gear mask looks like.
 // If -a8 is clean and -dxt5 is not, the round-trip (not the resampler) is the cause; if both
 // diverge equally, the resampler is implicated instead. One combined pack could not distinguish
-// the two. DXT5 block size for 400x400: (400/4)*(400/4)*16 = 160000 bytes, matching the real
+// the two. And -dxt5 vs -dxt5-smooth answers the follow-on question the first pair raises: how
+// much of the divergence is the format, and how much is the content? (Measured: max delta 116 vs
+// 9 — so it is overwhelmingly the content. See resizeToPow2ForMerge's doc comment.)
+// DXT5 block size for 400x400: (400/4)*(400/4)*16 = 160000 bytes, matching the real
 // v01_m0242b0001_n_c.tex payload exactly (160080 with its 80-byte header).
 //
 // .ttmp2 rather than .pmp deliberately: Club Cyberia Motorbike (the index path's golden, §3.2)

@@ -1,11 +1,10 @@
 // Builds test/corpus/upgrade-error/npot-tiny-mask.ttmp2 and npot-dxt3-mask.ttmp2: expected-failure
-// oracles for the two guards Tasks 1-2 ADDED to resizeToPow2ForMerge (src/upgrade/texture.ts),
+// oracles for the two guards resizeToPow2ForMerge (src/upgrade/texture.ts) ADDED,
 // standing in for the two ways Tex.MergePixelData (Tex.cs:637-706) can abort the whole upgrade that
 // our elided re-encode doesn't otherwise reproduce. Those guards are inferred from READING the C#,
 // not observed in any corpus pack failing — these two packs are how that inference gets checked
 // against the real oracle (design spec
-// docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md §3.3/§5.1, plan
-// docs/superpowers/plans/2026-07-21-npot-texture-resize.md Task 4). Both packs are the SAME shape as
+// docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md §3.4/§5.1/§6). Both packs are the SAME shape as
 // npot-mask-a8/-dxt5 (build-synthetic-npot-mask.ts) — same fictional e9999 material/normal/mask
 // gamePaths, same colorset .mtrl (buildEwColorsetMaskMtrl) so the mask path (upgradeMaskTex,
 // EndwalkerUpgrade.cs:2082-2098) actually runs, same power-of-two 64x64 A8R8G8B8 normal so
@@ -41,7 +40,7 @@
 // resizeToPow2ForMerge is WRONG — TexTools reaches this input by some path the trace missed, and we
 // would be refusing a modpack TexTools upgrades fine. That is treated as a successful outcome of
 // this pair of packs (it is exactly what they exist to check), not a bug in the packs themselves;
-// see the plan's Task 4 step 3.
+// see design spec §5.1's "Why 2 and 3 earn their keep".
 //
 // .ttmp2 rather than .pmp for the same reason as npot-mask-a8/-dxt5: keeps PMP's unported
 // FastValidateTexFile load-time fixup (docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md) off the

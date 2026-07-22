@@ -225,12 +225,19 @@ describe("updateEndwalkerHairTextures", () => {
   });
 
   it("resizes an NPOT normal to its nearest pow2 size before createHairMaps (EndwalkerUpgrade.cs:1195-1197, RoundToPowerOfTwo)", () => {
-    // 3 -> RoundToPowerOfTwo ties between floor=2 and ceil=4 (both distance 1) and resolves to
-    // the floor (IOUtil.cs:905-911: `max - x < x - min ? max : min`, false on a tie).
-    const nW = 3,
-      nH = 3;
-    const mW = 2,
-      mH = 2;
+    // 96 -> RoundToPowerOfTwo ties between floor=64 and ceil=128 (both distance 32) and resolves
+    // to the floor (IOUtil.cs:905-911: `max - x < x - min ? max : min`, false on a tie).
+    //
+    // 96 rather than a smaller tie like 3->2 deliberately, and it buys two things at once. The
+    // hair NPOT pre-step is a ResizeXivTx call, so it now runs MergePixelData's `<64` guard
+    // (Tex.cs:656-660) like the index/mask sites — a 3x3 fixture would round to 2x2 and throw,
+    // testing the guard instead of the resize. Landing exactly ON 64 also pins the guard's
+    // boundary: `w < 64` must be false at 64, so this test fails if that comparison is ever
+    // written as `<=`.
+    const nW = 96,
+      nH = 96;
+    const mW = 64,
+      mH = 64;
     const nRgba = new Uint8Array(nW * nH * 4).map((_, i) => (i * 7 + 3) & 0xff);
     const mRgba = new Uint8Array(mW * mH * 4).map(
       (_, i) => (i * 13 + 5) & 0xff,
@@ -239,16 +246,30 @@ describe("updateEndwalkerHairTextures", () => {
       a8r8g8b8Tex(nW, nH, nRgba),
       a8r8g8b8Tex(mW, mH, mRgba),
     );
-    const expN = resizeBicubic(nRgba, nW, nH, 2, 2);
+    const expN = resizeBicubic(nRgba, nW, nH, 64, 64);
     const expM = mRgba.slice();
-    createHairMaps(expN, expM, 2, 2);
+    createHairMaps(expN, expM, 64, 64);
     const parsedN = parseTex(res.normal);
-    expect(parsedN.width).toBe(2);
-    expect(parsedN.height).toBe(2);
+    expect(parsedN.width).toBe(64);
+    expect(parsedN.height).toBe(64);
     expect(Array.from(decodeToRgba(parsedN))).toEqual(Array.from(expN));
     expect(Array.from(decodeToRgba(parseTex(res.mask)))).toEqual(
       Array.from(expM),
     );
+  });
+
+  it("propagates the <64 guard from the hair NPOT pre-step (Tex.cs:656-660 via EndwalkerUpgrade.cs:1195-1202)", () => {
+    // The hair pre-step is a ResizeXivTx call like the index/mask sites, so it owns the same two
+    // MergePixelData failures. 3 -> 2 is under the guard, so TexTools aborts the pack here and so
+    // must we — before this was routed through resizeToPow2ForMerge we silently succeeded.
+    const nRgba = new Uint8Array(3 * 3 * 4);
+    const mRgba = new Uint8Array(2 * 2 * 4);
+    expect(() =>
+      updateEndwalkerHairTextures(
+        a8r8g8b8Tex(3, 3, nRgba),
+        a8r8g8b8Tex(2, 2, mRgba),
+      ),
+    ).toThrow(/64x64 Minimum Size/);
   });
 });
 

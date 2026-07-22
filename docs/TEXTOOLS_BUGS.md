@@ -336,12 +336,15 @@ and the loop moves on, leaving the untransformed **raw** copies already written 
 silently shipping a pixel-untransformed pair with the new Dawntrail paths.
 
 **Us:** reproduced verbatim — a bare `catch { continue; }` around the transform, so any transform
-failure (the modeled resize gap or an unmodeled corrupt-input failure) leaves the raw copies
-already written above untouched, matching the C#'s "log and move on" outcome.
+failure leaves the raw copies already written above untouched, matching the C#'s "log and move on"
+outcome. As of 2026-07-22 the only thing that reaches it is a genuinely corrupt or unparseable
+input: the modeled NPOT-resize gap this used to also swallow is gone, the resize being ported and
+its sentinel deleted (see `docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`).
 
-**Upstream fix:** catch only the specific expected condition (e.g. a resize-required signal), and
-either log-and-skip explicitly for that case or let a genuinely unexpected exception (a corrupt
-input) surface instead of silently swallowing it.
+**Upstream fix:** catch only the specific expected conditions — the two `MergePixelData` failures
+(`Tex.cs:656-660`, `:718-747`) are the ones a resize can legitimately raise here — and either
+log-and-skip explicitly for those or let a genuinely unexpected exception (a corrupt input) surface
+instead of silently swallowing it.
 
 ---
 

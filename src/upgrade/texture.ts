@@ -68,10 +68,15 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
 ]);
 
 /**
- * Port of Tex.ResizeXivTx (Tex.cs:413-420) as used by the two NPOT pre-steps,
- * EndwalkerUpgrade.cs:1096-1099 (CreateIndexFromNormal) and :2086-2089 (UpgradeMaskTex).
+ * Port of Tex.ResizeXivTx (Tex.cs:413-420) as used by all THREE of its NPOT pre-step call sites:
+ * EndwalkerUpgrade.cs:1096-1099 (CreateIndexFromNormal), :2086-2089 (UpgradeMaskTex), and
+ * :1195-1202 (UpdateEndwalkerHairTextures, both the normal and the mask).
  * Already-pow2 input is returned untouched — C# only calls ResizeXivTx inside the NPOT branch,
  * so nothing here runs for a pow2 texture.
+ *
+ * Note :1205's ResizeImages is NOT a fourth site: it calls TextureHelpers.ResizeImage directly
+ * (TextureHelpers.cs:336-337), with no MergePixelData behind it, so neither guard below applies to
+ * it and the hair path resizes to the common max size with a bare resizeBicubic instead.
  *
  * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
  * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt; the caller
@@ -90,8 +95,8 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  *     reads only alpha and quantizes it into rows of 17 (TextureHelpers.cs:222-260), which
  *     absorbs the round-trip error.
  *   - Lossy source, non-quantizing consumer (the MASK path): KNOWN DIVERGENT. upgradeGearMask
- *     has no quantization to absorb the error, so it reaches the output bytes. Two synthetics
- *     bracket the range, and the spread is the finding — the magnitude tracks how well the
+ *     has no quantization to absorb the error, so it reaches the output bytes. Two of the three
+ *     synthetics bracket the range, and the spread is the finding — the magnitude tracks how well the
  *     RESAMPLED image fits BC's per-block endpoint model, which is a property of the content,
  *     not of the format:
  *       `npot-mask-dxt5-smooth.ttmp2` (smooth gradient, i.e. what a real gear mask looks like):
@@ -105,13 +110,22 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * That last case is an ACCEPTED, OPERATOR-ADJUDICATED divergence (2026-07-22), not an oversight:
  * we emit a correctly-upgraded mask that skipped one lossy recompression cycle rather than
  * refusing the file. It is deliberately NOT confirmed by a DIVERGENCE_RULES entry, and that was
- * considered rather than skipped: a tolerance rule needs a PRINCIPLED bound, the way the global
- * `.tex` +/-1 rule rests on BCn decoder rounding being provably <= 1. There is no such bound here
- * — 9 and 116 are just what two fixtures happened to produce — so any threshold would be
- * calibrated to an authored pack, and since DIVERGENCE_RULES predicates apply corpus-wide it
- * would start absolving unrelated real `.tex` regressions. The three npot-mask-* packs are its
- * ratchet instead, and docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md tracks the real
- * fix. See the design spec §3.2/§3.3/§6.
+ * considered rather than skipped. A tolerance rule needs a bound tight enough to still reject
+ * everything else, the way the global `.tex` +/-1 rule rests on BCn decoder rounding being
+ * provably <= 1. There is no such bound here: the error is a function of how well the RESAMPLED
+ * image fits BC's endpoint model, so it is a property of the content. All three npot-mask-* packs
+ * deliberately share ONE mask gamePath, so a path-scoped predicate could not tell the smooth case
+ * (<= 9) from the adversarial one (<= 116) — the only rule expressible over them is <= 116, i.e.
+ * ~45% of an 8-bit channel's range, which would confirm essentially any output and is not a
+ * confirmation in AGENTS.md's sense. So the packs' ratchet baselines carry it instead, and
+ * docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md tracks the real fix. See the design spec
+ * §3.2/§3.3/§6.
+ *
+ * READ THIS BEFORE TRUSTING THE RATCHET: those two DXT5 baseline entries do NOT assert the
+ * measured deltas. Ratchet identity is `kind|gamePath#index:status` (test/helpers/upgrade-baseline.ts),
+ * which excludes the bytes and keeps `status` at "mismatch" for any content difference at all — so
+ * they RECORD a measurement, they do not police it. `npot-mask-a8` (which carries no payload entry,
+ * i.e. must stay byte-exact) is the live regression guard for the resampler and upgradeGearMask.
  *
  * NOT elided: the two ways MergePixelData FAILS. Both abort the whole upgrade in C#
  * (EndwalkerUpgrade.cs:1842 has no try/catch; ModpackUpgrader.cs:133-141 rethrows wrapped), so
@@ -217,29 +231,33 @@ export function updateEndwalkerHairTextures(
   const nTex = parseTex(normalTexBytes);
   const mTex = parseTex(maskTexBytes);
 
-  let nRgba = decodeToRgba(nTex);
-  let nW = nTex.width;
-  let nH = nTex.height;
-  if (!isPowerOfTwo(nW) || !isPowerOfTwo(nH)) {
-    const tW = roundToPowerOfTwo(nW);
-    const tH = roundToPowerOfTwo(nH);
-    nRgba = resizeBicubic(nRgba, nW, nH, tW, tH);
-    nW = tW;
-    nH = tH;
-  }
+  // The NPOT pre-steps (:1195-1202) are ResizeXivTx calls, so they carry MergePixelData's two
+  // failures exactly as the index/mask sites do — route them through the same helper rather than
+  // open-coding the resize, which would silently succeed where TexTools aborts. Behaviour-neutral
+  // for a pow2 input: resizeToPow2ForMerge returns it untouched without reaching either guard.
+  const n = resizeToPow2ForMerge(
+    decodeToRgba(nTex),
+    nTex.width,
+    nTex.height,
+    nTex.format,
+  );
+  let nRgba = n.rgba;
+  const nW = n.width;
+  const nH = n.height;
 
-  let mRgba = decodeToRgba(mTex);
-  let mW = mTex.width;
-  let mH = mTex.height;
-  if (!isPowerOfTwo(mW) || !isPowerOfTwo(mH)) {
-    const tW = roundToPowerOfTwo(mW);
-    const tH = roundToPowerOfTwo(mH);
-    mRgba = resizeBicubic(mRgba, mW, mH, tW, tH);
-    mW = tW;
-    mH = tH;
-  }
+  const m = resizeToPow2ForMerge(
+    decodeToRgba(mTex),
+    mTex.width,
+    mTex.height,
+    mTex.format,
+  );
+  let mRgba = m.rgba;
+  const mW = m.width;
+  const mH = m.height;
 
   // ResizeImages (TextureHelpers.cs:331-342): resize both to the max of the two (now pow2) sizes.
+  // NOT a ResizeXivTx call — it goes straight to ResizeImage (:336-337) with no MergePixelData
+  // behind it, so the two guards deliberately do NOT apply here.
   const maxW = Math.max(nW, mW);
   const maxH = Math.max(nH, mH);
   nRgba = resizeBicubic(nRgba, nW, nH, maxW, maxH);

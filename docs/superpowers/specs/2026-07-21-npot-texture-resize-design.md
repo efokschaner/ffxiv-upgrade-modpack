@@ -191,6 +191,15 @@ reproduced as plain `Error`s that propagate and fail the pack:
 Both guards fire **only when a resize actually happened** — `MergePixelData` is reached only from
 inside `ResizeXivTx`, so a texture that was already power-of-two never touches either.
 
+**One sub-behaviour here has no oracle, unlike the two guards themselves.** The `<64` guard's
+**BC7 exemption** rests on reading `Tex.cs:650-653` plus a hand-derived unit test; no pack proves it.
+It is a guard *suppression*, so if it is wrong the failure mode is the branch's own bad class: we
+succeed where TexTools aborts. Closing it costs one more pack — a 40×40 BC7 mask in the ordinary
+`synthetic` root, expected to upgrade rather than error — with one caveat that argues for doing it
+deliberately rather than casually: BC7 takes `DDS.TexConvRawPixels`, which shells out to `texconv.exe`,
+so a failure there could be environmental rather than a real refusal, and the result would need
+reading with that in mind. Recorded rather than silently assumed.
+
 ### 3.5 Why a plain `Error` (pack abort) is the faithful outcome
 
 The reachable call site is `EndwalkerUpgrade.cs:1842` (inside `UpgradeRemainingTextures`), which has

@@ -4,8 +4,8 @@
 ([`docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`](../superpowers/specs/2026-07-21-npot-texture-resize-design.md)).
 
 **Severity:** an **accepted, operator-adjudicated divergence** (2026-07-22), not a silent bug — the
-site documents it and two synthetic packs ratchet it. But it is a real byte-parity hole, and the only
-one on this branch that a `DIVERGENCE_RULES` entry cannot confirm.
+site documents it and three synthetic packs ratchet it. But it is a real byte-parity hole, and the
+only divergence in the repo carried by a ratchet rather than a `DIVERGENCE_RULES` confirmation.
 
 ## What diverges
 
@@ -49,19 +49,43 @@ expected difference and rejects everything else. No such rule is constructible h
 
 A **tolerance** rule was considered explicitly (operator question, 2026-07-22: "ensure the pixel RGBAs
 are within one or two of the golden like we have done in other validators") and rejected on the
-numbers. ±1/±2 does not survive contact with either fixture — smooth content already reaches 9. And a
-±9 rule would be worse than no rule: the existing global `.tex` ±1 tolerance is legitimate because it
-rests on a **provable** bound (BCn decoder rounding is ≤1 by construction), whereas 9 and 116 are
-merely what two authored fixtures happened to produce. Since `DIVERGENCE_RULES` predicates apply
-corpus-wide, a fixture-calibrated threshold would begin silently absolving unrelated, genuine `.tex`
-regressions on real packs — trading a documented gap for a blind spot.
+numbers. ±1/±2 does not survive contact with either fixture — smooth content already reaches 9.
+
+The reason a *larger* threshold is also wrong is specific, and worth stating precisely because an
+earlier draft of this file got it wrong. It is **not** that `DIVERGENCE_RULES` predicates are
+corpus-wide and would absolve real packs: `DivergenceRule.predicate` is
+`(gamePath: string) => boolean` (`test/helpers/upgrade-compare.ts`), and all three fixtures sit at the
+fictional `chara/equipment/e9999/...`, so a path-scoped rule would match these packs and nothing else.
+The real objection is that **all three fixtures deliberately share one mask gamePath**, so a
+path-scoped predicate cannot distinguish the smooth case from the adversarial one. The only bound
+expressible over them is ≤116 — roughly 45% of an 8-bit channel's range — which would confirm
+essentially any output and is not a confirmation in AGENTS.md's sense at all.
+
+That also names the route to a real rule, if one is ever wanted: **give the three packs distinct mask
+gamePaths**, then a smooth-content rule bounded at ≤9 becomes both expressible and meaningful, and the
+adversarial pack keeps its own looser record.
 
 A **shape** rule fares no better: confirming "these bytes differ exactly as a BC round-trip would
 explain" requires performing the BC round-trip.
 
-So this divergence is pinned by its two ratchet baselines plus the documentation at the site
-(`resizeToPow2ForMerge`'s doc comment) and here — deliberately, and with the operator's call on
-record. It is the one place on this branch where a baseline carries a divergence a rule cannot.
+## What the ratchet does and does not assert
+
+Do not over-read the baselines. Ratchet identity is `kind|gamePath#index:status`
+(`test/helpers/upgrade-baseline.ts`) — it excludes `detail` and the payload bytes, and `status` stays
+`"mismatch"` for *any* content difference, including a length change. So the two DXT5 packs' baseline
+entries **record that a divergence exists at that path; they do not police its size.** A future change
+that emitted garbage for a BC-sourced NPOT mask would still pass them.
+
+The live regression guard is **`npot-mask-a8`**, which carries no payload entry at all and so must
+stay byte-exact — it covers the Bicubic resampler and `upgradeGearMask` on this path. The measured
+±9/±116 figures above are a record of a measurement, not an invariant under test. Restoring that
+assertion is the second reason to want the distinct-gamePaths change described above.
+
+So this divergence is carried by its three ratchet baselines plus the documentation at the site
+(`resizeToPow2ForMerge`'s doc comment), the `DIVERGENCE_RULES` header (which points here so an audit
+starting from the registry does not conclude that list is exhaustive), and this file — deliberately,
+and with the operator's call on record. It is the one place in the repo where a baseline carries a
+divergence a rule cannot.
 
 ## What would close it
 
@@ -71,9 +95,17 @@ work with its own oracle problem, and it would also retire the related ±1 BCn *
 done as a matched pair. Note `MergePixelData`'s BC7 arm is different again — it shells out to
 `DDS.TexConvRawPixels` (`Tex.cs:650-653`, i.e. texconv.exe), which is not portable to a browser at all.
 
+**Loose end on the same BC7 arm.** Because it bypasses `MergePixelData`'s TexImpNet path, it also
+bypasses the `<64` size guard — which is why `resizeToPow2ForMerge` exempts BC7 from that guard. That
+exemption is the one guard-related behaviour on this branch with **no oracle**: it comes from reading
+`Tex.cs:650-653` and a hand-derived unit test, not from a pack. It is a guard *suppression*, so if the
+reading is wrong we succeed where TexTools aborts. A 40×40 BC7 mask pack in the ordinary `synthetic`
+root would settle it — see the design spec §3.4 for the texconv caveat that makes the result need
+careful reading.
+
 ## Reachability
 
-**Zero corpus packs reach it.** No real pack has an NPOT mask; the two `npot-mask-*` packs are
+**Zero corpus packs reach it.** No real pack has an NPOT mask; the three `npot-mask-*` packs are
 authored fixtures. Per `docs/BACKLOG.md`'s "deploying changes the probability term" note, an NPOT
 hand-authored mask is plausible enough for a public upload endpoint that this should not be treated as
 extinct — but it is not a live defect in anything we have seen.

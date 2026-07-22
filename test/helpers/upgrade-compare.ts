@@ -7,6 +7,14 @@ import { A8R8G8B8 } from "../../src/tex/types";
 // NOT a blanket tolerance: `confirm` must be tight enough that any OTHER difference still
 // fails. Files matched by no rule must be byte-identical to the golden. Starts empty; the
 // transform sub-projects add rules with cited reasons as generated files land.
+//
+// ONE ACCEPTED DIVERGENCE DELIBERATELY LIVES OUTSIDE THIS REGISTRY, so an audit that starts here
+// does not conclude this list is exhaustive: the NPOT mask path's elided MergePixelData BC
+// re-encode (src/upgrade/texture.ts · resizeToPow2ForMerge). It is carried by the npot-mask-*
+// packs' ratchet baselines instead, because its error is content-dependent and the only bound
+// expressible over those fixtures would be so loose it would confirm anything — the reasoning is
+// at that site and in docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md. If a future BC
+// encoder lands, or the fixtures gain distinct gamePaths, it should become a real rule here.
 export interface DivergenceRule {
   reason: string;
   predicate: (gamePath: string) => boolean;
