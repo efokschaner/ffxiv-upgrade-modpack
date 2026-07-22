@@ -4,6 +4,7 @@ import {
   type ModpackFile,
   type ModpackOption,
 } from "../../src/model/modpack";
+import { buildCanonicalTexHeader } from "../../src/tex/header";
 import {
   createHairMaps,
   createIndexTexture,
@@ -15,6 +16,7 @@ import {
   encodeUncompressedTex,
   parseTex,
 } from "../../src/tex/tex";
+import { BC7, DXT3 } from "../../src/tex/types";
 import {
   createIndexFromNormal,
   TextureResizeUnsupported,
@@ -26,6 +28,7 @@ import {
   EUpgradeTextureUsage,
   type UpgradeInfo,
 } from "../../src/upgrade/upgrade-info";
+import { concatBytes } from "../../src/util/binary";
 
 function a8r8g8b8Tex(
   width: number,
@@ -33,6 +36,20 @@ function a8r8g8b8Tex(
   rgba: Uint8Array,
 ): Uint8Array {
   return encodeUncompressedTex(rgba, width, height, { mips: false });
+}
+
+/** A .tex of `format` whose mip 0 is `blocks`, for exercising format/size branches that
+ *  `a8r8g8b8Tex` cannot reach. Block sizes are the caller's responsibility. */
+function rawTex(
+  format: number,
+  width: number,
+  height: number,
+  blocks: Uint8Array,
+): Uint8Array {
+  return concatBytes([
+    buildCanonicalTexHeader(format, width, height, 1),
+    blocks,
+  ]);
 }
 
 describe("createIndexFromNormal", () => {
@@ -52,11 +69,60 @@ describe("createIndexFromNormal", () => {
     expect(Array.from(got)).toEqual(Array.from(expected));
   });
 
-  it("throws TextureResizeUnsupported for a non-power-of-two normal", () => {
-    const rgba = new Uint8Array(3 * 2 * 4);
-    expect(() => createIndexFromNormal(a8r8g8b8Tex(3, 2, rgba))).toThrow(
-      TextureResizeUnsupported,
+  it("resizes an NPOT normal to its nearest pow2 size (EndwalkerUpgrade.cs:1096-1099)", () => {
+    // 400 -> RoundToPowerOfTwo picks 512 (|512-400| = 112 < |400-256| = 144), IOUtil.cs:905-930.
+    const w = 400,
+      h = 400;
+    const rgba = new Uint8Array(w * h * 4).map((_, i) => (i * 7 + 3) & 0xff);
+    const out = createIndexFromNormal(a8r8g8b8Tex(w, h, rgba));
+    const parsed = parseTex(out);
+    expect(parsed.width).toBe(512);
+    expect(parsed.height).toBe(512);
+    const expected = createIndexTexture(
+      resizeBicubic(rgba, w, h, 512, 512),
+      512,
+      512,
     );
+    expect(Array.from(decodeToRgba(parsed))).toEqual(Array.from(expected));
+  });
+
+  it("leaves an already-pow2 normal unresized (TextureHelpers.cs:368 early return)", () => {
+    const w = 64,
+      h = 64;
+    const rgba = new Uint8Array(w * h * 4).map((_, i) => (i * 5 + 1) & 0xff);
+    const out = createIndexFromNormal(a8r8g8b8Tex(w, h, rgba));
+    const parsed = parseTex(out);
+    expect(parsed.width).toBe(w);
+    expect(parsed.height).toBe(h);
+    expect(Array.from(decodeToRgba(parsed))).toEqual(
+      Array.from(createIndexTexture(rgba, w, h)),
+    );
+  });
+
+  it("throws when a rounded dimension is under 64 (Tex.cs:656-660)", () => {
+    // 40 -> RoundToPowerOfTwo picks 32 (|40-32| = 8 < |64-40| = 24), so MergePixelData's
+    // TexImpNet size guard fires on the POST-resize dims.
+    const rgba = new Uint8Array(40 * 40 * 4);
+    expect(() => createIndexFromNormal(a8r8g8b8Tex(40, 40, rgba))).toThrow(
+      /64x64 Minimum Size/,
+    );
+  });
+
+  it("throws on a format GetCompressionFormat rejects (Tex.cs:718-747)", () => {
+    // DXT3 decodes fine for us but is absent from GetCompressionFormat's switch, so TexTools
+    // aborts the whole upgrade rather than resizing it.
+    const blocks = new Uint8Array((400 / 4) * (400 / 4) * 16);
+    expect(() => createIndexFromNormal(rawTex(DXT3, 400, 400, blocks))).toThrow(
+      /unsupported/i,
+    );
+  });
+
+  it("exempts BC7 from the <64 guard (Tex.cs:650-653 takes the TexConv path)", () => {
+    // Mode-6 blocks: byte0 = 0x40 is six zero bits then the mode bit, LSB-first.
+    const blocks = new Uint8Array((40 / 4) * (40 / 4) * 16);
+    for (let i = 0; i < blocks.length; i += 16) blocks[i] = 0x40;
+    const out = createIndexFromNormal(rawTex(BC7, 40, 40, blocks));
+    expect(parseTex(out).width).toBe(32);
   });
 });
 
@@ -248,7 +314,40 @@ describe("upgradeRemainingTextures", () => {
     );
   });
 
-  it("skips (no throw) a target whose normal is NPOT", () => {
+  it("generates the index tex for an NPOT normal instead of skipping it (EndwalkerUpgrade.cs:1096-1099)", () => {
+    // Was "skips (no throw) a target whose normal is NPOT": before this change, any NPOT normal
+    // threw the swallowed TextureResizeUnsupported sentinel and the target was silently dropped
+    // (the class-1 bug this task fixes -- see Club Cyberia Motorbike.ttmp2's missing _n_c_id.tex).
+    // createIndexFromNormal now resizes NPOT sources instead, so a large-enough NPOT normal
+    // generates the index tex normally.
+    const normalPath = "chara/x/tex/npot_n.tex";
+    const indexPath = "chara/x/tex/npot_id.tex";
+    const w = 400,
+      h = 400;
+    const rgba = new Uint8Array(w * h * 4).map((_, i) => (i * 3 + 9) & 0xff);
+    const o = option([{ gamePath: normalPath, data: a8r8g8b8Tex(w, h, rgba) }]);
+    const targets = new Map<string, UpgradeInfo>([
+      [
+        indexPath,
+        {
+          usage: EUpgradeTextureUsage.IndexMaps,
+          files: { normal: normalPath, index: indexPath },
+        },
+      ],
+    ]);
+    upgradeRemainingTextures(o, targets);
+    const idxFile = o.files.get(indexPath);
+    expect(idxFile).toBeDefined();
+    expect(parseTex(idxFile!.data!).width).toBe(512);
+  });
+
+  it("propagates a too-small NPOT normal instead of swallowing it (Tex.cs:656-660)", () => {
+    // 3x2 rounds to 2x2 (roundToPowerOfTwo ties to the floor, IOUtil.cs:905-930), below
+    // MergePixelData's 64x64 size guard. That's a plain Error, not TextureResizeUnsupported, so
+    // the dispatch catch here (still keyed on TextureResizeUnsupported only until upgradeMaskTex
+    // loses its own sentinel throw in a later task) does NOT swallow it -- matching TexTools,
+    // where EndwalkerUpgrade.cs:1842 has no try/catch around CreateIndexFromNormal and the
+    // exception aborts the whole upgrade (ModpackUpgrader.cs:133-141 rethrows wrapped).
     const normalPath = "chara/x/tex/npot_n.tex";
     const indexPath = "chara/x/tex/npot_id.tex";
     const o = option([
@@ -266,7 +365,9 @@ describe("upgradeRemainingTextures", () => {
         },
       ],
     ]);
-    expect(() => upgradeRemainingTextures(o, targets)).not.toThrow();
+    expect(() => upgradeRemainingTextures(o, targets)).toThrow(
+      /64x64 Minimum Size/,
+    );
     expect(o.files.has(indexPath)).toBe(false);
   });
 });

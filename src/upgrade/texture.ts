@@ -17,6 +17,7 @@ import {
 } from "../tex/helpers";
 import { resizeBicubic } from "../tex/imagesharp/resample";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
+import { A8R8G8B8, BC4, BC5, BC7, DXT1, DXT5 } from "../tex/types";
 import { resolveFile } from "./upgrade";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
@@ -52,19 +53,86 @@ function roundToPowerOfTwo(x: number): number {
   return max - x < x - min ? max : min;
 }
 
-/** Port of CreateIndexFromNormal (EndwalkerUpgrade.cs:1083). Decodes the normal, builds
- *  the index map from its alpha, re-encodes A8R8G8B8 with mips. NPOT normals need a
- *  Bicubic resize (:1098) we don't port -> throw the resize sentinel. */
-export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
-  const tex = parseTex(normalTexBytes);
-  if (!isPowerOfTwo(tex.width) || !isPowerOfTwo(tex.height)) {
-    throw new TextureResizeUnsupported(
-      `index: NPOT normal ${tex.width}x${tex.height} needs a resize (EndwalkerUpgrade.cs:1098)`,
+// Tex.GetCompressionFormat (Tex.cs:718-747): the only XivTexFormats MergePixelData can re-encode.
+// Anything else hits its `default:` and throws InvalidDataException. Our decodeToRgba
+// (src/tex/decode.ts) accepts strictly more than this (DXT3, A4R4G4B4, A1R5G5B5, L8, A8,
+// A16B16G16R16F), so this set is load-bearing rather than incidental.
+const MERGE_SUPPORTED_FORMATS = new Set<number>([
+  DXT1,
+  DXT5,
+  BC4,
+  BC5,
+  BC7,
+  A8R8G8B8,
+]);
+
+/**
+ * Port of Tex.ResizeXivTx (Tex.cs:413-420) as used by the two NPOT pre-steps,
+ * EndwalkerUpgrade.cs:1096-1099 (CreateIndexFromNormal) and :2086-2089 (UpgradeMaskTex).
+ * Already-pow2 input is returned untouched — C# only calls ResizeXivTx inside the NPOT branch,
+ * so nothing here runs for a pow2 texture.
+ *
+ * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
+ * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt; the caller
+ * then immediately decodes them again. We have no nvtt-compatible encoder, so we hand the
+ * resized RGBA straight on. Measured against the ConsoleTools /upgrade golden for
+ * `Club Cyberia Motorbike.ttmp2` (a 400x400 DXT5 normal), our output is BYTE-IDENTICAL in all
+ * 12 options — CreateIndexTexture reads only the normal's alpha and quantizes it into rows of
+ * 17 (TextureHelpers.cs:222-260), which absorbs the round-trip error. See the design spec §3.2.
+ * The mask path (upgradeMaskTex) has NO such quantization and, at time of writing, no corpus
+ * pack reaching it — see §3.3 and the synthetic packs built for it.
+ *
+ * NOT elided: the two ways MergePixelData FAILS. Both abort the whole upgrade in C#
+ * (EndwalkerUpgrade.cs:1842 has no try/catch; ModpackUpgrader.cs:133-141 rethrows wrapped), so
+ * both are plain Errors here. They are checked before the resize rather than after purely to
+ * avoid wasted work — either way the call throws.
+ */
+function resizeToPow2ForMerge(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  format: number,
+): { rgba: Uint8Array; width: number; height: number } {
+  if (isPowerOfTwo(width) && isPowerOfTwo(height)) {
+    return { rgba, width, height };
+  }
+  // RoundToPowerOfTwo is never equal to an NPOT input, so ResizeImage's equal-dims early return
+  // (TextureHelpers.cs:368) is unreachable from here.
+  const w = roundToPowerOfTwo(width);
+  const h = roundToPowerOfTwo(height);
+  if (!MERGE_SUPPORTED_FORMATS.has(format)) {
+    throw new Error(
+      `tex resize: format ${format} is currently unsupported by MergePixelData (Tex.cs:718-747)`,
     );
   }
-  const normalRgba = decodeToRgba(tex);
-  const indexRgba = createIndexTexture(normalRgba, tex.width, tex.height);
-  return encodeUncompressedTex(indexRgba, tex.width, tex.height, {
+  // Tex.cs:656-660, gated to the non-BC7 arm: BC7 takes the DDS.TexConvRawPixels path
+  // (Tex.cs:650-653), which carries no size guard. The dims tested are the POST-resize ones —
+  // ResizeXivTx overwrites tex.Width/Height (Tex.cs:417-418) before calling MergePixelData.
+  if (format !== BC7 && (w < 64 || h < 64)) {
+    throw new Error(
+      `tex resize: ${width}x${height} rounds to ${w}x${h} — Image is too small for DDS Compressor. (64x64 Minimum Size) (Tex.cs:656-660)`,
+    );
+  }
+  return {
+    rgba: resizeBicubic(rgba, width, height, w, h),
+    width: w,
+    height: h,
+  };
+}
+
+/** Port of CreateIndexFromNormal (EndwalkerUpgrade.cs:1083-1113). Decodes the normal,
+ *  NPOT-normalizes it (:1096-1099, see resizeToPow2ForMerge), builds the index map from its
+ *  alpha, re-encodes A8R8G8B8 with mips. */
+export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
+  const tex = parseTex(normalTexBytes);
+  const src = resizeToPow2ForMerge(
+    decodeToRgba(tex),
+    tex.width,
+    tex.height,
+    tex.format,
+  );
+  const indexRgba = createIndexTexture(src.rgba, src.width, src.height);
+  return encodeUncompressedTex(indexRgba, src.width, src.height, {
     mips: true,
   });
 }
