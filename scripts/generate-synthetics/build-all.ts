@@ -24,3 +24,4 @@ import "./build-synthetic-imc-demihuman";
 import "./build-synthetic-pmp-group-type";
 import "./build-synthetic-index-fallback";
 import "./build-synthetic-npot-mask";
+import "./build-synthetic-npot-guards";

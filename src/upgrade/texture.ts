@@ -17,7 +17,15 @@ import {
 } from "../tex/helpers";
 import { resizeBicubic } from "../tex/imagesharp/resample";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
-import { A8R8G8B8, BC4, BC5, BC7, DXT1, DXT5 } from "../tex/types";
+import {
+  A8R8G8B8,
+  BC4,
+  BC5,
+  BC7,
+  DXT1,
+  DXT5,
+  texFormatName,
+} from "../tex/types";
 import { resolveFile } from "./upgrade";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
@@ -123,17 +131,26 @@ function resizeToPow2ForMerge(
   // (TextureHelpers.cs:368) is unreachable from here.
   const w = roundToPowerOfTwo(width);
   const h = roundToPowerOfTwo(height);
+  // Message is Tex.GetCompressionFormat's `default:` arm, verbatim (Tex.cs:743 —
+  // `"Format is currently unsupported: " + format.ToString()`), not decorated: the expected-failure
+  // harness (assertMatchedUpgradeFailure, test/helpers/corpus-upgrade.ts) asserts our thrown message
+  // is a literal substring of ConsoleTools' captured trace, so it must match the C# text exactly
+  // rather than merely mention it. resize-context (${width}x${height} -> ${w}x${h}, this format
+  // number) stays in this comment instead. Pinned by test/corpus/upgrade-error/npot-dxt3-mask.ttmp2.
   if (!MERGE_SUPPORTED_FORMATS.has(format)) {
     throw new Error(
-      `tex resize: format ${format} is currently unsupported by MergePixelData (Tex.cs:718-747)`,
+      `Format is currently unsupported: ${texFormatName(format)}`,
     );
   }
   // Tex.cs:656-660, gated to the non-BC7 arm: BC7 takes the DDS.TexConvRawPixels path
   // (Tex.cs:650-653), which carries no size guard. The dims tested are the POST-resize ones —
   // ResizeXivTx overwrites tex.Width/Height (Tex.cs:417-418) before calling MergePixelData.
+  // Message is Tex.cs:659's InvalidDataException text, verbatim, for the same substring-match
+  // reason as the format guard above (resize context: ${width}x${height} -> ${w}x${h}). Pinned by
+  // test/corpus/upgrade-error/npot-tiny-mask.ttmp2.
   if (format !== BC7 && (w < 64 || h < 64)) {
     throw new Error(
-      `tex resize: ${width}x${height} rounds to ${w}x${h} — Image is too small for DDS Compressor. (64x64 Minimum Size) (Tex.cs:656-660)`,
+      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
     );
   }
   return {

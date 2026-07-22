@@ -73,6 +73,34 @@ export function minDimension(format: number): number {
   return isCompressed(format) ? 4 : 1;
 }
 
+// Enum member names exactly as C#'s default `enum.ToString()` renders XivTexFormat (member name,
+// since every value above matches a declared member — XivTexFormat.cs:25-47). Used ONLY to
+// reproduce the literal text of Tex.GetCompressionFormat's error verbatim
+// (Tex.cs:743, `"Format is currently unsupported: " + format.ToString()`), not for any decoding.
+const FORMAT_NAMES: Record<number, string> = {
+  [L8]: "L8",
+  [A8]: "A8",
+  [A4R4G4B4]: "A4R4G4B4",
+  [A1R5G5B5]: "A1R5G5B5",
+  [A8R8G8B8]: "A8R8G8B8",
+  [X8R8G8B8]: "X8R8G8B8",
+  [R32F]: "R32F",
+  [G16R16F]: "G16R16F",
+  [G32R32F]: "G32R32F",
+  [A16B16G16R16F]: "A16B16G16R16F",
+  [A32B32G32R32F]: "A32B32G32R32F",
+  [DXT1]: "DXT1",
+  [DXT3]: "DXT3",
+  [DXT5]: "DXT5",
+  [D16]: "D16",
+  [BC4]: "BC4",
+  [BC5]: "BC5",
+  [BC7]: "BC7",
+};
+export function texFormatName(format: number): string {
+  return FORMAT_NAMES[format] ?? String(format);
+}
+
 /** Full mip-chain byte sizes down to 1x1. Port of DDS.CalculateMipMapSizes (DDS.cs:380). */
 export function texMipSizes(
   format: number,
