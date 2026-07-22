@@ -21,13 +21,6 @@ import { A8R8G8B8, BC4, BC5, BC7, DXT1, DXT5 } from "../tex/types";
 import { resolveFile } from "./upgrade";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
-/** Thrown when a source texture would require an ImageSharp resize that this path does not yet
- *  port: NPOT normalize for `createIndexFromNormal` / `upgradeMaskTex` (the hair path below now
- *  ports its own NPOT + common-size resizes via `resizeBicubic`). Caught+skipped at the dispatch
- *  boundary so one un-generatable target degrades to a ratchet-baselined diff rather than crashing
- *  the whole pack. See spec §4.4/§5. */
-export class TextureResizeUnsupported extends Error {}
-
 function isPowerOfTwo(n: number): boolean {
   return n > 0 && (n & (n - 1)) === 0;
 }
@@ -137,22 +130,29 @@ export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
   });
 }
 
-/** Port of UpgradeMaskTex (EndwalkerUpgrade.cs:2082). Decodes the mask, applies the
- *  gear-mask channel remap, re-encodes A8R8G8B8 with mips. NPOT masks resize (:2088) ->
- *  throw the resize sentinel. */
+/** Port of UpgradeMaskTex (EndwalkerUpgrade.cs:2082-2098). Decodes the mask, NPOT-normalizes it
+ *  (:2086-2089, see resizeToPow2ForMerge), applies the gear-mask channel remap, re-encodes
+ *  A8R8G8B8 with mips.
+ *
+ *  UNVERIFIED AGAINST TEXTOOLS at the time this was written, unlike the index path: the elided
+ *  MergePixelData round-trip (see resizeToPow2ForMerge) is proven byte-neutral only where
+ *  CreateIndexTexture's row-of-17 quantization absorbs it. upgradeGearMask has no such
+ *  quantization, so a lossy source format's round-trip error would reach the output bytes here.
+ *  The npot-mask-* synthetic packs (scripts/generate-synthetics/) exist to close that gap with a
+ *  real ConsoleTools golden — see the design spec §3.3/§5.1. */
 export function upgradeMaskTex(
   maskTexBytes: Uint8Array,
   legacy: boolean,
 ): Uint8Array {
   const tex = parseTex(maskTexBytes);
-  if (!isPowerOfTwo(tex.width) || !isPowerOfTwo(tex.height)) {
-    throw new TextureResizeUnsupported(
-      `gearmask: NPOT mask ${tex.width}x${tex.height} needs a resize (EndwalkerUpgrade.cs:2088)`,
-    );
-  }
-  const rgba = decodeToRgba(tex);
-  upgradeGearMask(rgba, tex.width, tex.height, legacy);
-  return encodeUncompressedTex(rgba, tex.width, tex.height, { mips: true });
+  const src = resizeToPow2ForMerge(
+    decodeToRgba(tex),
+    tex.width,
+    tex.height,
+    tex.format,
+  );
+  upgradeGearMask(src.rgba, src.width, src.height, legacy);
+  return encodeUncompressedTex(src.rgba, src.width, src.height, { mips: true });
 }
 
 /** Port of UpdateEndwalkerHairTextures (EndwalkerUpgrade.cs:1175). Decodes normal + mask, resizes
@@ -271,81 +271,80 @@ export function writeGeneratedMtrl(
 }
 
 /** Port of UpgradeRemainingTextures (EndwalkerUpgrade.cs:1832). For each target, generate
- *  its texture(s) only if the option locally holds the required source(s); a resize-
- *  unsupported target is skipped (baselined diff), everything else stays fail-loud. */
+ *  its texture(s) only if the option locally holds the required source(s); everything else
+ *  (including a resize failure) stays fail-loud. */
 export function upgradeRemainingTextures(
   option: ModpackOption,
   targets: Map<string, UpgradeInfo>,
 ): void {
+  // No try/catch here, matching EndwalkerUpgrade.cs:1842 — UpgradeRemainingTextures does not
+  // guard its CreateIndexFromNormal call, so a failure propagates to ModpackUpgrader.cs:133-141
+  // and aborts the whole upgrade. (The swallow-and-Trace catch at EndwalkerUpgrade.cs:637-645 is
+  // a DIFFERENT call site, gated behind `files == null` at :627 — unreachable on this path.)
   for (const info of targets.values()) {
-    try {
-      if (info.usage === EUpgradeTextureUsage.IndexMaps) {
-        const normal = findFile(option, info.files.normal!);
-        if (!normal) continue;
-        // C# gates on files.ContainsKey (:1840) — true for an absent-on-disk file — then
-        // CreateIndexFromNormal's ResolveFile returns null (:1087) and the caller `continue`s
-        // (:1843). So a key-present, byte-absent normal is SKIPPED, not an error.
-        const src = resolveFile(normal);
-        if (!src) continue;
-        const idx = createIndexFromNormal(src.bytes);
-        writeGeneratedTex(option, info.files.index!, idx, normal);
-      } else if (info.usage === EUpgradeTextureUsage.HairMaps) {
-        const normal = findFile(option, info.files.normal!);
-        const mask = findFile(option, info.files.mask!);
-        if (normal && mask) {
-          // Both keys present (C#'s ContainsKey guard, :1852). UpdateEndwalkerHairTextures IS a
-          // ResolveFile caller for both (:1181-1182) — an absent OR undecodable normal/mask
-          // resolves to null there too — and then null-checks explicitly and throws
-          // FileNotFoundException (:1184-1188) rather than dereferencing. Mirror both halves:
-          // resolveFile (so a corrupt entry is treated the same as an absent one, per ResolveFile's
-          // own catch), then an explicit throw on null.
-          const normalBytes = resolveFile(normal);
-          const maskBytes = resolveFile(mask);
-          if (!normalBytes || !maskBytes) {
-            throw new Error(
-              `hair: normal/mask did not resolve (absent or undecodable) — unable to properly resolve existing Hair Normal/Mask texture (EndwalkerUpgrade.cs:1184-1188): ${info.files.normal} / ${info.files.mask}`,
-            );
-          }
-          const res = updateEndwalkerHairTextures(
-            normalBytes.bytes,
-            maskBytes.bytes,
-          );
-          writeGeneratedTex(option, info.files.normal!, res.normal, normal);
-          writeGeneratedTex(option, info.files.mask!, res.mask, mask);
-        } else if (normal || mask) {
+    if (info.usage === EUpgradeTextureUsage.IndexMaps) {
+      const normal = findFile(option, info.files.normal!);
+      if (!normal) continue;
+      // C# gates on files.ContainsKey (:1840) — true for an absent-on-disk file — then
+      // CreateIndexFromNormal's ResolveFile returns null (:1087) and the caller `continue`s
+      // (:1843). So a key-present, byte-absent normal is SKIPPED, not an error.
+      const src = resolveFile(normal);
+      if (!src) continue;
+      const idx = createIndexFromNormal(src.bytes);
+      writeGeneratedTex(option, info.files.index!, idx, normal);
+    } else if (info.usage === EUpgradeTextureUsage.HairMaps) {
+      const normal = findFile(option, info.files.normal!);
+      const mask = findFile(option, info.files.mask!);
+      if (normal && mask) {
+        // Both keys present (C#'s ContainsKey guard, :1852). UpdateEndwalkerHairTextures IS a
+        // ResolveFile caller for both (:1181-1182) — an absent OR undecodable normal/mask
+        // resolves to null there too — and then null-checks explicitly and throws
+        // FileNotFoundException (:1184-1188) rather than dereferencing. Mirror both halves:
+        // resolveFile (so a corrupt entry is treated the same as an absent one, per ResolveFile's
+        // own catch), then an explicit throw on null.
+        const normalBytes = resolveFile(normal);
+        const maskBytes = resolveFile(mask);
+        if (!normalBytes || !maskBytes) {
           throw new Error(
-            `hair: Normal and Mask must be in the same option (EndwalkerUpgrade.cs:1862): ${info.files.normal} / ${info.files.mask}`,
+            `hair: normal/mask did not resolve (absent or undecodable) — unable to properly resolve existing Hair Normal/Mask texture (EndwalkerUpgrade.cs:1184-1188): ${info.files.normal} / ${info.files.mask}`,
           );
         }
-      } else if (
-        info.usage === EUpgradeTextureUsage.GearMaskNew ||
-        info.usage === EUpgradeTextureUsage.GearMaskLegacy
-      ) {
-        const old = findFile(option, info.files.mask_old!);
-        if (!old) continue;
-        const legacy = info.usage === EUpgradeTextureUsage.GearMaskLegacy;
-        // QUIRK (upstream bug — docs/TEXTOOLS_BUGS.md §1): the two branches disagree on null.
-        // Both call ResolveFile (:1869 / :1882), so both use resolveFile here — an absent OR
-        // undecodable mask_old resolves to null in either branch. But they disagree on what
-        // happens next: GearMaskLegacy null-checks the result and skips cleanly (:1882-1887);
-        // GearMaskNew passes it STRAIGHT INTO UpgradeMaskTex (:1870), which throws an
-        // ArgumentNullException on null (XivTex.cs:96, `new MemoryStream(texData)`) — its own
-        // null check (:1871) comes one line too late. So an absent/corrupt mask_old is a no-op for
-        // Legacy and fails the pack for New. Reproduce, do not fix: skip for Legacy, throw explicitly
-        // for New (standing in for the C# ArgumentNullException — same "kill the pack" outcome).
-        const src = resolveFile(old);
-        if (!src) {
-          if (legacy) continue;
-          throw new Error(
-            `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 throws ArgumentNullException on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${info.files.mask_old}`,
-          );
-        }
-        const data = upgradeMaskTex(src.bytes, legacy);
-        writeGeneratedTex(option, info.files.mask_new!, data, old);
+        const res = updateEndwalkerHairTextures(
+          normalBytes.bytes,
+          maskBytes.bytes,
+        );
+        writeGeneratedTex(option, info.files.normal!, res.normal, normal);
+        writeGeneratedTex(option, info.files.mask!, res.mask, mask);
+      } else if (normal || mask) {
+        throw new Error(
+          `hair: Normal and Mask must be in the same option (EndwalkerUpgrade.cs:1862): ${info.files.normal} / ${info.files.mask}`,
+        );
       }
-    } catch (e) {
-      if (e instanceof TextureResizeUnsupported) continue; // localized baselined gap
-      throw e;
+    } else if (
+      info.usage === EUpgradeTextureUsage.GearMaskNew ||
+      info.usage === EUpgradeTextureUsage.GearMaskLegacy
+    ) {
+      const old = findFile(option, info.files.mask_old!);
+      if (!old) continue;
+      const legacy = info.usage === EUpgradeTextureUsage.GearMaskLegacy;
+      // QUIRK (upstream bug — docs/TEXTOOLS_BUGS.md §1): the two branches disagree on null.
+      // Both call ResolveFile (:1869 / :1882), so both use resolveFile here — an absent OR
+      // undecodable mask_old resolves to null in either branch. But they disagree on what
+      // happens next: GearMaskLegacy null-checks the result and skips cleanly (:1882-1887);
+      // GearMaskNew passes it STRAIGHT INTO UpgradeMaskTex (:1870), which throws an
+      // ArgumentNullException on null (XivTex.cs:96, `new MemoryStream(texData)`) — its own
+      // null check (:1871) comes one line too late. So an absent/corrupt mask_old is a no-op for
+      // Legacy and fails the pack for New. Reproduce, do not fix: skip for Legacy, throw explicitly
+      // for New (standing in for the C# ArgumentNullException — same "kill the pack" outcome).
+      const src = resolveFile(old);
+      if (!src) {
+        if (legacy) continue;
+        throw new Error(
+          `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 throws ArgumentNullException on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${info.files.mask_old}`,
+        );
+      }
+      const data = upgradeMaskTex(src.bytes, legacy);
+      writeGeneratedTex(option, info.files.mask_new!, data, old);
     }
   }
 }

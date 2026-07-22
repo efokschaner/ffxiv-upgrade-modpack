@@ -330,11 +330,10 @@ zeros without altering any real model bytes.
 After copying a rescued hair/tail/ear texture pair to its canonical Dx11 destinations
 (`:1478-1492`), the function calls `UpdateEndwalkerHairTextures` inside a bare
 `catch (Exception ex) { Trace.WriteLine(ex); continue; }` (`:1495-1502`). That catch-all masks
-not just the one condition we model explicitly (a resize/resample the C# would need — our
-`TextureResizeUnsupported`) but **any** exception the transform can throw, including a genuinely
-corrupt or malformed loose texture that fails to parse. Either way the failure is logged (or, in
-our port, simply dropped) and the loop moves on, leaving the untransformed **raw** copies already
-written in place — silently shipping a pixel-untransformed pair with the new Dawntrail paths.
+**any** exception the transform can throw, including a genuinely corrupt or malformed loose
+texture that fails to parse. Either way the failure is logged (or, in our port, simply dropped)
+and the loop moves on, leaving the untransformed **raw** copies already written in place —
+silently shipping a pixel-untransformed pair with the new Dawntrail paths.
 
 **Us:** reproduced verbatim — a bare `catch { continue; }` around the transform, so any transform
 failure (the modeled resize gap or an unmodeled corrupt-input failure) leaves the raw copies

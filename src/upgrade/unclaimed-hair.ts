@@ -198,8 +198,8 @@ export function updateUnclaimedHairTextures(
       } catch {
         // Bare catch-all, faithfully reproducing EndwalkerUpgrade.cs:1498-1501
         // (`catch (Exception ex) { Trace.WriteLine(ex); continue; }`): it swallows ANY transform
-        // failure — both our modeled resize gap (TextureResizeUnsupported) and any genuine
-        // corrupt-input parse failure — leaving the raw copies already written above in place.
+        // failure — a genuinely corrupt or malformed input as much as any other — leaving the raw
+        // copies already written above in place.
         // See docs/TEXTOOLS_BUGS.md #12 for why this catch-all is itself a TexTools defect we
         // reproduce rather than narrow.
         continue;

@@ -19,7 +19,6 @@ import {
 import { BC7, DXT3 } from "../../src/tex/types";
 import {
   createIndexFromNormal,
-  TextureResizeUnsupported,
   updateEndwalkerHairTextures,
   upgradeMaskTex,
   upgradeRemainingTextures,
@@ -139,11 +138,39 @@ describe("upgradeMaskTex", () => {
     upgradeGearMask(expected, w, h, false);
     expect(Array.from(got)).toEqual(Array.from(expected));
   });
-  it("throws TextureResizeUnsupported for a NPOT mask", () => {
-    const rgba = new Uint8Array(6 * 4 * 4);
-    expect(() => upgradeMaskTex(a8r8g8b8Tex(6, 4, rgba), true)).toThrow(
-      TextureResizeUnsupported,
+
+  it("resizes an NPOT mask to its nearest pow2 size (EndwalkerUpgrade.cs:2086-2089)", () => {
+    const w = 400,
+      h = 400;
+    const rgba = new Uint8Array(w * h * 4).map((_, i) => (i * 11 + 5) & 0xff);
+    const out = upgradeMaskTex(a8r8g8b8Tex(w, h, rgba), true);
+    const parsed = parseTex(out);
+    expect(parsed.width).toBe(512);
+    expect(parsed.height).toBe(512);
+    const expected = resizeBicubic(rgba, w, h, 512, 512);
+    upgradeGearMask(expected, 512, 512, true);
+    expect(Array.from(decodeToRgba(parsed))).toEqual(Array.from(expected));
+  });
+
+  it("throws when a rounded dimension is under 64 (Tex.cs:656-660)", () => {
+    const rgba = new Uint8Array(40 * 40 * 4);
+    expect(() => upgradeMaskTex(a8r8g8b8Tex(40, 40, rgba), false)).toThrow(
+      /64x64 Minimum Size/,
     );
+  });
+
+  it("throws on a format GetCompressionFormat rejects (Tex.cs:718-747)", () => {
+    const blocks = new Uint8Array((400 / 4) * (400 / 4) * 16);
+    expect(() => upgradeMaskTex(rawTex(DXT3, 400, 400, blocks), false)).toThrow(
+      /unsupported/i,
+    );
+  });
+
+  it("exempts BC7 from the <64 guard (Tex.cs:650-653 takes the TexConv path)", () => {
+    const blocks = new Uint8Array((40 / 4) * (40 / 4) * 16);
+    for (let i = 0; i < blocks.length; i += 16) blocks[i] = 0x40;
+    const out = upgradeMaskTex(rawTex(BC7, 40, 40, blocks), false);
+    expect(parseTex(out).width).toBe(32);
   });
 });
 
@@ -316,8 +343,8 @@ describe("upgradeRemainingTextures", () => {
 
   it("generates the index tex for an NPOT normal instead of skipping it (EndwalkerUpgrade.cs:1096-1099)", () => {
     // Was "skips (no throw) a target whose normal is NPOT": before this change, any NPOT normal
-    // threw the swallowed TextureResizeUnsupported sentinel and the target was silently dropped
-    // (the class-1 bug this task fixes -- see Club Cyberia Motorbike.ttmp2's missing _n_c_id.tex).
+    // threw a swallowed resize-unsupported sentinel and the target was silently dropped (the
+    // class-1 bug this task fixes -- see Club Cyberia Motorbike.ttmp2's missing _n_c_id.tex).
     // createIndexFromNormal now resizes NPOT sources instead, so a large-enough NPOT normal
     // generates the index tex normally.
     const normalPath = "chara/x/tex/npot_n.tex";
@@ -343,11 +370,10 @@ describe("upgradeRemainingTextures", () => {
 
   it("propagates a too-small NPOT normal instead of swallowing it (Tex.cs:656-660)", () => {
     // 3x2 rounds to 2x2 (roundToPowerOfTwo ties to the floor, IOUtil.cs:905-930), below
-    // MergePixelData's 64x64 size guard. That's a plain Error, not TextureResizeUnsupported, so
-    // the dispatch catch here (still keyed on TextureResizeUnsupported only until upgradeMaskTex
-    // loses its own sentinel throw in a later task) does NOT swallow it -- matching TexTools,
-    // where EndwalkerUpgrade.cs:1842 has no try/catch around CreateIndexFromNormal and the
-    // exception aborts the whole upgrade (ModpackUpgrader.cs:133-141 rethrows wrapped).
+    // MergePixelData's 64x64 size guard. upgradeRemainingTextures has no try/catch around this
+    // call -- matching TexTools, where EndwalkerUpgrade.cs:1842 has no try/catch around
+    // CreateIndexFromNormal either -- so the error propagates and aborts the whole upgrade
+    // (ModpackUpgrader.cs:133-141 rethrows wrapped).
     const normalPath = "chara/x/tex/npot_n.tex";
     const indexPath = "chara/x/tex/npot_id.tex";
     const o = option([
