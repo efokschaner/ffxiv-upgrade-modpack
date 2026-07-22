@@ -20,5 +20,14 @@ Extinct in the wild (0 v1 metas across 1431 real corpus `.meta`s), so deferred b
 guard in `deserialize.ts` rather than ported. Re-run the probe script (still present, not wired into
 the harness) to re-verify against a fresh ConsoleTools build if this is ever picked up.
 
+**Blast radius widened 2026-07-21.** `deserializeMeta` used to be reached only from `metadataRound`
+(the `/upgrade` transform), so this guard only failed an `/upgrade` run. The housing-`.meta`-drop
+change (`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md`) moved a `deserializeMeta` call
+into `makeTtmpLoadFix` (`src/upgrade/load-fixes.ts`), which runs at **load** — the seam shared by
+`/upgrade` *and* `/resave`. A TTMP pack carrying a v1 `.meta` now fails to **load** at all, so this
+throw also breaks `/resave` and any other asset round-trip over that pack, not just `/upgrade`. Still
+extinct in the corpus (0 of 1431), so this is a note on reach, not a re-ranking — fail-loud remains the
+right posture until the item above is picked up.
+
 `src/meta/serialize.ts` always writes version `2` on output regardless of input version
 (`ItemMetadata.Serialize`, `ItemMetadata.cs:509`), so this is purely a read-side gap.

@@ -201,6 +201,11 @@ const IS_META = /\.meta$/;
  * Metadata round (round 5). Replaces the opaque .meta pass-through: reconstruct each .meta the
  * way ConsoleTools /upgrade does (base-game seed + mod deltas). See
  * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
+ *
+ * A `.meta` that yields no manipulations never reaches here at all — it is dropped at the LOAD
+ * seam (`makeTtmpLoadFix`, src/upgrade/load-fixes.ts), mirroring WizardData.cs:685-691 where
+ * TexTools deserializes such a meta straight into `data.Manipulations` and never adds it to
+ * `data.Files` in the first place.
  */
 function metadataRound(option: ModpackOption): void {
   function fixOne(path: string, f: ModpackFile): ModpackFile {
@@ -211,7 +216,8 @@ function metadataRound(option: ModpackOption): void {
     // than a zip member (PMP.cs:891-895), so a PMP `Files` entry naming a `.meta` is not something
     // TexTools or Penumbra produce. Fail loud.
     const { bytes, type } = requireBytes(f, path);
-    const out = serializeMeta(reconstructMeta(deserializeMeta(bytes), path));
+    const meta = deserializeMeta(bytes); // ItemMetadata.Deserialize, ItemMetadata.cs:869-921
+    const out = serializeMeta(reconstructMeta(meta, path));
     return restore(f, out, type ?? SqPackType.Standard);
   }
   const next = new Map<string, ModpackFile>();

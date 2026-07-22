@@ -318,7 +318,12 @@ corpus pack is) changes, and that change is the divergence being fixed — pinne
   to v6, still on the **load** side — moving it from `applyLoadFixes` to the reader keeps it there, so
   `/resave` is unchanged. Not addressed here.
 - **`.meta` / `.rgsp`**: untouched — our TTMP port keeps `.meta` as a file (reconstructed later by
-  `metadataRound`); that seam is separate and out of scope. The `ui/`-`.tex` exclusion is preserved
+  `metadataRound`); that seam is separate and out of scope. (Superseded 2026-07-21 for `.meta` — see
+  [`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md`](2026-07-21-housing-meta-drop-design.md):
+  `makeTtmpLoadFix` now drops a manipulation-less `.meta` at this load seam, though it still keeps a
+  manipulation-bearing `.meta` as a file for `metadataRound` to reconstruct, as described here.
+  `.rgsp` remains untouched on read — see `docs/backlog/2026-07-21-ttmp-load-rgsp-passthrough.md`.)
+  The `ui/`-`.tex` exclusion is preserved
   verbatim from the retired `texFixRound` (sibling `MakeFileStorageInformationDictionary`,
   `TTMP.cs:1367`) to keep the relocation behaviour-neutral. This is a **known, latent divergence from
   FromWizardGroup**, not a faithful port of it: `WizardData.cs:701`'s own gate has no `ui/` check, so

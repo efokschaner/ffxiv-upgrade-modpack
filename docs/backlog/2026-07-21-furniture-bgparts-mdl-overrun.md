@@ -2,10 +2,18 @@
 
 **Filed:** 2026-07-21, from the minion/mount/furniture corpus expansion.
 
-**Severity:** hard `parseMdl` throw. Loud, so honest, but it breaks asset round-trips (and, once the
-housing-meta gap above is fixed, would break the model round of furniture `/upgrade`). Companion to
-`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md` — together, "bgcommon
-housing/furniture support".
+**Severity:** **rubric class 1 — silent wrong output**, not a loud crash. The companion housing-meta
+gap shipped 2026-07-21
+([`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md`](../superpowers/specs/2026-07-21-housing-meta-drop-design.md);
+its backlog item was deleted per this repo's shipped-item convention), so furniture packs now reach the
+model round of `/upgrade` — and there, `makeTtmpLoadFix`'s per-file `catch { return null }`
+(`src/upgrade/load-fixes.ts`, a faithful port of `WizardData.cs:721-727`'s `FixOldModel` catch) swallows
+this throw same as any other model-normalize failure. The pack still upgrades and still produces
+output, but silently **missing the affected models** — no error is surfaced to the user, and TexTools'
+own golden keeps all of them. This item still breaks asset round-trips (`corpus-mdl`/`corpus-geometry`
+harnesses, which call `parseMdl` directly and do see the throw), so it is loud *there*; the class change
+is specifically about the `/upgrade` product path. Re-ranked to backlog items 1-2 (silent wrong output)
+in `docs/BACKLOG.md`, alongside the mount `_id.tex` gap.
 
 ## Symptom
 
@@ -17,9 +25,16 @@ mdl: model-data walk overran modelDataSize (consumed 1601 > 641)   bgcommon/hou/
 mdl: model-data walk overran modelDataSize (consumed 1118 > 1022)  bgcommon/hou/outdoor/general/0193/bgparts/gar_b0_m0193.mdl  (Crystal-Striking-Goddess)
 ```
 
-It breaks the `corpus-mdl` and `corpus-geometry` asset round-trips for those packs, plus two
-corpus-derived unit tests that iterate every model (`test/mdl/model/binormals-present.test.ts`,
-`test/mdl/model/serialize.test.ts`) — all four hit `gar_b0_m0193.mdl` / `fun_b0_m0613.mdl`.
+Direct callers of `parseMdl` (`corpus-mdl`/`corpus-geometry` asset round-trips, plus two
+corpus-derived unit tests that iterate every model —
+`test/mdl/model/binormals-present.test.ts`, `test/mdl/model/serialize.test.ts`) see the throw and fail
+loudly — all four hit `gar_b0_m0193.mdl` / `fun_b0_m0613.mdl`. But in the `/upgrade` product path the
+throw is caught and swallowed at the load-fix seam (see Severity above): `raykie`'s corpus run confirms
+this — its golden carries 9 `bgcommon/hou/**/bgparts/*.mdl` entries that our output now silently omits
+(the `9 × .mdl added` + `9 × manifest added` slice of the pack's 97 baselined diffs; the remaining 29
+`.tex` mismatches and 50 manifest mismatches are unrelated pre-existing gaps — see
+`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md` §4 for the full decomposition and
+citations).
 
 ## Not "all furniture" — a structure-specific subset
 

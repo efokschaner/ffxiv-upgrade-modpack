@@ -20,9 +20,14 @@ export interface LoadFixGates {
 
 /**
  * Per-file load fix applied at the read seam, BEFORE the reader's last-write-wins collapse `.set`,
- * reproducing WizardData.FromWizardGroup's fix-then-collapse order (WizardData.cs:700-737). Returns
- * the fixed file, or `null` to DROP it (the C# `catch { continue }`) — so a dropped later duplicate
- * FullPath never overwrites an earlier survivor.
+ * reproducing WizardData.FromWizardGroup's fix-then-collapse order (WizardData.cs:685-738, the whole
+ * body guarded by `if (File.Exists(finfo.RealPath))`). Returns the fixed file, or `null` to DROP it
+ * (the C# `catch { continue }` in the tex/mdl `else` branch, :699-738 — or, for `.meta`, the implicit
+ * skip where the `:685-698` branch diverts the file into `data.Manipulations` and never adds it to
+ * `data.Files` at all) — so a dropped later duplicate FullPath never overwrites an earlier survivor. A
+ * `LoadFix` may therefore implement either the tex/mdl fix-or-drop branch (:699-738) or the
+ * `.meta`/`.rgsp` branch (:685-698) — see `makeTtmpLoadFix` (`../upgrade/load-fixes.ts`) for the
+ * concrete implementation of both.
  */
 export type LoadFix = (
   gamePath: string,
