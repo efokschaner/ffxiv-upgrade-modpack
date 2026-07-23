@@ -161,8 +161,13 @@ The generated `_id.tex` is byte-identical in **all three**, independently re-con
 
 Two things fall out, and both mattered more than the headline number:
 
-1. **The resampler is exonerated.** `-a8` runs the identical Bicubic resize and is exact, so every
-   byte of divergence in the DXT5 packs is the elided round-trip, not our resampler port.
+1. **The resampler is exonerated — and re-checked directly when the 116 drew suspicion.** `-a8` runs
+   the identical Bicubic resize on the same adversarial content and is exact. And when a reviewer
+   asked whether a max delta of 116 might be our *resampler* diverging rather than the round-trip, it
+   was isolated head-on: wrap our decode of the `-dxt5` source as an A8R8G8B8 mask (both sides
+   lossless, so only the resampler differs) and run it through the oracle → **max delta 1 on 19 of
+   1398176 bytes**, the documented float64-vs-float32 tolerance. So the resampler contributes ≤1 and
+   the elided round-trip contributes the rest; no resampler fix would move the 116, only a BC encoder.
 2. **Content, not format, sets the magnitude.** The error tracks how well the *resampled* image fits
    BC's per-block endpoint model. 9 for smooth content (what a real gear mask looks like), 116 for
    noise (where every post-resample 4×4 block has huge internal variance). Real masks sit near the

@@ -119,6 +119,13 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  *     We cannot bound this in general: computing the error for a given input IS the
  *     nvtt-compatible encode we do not have.
  *
+ *   THE 116 IS THE BC RE-ENCODE, NOT OUR RESAMPLER — isolated and measured (2026-07-22). Wrapping
+ *   our decode of the -dxt5 source as an A8R8G8B8 mask (so both sides are lossless and differ ONLY
+ *   by the resampler) diffs from the golden by max delta 1 on 19 of 1398176 bytes — the documented
+ *   float64-vs-float32 tolerance. So the resampler contributes <=1 and the elided re-encode
+ *   contributes the rest; there is no resampler fix that would move this, only a BC encoder. (See
+ *   docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md "Measured cost".)
+ *
  * That last case is an ACCEPTED, OPERATOR-ADJUDICATED divergence (2026-07-22), not an oversight:
  * we emit a correctly-upgraded mask that skipped one lossy recompression cycle rather than
  * refusing the file. It is deliberately NOT confirmed by a DIVERGENCE_RULES entry, and that was

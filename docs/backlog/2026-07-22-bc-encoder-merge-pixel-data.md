@@ -41,8 +41,25 @@ like the other two. So an NPOT hair normal or mask in a BC format diverges by th
 amount. No synthetic covers it (no corpus pack has an NPOT hair texture at all), so unlike the mask
 path it is divergent *and* unmeasured. Treat the numbers above as covering both in kind.
 
-**The spread between the last two rows is the real finding.** The magnitude tracks how well the
-*resampled* image fits BC's per-block endpoint model — a property of the content, not the format.
+**The 116 is the BC re-encode, not our resampler — measured, not assumed.** The obvious worry about
+a max delta that large is that our Bicubic resampler is diverging from TexTools'. It is not. Two
+independent isolations:
+
+- `npot-mask-a8` uses the *same* pseudo-random adversarial content as `-dxt5`, in a lossless format,
+  so it is a direct resampler-vs-resampler test — and it is byte-identical (0 / 1398176).
+- Sharper: wrap *our decode of the `-dxt5` source* as an A8R8G8B8 mask and run it through the oracle.
+  Both sides then start from identical pixels and differ *only* by the resampler (no BC on either
+  side). Result: **max delta 1, on 19 of 1398176 bytes** — the documented float64-vs-float32
+  resampler tolerance, nothing more. (Throwaway measurement, 2026-07-22; the pack is not kept.)
+
+So of the `-dxt5` max delta 116, the resampler contributes ≤1 and the elided BC re-encode contributes
+the rest. There is no resampler code fix that would move it — closing it needs a BC *encoder*. (The
+±1 float tolerance is separately closable via `Math.fround` emulation of ImageSharp's `Vector4`, but
+that is cosmetic, already covered by the global `.tex` ±1 rule, and would not touch this divergence.)
+
+**The spread between the smooth and adversarial rows is the other half of the finding.** The magnitude
+tracks how well the *resampled* image fits BC's per-block endpoint model — a property of the content,
+not the format.
 Smooth content lands at max delta 9 with a hard-decaying histogram
 (370243@1, 195057@2, 83411@3, 26258@4, 4556@5, 1274@6, 33@7, 4@9). Pseudo-random content, where every
 4×4 block has huge post-resample variance, blows out to 116.
