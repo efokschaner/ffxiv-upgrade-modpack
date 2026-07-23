@@ -1,10 +1,12 @@
-// Port of Mdl.MakeUncompressedMdlFile (Mdl.cs:2488-3964). Common chara path
-// only: LoD0, weighted or unweighted, no shapes / neck-morph / extra-meshes / furniture
-// boxes -- those fail loud (throw) rather than emit a wrong file. Byte-parity against a
-// TexTools golden is the next task's job; this stage's gate is re-parseability and
-// structural self-consistency (the combinedDataBlockSize self-check below, and
-// parseMdl's own section-length walk, both surface an offset/size mistake loudly rather
-// than silently corrupting the file).
+// Port of Mdl.MakeUncompressedMdlFile (Mdl.cs:2488-3964). LoD0 only, weighted or
+// unweighted (including the unweighted multi-part "furniture"/boneless-part shape with
+// its per-part bounding boxes). Extra meshes, neck-morph tables, and Shadow+Fog mesh
+// ordering still fail loud (throw) rather than emit a wrong file. Byte-parity against a
+// TexTools golden holds on the corpus except the MDL version byte (the v6-bump seam,
+// docs/backlog/2026-07-13-resave-mdl-v6-bump-seam.md); this stage's own gate is
+// re-parseability and structural self-consistency (the combinedDataBlockSize self-check
+// below, and parseMdl's own section-length walk, both surface an offset/size mistake
+// loudly rather than silently corrupting the file).
 //
 // Split, don't blend: this module only assembles blocks; it reuses the already-ported
 // codecs for declarations/encode/bonesets/bbox/model-data rather than re-deriving them.
@@ -111,13 +113,11 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   );
 
   const weighted = hasWeights(model);
+  // Mdl.cs:2551-2553: parts are written for any weighted or multi-part model; a model that
+  // is unweighted AND uses parts carries the boneless "furniture-part" bounding boxes
+  // (bgcommon/hou/.../bgparts/*.mdl), whose per-part box count feeds furniturePartBoundingBoxCount.
   const useParts = weighted || model.meshGroups.some((g) => g.parts.length > 1);
   const useFurnitureBBs = useParts && !weighted;
-  if (useFurnitureBBs) {
-    throw new Error(
-      "mdl: furniture bounding boxes (unweighted multi-part model) are out of scope for makeUncompressedMdl",
-    );
-  }
 
   const meshCount = model.meshGroups.length;
   const decl = buildDeclarations(model);
@@ -274,7 +274,10 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
 
   let flags2 = ogMd.flags2;
   flags2 &= ~HAS_EXTRA_MESHES; // ttModel.HasExtraMeshes is always false in this scope
-  flags2 &= ~HAS_BONELESS_PARTS; // useFurnitureBBs is always false (else we threw above)
+  // Mdl.cs:2978-2984: HasBonelessParts follows the RECOMPUTED useFurnitureBBs (an unweighted
+  // multi-part model), independent of the source flag the meshPartDataBlock gates on below.
+  if (useFurnitureBBs) flags2 |= HAS_BONELESS_PARTS;
+  else flags2 &= ~HAS_BONELESS_PARTS;
 
   // Mdl.cs:3000-3018: CrestChange/MaterialChange flags follow whether any mesh group has
   // that MeshType. Our internal tag (0-3) can never equal those types (see the const doc
@@ -301,7 +304,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     flags2,
     modelClipOutDistance: 0,
     shadowClipOutDistance: 0,
-    furniturePartBoundingBoxCount: 0,
+    furniturePartBoundingBoxCount: useFurnitureBBs ? meshPartCountTotal : 0,
     terrainShadowPartCount: ogMd.terrainShadowPartCount,
     flags3,
     bgChangeMaterialIndex,
@@ -374,12 +377,13 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     let currentBoneOffset = 0;
     let boundingBoxIdx = 0;
     let globalPartIdx = 0;
-    // Mdl.cs:3314-3318: on the SOURCE model's HasBonelessParts flag (not our recomputed
-    // one, which the reference also reads from the pre-modification `ogMdl.ModelData`) --
-    // out of scope here (that's the furniture per-part-bbox path), but the model
-    // constructing this file already guarantees useFurnitureBBs is false, which for a
-    // weighted chara model implies HasWeights=true; we still mirror the reference's
-    // literal (og, not recomputed) flag read for fidelity.
+    // Mdl.cs:3314-3318: the part attribute-mask slot is overwritten with a sequential
+    // bounding-box index gated on the SOURCE model's HasBonelessParts flag (the reference
+    // reads the pre-modification `ogMdl.ModelData`), NOT the recomputed useFurnitureBBs that
+    // drives flags2/furniturePartBoundingBoxCount/the BB block above. Keeping the two gates
+    // separate is faithful: they normally agree for a real furniture model but can diverge
+    // (a source without the flag whose geometry still recomputes useFurnitureBBs, or vice
+    // versa), and the reference keys each on its own value.
     const sourceHasBonelessParts = (ogMd.flags2 & HAS_BONELESS_PARTS) !== 0;
     for (const group of model.meshGroups) {
       for (const part of group.parts) {
@@ -506,6 +510,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     radius,
     ext.min,
     ext.max,
+    useFurnitureBBs,
   );
 
   // ---- Phase 4: LoD0 header (60 B) + LoD1/2 padding (120 B) (Mdl.cs:3817-3875).

@@ -1,13 +1,13 @@
 // Model bounding-box extents/radius/block, ported from xivModdingFramework
 // Models/FileTypes/Mdl.cs MakeUncompressedMdlFile: extents/radius (Mdl.cs:2559-2587),
-// bounding-box data block (Mdl.cs:3681-3746). The per-bone cube helper
-// re-derives reference commit b185e1e's buildRadiusBoundingBox. Split, don't blend:
-// furniture-part boxes (Mdl.cs:3748+) are out of scope here -- a later task fails
-// loud when they would be required.
+// bounding-box data block (Mdl.cs:3681-3772, including the boneless "furniture-part"
+// boxes at 3751-3772). The per-bone cube helper re-derives reference commit b185e1e's
+// buildRadiusBoundingBox. Split, don't blend: the per-part min/max scan itself is
+// TTMeshPart.GetBoundingBox (partBoundingBox in tt-model.ts), reused here.
 
 import { ByteBuilder, concatBytes } from "../../util/binary";
 import type { Vec3 } from "../geometry/vertex-data";
-import type { TTModel } from "./tt-model";
+import { partBoundingBox, type TTModel } from "./tt-model";
 
 export interface ModelExtents {
   min: Vec3;
@@ -61,15 +61,18 @@ export function buildRadiusBoundingBox(radius: number): Uint8Array {
     .toUint8Array();
 }
 
-/** Port of the bounding-box data block (Mdl.cs:3681-3746): box[0] BoundingBox
+/** Port of the bounding-box data block (Mdl.cs:3681-3772): box[0] BoundingBox
  *  (origin-clamped), box[1] ModelBoundingBox (real extent), box[2] Water
- *  (zero), box[3] Fog (zero), then one per-bone radius cube per model bone.
- *  Furniture-part boxes are out of scope -- not emitted here. */
+ *  (zero), box[3] Fog (zero), then one per-bone radius cube per model bone, then --
+ *  when `useFurnitureBBs` (unweighted multi-part / boneless-part model, Mdl.cs:2552) --
+ *  one box per part in mesh-group/part order (Mdl.cs:3751-3772), each the part's own
+ *  min/max from partBoundingBox with w=1. */
 export function buildBoundingBoxBlock(
   m: TTModel,
   radius: number,
   min: Vec3,
   max: Vec3,
+  useFurnitureBBs: boolean,
 ): Uint8Array {
   const clampMin = (x: number) => (x > 0 ? 0 : x);
   const clampMax = (x: number) => (x < 0 ? 0 : x);
@@ -92,6 +95,19 @@ export function buildBoundingBoxBlock(
   const parts = [b.toUint8Array()];
   for (let i = 0; i < m.bones.length; i++) {
     parts.push(buildRadiusBoundingBox(radius));
+  }
+  // Mdl.cs:3751-3772: boneless "furniture-part" culling boxes, one per part in mesh-group
+  // then part order, each 32 B: min.xyz + 1.0f, max.xyz + 1.0f.
+  if (useFurnitureBBs) {
+    const fb = new ByteBuilder();
+    for (const group of m.meshGroups) {
+      for (const part of group.parts) {
+        const bb = partBoundingBox(part);
+        fb.f32(bb.min[0]).f32(bb.min[1]).f32(bb.min[2]).f32(1);
+        fb.f32(bb.max[0]).f32(bb.max[1]).f32(bb.max[2]).f32(1);
+      }
+    }
+    parts.push(fb.toUint8Array());
   }
   return concatBytes(parts);
 }

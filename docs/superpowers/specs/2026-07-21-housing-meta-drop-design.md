@@ -24,10 +24,10 @@ reachable from the corpus. Three corrections found during implementation, applie
 **Backlog item:** shipped. The item that tracked this
 (`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md`, formerly prioritized #1) was
 deleted from `docs/BACKLOG.md` per this repo's shipped-item convention (`docs/BACKLOG.md`'s "When an
-item ships" rule) — this spec is now the durable record. Its companion,
-[`docs/backlog/2026-07-21-furniture-bgparts-mdl-overrun.md`](../../backlog/2026-07-21-furniture-bgparts-mdl-overrun.md),
-remains open (re-ranked to a top silent-wrong-output item once this fix let furniture packs reach the
-model round — see that file).
+item ships" rule) — this spec is now the durable record. Its companion, the furniture `bgparts`
+`.mdl` gap that this fix let surface (once furniture packs reached the model round), has since
+**also shipped** (both the parse rewind and the boneless-part writer, 2026-07-23) and was deleted
+from the backlog under the same convention — git history is its record.
 **Builds on:** the metadata round design
 ([`2026-07-10-metadata-round-design.md`](2026-07-10-metadata-round-design.md)) — read its §1 first;
 this design extends the same round.
@@ -177,7 +177,7 @@ as an earlier draft of this doc claimed. The real split, counted from the baseli
 
 | Count | Shape | Owner |
 |---|---|---|
-| 9 | `.mdl` `added` | `bgcommon/hou/**/bgparts/*.mdl` gap (`docs/backlog/2026-07-21-furniture-bgparts-mdl-overrun.md`) |
+| 9 | `.mdl` `added` | `bgcommon/hou/**/bgparts/*.mdl` gap (the furniture `bgparts` writer, since shipped 2026-07-23) |
 | 9 | manifest `added` | same gap — the index shift the missing models leave in their options' manifests |
 | 50 | manifest `mismatch` | `Name`/`Category` re-derivation & option file order (`docs/backlog/2026-07-13-resave-ttmp2-name-category.md` and its file-order sibling) |
 | 29 | `.tex` `mismatch` | the texture float-precision bulk (roadmap design §8, `docs/backlog/2026-07-10-imagesharp-resampler.md`) |
