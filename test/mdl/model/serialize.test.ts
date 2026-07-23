@@ -263,6 +263,72 @@ describe("makeUncompressedMdl", () => {
     expect(masks).toEqual([0, 1]);
   });
 
+  it("keeps the two HasBonelessParts gates independent: source-flag mask override fires on a weighted model where useFurnitureBBs is false (Mdl.cs:2978-2984 vs 3314-3318)", () => {
+    // A WEIGHTED model (has bones) makes useFurnitureBBs (= useParts && !weighted) false, so flags2
+    // clears HasBonelessParts and no furniture-box block is written. But the SOURCE model's
+    // HasBonelessParts flag is set (furnitureRm's og.modelData.flags2 = 0x01), which the meshPart
+    // attribute-mask override keys off independently — so the masks must STILL be the sequential
+    // bounding-box indices, not the real attribute bitmask. Both parts carry attribute "atr" (index
+    // 0 → bitmask 1), so without the override both masks would be 1; observing [0, 1] proves the
+    // override fired (part 0's 0 ≠ 1 is the unambiguous witness).
+    const vertW = (position: [number, number, number]): TtVertex => {
+      const boneIds = new Uint8Array(8);
+      const weights = new Uint8Array(8);
+      weights[0] = 255; // full weight on bone 0 — a valid single-bone weighted vertex
+      return { ...vert(position), boneIds, weights };
+    };
+    const part = (positions: [number, number, number][]): TTMeshPart => ({
+      name: "p",
+      attributes: new Set<string>(["atr"]),
+      triangleIndices: [0, 1, 2],
+      vertices: positions.map(vertW),
+      shapeParts: new Map(),
+    });
+    const m: TTModel = {
+      source: "",
+      mdlVersion: 6,
+      attributes: ["atr"],
+      bones: ["j_root"],
+      materials: ["mt"],
+      shapeNames: [],
+      anisotropicLighting: false,
+      flags1: 0,
+      meshGroups: [
+        {
+          name: "g",
+          meshType: 0,
+          material: "mt",
+          bones: ["j_root"],
+          parts: [
+            part([
+              [0, 0, 0],
+              [1, 0, 0],
+              [0, 1, 0],
+            ]),
+            part([
+              [2, 2, 2],
+              [3, 2, 2],
+              [2, 3, 2],
+            ]),
+          ],
+        },
+      ],
+    };
+    const out = makeUncompressedMdl(m, furnitureRm(m));
+    const re = parseMdl(out);
+
+    // useFurnitureBBs is false → the recomputed-gate outputs stay clear/zero...
+    expect(re.modelData.flags2 & 0x01).toBe(0); // HasBonelessParts cleared
+    expect(re.modelData.furniturePartBoundingBoxCount).toBe(0);
+
+    // ...but the source-flag-gated mask override still fires: sequential [0, 1], not [1, 1].
+    const rm2 = readEditableModel(out, re);
+    const masks = rm2.meshes.flatMap((mesh) =>
+      mesh.parts.map((p) => p.attributeMask),
+    );
+    expect(masks).toEqual([0, 1]);
+  });
+
   it("fails loud when the assembled vertex buffer exceeds 8MB even after Half fallback (Mdl.cs:2822)", () => {
     // No practical corpus pack reaches this: the estimate forces Half precision at ~150k verts,
     // and Half is smaller than the Float estimate, so the actual buffer only exceeds 8MB well
