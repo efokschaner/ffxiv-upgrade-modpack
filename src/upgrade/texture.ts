@@ -83,9 +83,19 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  *     should come through this helper too.
  *
  * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
- * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt; the caller
- * then immediately decodes them again. We have no nvtt-compatible encoder, so we hand the
- * resized RGBA straight on.
+ * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt. The caller
+ * then immediately decodes them again (GetRawPixels) and writes the result as UNCOMPRESSED
+ * A8R8G8B8 (DefaultTextureFormat, XivCache.cs:68; final encode at EndwalkerUpgrade.cs:1105-1112 /
+ * :2094). So on a BC source that re-encode is a full lossy compression generation whose result is
+ * thrown away two lines later and never reaches the output format — it is there only to keep the
+ * XivTex object holding data in its declared format, which none of these callers use. TexTools
+ * itself resizes WITHOUT it two lines on in the hair path (ResizeImages, :1205, via the raw
+ * TextureHelpers.ResizeImage). So we skip it for TWO reasons, not one: we have no nvtt-compatible
+ * encoder to reproduce it with, AND reproducing it would faithfully copy a needless quality loss
+ * into a texture the game actually samples (index/mask/hair are all material samplers, not preview
+ * images). That makes this a TexTools defect we DIVERGE from rather than a mere inability — see
+ * docs/TEXTOOLS_BUGS.md #18. We resize to raw RGBA and carry it straight on, exactly what the raw
+ * ResizeImage primitive returns.
  *
  * WHAT THAT ELISION COSTS, MEASURED against real ConsoleTools /upgrade goldens. It depends
  * entirely on whether MergePixelData's re-encode is lossy for the SOURCE format, and on whether
@@ -127,9 +137,11 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  *   docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md "Measured cost".)
  *
  * That last case is an ACCEPTED, OPERATOR-ADJUDICATED divergence (2026-07-22), not an oversight:
- * we emit a correctly-upgraded mask that skipped one lossy recompression cycle rather than
- * refusing the file. It is deliberately NOT confirmed by a DIVERGENCE_RULES entry, and that was
- * considered rather than skipped. A tolerance rule needs a bound tight enough to still reject
+ * we emit a correctly-upgraded mask that skipped a lossy recompression cycle TexTools applies
+ * needlessly (docs/TEXTOOLS_BUGS.md #18), rather than refusing the file — so our output is
+ * plausibly CLOSER to the source than the golden here, though that is a code-trace argument, not
+ * game-verified, so we claim no confirmed superiority. It is deliberately NOT confirmed by a
+ * DIVERGENCE_RULES entry, and that was considered rather than skipped. A tolerance rule needs a bound tight enough to still reject
  * everything else, the way the global `.tex` +/-1 rule rests on BCn decoder rounding being
  * provably <= 1. There is no such bound here: the error is a function of how well the RESAMPLED
  * image fits BC's endpoint model, so it is a property of the content. All three npot-mask-* packs

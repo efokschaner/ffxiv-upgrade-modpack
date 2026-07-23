@@ -113,6 +113,15 @@ The caller then immediately calls `GetRawPixels()` again, decoding whatever step
 We have no nvtt-compatible BC encoder, so we go decode → resize → use the RGBA directly. This is the
 same elision `updateEndwalkerHairTextures` (`src/upgrade/texture.ts:98-138`) already ships.
 
+That round-trip is also **unnecessary** on TexTools' side, and it degrades a texture the game
+actually samples — registered as `docs/TEXTOOLS_BUGS.md` #18. `ResizeXivTx` re-compresses only to
+keep the `XivTex` in its declared format; the caller decodes it straight back and writes uncompressed
+`A8R8G8B8`, and TexTools resizes without the round-trip two lines later in the hair path
+(`ResizeImages`, `:1205`, via the raw `ResizeImage`). So on the mask/hair paths this is a defect we
+**diverge from**, not merely one we cannot reproduce — our output is plausibly closer to the source,
+though that is a code-trace argument and not game-verified (so no confirmed-superiority claim). It
+affects material samplers (`_id`, mask, hair), not preview images.
+
 **Evidence it is safe on the index path (a real golden).** Measured our
 decode→`resizeBicubic`→`createIndexTexture`→`encodeUncompressedTex` output against the cached
 ConsoleTools `/upgrade` golden for all 12 options of `Club Cyberia Motorbike.ttmp2`:

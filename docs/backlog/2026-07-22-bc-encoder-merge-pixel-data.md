@@ -19,6 +19,17 @@ nvtt-compatible BC encoder. The *failures* `MergePixelData` owns are reproduced 
 `GetCompressionFormat` unsupported-format throw, `Tex.cs:718-747`; the `<64` size guard,
 `Tex.cs:656-660`) — only the re-encode itself is skipped.
 
+**The round-trip is unnecessary, and it degrades an actually-used texture — filed as a TexTools bug
+(`docs/TEXTOOLS_BUGS.md` #18).** It exists only to keep the `XivTex` object in its declared format;
+every caller decodes it right back, and the final output is uncompressed `A8R8G8B8`. The three
+affected outputs — `_id.tex`, the gear mask, the hair normal/mask — are all textures a shader samples
+in-game (material samplers), **not** preview images (those go through `Image`/`ImagePath`). So this is
+not a divergence we merely *tolerate* because we lack an encoder; it is one where reproducing TexTools
+would copy a needless quality loss into what the user renders. Our skipping it is therefore
+**plausibly higher quality**, not just unavoidable — with the caveat that "higher quality" is a
+code-trace argument and has **not** been game-verified (`AGENTS.md` user-benefit bar: leg 1 met via
+#18, leg 3 not), so no confirmed-superiority claim is made.
+
 ## Measured cost
 
 Against real cached ConsoleTools `/upgrade` goldens:
@@ -134,6 +145,11 @@ and with the operator's call on record. It is the one place in the repo where a 
 divergence a rule cannot.
 
 ## What would close it
+
+Note the goal is in genuine tension with `docs/TEXTOOLS_BUGS.md` #18: "closing" this means
+*reproducing* the golden, which means re-introducing the needless BC generation into a used texture.
+So the honest framing is a choice, not a pure fix — byte-parity vs. the (plausibly, unverified)
+higher-quality output we ship today. If the operator ever prefers parity here, the way to get it is:
 
 A BC1/BC3/BC4/BC5 encoder matching TexImpNet/nvtt's output byte-for-byte. That is a large piece of
 work with its own oracle problem, and it would also retire the related ±1 BCn **decoder** divergence
