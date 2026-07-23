@@ -4,8 +4,9 @@
 ([`docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`](../superpowers/specs/2026-07-21-npot-texture-resize-design.md)).
 
 **Severity:** an **accepted, operator-adjudicated divergence** (2026-07-22), not a silent bug — the
-site documents it and three synthetic packs ratchet it. But it is a real byte-parity hole, and the
-only divergence in the repo carried by a ratchet rather than a `DIVERGENCE_RULES` confirmation.
+site documents it and two committed `DIVERGENCE_RULES` entries confirm it (see below), backed by three
+synthetic packs. But it is a real byte-parity hole: we cannot reproduce the golden's bytes on a
+BC-compressed NPOT mask/hair source without a BC encoder.
 
 ## What diverges
 
@@ -94,55 +95,39 @@ from a stated principle, not merely a missing registry entry, and it is recorded
 auditable. The justification is user impact: throwing aborts the *entire pack*, which for content
 anywhere near the smooth end trades a working mod for a ≤9/255 difference in one mask.
 
-## Why there is no `DIVERGENCE_RULES` entry
+## How it is confirmed — committed rules, no forever-baseline
 
-`AGENTS.md` requires every intended divergence to be *confirmed* by a rule that verifies the specific
-expected difference and rejects everything else. No such rule is constructible here — with the
-important qualification at the end of this section.
+`AGENTS.md` requires an intended divergence to be *confirmed* by a rule, not suppressed by a
+gitignored ratchet baseline. This one is (as of 2026-07-23) — two path-scoped `DIVERGENCE_RULES`
+entries (`test/helpers/upgrade-compare.ts`). The design took a few turns, recorded here because the
+dead ends are instructive:
 
-A **tolerance** rule was considered explicitly (operator question, 2026-07-22: "ensure the pixel RGBAs
-are within one or two of the golden like we have done in other validators") and rejected on the
-numbers. ±1/±2 does not survive contact with either fixture — smooth content already reaches 9.
+1. **A single delta tolerance across all cases — rejected.** ±1/±2 (the operator's first instinct,
+   "within one or two like the other validators") does not survive: smooth content already reaches 9.
+   A *larger* shared threshold is worse — the smooth 9 is a content-dependent *floor* (§ "Read 9 as a
+   floor") and the adversarial 116 has no bound, so any single number either false-fails realistic
+   content or, at ≤116, confirms essentially anything.
+2. **Distinct gamePaths + per-fixture rules — shipped.** Giving the three fixtures distinct mask paths
+   (`top_a`/`top_b`/`top_c`, one builder edit) lets a path-scoped `confirm` treat each case on its
+   merits:
+   - `top_b` (`npot-mask-dxt5-smooth`, realistic): valid same-shape A8R8G8B8 mask **within a generous
+     sanity ceiling** (`NPOT_MASK_BC_BOUND = 32`; measured 9, headroom for a different nvtt build). A
+     ceiling, not a claimed bound — it catches gross breakage without pretending to know the true
+     magnitude.
+   - `top_c` (`npot-mask-dxt5`, adversarial): valid same-shape A8R8G8B8 mask, **pixels exempt** — no
+     numeric bound is meaningful on noise content (measured 116).
+   - `top_a` (`npot-mask-a8`, lossless source): **not covered by any rule** — byte-identical to its
+     golden, the hard regression guard.
 
-The reason a *larger* threshold is also wrong is specific, and worth stating precisely because an
-earlier draft of this file got it wrong. It is **not** that `DIVERGENCE_RULES` predicates are
-corpus-wide and would absolve real packs: `DivergenceRule.predicate` is
-`(gamePath: string) => boolean` (`test/helpers/upgrade-compare.ts`), and all three fixtures sit at the
-fictional `chara/equipment/e9999/...`, so a path-scoped rule would match these packs and nothing else.
-The real objection is that **all three fixtures deliberately share one mask gamePath**, so a
-path-scoped predicate cannot distinguish the smooth case from the adversarial one. The only bound
-expressible over them is ≤116 — roughly 45% of an 8-bit channel's range — which would confirm
-essentially any output and is not a confirmation in AGENTS.md's sense at all.
+**What the rules do and don't assert, honestly.** They verify structure (format/dims/length) and, for
+`top_b`, a coarse delta ceiling; they do **not** verify the pixels are *correct* (we can't, without
+the encoder). That correctness is guarded byte-exactly where it can be: `npot-mask-a8` (same code
+path, lossless source, byte-identical) and the unit tests in `test/upgrade/texture.test.ts`. A
+committed rule with a cited reason is documentation; the earlier ratchet-baseline-only handling was
+not (that is why this changed).
 
-That also names the route to a real rule, if one is ever wanted: **give the three packs distinct mask
-gamePaths**, then a smooth-content rule bounded at ≤9 becomes expressible, and the adversarial pack
-keeps its own looser record. So the honest statement is not "no rule is constructible" but **"no rule
-is constructible without a change we chose not to make"** — the change costs one builder edit and a
-re-bless. It is deferred, not impossible, and the reason to defer is the floor caveat above: a ≤9
-bound calibrated to a near-flat fixture would be tighter than real content warrants, so it would start
-failing on the first realistic NPOT BC mask anyone uploads.
-
-A **shape** rule fares no better: confirming "these bytes differ exactly as a BC round-trip would
-explain" requires performing the BC round-trip.
-
-## What the ratchet does and does not assert
-
-Do not over-read the baselines. Ratchet identity is `kind|gamePath#index:status`
-(`test/helpers/upgrade-baseline.ts`) — it excludes `detail` and the payload bytes, and `status` stays
-`"mismatch"` for *any* content difference, including a length change. So the two DXT5 packs' baseline
-entries **record that a divergence exists at that path; they do not police its size.** A future change
-that emitted garbage for a BC-sourced NPOT mask would still pass them.
-
-The live regression guard is **`npot-mask-a8`**, which carries no payload entry at all and so must
-stay byte-exact — it covers the Bicubic resampler and `upgradeGearMask` on this path. The measured
-±9/±116 figures above are a record of a measurement, not an invariant under test. Restoring that
-assertion is the second reason to want the distinct-gamePaths change described above.
-
-So this divergence is carried by its three ratchet baselines plus the documentation at the site
-(`resizeToPow2ForMerge`'s doc comment), the `DIVERGENCE_RULES` header (which points here so an audit
-starting from the registry does not conclude that list is exhaustive), and this file — deliberately,
-and with the operator's call on record. It is the one place in the repo where a baseline carries a
-divergence a rule cannot.
+A **shape** rule — confirming "these bytes differ exactly as a BC round-trip would explain" — remains
+impossible: it requires performing the BC round-trip, i.e. the encoder we lack.
 
 ## What would close it
 
@@ -175,8 +160,12 @@ should not be treated as extinct — but it is not a live defect in anything we 
 ## Test that pins it
 
 `test/corpus/synthetic/npot-mask-a8.ttmp2`, `npot-mask-dxt5.ttmp2` and
-`npot-mask-dxt5-smooth.ttmp2` (`scripts/generate-synthetics/build-synthetic-npot-mask.ts`). All three
-share one material and one power-of-two normal and differ **only** in the mask — `-a8` vs `-dxt5`
-isolates the round-trip as the cause rather than the resampler, and `-dxt5` vs `-dxt5-smooth`
-isolates content as the thing that sets its magnitude. Keep both properties if you touch them: each
-comparison is only meaningful because exactly one variable moves.
+`npot-mask-dxt5-smooth.ttmp2` (`scripts/generate-synthetics/build-synthetic-npot-mask.ts`). Each is a
+structurally identical pack re-pathed to its own equipment variant (`top_a`/`top_b`/`top_c`) and
+differs **only** in the mask content — `-a8` vs `-dxt5` isolates the round-trip as the cause rather
+than the resampler, and `-dxt5` vs `-dxt5-smooth` isolates content as the thing that sets its
+magnitude. **Two properties are load-bearing, keep both if you touch these:** (1) exactly one variable
+moves between packs, or the attribution breaks; (2) the three masks sit at *distinct* gamePaths, or
+the `top_b`/`top_c` `DIVERGENCE_RULES` predicates would also cover `-a8`'s mask and neuter its
+byte-exact guard. There are **no** payload baseline entries for any of them — the mask divergences are
+confirmed by rule, not baselined.

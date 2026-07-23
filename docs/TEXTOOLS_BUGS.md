@@ -23,9 +23,9 @@ what an upstream fix would look like.
 > reproduce it yet and fail loud instead (a known parity hole). `worked around`: we neither reproduce
 > nor fail loud — the harness absorbs the symptom by other means (see the entry for how) rather than
 > our port mirroring the buggy behaviour itself. `diverged`: we deliberately do **not** reproduce it —
-> our output differs from the golden (documented + ratcheted) because reproducing the defect would hand
-> the user a worse result; distinct from `gap` (which fails loud) and `worked around` (which the
-> harness hides).
+> our output differs from the golden (documented, and confirmed by a `DIVERGENCE_RULES` entry or, if no
+> rule is constructible, a ratchet baseline) because reproducing the defect would hand the user a worse
+> result; distinct from `gap` (which fails loud) and `worked around` (which the harness hides).
 
 ---
 
@@ -576,9 +576,9 @@ sub-cases:
 on — exactly what the raw `ResizeImage` primitive returns — for two reasons, not one: we have no
 nvtt-compatible BC encoder to reproduce the round-trip with, **and** reproducing it would faithfully
 copy a needless quality loss into a texture the game actually samples. Our output therefore diverges
-from the golden on an NPOT BC mask/hair source (documented + ratcheted,
-`2026-07-22-bc-encoder-merge-pixel-data.md`) and is **plausibly higher quality** there — one fewer BC
-generation. That "higher quality" is a code-trace argument, **not** game-verified: under `AGENTS.md`'s
+from the golden on an NPOT BC mask/hair source (documented, and confirmed by two path-scoped
+`DIVERGENCE_RULES` entries — `2026-07-22-bc-encoder-merge-pixel-data.md`) and is **plausibly higher
+quality** there — one fewer BC generation. That "higher quality" is a code-trace argument, **not** game-verified: under `AGENTS.md`'s
 user-benefit-divergence bar we have leg 1 (this entry) but not leg 3 (real-game confirmation), so we
 make no confirmed claim of superiority — we simply decline to reproduce a defect we could not
 reproduce anyway.

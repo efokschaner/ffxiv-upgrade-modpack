@@ -140,23 +140,20 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * we emit a correctly-upgraded mask that skipped a lossy recompression cycle TexTools applies
  * needlessly (docs/TEXTOOLS_BUGS.md #18), rather than refusing the file — so our output is
  * plausibly CLOSER to the source than the golden here, though that is a code-trace argument, not
- * game-verified, so we claim no confirmed superiority. It is deliberately NOT confirmed by a
- * DIVERGENCE_RULES entry, and that was considered rather than skipped. A tolerance rule needs a bound tight enough to still reject
- * everything else, the way the global `.tex` +/-1 rule rests on BCn decoder rounding being
- * provably <= 1. There is no such bound here: the error is a function of how well the RESAMPLED
- * image fits BC's endpoint model, so it is a property of the content. All three npot-mask-* packs
- * deliberately share ONE mask gamePath, so a path-scoped predicate could not tell the smooth case
- * (<= 9) from the adversarial one (<= 116) — the only rule expressible over them is <= 116, i.e.
- * ~45% of an 8-bit channel's range, which would confirm essentially any output and is not a
- * confirmation in AGENTS.md's sense. So the packs' ratchet baselines carry it instead, and
- * docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md tracks the real fix. See the design spec
- * §3.2/§3.3/§6.
+ * game-verified, so we claim no confirmed superiority.
  *
- * READ THIS BEFORE TRUSTING THE RATCHET: those two DXT5 baseline entries do NOT assert the
- * measured deltas. Ratchet identity is `kind|gamePath#index:status` (test/helpers/upgrade-baseline.ts),
- * which excludes the bytes and keeps `status` at "mismatch" for any content difference at all — so
- * they RECORD a measurement, they do not police it. `npot-mask-a8` (which carries no payload entry,
- * i.e. must stay byte-exact) is the live regression guard for the resampler and upgradeGearMask.
+ * HOW IT IS CONFIRMED (no forever-baseline): two path-scoped DIVERGENCE_RULES entries
+ * (test/helpers/upgrade-compare.ts) cover the two BC fixture masks — `npot-mask-dxt5-smooth`
+ * (top_b) within a generous sanity ceiling, `npot-mask-dxt5` (top_c) structure-only, since the
+ * error has no environment-invariant bound. They verify the output is a structurally valid
+ * same-shape A8R8G8B8 mask and accept the pixel divergence; the resampler+gearmask CORRECTNESS is
+ * guarded byte-exactly by `npot-mask-a8` (a lossless-source mask, byte-identical, deliberately NOT
+ * covered by those rules) plus the unit tests. This replaced an earlier ratchet-baseline-only
+ * handling — a committed rule with a cited reason is documentation; a gitignored baseline is not
+ * (AGENTS.md) — and it required giving the three packs distinct mask gamePaths so a path-scoped
+ * predicate can cover the BC ones without neutering the a8 guard. A single delta THRESHOLD across
+ * all cases was rejected: the smooth 9 is a content-dependent floor and the adversarial 116 has no
+ * bound, so a shared threshold would either false-fail realistic content or confirm anything.
  *
  * NOT elided: the two ways MergePixelData FAILS. Both abort the whole upgrade in C#
  * (EndwalkerUpgrade.cs:1842 has no try/catch; ModpackUpgrader.cs:133-141 rethrows wrapped), so

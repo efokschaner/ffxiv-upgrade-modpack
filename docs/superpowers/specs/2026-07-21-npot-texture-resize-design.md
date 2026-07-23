@@ -10,11 +10,12 @@ carries, we produce. Four findings changed the design during implementation:
    divergent (max delta 116)** for DXT5. An operator question — could a ±1/±2 tolerance confirm it
    instead of a baseline? — prompted a third pack, `npot-mask-dxt5-smooth`, with realistic smooth
    content: **max delta 9**. So content, not format, sets the magnitude. See §3.3.
-2. **The mask divergence is shipped and ratcheted, not rule-confirmed** (operator call, 2026-07-22).
-   §6 offered "a `DIVERGENCE_RULES` entry with a measured tolerance versus a baselined mismatch";
-   the measurement supports neither cleanly, and a fixture-calibrated threshold would be actively
-   harmful. See §6 for the reasoning and
-   [`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md).
+2. **The mask divergence is shipped and confirmed by two path-scoped `DIVERGENCE_RULES` entries**
+   (operator call to ship, 2026-07-22; rules 2026-07-23). A single delta tolerance was rejected (§6);
+   the working answer was to give the three fixtures distinct mask gamePaths so a per-fixture `confirm`
+   can bound the realistic case and structure-check the adversarial one, with the lossless `-a8` mask
+   left byte-exact as the hard guard. **No payload baseline entries** remain for this feature. See §6
+   and [`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md).
 3. **Both §3.4 guards were confirmed against the real oracle** by the §5.1 expected-failure packs —
    and meeting the harness's matched-*reason* bar forced their messages to become TexTools' text
    verbatim, which is a fidelity gain the design did not anticipate. See §3.4.
@@ -329,28 +330,27 @@ No synthetic for the NPOT *index* path: `Club Cyberia Motorbike` already gives i
 
 - **The mask elision may not be byte-exact.** *Resolved: it is not, for BC-compressed sources.* This
   section originally framed the choice as "a `DIVERGENCE_RULES` entry with a measured tolerance versus
-  a baselined mismatch". The measurement (§3.3) supports **neither** cleanly, and the operator
-  adjudicated (2026-07-22) to **ship the elision and ratchet the divergence**, documented at the site
-  and in [`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md).
+  a baselined mismatch". The operator adjudicated (2026-07-22) to **ship the elision**; the divergence
+  is confirmed by committed rules (below), documented at the site and in
+  [`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md).
 
-  A tolerance rule was considered explicitly and rejected on the numbers. ±1/±2 does not survive
-  contact with either DXT5 fixture — even smooth content reaches 9. And a larger threshold is wrong
-  for a reason worth stating precisely, **because an earlier draft of this section got it wrong**: it
-  is *not* that `DIVERGENCE_RULES` predicates are corpus-wide and would absolve real packs.
-  `DivergenceRule.predicate` is `(gamePath: string) => boolean`, and all three fixtures sit at the
-  fictional `chara/equipment/e9999/…`, so a path-scoped rule would match these packs and nothing else.
-  The real objection is that **all three fixtures deliberately share one mask gamePath**, so a
-  path-scoped predicate cannot separate the smooth case from the adversarial one; the only bound
-  expressible over them is ≤116, roughly 45% of an 8-bit channel's range, which would confirm
-  essentially any output. A *shape* rule fares no better: confirming "these bytes differ exactly as a
-  BC round-trip would explain" requires performing the BC round-trip.
+  It is now confirmed by **two path-scoped `DIVERGENCE_RULES` entries** (added 2026-07-23), not a
+  ratchet baseline — the design went through a couple of dead ends worth recording. A single delta
+  tolerance across all cases was rejected: ±1/±2 doesn't survive (even smooth content reaches 9), and
+  a larger shared threshold is worse because the smooth 9 is a content-dependent *floor* (§3.3) while
+  the adversarial 116 has no bound, so one number either false-fails realistic content or (at ≤116)
+  confirms anything. The fix was to give the three fixtures **distinct mask gamePaths**
+  (`top_a`/`top_b`/`top_c`, one builder edit) so a path-scoped `confirm` can treat each on its merits:
+  `top_b` (smooth) within a generous sanity ceiling (`NPOT_MASK_BC_BOUND = 32`; measured 9, headroom
+  for a different nvtt build), `top_c` (adversarial) structure-only, and `top_a` (`npot-mask-a8`,
+  lossless) covered by **no** rule so its byte-exactness stays the hard guard. The rules verify
+  structure and accept the pixel divergence; correctness is guarded byte-exactly by `npot-mask-a8` and
+  the unit tests. A *shape* rule (confirming "these differ exactly as a BC round-trip would explain")
+  remains impossible — it needs the encoder we lack.
 
-  Stated honestly, then, "no rule is constructible" is really **"no rule is constructible without a
-  change we chose not to make"** — giving the three packs distinct mask gamePaths would make a
-  smooth-content `confirm` expressible. That is deferred rather than impossible, and the reason to
-  defer is §3.3's own caveat: the smooth fixture is near-flat *within* each 4×4 block, so its 9 is a
-  **floor** rather than a realistic figure, and a rule calibrated to it would be tighter than real
-  content warrants. See the backlog item.
+  Earlier drafts of this section reasoned this rule was *not constructible* (first blaming corpus-wide
+  predicates — wrong, they take a gamePath; then the shared gamePath — correct, but the fix was simply
+  to un-share them). The distinct-gamePaths change the earlier draft called "deferred" was done.
 
   **Which AGENTS.md rule actually governs.** Not the three-part user-benefit bar (registered defect +
   corpus accounting + in-game verification) — that is for cases where we deliberately depart because
@@ -361,9 +361,9 @@ No synthetic for the NPOT *index* path: `Club Cyberia Motorbike` already gives i
   auditable. The justification is user impact: throwing aborts the entire pack, which for content
   anywhere near the smooth end trades a working mod for a ≤9/255 difference in one mask.
 
-  This is the one divergence in the repo carried by a ratchet rather than a confirmation rule, and it
-  is deliberate. Per AGENTS.md a baseline alone is *not* documentation — hence the site comment on
-  `resizeToPow2ForMerge`, the `DIVERGENCE_RULES` header pointer, and the backlog item, which are.
+  So it is confirmed by committed rules with cited reasons, documented at the `resizeToPow2ForMerge`
+  site and in the backlog item — per AGENTS.md, a rule is documentation where a gitignored baseline is
+  not. There are no payload baseline entries for any of the three fixtures.
 
 - **The `<64` and unsupported-format guards may not match TexTools.** *Resolved: both match.* The
   §5.1 expected-failure packs confirm it against the real oracle, and at a stronger bar than

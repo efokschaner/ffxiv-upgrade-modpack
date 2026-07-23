@@ -1,7 +1,7 @@
 // Builds test/corpus/synthetic/npot-mask-{a8,dxt5,dxt5-smooth}.ttmp2: the mask side's
 // oracle for the NPOT Bicubic pre-step (design spec
-// docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md §3.3/§5.1). All three packs share one
-// option carrying a colorset .mtrl (buildEwColorsetMaskMtrl) with a power-of-two 64x64 A8R8G8B8
+// docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md §3.3/§5.1). Each pack carries one
+// option with a colorset .mtrl (buildEwColorsetMaskMtrl) with a power-of-two 64x64 A8R8G8B8
 // normal (so IndexMaps generation is trivial and never touches the resize path — the `<64` guard,
 // Tex.cs:656-660, cannot fire) plus an NPOT 400x400 mask, so `upgradeMaskTex`'s NPOT branch
 // (src/upgrade/texture.ts, EndwalkerUpgrade.cs:2082-2098) actually runs against a real ConsoleTools
@@ -47,10 +47,18 @@ import { concatBytes } from "../../src/util/binary";
 import { buildEwColorsetMaskMtrl } from "./synthetic-mtrl";
 import { writeTtmp2Files } from "./ttmp2-builder";
 
-const MTRL_PATH =
-  "chara/equipment/e9999/material/v0001/mt_c9999e9999_top_a.mtrl";
-const NORMAL_PATH = "chara/equipment/e9999/texture/c9999e9999_top_a_n.tex";
-const MASK_PATH = "chara/equipment/e9999/texture/c9999e9999_top_a_m.tex";
+// Each pack uses a DISTINCT equipment-variant letter (top_a / top_b / top_c) so its mask sits at
+// its own gamePath. That is load-bearing for the divergence rules in
+// test/helpers/upgrade-compare.ts: a path-scoped `confirm` can then cover the two BC packs' masks
+// (top_b/top_c) WITHOUT covering npot-mask-a8's mask (top_a), whose byte-exactness is the
+// resampler+gearmask regression guard and must stay a hard check.
+function variantPaths(v: string) {
+  return {
+    mtrl: `chara/equipment/e9999/material/v0001/mt_c9999e9999_top_${v}.mtrl`,
+    normal: `chara/equipment/e9999/texture/c9999e9999_top_${v}_n.tex`,
+    mask: `chara/equipment/e9999/texture/c9999e9999_top_${v}_m.tex`,
+  };
+}
 
 /** Deterministic non-uniform byte pattern — a flat fill would make a resize difference invisible. */
 function pattern(n: number): Uint8Array {
@@ -125,22 +133,29 @@ const maskTexDxt5Smooth = concatBytes([
   smoothDxt5Blocks(MASK_W, MASK_H),
 ]);
 
-const mtrl = buildEwColorsetMaskMtrl(NORMAL_PATH, MASK_PATH);
+/** One pack: a colorset mtrl + POT normal + the given NPOT mask, all under variant `v`'s paths. */
+function writeVariant(
+  fileName: string,
+  packName: string,
+  v: string,
+  maskBytes: Uint8Array,
+): void {
+  const p = variantPaths(v);
+  writeTtmp2Files(fileName, packName, [
+    { gamePath: p.mtrl, data: buildEwColorsetMaskMtrl(p.normal, p.mask) },
+    { gamePath: p.normal, data: normalTex },
+    { gamePath: p.mask, data: maskBytes },
+  ]);
+}
 
-writeTtmp2Files("npot-mask-a8.ttmp2", "NPOT Mask (A8R8G8B8)", [
-  { gamePath: MTRL_PATH, data: mtrl },
-  { gamePath: NORMAL_PATH, data: normalTex },
-  { gamePath: MASK_PATH, data: maskTexA8 },
-]);
-
-writeTtmp2Files("npot-mask-dxt5.ttmp2", "NPOT Mask (DXT5)", [
-  { gamePath: MTRL_PATH, data: mtrl },
-  { gamePath: NORMAL_PATH, data: normalTex },
-  { gamePath: MASK_PATH, data: maskTexDxt5 },
-]);
-
-writeTtmp2Files("npot-mask-dxt5-smooth.ttmp2", "NPOT Mask (DXT5, smooth)", [
-  { gamePath: MTRL_PATH, data: mtrl },
-  { gamePath: NORMAL_PATH, data: normalTex },
-  { gamePath: MASK_PATH, data: maskTexDxt5Smooth },
-]);
+// variant a: npot-mask-a8 keeps top_a and its exact bytes (its cached golden is unchanged) — the
+// byte-exact guard, covered by NO divergence rule. b/c are the two BC packs, each covered by a
+// path-scoped rule (upgrade-compare.ts): b (realistic) bounded, c (adversarial) structure-only.
+writeVariant("npot-mask-a8.ttmp2", "NPOT Mask (A8R8G8B8)", "a", maskTexA8);
+writeVariant(
+  "npot-mask-dxt5-smooth.ttmp2",
+  "NPOT Mask (DXT5, smooth)",
+  "b",
+  maskTexDxt5Smooth,
+);
+writeVariant("npot-mask-dxt5.ttmp2", "NPOT Mask (DXT5)", "c", maskTexDxt5);
