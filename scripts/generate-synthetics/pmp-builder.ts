@@ -32,10 +32,14 @@ const CORPUS_DIR = join(
  * which are scoped to the `upgrade` check alone — see test/helpers/corpus-roots.ts. */
 export type SyntheticRoot = "synthetic" | "upgrade-error";
 
-/** Payload bytes. The content is irrelevant to every synthetic here. For the `synthetic`-root packs
- * each sits at a gamePath /upgrade ignores, so ConsoleTools no-ops and the harness compares our
- * output against the input; the `upgrade-error`-root packs never get that far (the oracle errors
- * during load), so their payload is pure filler. */
+/** Payload bytes for the synthetics that use THIS constant — where the content is irrelevant. For
+ * the `synthetic`-root packs each sits at a gamePath /upgrade ignores, so ConsoleTools no-ops and
+ * the harness compares our output against the input; the `upgrade-error`-root packs that use this
+ * constant fail during LOAD (a malformed group/meta), so their payload never gets read.
+ *
+ * NOT true of every upgrade-error pack: `npot-tiny-mask`/`npot-dxt3-mask`
+ * (build-synthetic-npot-guards.ts) error during the TRANSFORM, and their payloads are entirely
+ * load-bearing — the whole point is the mask's dimensions and format. They build their own. */
 export const DUMMY_PAYLOAD = new Uint8Array([0, 1, 2, 3]);
 
 /** Pinned zip mtime. fflate stamps `Date.now()` into every entry when `mtime` is omitted, which made

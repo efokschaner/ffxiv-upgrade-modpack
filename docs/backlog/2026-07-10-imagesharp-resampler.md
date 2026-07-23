@@ -1,6 +1,7 @@
 # T3 — ImageSharp Bicubic resampler: T2's `ValidateTexFileData` NPOT resize still unported
 
-Filed: 2026-07-10 · Status: open (narrowed 2026-07-16) · Needs its own spec→plan
+Filed: 2026-07-10 · Status: open (narrowed 2026-07-16, narrowed again 2026-07-22 to the load-time
+call site alone) · Needs its own spec→plan
 
 The Bicubic resampler (`resizeBicubic`, `src/tex/imagesharp/resample.ts`) is built and, as of
 2026-07-16, wired into `updateEndwalkerHairTextures` (`src/upgrade/texture.ts`): the NPOT pow2
@@ -37,10 +38,26 @@ regenerated hair `.tex`/`.mtrl` entries lose their `ttmp` (Name/Category/DatFile
 `writeGeneratedTex`/`writeGeneratedMtrl` don't carry it forward; see
 `2026-07-13-resave-ttmp2-name-category.md` (now confirmed to reach `/upgrade`, not just `/resave`).
 
-**Remaining scope:** `createIndexFromNormal`/`upgradeMaskTex` NPOT-normalize still throw
-`TextureResizeUnsupported`. **No NPOT source exists anywhere in the ~940-pack scan**, so this
-remaining branch has zero real corpus coverage (synthetic-only when built) — wiring it needs the
-same `roundToPowerOfTwo`+`resizeBicubic` shape already used in `updateEndwalkerHairTextures`, plus a
-synthetic NPOT pack/unit test since no real pack reaches it. Also still open: T2's
-`ValidateTexFileData` NPOT-resize (`2026-07-10-fixoldtexdata-load-round.md`), a different call site
-that depends on the same resampler.
+**`createIndexFromNormal`/`upgradeMaskTex` SHIPPED 2026-07-22** — see
+[`docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`](../superpowers/specs/2026-07-21-npot-texture-resize-design.md).
+Both now NPOT-normalize via `roundToPowerOfTwo` + `resizeBicubic`, and **`TextureResizeUnsupported`
+no longer exists** — the class and the `upgradeRemainingTextures` catch that swallowed it were both
+deleted, which also made that loop structurally match `EndwalkerUpgrade.cs:1842` (no catch there
+either).
+
+**A claim this item made was FALSIFIED, and it is worth recording why.** The paragraph above used to
+read "**No NPOT source exists anywhere in the ~940-pack scan**", which is what kept this branch ranked
+as latent. `Club Cyberia Motorbike.ttmp2` carries `v01_m0242b0001_n_c.tex` at **400×400**, and it was
+silently costing that pack a generated `_id.tex` in all 12 options. The scan was not wrong about the
+packs it saw; it was over-read as evidence about packs in general — exactly the failure mode
+`docs/BACKLOG.md`'s "deploying changes the probability term" note warns about. Treat corpus silence as
+absence of evidence, not evidence of absence.
+
+**Remaining scope: T2's `ValidateTexFileData` NPOT-resize only**
+(`EndwalkerUpgrade.cs:2100-2113`, tracked by
+[`2026-07-10-fixoldtexdata-load-round.md`](2026-07-10-fixoldtexdata-load-round.md)) — a *load-time*
+call site depending on the same resampler, untouched by the 2026-07-22 work.
+
+One residual from the shipped work, tracked separately rather than here: the elided
+`MergePixelData` BC re-encode makes the mask path diverge for BC-compressed NPOT sources —
+[`2026-07-22-bc-encoder-merge-pixel-data.md`](2026-07-22-bc-encoder-merge-pixel-data.md).

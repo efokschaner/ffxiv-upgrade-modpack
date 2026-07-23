@@ -13,14 +13,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { zipSync } from "fflate";
 import { encodeSqPackFile, SqPackType } from "../../src/sqpack/sqpack";
+import type { SyntheticRoot } from "./pmp-builder";
 
-const OUT_DIR = join(
+const CORPUS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
   "..",
   "..",
   "test",
   "corpus",
-  "synthetic",
 );
 
 /** See pmp-builder.ts: fflate stamps Date.now() into every entry unless pinned, which would make
@@ -45,12 +45,14 @@ export interface SyntheticTtmpGroup {
   selectionType?: string;
 }
 
-/** Writes a one-page wizard .ttmp2 into test/corpus/synthetic/ (gitignored, like the real corpus).
- * Every group gets one option carrying the same dummy payload. */
+/** Writes a one-page wizard .ttmp2 into test/corpus/<root>/ (gitignored, like the real corpus;
+ * `root` defaults to "synthetic" — see pmp-builder.ts's SyntheticRoot). Every group gets one
+ * option carrying the same dummy payload. */
 export function writeTtmp2Pack(
   fileName: string,
   packName: string,
   groups: SyntheticTtmpGroup[],
+  root: SyntheticRoot = "synthetic",
 ): void {
   const modsJson = {
     Name: "Dummy",
@@ -91,8 +93,9 @@ export function writeTtmp2Pack(
     ModPackPages: [{ PageIndex: 0, ModGroups: modGroups }],
   };
 
-  mkdirSync(OUT_DIR, { recursive: true });
-  const out = join(OUT_DIR, fileName);
+  const outDir = join(CORPUS_DIR, root);
+  mkdirSync(outDir, { recursive: true });
+  const out = join(outDir, fileName);
   writeFileSync(
     out,
     zipSync(
@@ -109,12 +112,13 @@ export function writeTtmp2Pack(
 /** Writes a one-page, one-group, one-option wizard .ttmp2 carrying arbitrary payloads, for
  *  fixtures whose point is the FILE CONTENT rather than the group structure writeTtmp2Pack
  *  exercises. Each file's bytes are SQPACK-compressed into the .mpd and pointed at by its own
- *  ModsJson (TTMP.cs:378/:488). Same pinned mtime and key order as writeTtmp2Pack, and for the
- *  same reasons — see this file's header. */
+ *  ModsJson (TTMP.cs:378/:488). Same pinned mtime, key order, and `root` parameter as
+ *  writeTtmp2Pack, and for the same reasons — see this file's header. */
 export function writeTtmp2Files(
   fileName: string,
   packName: string,
   files: { gamePath: string; data: Uint8Array }[],
+  root: SyntheticRoot = "synthetic",
 ): void {
   const chunks: Uint8Array[] = [];
   let offset = 0;
@@ -169,8 +173,9 @@ export function writeTtmp2Files(
     ],
   };
 
-  mkdirSync(OUT_DIR, { recursive: true });
-  const out = join(OUT_DIR, fileName);
+  const outDir = join(CORPUS_DIR, root);
+  mkdirSync(outDir, { recursive: true });
+  const out = join(outDir, fileName);
   writeFileSync(
     out,
     zipSync(

@@ -210,11 +210,10 @@ describe("updateUnclaimedHairTextures (hair)", () => {
   it("leaves the raw copies untransformed when the transform throws (bare catch-all, EndwalkerUpgrade.cs:1498-1501)", () => {
     // Normal claims 2x2 A8R8G8B8 (needs 16 bytes of pixel data) but only carries 4 -- decodeToRgba
     // genuinely throws ("truncated mip data") inside updateEndwalkerHairTextures. Since the
-    // resampler (Task 8) now resolves the pow2/size-mismatch cases that used to model this gap via
-    // TextureResizeUnsupported, a real corrupt-input parse failure is what still exercises this
-    // catch-all; the function must not propagate it (or any other transform error) -- it must
-    // swallow it, leaving the raw copies already written by the copy-first step untouched at both
-    // destinations.
+    // resampler (Task 8) now resolves the pow2/size-mismatch cases that used to require a modeled
+    // resize gap, a real corrupt-input parse failure is what still exercises this catch-all; the
+    // function must not propagate it (or any other transform error) -- it must swallow it, leaving
+    // the raw copies already written by the copy-first step untouched at both destinations.
     const nOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
     const sOld =

@@ -17,15 +17,17 @@ import {
 } from "../tex/helpers";
 import { resizeBicubic } from "../tex/imagesharp/resample";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
+import {
+  A8R8G8B8,
+  BC4,
+  BC5,
+  BC7,
+  DXT1,
+  DXT5,
+  texFormatName,
+} from "../tex/types";
 import { resolveFile } from "./upgrade";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
-
-/** Thrown when a source texture would require an ImageSharp resize that this path does not yet
- *  port: NPOT normalize for `createIndexFromNormal` / `upgradeMaskTex` (the hair path below now
- *  ports its own NPOT + common-size resizes via `resizeBicubic`). Caught+skipped at the dispatch
- *  boundary so one un-generatable target degrades to a ratchet-baselined diff rather than crashing
- *  the whole pack. See spec §4.4/§5. */
-export class TextureResizeUnsupported extends Error {}
 
 function isPowerOfTwo(n: number): boolean {
   return n > 0 && (n & (n - 1)) === 0;
@@ -52,39 +54,194 @@ function roundToPowerOfTwo(x: number): number {
   return max - x < x - min ? max : min;
 }
 
-/** Port of CreateIndexFromNormal (EndwalkerUpgrade.cs:1083). Decodes the normal, builds
- *  the index map from its alpha, re-encodes A8R8G8B8 with mips. NPOT normals need a
- *  Bicubic resize (:1098) we don't port -> throw the resize sentinel. */
-export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
-  const tex = parseTex(normalTexBytes);
-  if (!isPowerOfTwo(tex.width) || !isPowerOfTwo(tex.height)) {
-    throw new TextureResizeUnsupported(
-      `index: NPOT normal ${tex.width}x${tex.height} needs a resize (EndwalkerUpgrade.cs:1098)`,
+// Tex.GetCompressionFormat (Tex.cs:718-747): the only XivTexFormats MergePixelData can re-encode.
+// Anything else hits its `default:` and throws InvalidDataException. Our decodeToRgba
+// (src/tex/decode.ts) accepts strictly more than this (DXT3, A4R4G4B4, A1R5G5B5, L8, A8,
+// A16B16G16R16F), so this set is load-bearing rather than incidental.
+const MERGE_SUPPORTED_FORMATS = new Set<number>([
+  DXT1,
+  DXT5,
+  BC4,
+  BC5,
+  BC7,
+  A8R8G8B8,
+]);
+
+/**
+ * Port of Tex.ResizeXivTx (Tex.cs:413-420) as used by all THREE of its NPOT pre-step call sites:
+ * EndwalkerUpgrade.cs:1096-1099 (CreateIndexFromNormal), :2086-2089 (UpgradeMaskTex), and
+ * :1195-1202 (UpdateEndwalkerHairTextures, both the normal and the mask).
+ * Already-pow2 input is returned untouched — C# only calls ResizeXivTx inside the NPOT branch,
+ * so nothing here runs for a pow2 texture.
+ *
+ * Those three are the TRANSFORM-ROUND sites. Two nearby calls are deliberately not routed here:
+ *   - :1205's ResizeImages is not a resize of this kind at all — it calls TextureHelpers.ResizeImage
+ *     directly (TextureHelpers.cs:336-337) with no MergePixelData behind it, so neither guard below
+ *     applies and the hair path resizes to the common max size with a bare resizeBicubic instead.
+ *   - :2110 (ValidateTexFileData) IS a genuine fourth ResizeXivTx call, but it is LOAD-time and
+ *     wholly unported — see docs/backlog/2026-07-10-fixoldtexdata-load-round.md. When it lands it
+ *     should come through this helper too.
+ *
+ * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
+ * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt. The caller
+ * then immediately decodes them again (GetRawPixels) and writes the result as UNCOMPRESSED
+ * A8R8G8B8 (DefaultTextureFormat, XivCache.cs:68; final encode at EndwalkerUpgrade.cs:1105-1112 /
+ * :2094). So on a BC source that re-encode is a full lossy compression generation whose result is
+ * thrown away two lines later and never reaches the output format — it is there only to keep the
+ * XivTex object holding data in its declared format, which none of these callers use. TexTools
+ * itself resizes WITHOUT it two lines on in the hair path (ResizeImages, :1205, via the raw
+ * TextureHelpers.ResizeImage). So we skip it for TWO reasons, not one: we have no nvtt-compatible
+ * encoder to reproduce it with, AND reproducing it would faithfully copy a needless quality loss
+ * into a texture the game actually samples (index/mask/hair are all material samplers, not preview
+ * images). That makes this a TexTools defect we DIVERGE from rather than a mere inability — see
+ * docs/TEXTOOLS_BUGS.md #18. We resize to raw RGBA and carry it straight on, exactly what the raw
+ * ResizeImage primitive returns.
+ *
+ * WHAT THAT ELISION COSTS, MEASURED against real ConsoleTools /upgrade goldens. It depends
+ * entirely on whether MergePixelData's re-encode is lossy for the SOURCE format, and on whether
+ * the consumer quantizes the result:
+ *
+ *   - Lossless source (A8R8G8B8 -> CompressionFormat.BGRA, Tex.cs:739-741): EXACT. The
+ *     `npot-mask-a8.ttmp2` synthetic (400x400 A8R8G8B8 mask) is byte-identical to its golden,
+ *     0 of 1398176 bytes differing.
+ *   - Lossy source, quantizing consumer (the index path): EXACT. `Club Cyberia Motorbike.ttmp2`
+ *     (a 400x400 DXT5 normal) is byte-identical in all 12 options, because CreateIndexTexture
+ *     reads only alpha and quantizes it into rows of 17 (TextureHelpers.cs:222-260), which
+ *     absorbs the round-trip error.
+ *   - Lossy source, non-quantizing consumer — the MASK path (upgradeGearMask) AND the HAIR path
+ *     (createHairMaps, TextureHelpers.cs:261-286, a channel shuffle plus one RemapByte): KNOWN
+ *     DIVERGENT. Neither has quantization to absorb the error, so it reaches the output bytes.
+ *     Only the mask path is measured below — no synthetic exercises an NPOT BC *hair* texture —
+ *     but the exposure is identical in kind, so read these numbers as covering both.
+ *     Two of the three
+ *     synthetics bracket the range, and the spread is the finding — the magnitude tracks how well the
+ *     RESAMPLED image fits BC's per-block endpoint model, which is a property of the content,
+ *     not of the format:
+ *       `npot-mask-dxt5-smooth.ttmp2` (smooth gradient): 680836 of 1398176 bytes differ,
+ *          **max delta 9**, histogram decaying hard
+ *          (370243@1, 195057@2, 83411@3, 26258@4, 4556@5, 1274@6, 33@7, 4@9).
+ *          Read 9 as a FLOOR, not as the realistic figure: that fixture is near-flat WITHIN each
+ *          4x4 block (endpoints ~1 step apart), which is close to the easiest input BC endpoint
+ *          fitting can get. A real gear mask has material boundaries falling inside blocks and
+ *          will land above 9.
+ *       `npot-mask-dxt5.ttmp2` (pseudo-random bytes, the pathological case — after the resample
+ *          every 4x4 block has huge internal variance): 1337354 differ, **max delta 116**.
+ *     We cannot bound this in general: computing the error for a given input IS the
+ *     nvtt-compatible encode we do not have.
+ *
+ *   THE 116 IS THE BC RE-ENCODE, NOT OUR RESAMPLER — isolated and measured (2026-07-22). Wrapping
+ *   our decode of the -dxt5 source as an A8R8G8B8 mask (so both sides are lossless and differ ONLY
+ *   by the resampler) diffs from the golden by max delta 1 on 19 of 1398176 bytes — the documented
+ *   float64-vs-float32 tolerance. So the resampler contributes <=1 and the elided re-encode
+ *   contributes the rest; there is no resampler fix that would move this, only a BC encoder. (See
+ *   docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md "Measured cost".)
+ *
+ * That last case is an ACCEPTED, OPERATOR-ADJUDICATED divergence (2026-07-22), not an oversight:
+ * we emit a correctly-upgraded mask that skipped a lossy recompression cycle TexTools applies
+ * needlessly (docs/TEXTOOLS_BUGS.md #18), rather than refusing the file — so our output is
+ * plausibly CLOSER to the source than the golden here, though that is a code-trace argument, not
+ * game-verified, so we claim no confirmed superiority.
+ *
+ * HOW IT IS CONFIRMED (no forever-baseline): two path-scoped DIVERGENCE_RULES entries
+ * (test/helpers/upgrade-compare.ts) cover the two BC fixture masks — `npot-mask-dxt5-smooth`
+ * (top_b) within a generous sanity ceiling, `npot-mask-dxt5` (top_c) structure-only, since the
+ * error has no environment-invariant bound. They verify the output is a structurally valid
+ * same-shape A8R8G8B8 mask and accept the pixel divergence; the resampler+gearmask CORRECTNESS is
+ * guarded byte-exactly by `npot-mask-a8` (a lossless-source mask, byte-identical, deliberately NOT
+ * covered by those rules) plus the unit tests. This replaced an earlier ratchet-baseline-only
+ * handling — a committed rule with a cited reason is documentation; a gitignored baseline is not
+ * (AGENTS.md) — and it required giving the three packs distinct mask gamePaths so a path-scoped
+ * predicate can cover the BC ones without neutering the a8 guard. A single delta THRESHOLD across
+ * all cases was rejected: the smooth 9 is a content-dependent floor and the adversarial 116 has no
+ * bound, so a shared threshold would either false-fail realistic content or confirm anything.
+ *
+ * NOT elided: the two ways MergePixelData FAILS. Both abort the whole upgrade in C#
+ * (EndwalkerUpgrade.cs:1842 has no try/catch; ModpackUpgrader.cs:133-141 rethrows wrapped), so
+ * both are plain Errors here. They are checked before the resize rather than after purely to
+ * avoid wasted work — either way the call throws.
+ */
+function resizeToPow2ForMerge(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  format: number,
+): { rgba: Uint8Array; width: number; height: number } {
+  if (isPowerOfTwo(width) && isPowerOfTwo(height)) {
+    return { rgba, width, height };
+  }
+  // RoundToPowerOfTwo is never equal to an NPOT input, so ResizeImage's equal-dims early return
+  // (TextureHelpers.cs:368) is unreachable from here.
+  const w = roundToPowerOfTwo(width);
+  const h = roundToPowerOfTwo(height);
+  // Message is Tex.GetCompressionFormat's `default:` arm, verbatim (Tex.cs:743 —
+  // `"Format is currently unsupported: " + format.ToString()`), not decorated: the expected-failure
+  // harness (assertMatchedUpgradeFailure, test/helpers/corpus-upgrade.ts) asserts our thrown message
+  // is a literal substring of ConsoleTools' captured trace, so it must match the C# text exactly
+  // rather than merely mention it. resize-context (${width}x${height} -> ${w}x${h}, this format
+  // number) stays in this comment instead. Pinned by test/corpus/upgrade-error/npot-dxt3-mask.ttmp2.
+  if (!MERGE_SUPPORTED_FORMATS.has(format)) {
+    throw new Error(
+      `Format is currently unsupported: ${texFormatName(format)}`,
     );
   }
-  const normalRgba = decodeToRgba(tex);
-  const indexRgba = createIndexTexture(normalRgba, tex.width, tex.height);
-  return encodeUncompressedTex(indexRgba, tex.width, tex.height, {
+  // Tex.cs:656-660, gated to the non-BC7 arm: BC7 takes the DDS.TexConvRawPixels path
+  // (Tex.cs:650-653), which carries no size guard. The dims tested are the POST-resize ones —
+  // ResizeXivTx overwrites tex.Width/Height (Tex.cs:417-418) before calling MergePixelData.
+  // Message is Tex.cs:659's InvalidDataException text, verbatim, for the same substring-match
+  // reason as the format guard above (resize context: ${width}x${height} -> ${w}x${h}). Pinned by
+  // test/corpus/upgrade-error/npot-tiny-mask.ttmp2.
+  if (format !== BC7 && (w < 64 || h < 64)) {
+    throw new Error(
+      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
+    );
+  }
+  return {
+    rgba: resizeBicubic(rgba, width, height, w, h),
+    width: w,
+    height: h,
+  };
+}
+
+/** Port of CreateIndexFromNormal (EndwalkerUpgrade.cs:1083-1113). Decodes the normal,
+ *  NPOT-normalizes it (:1096-1099, see resizeToPow2ForMerge), builds the index map from its
+ *  alpha, re-encodes A8R8G8B8 with mips. */
+export function createIndexFromNormal(normalTexBytes: Uint8Array): Uint8Array {
+  const tex = parseTex(normalTexBytes);
+  const src = resizeToPow2ForMerge(
+    decodeToRgba(tex),
+    tex.width,
+    tex.height,
+    tex.format,
+  );
+  const indexRgba = createIndexTexture(src.rgba, src.width, src.height);
+  return encodeUncompressedTex(indexRgba, src.width, src.height, {
     mips: true,
   });
 }
 
-/** Port of UpgradeMaskTex (EndwalkerUpgrade.cs:2082). Decodes the mask, applies the
- *  gear-mask channel remap, re-encodes A8R8G8B8 with mips. NPOT masks resize (:2088) ->
- *  throw the resize sentinel. */
+/** Port of UpgradeMaskTex (EndwalkerUpgrade.cs:2082-2098). Decodes the mask, NPOT-normalizes it
+ *  (:2086-2089, see resizeToPow2ForMerge), applies the gear-mask channel remap, re-encodes
+ *  A8R8G8B8 with mips.
+ *
+ *  THIS IS THE PATH THAT PAYS FOR resizeToPow2ForMerge's ELISION — read its third bullet before
+ *  changing anything here. A pow2 mask, and an NPOT mask whose source format is lossless
+ *  (A8R8G8B8), are byte-exact against the golden. An NPOT mask in a BC format is KNOWN DIVERGENT
+ *  and unbounded, because upgradeGearMask has no quantization to absorb the round-trip error that
+ *  CreateIndexTexture's does. Both cases are pinned by synthetic packs with real ConsoleTools
+ *  goldens (`npot-mask-a8.ttmp2`, `npot-mask-dxt5.ttmp2`, `npot-mask-dxt5-smooth.ttmp2`). */
 export function upgradeMaskTex(
   maskTexBytes: Uint8Array,
   legacy: boolean,
 ): Uint8Array {
   const tex = parseTex(maskTexBytes);
-  if (!isPowerOfTwo(tex.width) || !isPowerOfTwo(tex.height)) {
-    throw new TextureResizeUnsupported(
-      `gearmask: NPOT mask ${tex.width}x${tex.height} needs a resize (EndwalkerUpgrade.cs:2088)`,
-    );
-  }
-  const rgba = decodeToRgba(tex);
-  upgradeGearMask(rgba, tex.width, tex.height, legacy);
-  return encodeUncompressedTex(rgba, tex.width, tex.height, { mips: true });
+  const src = resizeToPow2ForMerge(
+    decodeToRgba(tex),
+    tex.width,
+    tex.height,
+    tex.format,
+  );
+  upgradeGearMask(src.rgba, src.width, src.height, legacy);
+  return encodeUncompressedTex(src.rgba, src.width, src.height, { mips: true });
 }
 
 /** Port of UpdateEndwalkerHairTextures (EndwalkerUpgrade.cs:1175). Decodes normal + mask, resizes
@@ -94,7 +251,13 @@ export function upgradeMaskTex(
  *  and re-encodes both A8R8G8B8 with mips. `resizeBicubic` (src/tex/imagesharp/resample.ts) is a
  *  no-op when target dims already equal source dims, mirroring `ResizeImage`'s early return
  *  (`TextureHelpers.cs:368`) — so the common case (both inputs already pow2 and equal-sized) stays
- *  byte-exact. */
+ *  byte-exact.
+ *
+ *  CARRIES THE SAME ACCEPTED DIVERGENCE AS upgradeMaskTex — read resizeToPow2ForMerge's third cost
+ *  bullet before changing anything here. createHairMaps has no quantization either, so an NPOT
+ *  hair normal or mask in a BC format diverges from the golden by the same unbounded amount. No
+ *  synthetic covers it (no corpus pack has an NPOT hair texture at all), so unlike the mask path it
+ *  is unmeasured as well as divergent. */
 export function updateEndwalkerHairTextures(
   normalTexBytes: Uint8Array,
   maskTexBytes: Uint8Array,
@@ -102,29 +265,33 @@ export function updateEndwalkerHairTextures(
   const nTex = parseTex(normalTexBytes);
   const mTex = parseTex(maskTexBytes);
 
-  let nRgba = decodeToRgba(nTex);
-  let nW = nTex.width;
-  let nH = nTex.height;
-  if (!isPowerOfTwo(nW) || !isPowerOfTwo(nH)) {
-    const tW = roundToPowerOfTwo(nW);
-    const tH = roundToPowerOfTwo(nH);
-    nRgba = resizeBicubic(nRgba, nW, nH, tW, tH);
-    nW = tW;
-    nH = tH;
-  }
+  // The NPOT pre-steps (:1195-1202) are ResizeXivTx calls, so they carry MergePixelData's two
+  // failures exactly as the index/mask sites do — route them through the same helper rather than
+  // open-coding the resize, which would silently succeed where TexTools aborts. Behaviour-neutral
+  // for a pow2 input: resizeToPow2ForMerge returns it untouched without reaching either guard.
+  const n = resizeToPow2ForMerge(
+    decodeToRgba(nTex),
+    nTex.width,
+    nTex.height,
+    nTex.format,
+  );
+  let nRgba = n.rgba;
+  const nW = n.width;
+  const nH = n.height;
 
-  let mRgba = decodeToRgba(mTex);
-  let mW = mTex.width;
-  let mH = mTex.height;
-  if (!isPowerOfTwo(mW) || !isPowerOfTwo(mH)) {
-    const tW = roundToPowerOfTwo(mW);
-    const tH = roundToPowerOfTwo(mH);
-    mRgba = resizeBicubic(mRgba, mW, mH, tW, tH);
-    mW = tW;
-    mH = tH;
-  }
+  const m = resizeToPow2ForMerge(
+    decodeToRgba(mTex),
+    mTex.width,
+    mTex.height,
+    mTex.format,
+  );
+  let mRgba = m.rgba;
+  const mW = m.width;
+  const mH = m.height;
 
   // ResizeImages (TextureHelpers.cs:331-342): resize both to the max of the two (now pow2) sizes.
+  // NOT a ResizeXivTx call — it goes straight to ResizeImage (:336-337) with no MergePixelData
+  // behind it, so the two guards deliberately do NOT apply here.
   const maxW = Math.max(nW, mW);
   const maxH = Math.max(nH, mH);
   nRgba = resizeBicubic(nRgba, nW, nH, maxW, maxH);
@@ -203,81 +370,80 @@ export function writeGeneratedMtrl(
 }
 
 /** Port of UpgradeRemainingTextures (EndwalkerUpgrade.cs:1832). For each target, generate
- *  its texture(s) only if the option locally holds the required source(s); a resize-
- *  unsupported target is skipped (baselined diff), everything else stays fail-loud. */
+ *  its texture(s) only if the option locally holds the required source(s); everything else
+ *  (including a resize failure) stays fail-loud. */
 export function upgradeRemainingTextures(
   option: ModpackOption,
   targets: Map<string, UpgradeInfo>,
 ): void {
+  // No try/catch here, matching EndwalkerUpgrade.cs:1842 — UpgradeRemainingTextures does not
+  // guard its CreateIndexFromNormal call, so a failure propagates to ModpackUpgrader.cs:133-141
+  // and aborts the whole upgrade. (The swallow-and-Trace catch at EndwalkerUpgrade.cs:637-645 is
+  // a DIFFERENT call site, gated behind `files == null` at :627 — unreachable on this path.)
   for (const info of targets.values()) {
-    try {
-      if (info.usage === EUpgradeTextureUsage.IndexMaps) {
-        const normal = findFile(option, info.files.normal!);
-        if (!normal) continue;
-        // C# gates on files.ContainsKey (:1840) — true for an absent-on-disk file — then
-        // CreateIndexFromNormal's ResolveFile returns null (:1087) and the caller `continue`s
-        // (:1843). So a key-present, byte-absent normal is SKIPPED, not an error.
-        const src = resolveFile(normal);
-        if (!src) continue;
-        const idx = createIndexFromNormal(src.bytes);
-        writeGeneratedTex(option, info.files.index!, idx, normal);
-      } else if (info.usage === EUpgradeTextureUsage.HairMaps) {
-        const normal = findFile(option, info.files.normal!);
-        const mask = findFile(option, info.files.mask!);
-        if (normal && mask) {
-          // Both keys present (C#'s ContainsKey guard, :1852). UpdateEndwalkerHairTextures IS a
-          // ResolveFile caller for both (:1181-1182) — an absent OR undecodable normal/mask
-          // resolves to null there too — and then null-checks explicitly and throws
-          // FileNotFoundException (:1184-1188) rather than dereferencing. Mirror both halves:
-          // resolveFile (so a corrupt entry is treated the same as an absent one, per ResolveFile's
-          // own catch), then an explicit throw on null.
-          const normalBytes = resolveFile(normal);
-          const maskBytes = resolveFile(mask);
-          if (!normalBytes || !maskBytes) {
-            throw new Error(
-              `hair: normal/mask did not resolve (absent or undecodable) — unable to properly resolve existing Hair Normal/Mask texture (EndwalkerUpgrade.cs:1184-1188): ${info.files.normal} / ${info.files.mask}`,
-            );
-          }
-          const res = updateEndwalkerHairTextures(
-            normalBytes.bytes,
-            maskBytes.bytes,
-          );
-          writeGeneratedTex(option, info.files.normal!, res.normal, normal);
-          writeGeneratedTex(option, info.files.mask!, res.mask, mask);
-        } else if (normal || mask) {
+    if (info.usage === EUpgradeTextureUsage.IndexMaps) {
+      const normal = findFile(option, info.files.normal!);
+      if (!normal) continue;
+      // C# gates on files.ContainsKey (:1840) — true for an absent-on-disk file — then
+      // CreateIndexFromNormal's ResolveFile returns null (:1087) and the caller `continue`s
+      // (:1843). So a key-present, byte-absent normal is SKIPPED, not an error.
+      const src = resolveFile(normal);
+      if (!src) continue;
+      const idx = createIndexFromNormal(src.bytes);
+      writeGeneratedTex(option, info.files.index!, idx, normal);
+    } else if (info.usage === EUpgradeTextureUsage.HairMaps) {
+      const normal = findFile(option, info.files.normal!);
+      const mask = findFile(option, info.files.mask!);
+      if (normal && mask) {
+        // Both keys present (C#'s ContainsKey guard, :1852). UpdateEndwalkerHairTextures IS a
+        // ResolveFile caller for both (:1181-1182) — an absent OR undecodable normal/mask
+        // resolves to null there too — and then null-checks explicitly and throws
+        // FileNotFoundException (:1184-1188) rather than dereferencing. Mirror both halves:
+        // resolveFile (so a corrupt entry is treated the same as an absent one, per ResolveFile's
+        // own catch), then an explicit throw on null.
+        const normalBytes = resolveFile(normal);
+        const maskBytes = resolveFile(mask);
+        if (!normalBytes || !maskBytes) {
           throw new Error(
-            `hair: Normal and Mask must be in the same option (EndwalkerUpgrade.cs:1862): ${info.files.normal} / ${info.files.mask}`,
+            `hair: normal/mask did not resolve (absent or undecodable) — unable to properly resolve existing Hair Normal/Mask texture (EndwalkerUpgrade.cs:1184-1188): ${info.files.normal} / ${info.files.mask}`,
           );
         }
-      } else if (
-        info.usage === EUpgradeTextureUsage.GearMaskNew ||
-        info.usage === EUpgradeTextureUsage.GearMaskLegacy
-      ) {
-        const old = findFile(option, info.files.mask_old!);
-        if (!old) continue;
-        const legacy = info.usage === EUpgradeTextureUsage.GearMaskLegacy;
-        // QUIRK (upstream bug — docs/TEXTOOLS_BUGS.md §1): the two branches disagree on null.
-        // Both call ResolveFile (:1869 / :1882), so both use resolveFile here — an absent OR
-        // undecodable mask_old resolves to null in either branch. But they disagree on what
-        // happens next: GearMaskLegacy null-checks the result and skips cleanly (:1882-1887);
-        // GearMaskNew passes it STRAIGHT INTO UpgradeMaskTex (:1870), which throws an
-        // ArgumentNullException on null (XivTex.cs:96, `new MemoryStream(texData)`) — its own
-        // null check (:1871) comes one line too late. So an absent/corrupt mask_old is a no-op for
-        // Legacy and fails the pack for New. Reproduce, do not fix: skip for Legacy, throw explicitly
-        // for New (standing in for the C# ArgumentNullException — same "kill the pack" outcome).
-        const src = resolveFile(old);
-        if (!src) {
-          if (legacy) continue;
-          throw new Error(
-            `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 throws ArgumentNullException on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${info.files.mask_old}`,
-          );
-        }
-        const data = upgradeMaskTex(src.bytes, legacy);
-        writeGeneratedTex(option, info.files.mask_new!, data, old);
+        const res = updateEndwalkerHairTextures(
+          normalBytes.bytes,
+          maskBytes.bytes,
+        );
+        writeGeneratedTex(option, info.files.normal!, res.normal, normal);
+        writeGeneratedTex(option, info.files.mask!, res.mask, mask);
+      } else if (normal || mask) {
+        throw new Error(
+          `hair: Normal and Mask must be in the same option (EndwalkerUpgrade.cs:1862): ${info.files.normal} / ${info.files.mask}`,
+        );
       }
-    } catch (e) {
-      if (e instanceof TextureResizeUnsupported) continue; // localized baselined gap
-      throw e;
+    } else if (
+      info.usage === EUpgradeTextureUsage.GearMaskNew ||
+      info.usage === EUpgradeTextureUsage.GearMaskLegacy
+    ) {
+      const old = findFile(option, info.files.mask_old!);
+      if (!old) continue;
+      const legacy = info.usage === EUpgradeTextureUsage.GearMaskLegacy;
+      // QUIRK (upstream bug — docs/TEXTOOLS_BUGS.md §1): the two branches disagree on null.
+      // Both call ResolveFile (:1869 / :1882), so both use resolveFile here — an absent OR
+      // undecodable mask_old resolves to null in either branch. But they disagree on what
+      // happens next: GearMaskLegacy null-checks the result and skips cleanly (:1882-1887);
+      // GearMaskNew passes it STRAIGHT INTO UpgradeMaskTex (:1870), which throws an
+      // ArgumentNullException on null (XivTex.cs:96, `new MemoryStream(texData)`) — its own
+      // null check (:1871) comes one line too late. So an absent/corrupt mask_old is a no-op for
+      // Legacy and fails the pack for New. Reproduce, do not fix: skip for Legacy, throw explicitly
+      // for New (standing in for the C# ArgumentNullException — same "kill the pack" outcome).
+      const src = resolveFile(old);
+      if (!src) {
+        if (legacy) continue;
+        throw new Error(
+          `gearmask: mask_old did not resolve (absent or undecodable) (EndwalkerUpgrade.cs:1870 throws ArgumentNullException on null passed into UpgradeMaskTex; see docs/TEXTOOLS_BUGS.md #1): ${info.files.mask_old}`,
+        );
+      }
+      const data = upgradeMaskTex(src.bytes, legacy);
+      writeGeneratedTex(option, info.files.mask_new!, data, old);
     }
   }
 }
