@@ -1,6 +1,7 @@
 // Ported from xivModdingFramework Models/Helpers/ModelModifiers.cs: MergeGeometryData
 // (:376-576), MergeAttributeData (:578-623), MergeMaterialData (:626-655), MergeShapeData
-// (:658-846), ClearShapeData (:848-860), MergeFlags (:2284-2295). FixUpSkinReferences
+// (:658-846), ClearShapeData (:848-860), GetWeldedMeshData (:1935-2100), MergeFlags
+// (:2284-2295). FixUpSkinReferences
 // (:2309) is a deferred stub (see its doc comment below) -- "split, don't blend".
 
 import type {
@@ -544,9 +545,23 @@ export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
           let isMirror = false;
           const alreadyConnected = new Set<number>();
           for (const vi of vertexIdTable[ni]!) {
-            for (const c of connected.get(vi) ?? []) alreadyConnected.add(c);
+            const viConn = connected.get(vi);
+            // C# indexes connectedVertices[vi] unguarded (ModelModifiers.cs:2021): a vertex never
+            // referenced by a triangle throws KeyNotFoundException -> FixOldModel drops the file.
+            // Fail loud to match, rather than silently substituting empty connections.
+            if (viConn === undefined) {
+              throw new Error(
+                `getWeldedMeshData: vertex ${vi} not referenced by any triangle (ModelModifiers.cs:2021)`,
+              );
+            }
+            for (const c of viConn) alreadyConnected.add(c);
           }
-          const myConnected = connected.get(i) ?? new Set<number>();
+          const myConnected = connected.get(i);
+          if (myConnected === undefined) {
+            throw new Error(
+              `getWeldedMeshData: vertex ${i} not referenced by any triangle (ModelModifiers.cs:2026)`,
+            );
+          }
           for (const wc of alreadyConnected) {
             const wcVert = vertices[wc]!;
             for (const nc of myConnected) {
