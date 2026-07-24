@@ -60,7 +60,12 @@ rather than a `DIVERGENCE_RULES` confirmation. **2026-07-23:** the furniture `bg
 `furniturePartBoundingBoxCount`, and the per-part culling boxes (`Mdl.cs:2978-2984/3314-3318/3751-3772`;
 see the model-normalizer spec's 2026-07-23 update). The 3 corpus models it un-dropped now byte-match the
 golden except the MDL version at byte 0 — the known v6-bump-seam residual (baselined; see that item).
-Its item was deleted per this file's own convention, shifting the former 2–10 to 1–9.
+Its item was deleted per this file's own convention, shifting the former 2–10 to 1–9. **2026-07-24:**
+the unported `CalculateTangents` recompute (then #1) **shipped** — the full binormal/handedness
+recompute branch (`ModelModifiers.cs:2140-2253`) + `GetWeldedMeshData` (`:1935-2100`) are ported;
+`gar_b0_m0112.mdl` now byte-matches the `/resave` golden except the v6 version byte (its own item).
+See `docs/superpowers/specs/2026-07-24-tangent-recompute-design.md`. Its item was deleted per this
+file's own convention, shifting the former 2–9 to 1–8.
 
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
@@ -86,19 +91,7 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. [`CalculateTangents`' full recompute is unported, and the corpus now reaches it](backlog/2026-07-21-unported-tangent-recompute.md)
-   — **rubric class 1: silent wrong output, but latent.** `from-raw.ts` omits `CalculateTangents`
-   entirely on the strength of R2 (every corpus LoD0 mesh carries binormals, so only the byte-neutral
-   fast path can run). The furniture `bgparts` parse fix (shipped 2026-07-23) surfaced R2's first
-   counterexample —
-   `gar_b0_m0112.mdl` mesh 0 in `SM-Cherry Blossom Upscale` — which would take the **unported** full
-   recompute (`ModelModifiers.cs:2140-2253`), the branch that writes `Binormal` and `Handedness` onto
-   every welded base vertex. `normalizeModel` succeeds on it, so nothing fails loud. Latent because that
-   pack's `/upgrade` golden is a `.noop`: no golden bytes exist to prove or disprove our output, which
-   also means porting the recompute would have **no oracle** — see the item for why it must *not* be
-   closed by throwing (a throw at this seam drops the file, which is strictly worse). Found 2026-07-21.
-
-2. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **much narrower
+1. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **much narrower
    as of 2026-07-22**, and demoted accordingly. `createIndexFromNormal` and `upgradeMaskTex` now
    NPOT-normalize for real, and `TextureResizeUnsupported` no longer exists (see
    `docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`), so the "silent partial upgrade"
@@ -107,7 +100,7 @@ unchanged by deployment; only probability moves.
    corpus scan was **falsified** by `Club Cyberia Motorbike` (a 400×400 normal) — see the item for why
    that over-read matters more than the branch it mis-ranked.
 
-3. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
+2. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
    — the last remaining silent-fallback table of this shape; its sibling (`index-path-overrides`)
    shipped a complete, item-seeded enumeration 2026-07-20
    (`docs/superpowers/specs/2026-07-20-index-path-resolution-design.md`,
@@ -115,7 +108,7 @@ unchanged by deployment; only probability moves.
    sampler path outside the bundled hair/zear/tail texture namespace (a `chara/common/…` mashup, or an
    id > 500); the oracle answers a hard `false`, silently suppressing a rename TexTools would perform.
 
-4. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
+3. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
    first, so it is described here rather than filed.)* `unclaimed-hair.ts:197-204` faithfully
    reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing genuine
    parse failures. (It used to swallow the modeled `TextureResizeUnsupported` gap too; that type no
@@ -129,7 +122,7 @@ unchanged by deployment; only probability moves.
    harness's matched-*reason* assertion), which means they no longer name *which* texture failed —
    faithful, but a real debuggability cost this channel is the right place to repay.
 
-5. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+4. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -140,14 +133,14 @@ unchanged by deployment; only probability moves.
    messages. One hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI
    must **not** offer an output-format picker. Should start in parallel with 1-2, not after them.
 
-6. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
+5. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
    machine, gitignored, with no CI. Code coverage is strong (92.98% lines / 84.6% branches — the 0%
    files are re-export barrels), so the residual risk is **data and inputs, not code paths**, which
    is exactly what more packs buy and coverage cannot. This is the only entry that finds the
    unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
    design §8.4's thin-coverage note.
 
-7. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+6. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
    — **the highest-severity item that no corpus pack reaches.** Rubric class #1: a group TexTools
    drops from the wizard model entirely survives our TTMP read and gets re-emitted, so the user's
    upgraded pack carries a group the golden does not, with no diff to warn us (no baseline entry
@@ -158,7 +151,7 @@ unchanged by deployment; only probability moves.
    is already masked downstream by `groupHasData` (by the same predicate C# uses), so the genuinely
    open surface is the TTMP path. **Moved here from *Unprioritized → Other ported code*, 2026-07-20b.**
 
-8. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -172,7 +165,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-9. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+8. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -215,7 +208,7 @@ unchanged by deployment; only probability moves.
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression. **Traced
   2026-07-21** (C# path is `WritePmp`, PMP.cs:830-868): this is only **~5** baselined `structure`
   entries (`added`/`removed` shaped). The other ~42 are a *different*, tex-payload-shadow phenomenon —
-  now item 10 in the *Prioritized* list above.
+  now item 8 in the *Prioritized* list above.
 - [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
   — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
   separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw

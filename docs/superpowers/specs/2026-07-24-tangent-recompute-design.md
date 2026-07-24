@@ -1,7 +1,16 @@
 # Port `CalculateTangents`' full binormal/handedness recompute — Design & handoff
 
 **Date:** 2026-07-24
-**Status:** Proposed.
+**Status:** Implemented 2026-07-24.
+
+R2 (§5) was decided by coverage: `test/mdl/model/binormals-present.test.ts` never called
+`getWeldedMeshData`/`calculateTangentsForMesh` (it only parsed vertex declarations), and the parse
+functions it did exercise (`parseMdl`/`parseGeometryLayout`/`parseVertexDeclarations`) were already at
+100% line/branch coverage from the corpus `/upgrade`/`/resave` harness independent of R2 — so removing
+it dropped no line from covered to uncovered. **Retired**
+(`git rm test/mdl/model/binormals-present.test.ts`). Also confirmed empirically: `Math.fround` was
+**not** needed — the float64 vector math in `calculateTangentsForMesh`/`getWeldedMeshData` matched the
+`/resave` golden byte-for-byte on the first run.
 
 **Goal:** port the unported "full recompute" branch of `ModelModifiers.CalculateTangentsForMesh`
 (`ModelModifiers.cs:2140-2253`) plus its weld helper `GetWeldedMeshData` (`:1935-2100`), so a LoD0
