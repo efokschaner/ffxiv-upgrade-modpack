@@ -95,7 +95,7 @@ read-model.ts   readEditableInputs(XivMdl)
 from-raw.ts     fromRaw(inputs) → TTModel        (TTModel.FromRaw)
    │   model-modifiers.ts: mergeGeometryData (per-part unique→sort→dedupe→remap; R5),
    │   MergeAttribute/Material/Shape/Flags, FixUpSkinReferences,
-   │   calculateTangents (binormals-present fast path only; R2)
+   │   calculateTangents (fast path + full binormal recompute; R2 retired 2026-07-24)
    ▼
 serialize.ts    makeUncompressedMdlFile(ttModel, ogMdl) → bytes   (§ research 4 order)
        build-declarations.ts  usage → VertexElement[][] → 3a serializeVertexDeclarations

@@ -327,6 +327,11 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   — `docs/TEXTOOLS_BUGS.md` was seeded, not swept. Adjudicate the remaining candidates (EQP set-0
   omission, `PlayableRaces` race-order, `MakePMPPathSafe`'s platform-dependent invalid-char set)
   bug-vs-quirk and register the genuine defects.
+- [`vNormalize` doesn't reproduce SharpDX's zero-tolerance normalize behaviour](backlog/2026-07-24-vnormalize-zero-tolerance.md)
+  — the tangent recompute's `vNormalize` guards only exactly-zero length, where SharpDX
+  `Vector3.Normalize` / TexTools' `.Normalized()` (`ModelModifiers.cs:2225-2226`) leave the vector
+  unchanged below a ~1e-6 zero-tolerance. Latent (degenerate-geometry-only; no corpus model's
+  recompute reaches it) and deferred because the extension's source isn't vendored in `reference/`.
 
 ### Harness & housekeeping
 

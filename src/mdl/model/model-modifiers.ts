@@ -1,6 +1,7 @@
 // Ported from xivModdingFramework Models/Helpers/ModelModifiers.cs: MergeGeometryData
 // (:376-576), MergeAttributeData (:578-623), MergeMaterialData (:626-655), MergeShapeData
-// (:658-846), ClearShapeData (:848-860), GetWeldedMeshData (:1935-2100), MergeFlags
+// (:658-846), ClearShapeData (:848-860), GetWeldedMeshData (:1935-2100),
+// CalculateTangentsForMesh (:2102-2253), CopyShapeTangentsForPart (:2257-2270), MergeFlags
 // (:2284-2295). FixUpSkinReferences
 // (:2309) is a deferred stub (see its doc comment below) -- "split, don't blend".
 

@@ -130,7 +130,7 @@ exactly as today, and the recompute happens on the binormal-less path. Net behav
 current corpus model except `gar_b0_m0112.mdl` mesh 0 is unchanged (they all take the fast path); byte
 parity for those is re-proven by the existing `/resave` + `/upgrade` goldens.
 
-### 3.3 Two deliberate parity decisions (documented at the site)
+### 3.3 Three deliberate parity decisions (documented at the site)
 
 1. **Weld hash is not reproduced.** C# `TTVertex.GetWeldHash` (`TTModel.cs:112-122`) is an `int`
    hash of `Position/UV1/Normal` used **only** to bucket weld candidates; the actual weld gate is the
@@ -148,6 +148,19 @@ parity for those is re-proven by the existing `/resave` + `/upgrade` goldens.
    moves. The oracle makes this empirical, not speculative. If full float32 fidelity proves necessary,
    the fallback is per-operation `Math.fround` throughout the accumulation and normalization, matching
    `computeRadius`.
+
+3. **`vNormalize`'s zero-tolerance is latent and deliberately deferred.** SharpDX `Vector3.Normalize`
+   / the TexTools `.Normalized()` extension (call sites `ModelModifiers.cs:2225-2226`) leave a vector
+   **unchanged** when its length is below a small zero-tolerance (~1e-6), not just at exactly zero.
+   Our `vNormalize` (`model-modifiers.ts`) guards only exactly-zero length and divides for any nonzero
+   length, so a degenerate/near-cancelled tangent sum with length in `(0, ~1e-6)` would diverge from
+   TexTools. Not fixed now: the `.Normalized()` extension's source is not vendored in `reference/`, so
+   matching its exact tolerance/branch would be inventing behaviour rather than porting it (AGENTS.md's
+   "don't invent" rule), and the current form already matches the `/resave` oracle byte-for-byte on the
+   one model that reaches the recompute. Tracked as
+   [`docs/backlog/2026-07-24-vnormalize-zero-tolerance.md`](../../backlog/2026-07-24-vnormalize-zero-tolerance.md).
+   (The sibling `r`-guard divergence — `!Number.isFinite(r)` swallowing NaN where C#'s
+   `float.IsInfinity(r)` does not — was found and fixed instead of deferred; see that commit.)
 
 ## 4. Validation
 
