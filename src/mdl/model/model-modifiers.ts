@@ -680,7 +680,9 @@ export function calculateTangentsForMesh(group: TTMeshGroup): void {
     const dV2 = v3y - v1y;
 
     let r = 1.0 / (dU1 * dV2 - dU2 * dV1);
-    if (!Number.isFinite(r)) r = 0;
+    // C# guards float.IsInfinity(r) only (ModelModifiers.cs:2190) — NOT NaN; match it exactly so a
+    // NaN UV1 propagates as C# does rather than being silently zeroed.
+    if (r === Infinity || r === -Infinity) r = 0;
 
     const sdir: Vec3 = [
       (dV2 * dX1 - dV1 * dX2) * r,
