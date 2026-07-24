@@ -461,6 +461,134 @@ export function fixUpSkinReferences(
   // Intentionally no-op: inert in /upgrade because FixOldModel passes MdlPath="" (see doc comment).
 }
 
+/** Port of ModelModifiers.GetWeldedMeshData (ModelModifiers.cs:1935-2100), weldMirrors=false only
+ *  (the recompute never passes true). Combines the group's parts into one vertex/index list, builds
+ *  the triangle-adjacency graph, and welds vertices sharing Position/UV1/Normal — except across a
+ *  UV-seam mirror point. Returns the translated index list and, per new welded vertex, the list of
+ *  ORIGINAL TtVertex objects welded into it (so the recompute can fan its result back over all of
+ *  them). The C# GetWeldHash (TTVertex, TTModel.cs:112-122) only BUCKETS candidates; the actual weld
+ *  gate is the explicit ==(Position, UV1, Normal) at :2011-2013, so we bucket by a canonical key and
+ *  apply the same == gate — provably equivalent without reproducing the int hash. */
+export interface WeldedMeshData {
+  indices: number[];
+  vertexTable: TtVertex[][];
+}
+
+function vec3Eq(a: Vec3, b: Vec3): boolean {
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+}
+function vec2Eq(a: Vec2, b: Vec2): boolean {
+  return a[0] === b[0] && a[1] === b[1];
+}
+function weldKey(v: TtVertex): string {
+  return `${v.position[0]},${v.position[1]},${v.position[2]}|${v.uv1[0]},${v.uv1[1]}|${v.normal[0]},${v.normal[1]},${v.normal[2]}`;
+}
+
+export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
+  // Combine parts (ModelModifiers.cs:1940-1950): index list offset by running vertex count.
+  const indices: number[] = [];
+  const vertices: TtVertex[] = [];
+  let offset = 0;
+  for (const p of group.parts) {
+    for (const i of p.triangleIndices) indices.push(i + offset);
+    offset += p.vertices.length;
+    for (const v of p.vertices) vertices.push(v);
+  }
+
+  // Triangle-adjacency graph (ModelModifiers.cs:1953-1982).
+  const connected = new Map<number, Set<number>>();
+  const connect = (a: number, b: number): void => {
+    let s = connected.get(a);
+    if (s === undefined) {
+      s = new Set();
+      connected.set(a, s);
+    }
+    s.add(b);
+  };
+  for (let i = 0; i < indices.length; i += 3) {
+    const v0 = indices[i]!;
+    const v1 = indices[i + 1]!;
+    const v2 = indices[i + 2]!;
+    if (!connected.has(v0)) connected.set(v0, new Set());
+    if (!connected.has(v1)) connected.set(v1, new Set());
+    if (!connected.has(v2)) connected.set(v2, new Set());
+    connect(v0, v1);
+    connect(v0, v2);
+    connect(v1, v0);
+    connect(v1, v2);
+    connect(v2, v0);
+    connect(v2, v1);
+  }
+
+  // Weld (ModelModifiers.cs:1985-2088).
+  const weldBuckets = new Map<string, number[]>(); // key -> original vertex ids
+  const oldToNew = new Map<number, number>();
+  const vertexIdTable: number[][] = []; // new id -> original ids welded in
+  const vertexTable: TtVertex[][] = []; // new id -> original TtVertex objects welded in
+
+  for (let i = 0; i < vertices.length; i++) {
+    const ov = vertices[i]!;
+    const key = weldKey(ov);
+    let found = false;
+    const bucket = weldBuckets.get(key);
+    if (bucket !== undefined) {
+      for (const oi of bucket) {
+        const ni = oldToNew.get(oi)!;
+        const nv = vertices[oi]!;
+        if (
+          vec2Eq(nv.uv1, ov.uv1) &&
+          vec3Eq(nv.position, ov.position) &&
+          vec3Eq(nv.normal, ov.normal)
+        ) {
+          // Mirror-point check (ModelModifiers.cs:2018-2055).
+          let isMirror = false;
+          const alreadyConnected = new Set<number>();
+          for (const vi of vertexIdTable[ni]!) {
+            for (const c of connected.get(vi) ?? []) alreadyConnected.add(c);
+          }
+          const myConnected = connected.get(i) ?? new Set<number>();
+          for (const wc of alreadyConnected) {
+            const wcVert = vertices[wc]!;
+            for (const nc of myConnected) {
+              const ncVert = vertices[nc]!;
+              if (
+                vec2Eq(ncVert.uv1, wcVert.uv1) &&
+                !vec3Eq(ncVert.position, wcVert.position)
+              ) {
+                isMirror = true;
+                break;
+              }
+            }
+            if (isMirror) break;
+          }
+          if (!isMirror) {
+            oldToNew.set(i, ni);
+            vertexTable[ni]!.push(ov);
+            vertexIdTable[ni]!.push(i);
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+    if (!found) {
+      const ni = vertexTable.length;
+      vertexTable.push([]);
+      vertexIdTable.push([]);
+      oldToNew.set(i, ni);
+      vertexTable[ni]!.push(ov);
+      vertexIdTable[ni]!.push(i);
+      const b = weldBuckets.get(key);
+      if (b !== undefined) b.push(i);
+      else weldBuckets.set(key, [i]);
+    }
+  }
+
+  // Translate indices (ModelModifiers.cs:2091-2097).
+  const finalIndices = indices.map((ov) => oldToNew.get(ov)!);
+  return { indices: finalIndices, vertexTable };
+}
+
 /** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2284-2295): anisotropic lighting is
  *  enabled iff any LoD0 mesh's vertex declaration carried a Flow usage (mirrored here by
  *  the presence of decoded flow-direction data); flags1 is copied verbatim. */
