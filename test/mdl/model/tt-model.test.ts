@@ -3,7 +3,9 @@ import type { TtVertex } from "../../../src/mdl/geometry/vertex-data";
 import {
   getUsageInfo,
   getV6BoneSet,
+  partBoundingBox,
   type TTMeshGroup,
+  type TTMeshPart,
   type TTModel,
 } from "../../../src/mdl/model/tt-model";
 
@@ -114,6 +116,37 @@ describe("getUsageInfo", () => {
       },
     ]);
     expect(getUsageInfo(m).maxUv).toBe(3);
+  });
+});
+
+describe("partBoundingBox", () => {
+  function part(positions: [number, number, number][]): TTMeshPart {
+    return {
+      name: "p",
+      attributes: new Set<string>(),
+      triangleIndices: [],
+      vertices: positions.map((position) => vert({ position })),
+      shapeParts: new Map(),
+    };
+  }
+
+  it("returns the per-axis min/max over the part's vertex positions (TTModel.cs:304-328)", () => {
+    const p = part([
+      [1, -2, 3],
+      [-4, 5, -6],
+      [0, 0, 0],
+    ]);
+    expect(partBoundingBox(p)).toEqual({
+      min: [-4, -2, -6],
+      max: [1, 5, 3],
+    });
+  });
+
+  it("yields the inverted 9999/-9999 seed box for a part with no vertices (faithful to the C# seeds)", () => {
+    expect(partBoundingBox(part([]))).toEqual({
+      min: [9999, 9999, 9999],
+      max: [-9999, -9999, -9999],
+    });
   });
 });
 

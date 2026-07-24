@@ -132,6 +132,13 @@ unexercised by the corpus, so implement the chara path faithfully and **fail lou
 serializer meets furniture-part structure it does not model (consistent with 3a's throw-rather-
 than-silently-diverge stance). Documented gap, not silent mis-handling.
 
+**Update, 2026-07-23 — the boneless-part ("furniture") write path is now ported.** The corpus
+expansion added real `bgcommon/hou/.../bgparts/*.mdl` models, which reached this fail-loud and got
+silently dropped by the load-fix `catch`. `makeUncompressedMdl` now emits the `useFurnitureBBs`
+shape (`HasBonelessParts` in flags2, `furniturePartBoundingBoxCount`, the per-part culling boxes via
+`partBoundingBox` = `TTMeshPart.GetBoundingBox`, Mdl.cs:2978-2984/3314-3318/3751-3772). The remaining
+fail-louds here (HasExtraMeshes, neck-morph, Shadow+Fog ordering) still stand.
+
 **Error handling in `modelRound`:** during ratchet burndown a normalization throw should
 **surface** (so the ratchet exposes the gap) — *not* be swallowed the way `materialRound`
 swallows C#-NRE-abandon cases. Production resilience (one bad model must not fail a whole

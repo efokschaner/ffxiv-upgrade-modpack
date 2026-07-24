@@ -8,7 +8,7 @@
 // Split, don't blend: this holds only the TTModel container + its own methods, no
 // serializer/read logic (see src/mdl/geometry for the codec this builds on).
 
-import type { Rgba, TtVertex, Vec2 } from "../geometry/vertex-data";
+import type { Rgba, TtVertex, Vec2, Vec3 } from "../geometry/vertex-data";
 
 /** Port of TTModel.cs TTShapePart (:357-386): one shape's contribution to a single
  *  TTMeshPart -- the new vertices it introduces, and which part-local vertex index each
@@ -242,6 +242,24 @@ export function getAttributeBitmask(model: TTModel, part: TTMeshPart): number {
     if (ai >= 0) attributeMask |= (1 << ai) >>> 0;
   }
   return attributeMask;
+}
+
+/** Port of TTMeshPart.GetBoundingBox (TTModel.cs:304-328): the per-axis min/max over the
+ *  part's own vertex positions. Seeds are the reference's literal 9999/-9999 (NOT ±Infinity),
+ *  so a part with no vertices yields the inverted seed box verbatim -- reproduced faithfully
+ *  because the furniture-BB write path (Mdl.cs:3751-3772) serializes whatever this returns. */
+export function partBoundingBox(part: TTMeshPart): { min: Vec3; max: Vec3 } {
+  const min: Vec3 = [9999, 9999, 9999];
+  const max: Vec3 = [-9999, -9999, -9999];
+  for (const v of part.vertices) {
+    const p = v.position;
+    for (let c = 0; c < 3; c++) {
+      const x = p[c]!;
+      min[c] = min[c]! < x ? min[c]! : x;
+      max[c] = max[c]! > x ? max[c]! : x;
+    }
+  }
+  return { min, max };
 }
 
 /** Port of TTMeshGroup.GetPartRelevantVertexInformation (TTModel.cs:514-534): given a
