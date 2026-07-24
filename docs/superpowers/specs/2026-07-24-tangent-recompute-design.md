@@ -17,8 +17,9 @@ it dropped no line from covered to uncovered. **Retired**
 mesh that carries **no** binormals gets its `Binormal` and `Handedness` recomputed on load exactly as
 TexTools does — instead of our port silently emitting all-zero binormals.
 
-**Closes:** [`docs/backlog/2026-07-21-unported-tangent-recompute.md`](../../backlog/2026-07-21-unported-tangent-recompute.md)
-(prioritized #1) — this spec becomes its durable record.
+**Closes:** the prioritized-#1 backlog item `2026-07-21-unported-tangent-recompute.md` — deleted on
+completion per docs/BACKLOG.md's convention (the name is left unlinked deliberately, the file is
+gone); this spec is now its durable record.
 
 **Roadmap:** design §8.1 model-normalizer row (round-4 model port). Read the foundation spec
 ([`2026-06-30-dawntrail-modpack-upgrader-design.md`](2026-06-30-dawntrail-modpack-upgrader-design.md))
@@ -170,18 +171,15 @@ justified given the real oracle already exists.
 
 ## 5. R2 disposition — decided by coverage, at the end
 
-R2 (`test/mdl/model/binormals-present.test.ts`) exists to prove the unported branch is *unreachable*.
-Once the branch is ported, that purpose dissolves. **The disposition is not chosen up front** (operator
-decision, 2026-07-24): after the port lands and both new tests are green, run `npm run test:coverage`
-and check whether R2's corpus scan is the *only* thing exercising any line the new oracle + unit test
-do not reach.
-
-- If removing R2 would drop coverage on a real path → **repurpose** it (flip its assertion from
-  "unreachable" to "reached and handled"; drop `KNOWN_WITHOUT_BINORMALS`).
-- If the new tests fully subsume its reach → **retire** it.
-
-Either way, the `KNOWN_WITHOUT_BINORMALS` reference to the backlog item must go when the item is
-deleted (grep `2026-07-21-unported-tangent-recompute` across `src/ test/ scripts/ docs/`).
+R2 (`test/mdl/model/binormals-present.test.ts`) existed to prove the unported branch was *unreachable*.
+Once the branch was ported, that purpose dissolved. The disposition was not chosen up front (operator
+decision, 2026-07-24): after the port landed and both new tests went green, `npm run test:coverage`
+showed R2's corpus scan was not the only thing exercising any line the new oracle + unit test reach —
+`parseMdl`/`parseGeometryLayout`/`parseVertexDeclarations` were already at 100% line/branch coverage
+independent of R2, and the recompute path itself is now covered by the `/resave` golden and the new
+unit test. R2 was **retired** (`git rm test/mdl/model/binormals-present.test.ts`) rather than
+repurposed, and its `KNOWN_WITHOUT_BINORMALS` reference to `2026-07-21-unported-tangent-recompute`
+(now a deleted backlog item) was removed along with it.
 
 ## 6. Interaction with the v6-bump seam (out of scope)
 
