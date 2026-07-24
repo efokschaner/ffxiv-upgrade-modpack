@@ -604,6 +604,145 @@ export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
   return { indices: finalIndices, vertexTable };
 }
 
+// Local float vector helpers mirroring SharpDX Vector3 ops used by the recompute
+// (ModelModifiers.cs:2195-2246). Kept local: only the recompute uses them.
+function vAdd(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+function vScale(a: Vec3, s: number): Vec3 {
+  return [a[0] * s, a[1] * s, a[2] * s];
+}
+function vDot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function vCross(a: Vec3, b: Vec3): Vec3 {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+function vNormalize(a: Vec3): Vec3 {
+  const len = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+  if (len === 0) return [0, 0, 0];
+  return [a[0] / len, a[1] / len, a[2] / len];
+}
+
+/** Port of ModelModifiers.CopyShapeTangentsForPart (ModelModifiers.cs:2257-2270) restricted to the
+ *  serialized fields (Binormal, Handedness); Tangent is never serialized so it is omitted. Copies
+ *  each shape vertex's binormal/handedness from the base part vertex it replaces. This is the byte-
+ *  affecting tail shared by BOTH branches of CalculateTangentsForMesh. */
+export function copyShapeBinormalsForPart(part: TTMeshPart): void {
+  for (const sp of part.shapeParts.values()) {
+    for (const [partIdx, shapeIdx] of sp.vertexReplacements) {
+      const shpV = sp.vertices[shapeIdx];
+      const baseV = part.vertices[partIdx];
+      if (shpV && baseV) {
+        shpV.binormal = baseV.binormal;
+        shpV.handedness = baseV.handedness;
+      }
+    }
+  }
+}
+
+/** Port of ModelModifiers.CalculateTangentsForMesh (ModelModifiers.cs:2102-2253), force=false only.
+ *  Dispatches per mesh group:
+ *   - Empty guard (:2106-2109).
+ *   - The C# `anyMissing` early-return (:2111-2124) reads v.Tangent, which this port never stores
+ *     (Tangent is unserialized). Our Tangent is conceptually always zero, so anyMissing is always
+ *     true and the early-return never fires — so it is intentionally not reproduced; we go straight
+ *     to the binormal branch, which is behaviourally identical here.
+ *   - Fast path (:2127-2137): if any vertex already has a non-zero binormal, only the shape copy is
+ *     byte-affecting (Tangent write is skipped), so run copyShapeBinormalsForPart per part.
+ *   - Full recompute (:2140-2253): weld, accumulate per-triangle sdir/tdir, then per welded vertex
+ *     write Binormal + Handedness onto every original vertex welded into it; finally the shape copy. */
+export function calculateTangentsForMesh(group: TTMeshGroup): void {
+  const vertexCount = group.parts.reduce((s, p) => s + p.vertices.length, 0);
+  const indexCount = group.parts.reduce(
+    (s, p) => s + p.triangleIndices.length,
+    0,
+  );
+  if (vertexCount === 0 || indexCount === 0) return;
+
+  const hasBinormal = group.parts.some((p) =>
+    p.vertices.some(
+      (v) => v.binormal[0] !== 0 || v.binormal[1] !== 0 || v.binormal[2] !== 0,
+    ),
+  );
+  if (hasBinormal) {
+    for (const p of group.parts) copyShapeBinormalsForPart(p);
+    return;
+  }
+
+  const { indices, vertexTable } = getWeldedMeshData(group);
+  const tangents: Vec3[] = vertexTable.map(() => [0, 0, 0]);
+  const bitangents: Vec3[] = vertexTable.map(() => [0, 0, 0]);
+
+  for (let a = 0; a < indices.length; a += 3) {
+    const i1 = indices[a]!;
+    const i2 = indices[a + 1]!;
+    const i3 = indices[a + 2]!;
+    const p1 = vertexTable[i1]![0]!;
+    const p2 = vertexTable[i2]![0]!;
+    const p3 = vertexTable[i3]![0]!;
+
+    const dX1 = p2.position[0] - p1.position[0];
+    const dX2 = p3.position[0] - p1.position[0];
+    const dY1 = p2.position[1] - p1.position[1];
+    const dY2 = p3.position[1] - p1.position[1];
+    const dZ1 = p2.position[2] - p1.position[2];
+    const dZ2 = p3.position[2] - p1.position[2];
+
+    // Top-left addressing flip (ModelModifiers.cs:2179-2181): y -> -y + 1.
+    const v1y = -p1.uv1[1] + 1;
+    const v2y = -p2.uv1[1] + 1;
+    const v3y = -p3.uv1[1] + 1;
+    const dU1 = p2.uv1[0] - p1.uv1[0];
+    const dU2 = p3.uv1[0] - p1.uv1[0];
+    const dV1 = v2y - v1y;
+    const dV2 = v3y - v1y;
+
+    let r = 1.0 / (dU1 * dV2 - dU2 * dV1);
+    if (!Number.isFinite(r)) r = 0;
+
+    const sdir: Vec3 = [
+      (dV2 * dX1 - dV1 * dX2) * r,
+      (dV2 * dY1 - dV1 * dY2) * r,
+      (dV2 * dZ1 - dV1 * dZ2) * r,
+    ];
+    const tdir: Vec3 = [
+      (dU1 * dX2 - dU2 * dX1) * r,
+      (dU1 * dY2 - dU2 * dY1) * r,
+      (dU1 * dZ2 - dU2 * dZ1) * r,
+    ];
+
+    tangents[i1] = vAdd(tangents[i1]!, sdir);
+    tangents[i2] = vAdd(tangents[i2]!, sdir);
+    tangents[i3] = vAdd(tangents[i3]!, sdir);
+    bitangents[i1] = vAdd(bitangents[i1]!, tdir);
+    bitangents[i2] = vAdd(bitangents[i2]!, tdir);
+    bitangents[i3] = vAdd(bitangents[i3]!, tdir);
+  }
+
+  for (let vId = 0; vId < vertexTable.length; vId++) {
+    const n = vertexTable[vId]![0]!.normal;
+    const t = tangents[vId]!;
+    const b = bitangents[vId]!;
+
+    let binormal = vNormalize(vCross(n, vNormalize(t)));
+    const bHandedness = vDot(vNormalize(binormal), b) >= 0 ? 1 : -1;
+    const boolHandedness = !(bHandedness < 0);
+    binormal = vScale(binormal, bHandedness);
+
+    for (const v of vertexTable[vId]!) {
+      v.binormal = [binormal[0], binormal[1], binormal[2]];
+      v.handedness = boolHandedness;
+    }
+  }
+
+  for (const p of group.parts) copyShapeBinormalsForPart(p);
+}
+
 /** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2284-2295): anisotropic lighting is
  *  enabled iff any LoD0 mesh's vertex declaration carried a Flow usage (mirrored here by
  *  the presence of decoded flow-direction data); flags1 is copied verbatim. */
