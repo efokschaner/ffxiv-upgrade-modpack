@@ -1,13 +1,14 @@
 // Port of TTModel.FromRaw (TTModel.cs:2695-2729). Builds the editable TTModel from a
-// ReadMdl. Tangent calculation (ModelModifiers.CalculateTangents, TTModel.cs:2728) is
-// omitted for BASE vertices -- the fast path only writes the (unserialized) Tangent and
-// leaves base binormal/handedness untouched (R2, confirmed by the Task 3 corpus binormals
-// scan). Its shape-vertex binormal/handedness copy IS byte-affecting, so that one piece is
-// ported as copyShapeBinormals (run below).
+// ReadMdl. TTModel.cs:2728 calls ModelModifiers.CalculateTangents (ModelModifiers.cs:1851-1892), a
+// wrapper that dispatches CalculateTangentsForMesh (ModelModifiers.cs:2102-2253) per group; that
+// per-group call is what we port below (see the call site for why the wrapper's extra gating is
+// inert here). The fast path (mesh has binormals) leaves base binormals untouched and only copies
+// them onto shape vertices; the full recompute (binormal-less mesh) writes Binormal + Handedness
+// onto every welded base vertex. Tangent is never serialized and is omitted throughout.
 
 import {
+  calculateTangentsForMesh,
   clearShapeData,
-  copyShapeBinormals,
   fixUpSkinReferences,
   mergeAttributeData,
   mergeFlags,
@@ -51,10 +52,16 @@ export function fromRaw(rm: ReadMdl): TTModel {
   model.mdlVersion = rm.mdlVersion;
   fixUpSkinReferences(model, rm.source); // no-op: inert in /upgrade (MdlPath="", see model-modifiers)
   mergeFlags(model, rm);
-  // UVState = SE_Space (implicit). CalculateTangents (TTModel.cs:2728) is omitted for base
-  // vertices (no byte effect, R2), but its shape-vertex binormal/handedness copy IS byte-
-  // affecting, so we run just that piece.
-  copyShapeBinormals(model);
+  // TTModel.cs:2728 calls the wrapper ModelModifiers.CalculateTangents (ModelModifiers.cs:1851-1892),
+  // which dispatches CalculateTangentsForMesh per group (ModelModifiers.cs:2102-2253) - that per-group
+  // call is what we port below. The wrapper's extra steps are all inert on a fresh FromRaw model: its
+  // ApplyShapes(model, [], true) no-ops because ActiveShapes is still the default empty set (:2459-2486);
+  // AnyMissingTangentData is always true because Tangent is never populated here (see below), so the
+  // wrapper never early-returns; and UVState is SE_Space (set at TTModel.cs:2726), so its guard never
+  // throws. The fast path leaves base binormals untouched and copies them to shape vertices (byte-neutral
+  // for base verts, R2); the full recompute writes Binormal/Handedness for a binormal-less mesh. Run per
+  // group, matching the C# `foreach (m in MeshGroups)`.
+  for (const group of model.meshGroups) calculateTangentsForMesh(group);
   computeModelLists(model);
   return model;
 }

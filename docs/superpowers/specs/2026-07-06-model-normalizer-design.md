@@ -95,7 +95,7 @@ read-model.ts   readEditableInputs(XivMdl)
 from-raw.ts     fromRaw(inputs) → TTModel        (TTModel.FromRaw)
    │   model-modifiers.ts: mergeGeometryData (per-part unique→sort→dedupe→remap; R5),
    │   MergeAttribute/Material/Shape/Flags, FixUpSkinReferences,
-   │   calculateTangents (binormals-present fast path only; R2)
+   │   calculateTangents (fast path + full binormal recompute; R2 retired 2026-07-24)
    ▼
 serialize.ts    makeUncompressedMdlFile(ttModel, ogMdl) → bytes   (§ research 4 order)
        build-declarations.ts  usage → VertexElement[][] → 3a serializeVertexDeclarations
@@ -196,9 +196,11 @@ replaced by this normalizer.
   reachable, and `normalizeModel` runs it silently rather than failing loud (a throw at that seam
   would drop the file, which is worse). The scan
   (`test/mdl/model/binormals-present.test.ts`) now asserts the exception set rather than unanimity.
-  Tracked in [`docs/backlog/2026-07-21-unported-tangent-recompute.md`](../../backlog/2026-07-21-unported-tangent-recompute.md);
-  read it before acting on this risk — it explains why the obvious fail-loud is the wrong close, and
-  that no golden oracle covers the one model that reaches it.
+  **R2 RESOLVED, 2026-07-24:** the full `CalculateTangentsForMesh` recompute (and its `GetWeldedMeshData`
+  weld helper) shipped, and the `/resave` golden for `gar_b0_m0112.mdl` proved it byte-for-byte — the
+  "no golden oracle covers this model" gap is closed. See
+  [`2026-07-24-tangent-recompute-design.md`](2026-07-24-tangent-recompute-design.md) for the durable
+  record; the backlog item this risk tracked was deleted on completion.
 - **R3 — Half↔Float bit-exactness.** Reuse 3a's exact widening; **assert no residual Half
   channels remain** in the v6 output so a `floatToHalf` mismatch cannot bite.
 - **R4 — float32 accumulation order.** Model/water/fog bbox must use `Math.fround` single

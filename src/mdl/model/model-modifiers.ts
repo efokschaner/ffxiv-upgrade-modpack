@@ -1,6 +1,8 @@
 // Ported from xivModdingFramework Models/Helpers/ModelModifiers.cs: MergeGeometryData
 // (:376-576), MergeAttributeData (:578-623), MergeMaterialData (:626-655), MergeShapeData
-// (:658-846), ClearShapeData (:848-860), MergeFlags (:2284-2295). FixUpSkinReferences
+// (:658-846), ClearShapeData (:848-860), GetWeldedMeshData (:1935-2100),
+// CalculateTangentsForMesh (:2102-2253), CopyShapeTangentsForPart (:2257-2270), MergeFlags
+// (:2284-2295). FixUpSkinReferences
 // (:2309) is a deferred stub (see its doc comment below) -- "split, don't blend".
 
 import type {
@@ -214,29 +216,6 @@ export function clearShapeData(model: TTModel): void {
   for (const g of model.meshGroups) {
     for (const p of g.parts) {
       p.shapeParts.clear();
-    }
-  }
-}
-
-/** Copies each shape vertex's binormal + handedness from the base part vertex it replaces
- *  (ModelModifiers.CopyShapeTangentsForPart, ModelModifiers.cs:2257-2270). This is the ONLY
- *  byte-affecting part of the otherwise-omitted CalculateTangents fast path (R2): base-vertex
- *  binormals are left untouched, but a shape vertex's own decoded binormal is discarded in
- *  favour of the base vertex's — so this must run for shape-bearing models. (Tangent is also
- *  copied in the reference but is never serialized, so it is not modelled here.) */
-export function copyShapeBinormals(model: TTModel): void {
-  for (const g of model.meshGroups) {
-    for (const p of g.parts) {
-      for (const sp of p.shapeParts.values()) {
-        for (const [partIdx, shapeIdx] of sp.vertexReplacements) {
-          const shpV = sp.vertices[shapeIdx];
-          const baseV = p.vertices[partIdx];
-          if (shpV && baseV) {
-            shpV.binormal = baseV.binormal;
-            shpV.handedness = baseV.handedness;
-          }
-        }
-      }
     }
   }
 }
@@ -459,6 +438,289 @@ export function fixUpSkinReferences(
   _sourcePath: string,
 ): void {
   // Intentionally no-op: inert in /upgrade because FixOldModel passes MdlPath="" (see doc comment).
+}
+
+/** Port of ModelModifiers.GetWeldedMeshData (ModelModifiers.cs:1935-2100), weldMirrors=false only
+ *  (the recompute never passes true). Combines the group's parts into one vertex/index list, builds
+ *  the triangle-adjacency graph, and welds vertices sharing Position/UV1/Normal — except across a
+ *  UV-seam mirror point. Returns the translated index list and, per new welded vertex, the list of
+ *  ORIGINAL TtVertex objects welded into it (so the recompute can fan its result back over all of
+ *  them). The C# GetWeldHash (TTVertex, TTModel.cs:112-122) only BUCKETS candidates; the actual weld
+ *  gate is the explicit ==(Position, UV1, Normal) at :2011-2013, so we bucket by a canonical key and
+ *  apply the same == gate — provably equivalent without reproducing the int hash. */
+export interface WeldedMeshData {
+  indices: number[];
+  vertexTable: TtVertex[][];
+}
+
+function vec3Eq(a: Vec3, b: Vec3): boolean {
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+}
+function vec2Eq(a: Vec2, b: Vec2): boolean {
+  return a[0] === b[0] && a[1] === b[1];
+}
+function weldKey(v: TtVertex): string {
+  return `${v.position[0]},${v.position[1]},${v.position[2]}|${v.uv1[0]},${v.uv1[1]}|${v.normal[0]},${v.normal[1]},${v.normal[2]}`;
+}
+
+export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
+  // Combine parts (ModelModifiers.cs:1940-1950): index list offset by running vertex count.
+  const indices: number[] = [];
+  const vertices: TtVertex[] = [];
+  let offset = 0;
+  for (const p of group.parts) {
+    for (const i of p.triangleIndices) indices.push(i + offset);
+    offset += p.vertices.length;
+    for (const v of p.vertices) vertices.push(v);
+  }
+
+  // Triangle-adjacency graph (ModelModifiers.cs:1953-1982).
+  const connected = new Map<number, Set<number>>();
+  const connect = (a: number, b: number): void => {
+    let s = connected.get(a);
+    if (s === undefined) {
+      s = new Set();
+      connected.set(a, s);
+    }
+    s.add(b);
+  };
+  for (let i = 0; i < indices.length; i += 3) {
+    const v0 = indices[i]!;
+    const v1 = indices[i + 1]!;
+    const v2 = indices[i + 2]!;
+    if (!connected.has(v0)) connected.set(v0, new Set());
+    if (!connected.has(v1)) connected.set(v1, new Set());
+    if (!connected.has(v2)) connected.set(v2, new Set());
+    connect(v0, v1);
+    connect(v0, v2);
+    connect(v1, v0);
+    connect(v1, v2);
+    connect(v2, v0);
+    connect(v2, v1);
+  }
+
+  // Weld (ModelModifiers.cs:1985-2088).
+  const weldBuckets = new Map<string, number[]>(); // key -> original vertex ids
+  const oldToNew = new Map<number, number>();
+  const vertexIdTable: number[][] = []; // new id -> original ids welded in
+  const vertexTable: TtVertex[][] = []; // new id -> original TtVertex objects welded in
+
+  for (let i = 0; i < vertices.length; i++) {
+    const ov = vertices[i]!;
+    const key = weldKey(ov);
+    let found = false;
+    const bucket = weldBuckets.get(key);
+    if (bucket !== undefined) {
+      for (const oi of bucket) {
+        const ni = oldToNew.get(oi)!;
+        const nv = vertices[oi]!;
+        if (
+          vec2Eq(nv.uv1, ov.uv1) &&
+          vec3Eq(nv.position, ov.position) &&
+          vec3Eq(nv.normal, ov.normal)
+        ) {
+          // Mirror-point check (ModelModifiers.cs:2018-2055).
+          let isMirror = false;
+          const alreadyConnected = new Set<number>();
+          for (const vi of vertexIdTable[ni]!) {
+            const viConn = connected.get(vi);
+            // C# indexes connectedVertices[vi] unguarded (ModelModifiers.cs:2021): a vertex never
+            // referenced by a triangle throws KeyNotFoundException -> FixOldModel drops the file.
+            // Fail loud to match, rather than silently substituting empty connections.
+            if (viConn === undefined) {
+              throw new Error(
+                `getWeldedMeshData: vertex ${vi} not referenced by any triangle (ModelModifiers.cs:2021)`,
+              );
+            }
+            for (const c of viConn) alreadyConnected.add(c);
+          }
+          const myConnected = connected.get(i);
+          if (myConnected === undefined) {
+            throw new Error(
+              `getWeldedMeshData: vertex ${i} not referenced by any triangle (ModelModifiers.cs:2026)`,
+            );
+          }
+          for (const wc of alreadyConnected) {
+            const wcVert = vertices[wc]!;
+            for (const nc of myConnected) {
+              const ncVert = vertices[nc]!;
+              if (
+                vec2Eq(ncVert.uv1, wcVert.uv1) &&
+                !vec3Eq(ncVert.position, wcVert.position)
+              ) {
+                isMirror = true;
+                break;
+              }
+            }
+            if (isMirror) break;
+          }
+          if (!isMirror) {
+            oldToNew.set(i, ni);
+            vertexTable[ni]!.push(ov);
+            vertexIdTable[ni]!.push(i);
+            found = true;
+            break;
+          }
+        }
+      }
+    }
+    if (!found) {
+      const ni = vertexTable.length;
+      vertexTable.push([]);
+      vertexIdTable.push([]);
+      oldToNew.set(i, ni);
+      vertexTable[ni]!.push(ov);
+      vertexIdTable[ni]!.push(i);
+      const b = weldBuckets.get(key);
+      if (b !== undefined) b.push(i);
+      else weldBuckets.set(key, [i]);
+    }
+  }
+
+  // Translate indices (ModelModifiers.cs:2091-2097).
+  const finalIndices = indices.map((ov) => oldToNew.get(ov)!);
+  return { indices: finalIndices, vertexTable };
+}
+
+// Local float vector helpers mirroring SharpDX Vector3 ops used by the recompute
+// (ModelModifiers.cs:2195-2246). Kept local: only the recompute uses them.
+function vAdd(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+function vScale(a: Vec3, s: number): Vec3 {
+  return [a[0] * s, a[1] * s, a[2] * s];
+}
+function vDot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+function vCross(a: Vec3, b: Vec3): Vec3 {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+function vNormalize(a: Vec3): Vec3 {
+  const len = Math.sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+  if (len === 0) return [0, 0, 0];
+  return [a[0] / len, a[1] / len, a[2] / len];
+}
+
+/** Port of ModelModifiers.CopyShapeTangentsForPart (ModelModifiers.cs:2257-2270) restricted to the
+ *  serialized fields (Binormal, Handedness); Tangent is never serialized so it is omitted. Copies
+ *  each shape vertex's binormal/handedness from the base part vertex it replaces. This is the byte-
+ *  affecting tail shared by BOTH branches of CalculateTangentsForMesh. */
+export function copyShapeBinormalsForPart(part: TTMeshPart): void {
+  for (const sp of part.shapeParts.values()) {
+    for (const [partIdx, shapeIdx] of sp.vertexReplacements) {
+      const shpV = sp.vertices[shapeIdx];
+      const baseV = part.vertices[partIdx];
+      if (shpV && baseV) {
+        shpV.binormal = baseV.binormal;
+        shpV.handedness = baseV.handedness;
+      }
+    }
+  }
+}
+
+/** Port of ModelModifiers.CalculateTangentsForMesh (ModelModifiers.cs:2102-2253), force=false only.
+ *  Dispatches per mesh group:
+ *   - Empty guard (:2106-2109).
+ *   - The C# `anyMissing` early-return (:2111-2124) reads v.Tangent, which this port never stores
+ *     (Tangent is unserialized). Our Tangent is conceptually always zero, so anyMissing is always
+ *     true and the early-return never fires — so it is intentionally not reproduced; we go straight
+ *     to the binormal branch, which is behaviourally identical here.
+ *   - Fast path (:2127-2137): if any vertex already has a non-zero binormal, only the shape copy is
+ *     byte-affecting (Tangent write is skipped), so run copyShapeBinormalsForPart per part.
+ *   - Full recompute (:2140-2253): weld, accumulate per-triangle sdir/tdir, then per welded vertex
+ *     write Binormal + Handedness onto every original vertex welded into it; finally the shape copy. */
+export function calculateTangentsForMesh(group: TTMeshGroup): void {
+  const vertexCount = group.parts.reduce((s, p) => s + p.vertices.length, 0);
+  const indexCount = group.parts.reduce(
+    (s, p) => s + p.triangleIndices.length,
+    0,
+  );
+  if (vertexCount === 0 || indexCount === 0) return;
+
+  const hasBinormal = group.parts.some((p) =>
+    p.vertices.some(
+      (v) => v.binormal[0] !== 0 || v.binormal[1] !== 0 || v.binormal[2] !== 0,
+    ),
+  );
+  if (hasBinormal) {
+    for (const p of group.parts) copyShapeBinormalsForPart(p);
+    return;
+  }
+
+  const { indices, vertexTable } = getWeldedMeshData(group);
+  const tangents: Vec3[] = vertexTable.map(() => [0, 0, 0]);
+  const bitangents: Vec3[] = vertexTable.map(() => [0, 0, 0]);
+
+  for (let a = 0; a < indices.length; a += 3) {
+    const i1 = indices[a]!;
+    const i2 = indices[a + 1]!;
+    const i3 = indices[a + 2]!;
+    const p1 = vertexTable[i1]![0]!;
+    const p2 = vertexTable[i2]![0]!;
+    const p3 = vertexTable[i3]![0]!;
+
+    const dX1 = p2.position[0] - p1.position[0];
+    const dX2 = p3.position[0] - p1.position[0];
+    const dY1 = p2.position[1] - p1.position[1];
+    const dY2 = p3.position[1] - p1.position[1];
+    const dZ1 = p2.position[2] - p1.position[2];
+    const dZ2 = p3.position[2] - p1.position[2];
+
+    // Top-left addressing flip (ModelModifiers.cs:2179-2181): y -> -y + 1.
+    const v1y = -p1.uv1[1] + 1;
+    const v2y = -p2.uv1[1] + 1;
+    const v3y = -p3.uv1[1] + 1;
+    const dU1 = p2.uv1[0] - p1.uv1[0];
+    const dU2 = p3.uv1[0] - p1.uv1[0];
+    const dV1 = v2y - v1y;
+    const dV2 = v3y - v1y;
+
+    let r = 1.0 / (dU1 * dV2 - dU2 * dV1);
+    // C# guards float.IsInfinity(r) only (ModelModifiers.cs:2190) — NOT NaN; match it exactly so a
+    // NaN UV1 propagates as C# does rather than being silently zeroed.
+    if (r === Infinity || r === -Infinity) r = 0;
+
+    const sdir: Vec3 = [
+      (dV2 * dX1 - dV1 * dX2) * r,
+      (dV2 * dY1 - dV1 * dY2) * r,
+      (dV2 * dZ1 - dV1 * dZ2) * r,
+    ];
+    const tdir: Vec3 = [
+      (dU1 * dX2 - dU2 * dX1) * r,
+      (dU1 * dY2 - dU2 * dY1) * r,
+      (dU1 * dZ2 - dU2 * dZ1) * r,
+    ];
+
+    tangents[i1] = vAdd(tangents[i1]!, sdir);
+    tangents[i2] = vAdd(tangents[i2]!, sdir);
+    tangents[i3] = vAdd(tangents[i3]!, sdir);
+    bitangents[i1] = vAdd(bitangents[i1]!, tdir);
+    bitangents[i2] = vAdd(bitangents[i2]!, tdir);
+    bitangents[i3] = vAdd(bitangents[i3]!, tdir);
+  }
+
+  for (let vId = 0; vId < vertexTable.length; vId++) {
+    const n = vertexTable[vId]![0]!.normal;
+    const t = tangents[vId]!;
+    const b = bitangents[vId]!;
+
+    let binormal = vNormalize(vCross(n, vNormalize(t)));
+    const bHandedness = vDot(vNormalize(binormal), b) >= 0 ? 1 : -1;
+    const boolHandedness = !(bHandedness < 0);
+    binormal = vScale(binormal, bHandedness);
+
+    for (const v of vertexTable[vId]!) {
+      v.binormal = [binormal[0], binormal[1], binormal[2]];
+      v.handedness = boolHandedness;
+    }
+  }
+
+  for (const p of group.parts) copyShapeBinormalsForPart(p);
 }
 
 /** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2284-2295): anisotropic lighting is
