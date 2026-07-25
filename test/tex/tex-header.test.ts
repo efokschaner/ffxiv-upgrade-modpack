@@ -66,7 +66,7 @@ describe("tex header codec", () => {
 });
 
 describe("fixUpBrokenMipOffsets", () => {
-  // A8R8G8B8 mip sizes for 4x4: [64, 16, 4, 4] (32bpp; min dim 1; halves to 2x2=16, 1x1=4, then 1x1=4).
+  // A8R8G8B8 mip sizes for 4x4: [64, 16, 4] (32bpp; min dim 1; halves 4x4=64, 2x2=16, 1x1=4).
   it("rewrites a broken first offset and trims trailing data", () => {
     const header = {
       format: A8R8G8B8,
