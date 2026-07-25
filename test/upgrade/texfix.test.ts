@@ -30,6 +30,10 @@ function makeUncompressedTex(
   dv.setUint16(10, height, true);
   dv.setUint16(12, 1, true); // depth
   buf[14] = mipCount & 0xf; // mip count (low nibble)
+  // mip0 offset (byte 28, right after the 12-byte LoDMips table): must point past the 80-byte
+  // header or validateTexFileData's fixUpBrokenMipOffsets (now wired into makeTtmpLoadFix) treats
+  // this fixture as a broken-offset tex and rewrites it, which is not what this suite is testing.
+  dv.setUint32(28, TEX_HEADER_SIZE, true);
   for (let i = TEX_HEADER_SIZE; i < buf.length; i++)
     buf[i] = (i * 17 + 3) & 0xff;
   return buf;
@@ -127,9 +131,11 @@ describe("needsTexFix", () => {
   });
 });
 
-// The per-.tex validity-check DROP that used to be `texFixRound` now lives in makeTtmpLoadFix's
-// `.tex` branch (FromWizardGroup fix-before-collapse, WizardData.cs:701-712). Drive it directly.
-describe("makeTtmpLoadFix (.tex validity-check drop)", () => {
+// The per-.tex decode-and-fix that used to be `texFixRound` now lives in makeTtmpLoadFix's `.tex`
+// branch (FromWizardGroup fix-before-collapse, WizardData.cs:701-712), running the full
+// validateTexFileData (see test/upgrade/load-fixes.test.ts for the repair-path coverage). Drive it
+// directly here for the decode-drop / ui-carve-out / gating behaviour.
+describe("makeTtmpLoadFix (.tex decode-and-fix)", () => {
   const fix = makeTtmpLoadFix({ needsTexFix: true, needsMdlFix: false });
 
   it("drops a malformed compressed .tex (returns null)", () => {
@@ -138,7 +144,7 @@ describe("makeTtmpLoadFix (.tex validity-check drop)", () => {
     ).toBeNull();
   });
 
-  it("keeps a valid .tex, bytes unchanged (validity check only)", () => {
+  it("keeps a valid .tex, bytes unchanged (nothing for validateTexFileData to fix)", () => {
     const valid = validTexEntry();
     const kept = fix("chara/x/tex/valid_n.tex", sqpackFile(valid));
     expect(kept).not.toBeNull();

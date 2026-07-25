@@ -17,9 +17,10 @@
 import type { LoadFix, LoadFixGates } from "../container/load-fix";
 import { deserializeMeta } from "../meta/deserialize";
 import { yieldsManipulations } from "../meta/manipulations";
-import { decodeSqPackFile, SqPackType } from "../sqpack/sqpack";
+import { SqPackType } from "../sqpack/sqpack";
 import { normalizeModel } from "./model";
 import { requireBytes, restore } from "./upgrade";
+import { UnportedBcReencode, validateTexFileData } from "./validate-tex";
 
 const IS_TEX = /\.tex$/;
 const IS_UI = /^ui\//;
@@ -55,21 +56,22 @@ const IS_META = /\.meta$/;
  *   Byte-identical when kept: the load seam must not rewrite meta bytes; `metadataRound` still owns
  *   reconstruction.
  *
- * - `.tex` when `needsTexFix` (WizardData.cs:701-712): a validity check ONLY. Decode the compressed
- *   Type-4 entry; a decode failure returns `null` to DROP the file (FixOldTexData's catch -> continue
- *   — a majorly-broken texture). A decodable `.tex` is returned UNCHANGED: our FixOldTexData subset
- *   never rewrites bytes (NPOT-resize / mip-fixup / recompress are deferred — see
- *   docs/backlog/2026-07-10-fixoldtexdata-load-round.md). The `ui/` exclusion here does NOT come from
- *   FromWizardGroup itself — `WizardData.cs:701`'s gate is `needsTexFix && path.EndsWith(".tex")`,
- *   with no `ui/` check at all. It is carried instead from a different C# symbol,
- *   `MakeFileStorageInformationDictionary` (`TTMP.cs:1367`, `!FullPath.StartsWith("ui/")`), preserved
- *   verbatim from the retired `texFixRound`. It is kept deliberately rather than dropped to match
- *   FromWizardGroup, because our tex fix is only the minimal drop-malformed subset of the real
- *   `FixOldTexData` (see the "T2" item in docs/backlog/2026-07-10-fixoldtexdata-load-round.md): our
- *   decode-only check can reject a `ui/*.tex` that TexTools' full `FixOldTexData` would successfully
- *   fix and keep, which WOULD move a golden. Net effect: a malformed `ui/*.tex` in a `needsTexFix`
- *   pack is a latent divergence from FromWizardGroup (we keep it; TexTools drops it), gated behind
- *   the T2 backlog item — revisit once full `FixOldTexData` is ported.
+ * - `.tex` when `needsTexFix` (WizardData.cs:701-712): runs the full `ValidateTexFileData`
+ *   (`validateTexFileData`, port of EndwalkerUpgrade.ValidateTexFileData / TTMP.FixOldTexData) — NPOT
+ *   resize-for-merge (Branch A) and mip-offset fixup (Branch B). A decode failure, or a faithful
+ *   resize-guard throw (an unsupported format, or a <64px non-BC7 source — MergePixelData's own
+ *   guards), DROPS the file (`null`), matching FromWizardGroup's `catch { continue }` on a
+ *   majorly-broken or unfixable texture. A BC-compressed NPOT-with-mips source needs a re-encode back
+ *   to its original BC format we have no encoder for (`UnportedBcReencode`); that PROPAGATES instead
+ *   of dropping — fails loud rather than silently emitting a wrong-format file. See
+ *   docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md and
+ *   docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md §3.4. The `Tex.CompressTexFile`
+ *   recompress step remains deferred (invisible to the golden: we always store uncompressed .tex
+ *   payloads pre-SqPack-compression, so there is no observable byte difference). The `ui/` exclusion
+ *   here does NOT come from FromWizardGroup itself — `WizardData.cs:701`'s gate is
+ *   `needsTexFix && path.EndsWith(".tex")`, with no `ui/` check at all. It is carried instead from a
+ *   different C# symbol, `MakeFileStorageInformationDictionary` (`TTMP.cs:1367`,
+ *   `!FullPath.StartsWith("ui/")`), preserved verbatim from the retired `texFixRound`.
  *
  * - `.mdl` when `needsMdlFix` (WizardData.cs:714-727): run FixOldModel (normalizeModel) — parse,
  *   build the editable TTModel, re-serialize as a v6 uncompressed model, re-wrapped as a Model
@@ -94,13 +96,21 @@ export function makeTtmpLoadFix(gates: LoadFixGates): LoadFix {
       return yieldsManipulations(meta) ? file : null;
     }
     if (gates.needsTexFix && IS_TEX.test(gamePath)) {
-      if (IS_UI.test(gamePath)) return file; // MakeFileStorageInformationDictionary (:1367), not FromWizardGroup — see doc comment above
+      // ui/ carve-out from MakeFileStorageInformationDictionary (TTMP.cs:1367), not FromWizardGroup —
+      // preserved verbatim from the retired texFixRound; see this module's header comment.
+      if (IS_UI.test(gamePath)) return file;
       try {
-        decodeSqPackFile(file.data);
-      } catch {
-        return null; // majorly-broken texture — FixOldTexData catch -> continue
+        // GetUncompressedFile (TTMP.cs:1426): decode the Type-4 entry; a decode failure throws and is
+        // caught below → DROP (FixOldTexData's catch → continue on a majorly-broken texture).
+        const { bytes } = requireBytes(file, gamePath);
+        const fixed = validateTexFileData(bytes);
+        return fixed ? restore(file, fixed, SqPackType.Texture) : file;
+      } catch (e) {
+        // FAIL LOUD for the one path we can't reproduce (BC re-encode); everything else that throws is
+        // a faithful drop (majorly-broken tex, or a resize guard TexTools also aborts on → continue).
+        if (e instanceof UnportedBcReencode) throw e;
+        return null;
       }
-      return file; // validity check only; stored bytes unchanged
     }
     if (gates.needsMdlFix && IS_MDL.test(gamePath)) {
       try {

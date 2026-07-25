@@ -105,6 +105,9 @@ function makeUncompressedTex(
   dv.setUint16(10, height, true);
   dv.setUint16(12, 1, true);
   buf[14] = mipCount & 0xf;
+  // mip0 offset must point past the 80-byte header, or validateTexFileData's
+  // fixUpBrokenMipOffsets (wired into makeTtmpLoadFix) rewrites this "valid" fixture.
+  dv.setUint32(28, TEX_HEADER_SIZE, true);
   for (let i = TEX_HEADER_SIZE; i < buf.length; i++)
     buf[i] = (i * 17 + 3) & 0xff;
   return buf;
@@ -149,7 +152,8 @@ describe("load-fix + collapse ordering (WizardData.FromWizardGroup, WizardData.c
     const files = data.groups[0]!.options[0]!.files;
 
     expect(files.has(path)).toBe(true);
-    // Kept copy is the FIRST (valid) one, bytes unchanged (texFix is a validity check only).
+    // Kept copy is the FIRST (valid) one; bytes unchanged since this fixture's mip offsets are
+    // already well-formed, so validateTexFileData has nothing to fix.
     expect(Array.from(files.get(path)!.data!)).toEqual(Array.from(first));
   });
 
