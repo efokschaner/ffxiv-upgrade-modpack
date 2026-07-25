@@ -39,6 +39,31 @@ describe("validateTexFileData", () => {
     expect(() => validateTexFileData(dxt5)).toThrow(UnportedBcReencode);
   });
 
+  it("Branch A: BC source rounding below 64 hits the size-guard drop, NOT the BC abort (order is load-bearing)", () => {
+    // 48x96 DXT5, NPOT, 2 mips. validateTexFileData rounds WIDTH (48 → 32) for both dims, so the
+    // target is 32x32 (<64). Because resizeForMerge is called BEFORE the isCompressed abort, this
+    // throws MergePixelData's "too small" guard (a faithful DROP at the load seam), not UnportedBcReencode.
+    // If the two were reordered, it would throw UnportedBcReencode instead — so this pins the ordering.
+    const dxt5 = makeSolidDxt5Tex(48, 96);
+    expect(() => validateTexFileData(dxt5)).toThrow(
+      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
+    );
+    expect(() => validateTexFileData(dxt5)).not.toThrow(UnportedBcReencode);
+  });
+
+  it("Branch B: a mipCount==2 tex with a broken offset throws the ToBytes ordering guard (TEXTOOLS_BUGS #19)", () => {
+    // A 4x4 A8R8G8B8 tex has exactly 2 mips (generateMipmaps' 2x2 floor), so buildCanonicalTexHeader
+    // emits the non-monotonic LoDMips=[0,1,0]. Branch B's rewrite calls assertTexHeaderWritable
+    // (= TexHeader.ToBytes' guard), which throws — reproducing the TexTools crash faithfully. At the
+    // load seam this becomes a faithful drop. Pins that we keep reproducing #19.
+    const src = encodeUncompressedTex(solidRgba(4, 4), 4, 4, { mips: true });
+    const broken = src.slice();
+    new DataView(broken.buffer, broken.byteOffset).setUint32(28, 999, true);
+    expect(() => validateTexFileData(broken)).toThrow(
+      "LoDMips is not in non-descending order.",
+    );
+  });
+
   it("Branch B: a POT tex with a broken first offset is rewritten, not resized", () => {
     // 16x16 (not 4x4/mipCount=2): a canonical mipCount=2 A8R8G8B8 header has LoDMips=[0,1,0]
     // (CreateTexFileHeader, Tex.cs:1125-1127 — LoD2 stays 0 unless mipCount>2), which is

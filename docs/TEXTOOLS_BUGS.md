@@ -606,24 +606,31 @@ off-by-one in the second guard, not a format rule (nothing requires LoD2 to stay
 `MipCount==2`; the natural completion is `min(2, newMipCount-1)`, matching what the `>1` guard already
 does for LoD1).
 
-That header round-trips fine through `ToBytes()` unmodified — the guard there only fires when
-`LoDMips` is *read back* and re-validated after something else touched the header first. `TexHeader.
-FixUpBrokenMipOffsets` is exactly that path: it never rewrites `LoDMips` unless an entry is `>=
-MipCount` (`Tex.cs:206-211`, ported as the `fixUpBrokenMipOffsets` loop), so a `MipCount==2` header
-with corrupted mip offsets keeps its `[0,1,0]` LoDMips untouched by the fixup — and then `ToBytes()`
-(`:138`, ported as `assertTexHeaderWritable`) throws `InvalidOperationException("LoDMips is not in
-non-descending order.")` the moment `ValidateTexFileData`'s Branch B (`EndwalkerUpgrade.cs:2116-2124`)
-tries to rebuild it. Any real, old two-mip `.tex` with broken offsets hits this — not a hypothetical:
-it is exactly the shape `ValidateTexFileData`'s Branch B exists to repair, and for `MipCount==2` it
-crashes attempting the repair instead.
+`ToBytes()`'s ordering guard (`:138`, ported as `assertTexHeaderWritable`) is a **pure function of the
+stored `LoDMips`** — it doesn't care how the header got that way. So this is not a "corrupted header
+only" crash: any canonical `MipCount==2` header hits it, corrupted or not. `CompressTexFile`
+(`Tex.cs:1300-1330`), TexTools' ordinary DDS-import path, reads back a header built moments earlier by
+this same `CreateTexFileHeader` (via `DDSHeaderToTexHeader`, `:1203`, called from `DDSToUncompressedTex`
+at the top-level import entry point `:503`) and immediately calls `header.ToBytes()` on it (`:1325`) —
+with no `FixUpBrokenMipOffsets` anywhere in that path. A **freshly imported, never-corrupted** two-mip
+texture crashes there exactly as a broken-offset one does in `ValidateTexFileData`'s Branch B; the two
+call sites just differ in *when* they reach `ToBytes()`. `TexHeader.FixUpBrokenMipOffsets` (`Tex.cs:206-
+211`, ported as the `fixUpBrokenMipOffsets` loop) is a separate, unrelated reader — it never rewrites
+`LoDMips` unless an entry is `>= MipCount`, so it passes a `MipCount==2` header's `[0,1,0]` through
+untouched — but its absence isn't what causes the crash; `ToBytes()` would throw on that header whether
+or not a fixup pass ever ran. `ValidateTexFileData`'s Branch B (`EndwalkerUpgrade.cs:2116-2124`) is
+simply the first place *our port* currently reaches this shared defect, because a broken-offset old
+two-mip `.tex` is the case our load seam constructs; the crash itself is reachable anywhere TexTools
+serializes a canonical `MipCount==2` header, broken offsets or not.
 
 **Us:** ported both symbols verbatim — `buildCanonicalTexHeader` (`src/tex/header.ts`) reproduces the
 `[0,1,0]` construction for `MipCount==2`, and `assertTexHeaderWritable` reproduces `ToBytes`'s ordering
 check, so `validateTexFileData`'s Branch B (`src/upgrade/validate-tex.ts`) throws on this shape exactly
 where TexTools would. Found while writing this task's synthetic Branch-B test: a naive 4x4
-(`mipCount==2`) fixture with a corrupted mip0 offset reliably reproduces the crash; the committed test
-uses 16x16 (`mipCount==4`, `LoDMips=[0,1,2]`) instead, to exercise the *intended* rewrite path without
-tripping this defect. No corpus pack is known to reach it yet.
+(`mipCount==2`) fixture with a corrupted mip0 offset reliably reproduces the crash — pinned directly by
+`test/upgrade/validate-tex.test.ts` ("Branch B: a mipCount==2 tex with a broken offset throws the ToBytes
+ordering guard"); the *rewrite-path* test uses 16x16 (`mipCount==4`, `LoDMips=[0,1,2]`) instead, to
+exercise the intended repair without tripping this defect. No corpus pack is known to reach it yet.
 
 **Upstream fix:** `LoD2Mip = newMipCount > 2 ? 2 : (newMipCount > 1 ? 1 : 0)` (i.e. `Math.Min(2,
 newMipCount - 1)` clamped at 0) in `CreateTexFileHeader`, matching the completion the `>1` guard
