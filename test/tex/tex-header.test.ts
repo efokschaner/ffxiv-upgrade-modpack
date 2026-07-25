@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertTexHeaderWritable,
   buildCanonicalTexHeader,
+  fixUpBrokenMipOffsets,
   parseTexHeader,
   serializeTexHeader,
 } from "../../src/tex/header";
@@ -60,5 +62,56 @@ describe("tex header codec", () => {
     expect(dv.getUint32(36, true)).toBe(400); // mip2 offset (336+64)
     expect(dv.getUint32(40, true)).toBe(416); // mip3 offset (400+16)
     expect(dv.getUint32(44, true)).toBe(0); // padding
+  });
+});
+
+describe("fixUpBrokenMipOffsets", () => {
+  // A8R8G8B8 mip sizes for 4x4: [64, 16, 4, 4] (32bpp; min dim 1; halves to 2x2=16, 1x1=4, then 1x1=4).
+  it("rewrites a broken first offset and trims trailing data", () => {
+    const header = {
+      format: A8R8G8B8,
+      width: 4,
+      height: 4,
+      mipCount: 1,
+      lodMips: [0, 0, 0] as [number, number, number],
+      mipMapOffsets: [999, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    // File claims 80 header + 64 mip0 + 40 trailing garbage = 184.
+    const res = fixUpBrokenMipOffsets(header, 184);
+    expect(header.mipMapOffsets[0]).toBe(80); // first offset forced to 80
+    expect(res.headerChanged).toBe(true);
+    expect(res.calculatedTexSize).toBe(80 + 64); // trailing 40 bytes trimmed
+  });
+
+  it("leaves mipCount untouched on the passed header (struct-copy quirk)", () => {
+    // A file whose header claims 3 mips but only mip0 fits: the loop reduces the LOCAL mip count,
+    // but the caller's header.mipCount must stay 3 (C# passes TexHeader by value; scalar writes to
+    // MipCount do not escape). Tex.cs:168-235 + ValidateTexFileData's use at EndwalkerUpgrade.cs:2121.
+    const header = {
+      format: A8R8G8B8,
+      width: 4,
+      height: 4,
+      mipCount: 3,
+      lodMips: [2, 2, 2] as [number, number, number],
+      mipMapOffsets: [80, 144, 160, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    // Only mip0 (64 bytes) fits in an 80+64 = 144-byte file; mip1 would need 16 more.
+    const res = fixUpBrokenMipOffsets(header, 144);
+    expect(header.mipCount).toBe(3); // UNCHANGED — the quirk
+    expect(res.calculatedTexSize).toBe(144);
+    expect(header.lodMips).toEqual([0, 0, 0]); // clamped to localMipCount(1) - 1 = 0
+    expect(res.headerChanged).toBe(true);
+  });
+});
+
+describe("assertTexHeaderWritable", () => {
+  it("throws on descending LoDMips", () => {
+    expect(() =>
+      assertTexHeaderWritable({
+        lodMips: [2, 1, 0],
+        mipCount: 5,
+        mipFlag: 0,
+      }),
+    ).toThrow(/LoDMips is not in non-descending order/);
   });
 });
