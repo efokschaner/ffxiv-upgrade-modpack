@@ -74,13 +74,13 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * Already-pow2 input is returned untouched — C# only calls ResizeXivTx inside the NPOT branch,
  * so nothing here runs for a pow2 texture.
  *
- * Those three are the TRANSFORM-ROUND sites. Two nearby calls are deliberately not routed here:
+ * Those three are the TRANSFORM-ROUND sites. Two nearby calls are handled elsewhere:
  *   - :1205's ResizeImages is not a resize of this kind at all — it calls TextureHelpers.ResizeImage
  *     directly (TextureHelpers.cs:336-337) with no MergePixelData behind it, so neither guard below
  *     applies and the hair path resizes to the common max size with a bare resizeBicubic instead.
- *   - :2110 (ValidateTexFileData) IS a genuine fourth ResizeXivTx call, but it is LOAD-time and
- *     wholly unported — see docs/backlog/2026-07-10-fixoldtexdata-load-round.md. When it lands it
- *     should come through this helper too.
+ *   - :2110 (ValidateTexFileData) IS a genuine fourth ResizeXivTx call; it is the LOAD-time seam and
+ *     now routes through this helper's extracted core `resizeForMerge` from src/upgrade/validate-tex.ts
+ *     (see docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md).
  *
  * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
  * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt. The caller
