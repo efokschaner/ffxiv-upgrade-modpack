@@ -97,7 +97,11 @@ Decode the uncompressed tex → `resizeForMerge` → re-encode, keyed on the sou
   byte-exact.** TexTools' `MergePixelData` maps A8R8G8B8 → `CompressionFormat.BGRA` (lossless), and
   `ToUncompressedTex` stores it back as A8R8G8B8 — the same bytes our uncompressed encoder produces.
   This is the case we can match; a synthetic golden (§6) proves it.
-- **BC / block-compressed source (DXT1/DXT5/BC5/BC7): fail loud.** See §3.4.
+- **BC / block-compressed source (DXT1/DXT5/BC5/BC7): resize + `encodeUncompressedTex` too, a
+  *confirmed divergence*.** We have no nvtt-matching BC encoder, so we emit the resized image as
+  A8R8G8B8 where TexTools re-encodes it back to its original BC format — the same
+  `MergePixelData`-elision the material-round mask path already ships. See §3.4 for why this replaced
+  the original fail-loud decision.
 
 `resizeForMerge` already carries the two faithful TexTools failure guards verbatim (unsupported
 format → `"Format is currently unsupported: …"`, `Tex.cs:743`; `<64` post-resize dim →
@@ -112,7 +116,7 @@ At *this* seam those throws mean **drop** (§3.4), not abort.
 format)` (source stays `W × H`, target is `roundW × roundW`) — and register it in
 `docs/TEXTOOLS_BUGS.md` as a genuine defect we knowingly reproduce.
 
-### 3.4 Drop vs. abort at the load seam
+### 3.4 Drop vs. keep vs. confirmed-divergence at the load seam
 
 `FixOldTexData` runs under `FromWizardGroup`'s `catch { continue }` (`WizardData.cs:703-712`), so at
 this seam a throw **drops the file** — unlike the material round (`EndwalkerUpgrade.cs:1842`, no
@@ -125,29 +129,42 @@ decides. Our `.tex` branch therefore:
 | `resizeForMerge` guard throw (`<64`, unsupported format) | **drop** | ✅ FixOldTexData throws → `catch { continue }` |
 | `texMipSizes` throws on unknown format in Branch B | **drop** | ✅ `DDS.CalculateMipMapSizes` throws → caught |
 | Branch B change, or Branch A on A8R8G8B8 | **keep** (fixed bytes) | ✅ byte-exact |
-| **Branch A on a BC source** | **fail-loud abort** (typed sentinel escaping the drop-catch) | ❌ *deliberate divergence* |
+| **Branch A on a BC source** | **keep, as A8R8G8B8** (confirmed divergence) | ⚠️ *same resized image, uncompressed instead of re-encoded to BC* |
 
-The BC-source abort is **not** what TexTools does — it resizes + nvtt-re-encodes to the same BC
-format and keeps the file. We have no BC encoder (`src/tex/` decodes BC1/3/5/7 but the only encoder
-is `encodeUncompressedTex` → A8R8G8B8), and cannot reproduce nvtt byte-for-byte. Emitting A8R8G8B8
-instead would be a **larger** divergence than the material-round mask path — it changes the file's
-**format and length** (uncompressed is 4–8× larger), not just pixel values — for a path **no corpus
-pack reaches**, to "fix" a texture where TexTools' own BC re-encode is the degraded output
-(`docs/TEXTOOLS_BUGS.md` #18). So per AGENTS.md "fail loud, never silently diverge," we abort, framed
-as an **unported path gated behind the BC-encoder item**
-([`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md)).
-This is **latent**: it requires an old-version (`needsTexFix`) TTMP carrying a BC NPOT-with-mips
-texture; none exists in the corpus.
+**DECISION UPDATE (2026-07-25b) — this reverses the original fail-loud call.** The first version of
+this section made BC sources **fail loud** (a typed `UnportedBcReencode` escaping the drop-catch), on
+the explicit premise that the path was **latent** — "no corpus pack reaches it." **Wiring the branch
+in (implementation) falsified that premise:** the real corpus pack
+`KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2` carries a **DXT1 NPOT-with-mips** texture and reached the
+abort on both `/upgrade` and `/resave` — the exact "deploying changes the probability term / corpus
+silence is absence of evidence" trap `docs/BACKLOG.md` warns about (and the second such NPOT
+falsification, after `Club Cyberia`). Fail-loud therefore **aborts an entire pack TexTools upgrades
+successfully**, the worst user outcome, and cannot go green (ConsoleTools succeeds, so there is no
+expected-failure golden to match).
 
-**Decision provenance.** A BC-encoder impact survey (2026-07-25) confirmed the missing encoder is the
-sole blocker of 1 backlog item (+1 matched-pair decoder item) and the cause of all 3 current
-`DIVERGENCE_RULES` entries, but that it affects **zero** corpus packs and that closing it would
-re-introduce bug #18's quality loss. Option (b) (produce A8R8G8B8 + a new `DIVERGENCE_RULES` entry)
-was rejected on that evidence in favour of fail-loud (a). The survey also settled that the BC-encoder
-item stays **unprioritized** (probability ~0, severity bounded-to-cosmetic; leverage, not urgency, is
-its only case for a bump).
+The operator adjudicated (2026-07-25) to **produce A8R8G8B8 + confirm** — the same call made for the
+material-round mask path (2026-07-22), and for the same reason: we lack an nvtt-matching BC encoder,
+TexTools' own BC re-encode is the *degraded* output (`docs/TEXTOOLS_BUGS.md` #18), and an A8R8G8B8
+tex is valid and renders in-game, so the mod works. So Branch A now emits the resized image as
+A8R8G8B8 for **every** decodable format; there is no `UnportedBcReencode` and nothing escapes the
+drop-catch — every throw at the seam is a faithful drop again.
 
-The typed sentinel must escape the load-fix drop-catch. Everything else that throws is caught → drop.
+**The divergence is bigger than the mask path's and confirmed differently.** There, ours and the
+golden are both A8R8G8B8, differing only in resized pixels. Here the golden is the source's **original
+BC format** (`ToUncompressedTex` of the MergePixelData re-encode) while ours is A8R8G8B8 — different
+**format and length**. So the confirmation cannot compare bytes or same-shape pixels; it **decodes
+both sides to RGBA** and checks same dimensions + pixels within a generous ceiling (the BC round-trip
+error, content-dependent and unbounded in principle — §6). Byte-exactness stays the hard guard for the
+**A8R8G8B8-source** case (a synthetic + the unit tests), which no rule covers.
+
+**Which AGENTS.md rule governs.** Not the three-part user-benefit bar (that is for departing because
+TexTools is *wrong*). Here TexTools is right and we lack a capability, so — exactly as for the mask
+path — this is a **knowing departure from "fail loud, never silently diverge"**, justified by user
+impact (throwing aborts a whole pack for a ≤ some-delta difference in one texture) and recorded as
+such, confirmed by a committed `DIVERGENCE_RULES` entry with a cited reason (not a bare baseline). The
+BC-encoder item ([`2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md))
+remains the real fix; a real pack now reaching this is fresh evidence for its priority, to re-weigh
+against the survey's "leverage-not-urgency" finding.
 
 ### 3.5 The load-fix `.tex` branch (`load-fixes.ts`)
 
@@ -156,8 +173,7 @@ try {
   const { bytes } = requireBytes(file, gamePath);        // GetUncompressedFile; throw → drop
   const fixed = validateTexFileData(bytes);              // Branch A/B; guard throws → drop
   return fixed ? restore(file, fixed, SqPackType.Texture) : file;
-} catch (e) {
-  if (e is UnportedBcReencode) throw e;                  // fail loud (§3.4), latent
+} catch {
   return null;                                            // majorly-broken / guard fired → drop
 }
 ```
@@ -173,8 +189,12 @@ uncompressed bytes are what the golden decompresses and compares.
 numbering and every later round — wider than a material-round resize. Mitigations:
 
 - **Branch B is byte-exact** (pure header/size integer math, no lossy step), so it can only *remove*
-  existing baseline diffs, never add one.
-- **Branch A is latent** for BC (abort) and byte-exact for A8R8G8B8.
+  existing baseline diffs, never add one. Confirmed in implementation: 30+ real packs' diffs shrank
+  below baseline, zero regressions.
+- **Branch A is byte-exact for A8R8G8B8** and a **confirmed A8R8G8B8 divergence for BC** (§3.4). The
+  real pack `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2` (DXT1 NPOT-with-mips) reaches the BC case on both
+  `/upgrade` and `/resave` and is the real golden that measures the divergence and anchors its
+  `DIVERGENCE_RULES` confirmation.
 - Full `npm test` + a re-bless, reporting per-pack before/after entry counts, with any *unexpected*
   baseline movement investigated (an NPOT/broken-mip source we didn't know about) rather than blessed.
 
@@ -210,14 +230,18 @@ behaviour first.
   the width-for-both-dims bug against the real oracle.
 - **Unit** (`test/upgrade/validate-tex.test.ts`): NPOT-with-mips A8R8G8B8 resizes to the hand-computed
   `resizeForMerge` + `encodeUncompressedTex` reference; **the §3.3 bug** — a non-square NPOT input
-  produces a **square** output (`roundW × roundW`); guard cases return the drop signal; a BC
-  NPOT-with-mips source throws the `UnportedBcReencode` sentinel.
-- **BC measurement (documentation, not a passing golden):** optionally build the BC-source synthetic
-  (an old-version TTMP with a DXT5 NPOT-with-mips `.tex`, hand-assembled like `npot-mask-dxt5`),
-  capture ConsoleTools' golden, and record the measured divergence magnitude in `TEXTOOLS_BUGS.md`
-  #18 / the backlog item as the evidence for §3.4's fail-loud choice. It **cannot** be a normal
-  corpus pack (ConsoleTools succeeds where we deliberately abort) — pin our abort with the unit test
-  above. Skip if the measurement adds nothing beyond the mask-path numbers already recorded.
+  produces a **square** output (`roundW × roundW`); the `<64`/unsupported-format guard cases throw the
+  drop signal (`resizeForMerge`'s verbatim messages), including the load-bearing call-order test (a BC
+  source whose rounded dim is `<64` throws the "too small" *drop*, not a produce); a **BC NPOT-with-mips
+  source now produces a valid A8R8G8B8 tex** (resized dims, A8R8G8B8 format), not an abort; and the
+  `TEXTOOLS_BUGS.md` #19 case (a `mipCount==2` broken-offset tex throws the ToBytes ordering guard → drop).
+- **BC divergence — real golden + confirmation (§3.4):** `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2` (DXT1
+  NPOT-with-mips) is the real `/upgrade` + `/resave` golden. Add a path-scoped `DIVERGENCE_RULES`
+  entry (`test/helpers/upgrade-compare.ts`) that **decodes both** the golden (DXT1) and our output
+  (A8R8G8B8) to RGBA, confirms identical dimensions, and accepts pixels within a generous ceiling
+  (record the measured max delta in the rule's cited reason and in `TEXTOOLS_BUGS.md` #18). The
+  `A8R8G8B8`-source case stays byte-exact and is covered by **no** rule (the hard guard), matching the
+  mask path's `npot-mask-a8` discipline.
 
 ### 6.3 Regression guard
 
