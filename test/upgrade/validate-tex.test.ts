@@ -89,4 +89,24 @@ describe("validateTexFileData", () => {
     const src = encodeUncompressedTex(solidRgba(8, 8), 8, 8, { mips: true });
     expect(validateTexFileData(src)).toBeNull();
   });
+
+  it("Branch B: a tex truncated below its computed mip0 size throws (dropped at the load seam)", () => {
+    // 16x16 A8R8G8B8, mipCount=4, canonical LoDMips=[0,1,2] (monotonic — doesn't trip #19), so this
+    // reaches assertTexHeaderWritable without throwing and lands on the new overrun guard. Truncate
+    // the file to 580 bytes: well past the 80-byte header but short of 80 + mip0's 1024-byte size
+    // (16*16*4). fixUpBrokenMipOffsets ALWAYS accounts mip0's full computed size into
+    // calculatedTexSize (Tex.cs:168-235 / header.ts:120-122) even though it doesn't fit the
+    // truncated file — mip1 then fails the `mipOffset + mipSize > texSizeIncludingHeader` check
+    // immediately, so recomputed mipCount(1) != original(4) and headerChanged is forced true, taking
+    // the rewrite path. calculatedTexSize (1104) > file length (580): the C# Array.Copy this ports
+    // (EndwalkerUpgrade.cs:2122) throws ArgumentException on that source overrun, which
+    // WizardData.FromWizardGroup's surrounding try/catch (WizardData.cs:703-712) swallows and
+    // `continue`s past — the corrupt/truncated file is silently DROPPED from the upgraded pack, not
+    // kept zero-padded. We reproduce the throw so callers at the load seam can drop it the same way.
+    const src = encodeUncompressedTex(solidRgba(16, 16), 16, 16, {
+      mips: true,
+    });
+    const truncated = src.subarray(0, 580);
+    expect(() => validateTexFileData(truncated)).toThrow("exceeds file length");
+  });
 });

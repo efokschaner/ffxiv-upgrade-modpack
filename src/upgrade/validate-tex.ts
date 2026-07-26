@@ -47,6 +47,15 @@ export function validateTexFileData(
   const fix = fixUpBrokenMipOffsets(tex, uncompressedTex.length);
   if (fix.headerChanged || fix.calculatedTexSize !== uncompressedTex.length) {
     assertTexHeaderWritable(tex); // header.ToBytes() guard (Tex.cs:138-145); throw → drop at the seam
+    // Array.Copy(uncompressedTex, 80, newData, 80, CalculatedTexSize-80) throws on a source overrun
+    // (EndwalkerUpgrade.cs:2122) — a truncated/corrupt tex whose computed mip0 exceeds the file. That
+    // throw is caught by FromWizardGroup's catch → the file is dropped. Reproduce it (a bare subarray
+    // would silently zero-pad and KEEP a corrupt tex — a silent divergence).
+    if (fix.calculatedTexSize > uncompressedTex.length) {
+      throw new Error(
+        "validateTexFileData: calculated tex size exceeds file length",
+      );
+    }
     const out = new Uint8Array(fix.calculatedTexSize);
     out.set(serializeTexHeader(tex), 0); // ORIGINAL mipCount + FIXED offset/lod tables (struct-copy quirk)
     out.set(uncompressedTex.subarray(80, fix.calculatedTexSize), 80);
