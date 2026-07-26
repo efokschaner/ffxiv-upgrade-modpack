@@ -129,9 +129,10 @@ export const DIVERGENCE_RULES: DivergenceRule[] = [
   // (measured 116, also structure-only) rather than the smooth one (measured 9, bounded) — so this
   // rule is STRUCTURE-ONLY: same dims, ours is A8R8G8B8, golden decodes as a recognized BC format,
   // decoded RGBA lengths match. It does not assert the pixels are correct (we cannot, without the
-  // encoder); correctness of the resize itself is guarded byte-exactly by the A8R8G8B8-source case
-  // (src/upgrade/validate-tex.ts's unit tests + the synthetic NPOT-with-mips A8R8G8B8 golden, design
-  // spec §6.2), which no rule here covers.
+  // encoder); correctness of the resize itself is guarded byte-exactly elsewhere by the A8R8G8B8-source
+  // case (src/upgrade/validate-tex.ts's unit tests, resizeBicubic's ImageSharp-golden fixtures, and
+  // the byte-identical npot-mask-a8 corpus pack; a dedicated NPOT-with-mips A8R8G8B8 synthetic golden
+  // is planned, design spec §6.2), which no rule here covers.
   //
   // PATH-SCOPED (via endsWith, robust to the prefixed member name the caller may pass — see
   // docs/backlog/2026-07-16-archive-diff-prefixed-gamepath.md) to KK_Sportcar's one diverging path, so
