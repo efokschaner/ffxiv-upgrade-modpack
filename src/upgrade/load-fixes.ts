@@ -20,7 +20,7 @@ import { yieldsManipulations } from "../meta/manipulations";
 import { SqPackType } from "../sqpack/sqpack";
 import { normalizeModel } from "./model";
 import { requireBytes, restore } from "./upgrade";
-import { UnportedBcReencode, validateTexFileData } from "./validate-tex";
+import { validateTexFileData } from "./validate-tex";
 
 const IS_TEX = /\.tex$/;
 const IS_UI = /^ui\//;
@@ -58,14 +58,15 @@ const IS_META = /\.meta$/;
  *
  * - `.tex` when `needsTexFix` (WizardData.cs:701-712): runs the full `ValidateTexFileData`
  *   (`validateTexFileData`, port of EndwalkerUpgrade.ValidateTexFileData / TTMP.FixOldTexData) — NPOT
- *   resize-for-merge (Branch A) and mip-offset fixup (Branch B). A decode failure, or a faithful
+ *   resize-for-merge (Branch A) and mip-offset fixup (Branch B). A BC-compressed NPOT-with-mips source
+ *   is resized and emitted as A8R8G8B8 — we have no BC encoder to match TexTools' nvtt re-encode back
+ *   to the original BC format, so this is a CONFIRMED divergence (design spec §3.4;
+ *   docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md), not a fail-loud abort: a real corpus pack
+ *   (KK_Sportcar) reaches this path and TexTools upgrades it successfully, so aborting the whole pack
+ *   would be worse for the user than the format divergence. A decode failure, or a faithful
  *   resize-guard throw (an unsupported format, or a <64px non-BC7 source — MergePixelData's own
  *   guards), DROPS the file (`null`), matching FromWizardGroup's `catch { continue }` on a
- *   majorly-broken or unfixable texture. A BC-compressed NPOT-with-mips source needs a re-encode back
- *   to its original BC format we have no encoder for (`UnportedBcReencode`); that PROPAGATES instead
- *   of dropping — fails loud rather than silently emitting a wrong-format file. See
- *   docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md and
- *   docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md §3.4. The `Tex.CompressTexFile`
+ *   majorly-broken or unfixable texture. The `Tex.CompressTexFile`
  *   recompress step remains deferred (invisible to the golden: we always store uncompressed .tex
  *   payloads pre-SqPack-compression, so there is no observable byte difference). The `ui/` exclusion
  *   here does NOT come from FromWizardGroup itself — `WizardData.cs:701`'s gate is
@@ -105,11 +106,8 @@ export function makeTtmpLoadFix(gates: LoadFixGates): LoadFix {
         const { bytes } = requireBytes(file, gamePath);
         const fixed = validateTexFileData(bytes);
         return fixed ? restore(file, fixed, SqPackType.Texture) : file;
-      } catch (e) {
-        // FAIL LOUD for the one path we can't reproduce (BC re-encode); everything else that throws is
-        // a faithful drop (majorly-broken tex, or a resize guard TexTools also aborts on → continue).
-        if (e instanceof UnportedBcReencode) throw e;
-        return null;
+      } catch {
+        return null; // majorly-broken tex, or a resize guard TexTools also aborts on → drop (continue)
       }
     }
     if (gates.needsMdlFix && IS_MDL.test(gamePath)) {

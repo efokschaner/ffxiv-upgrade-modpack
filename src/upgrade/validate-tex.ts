@@ -9,15 +9,7 @@ import {
   serializeTexHeader,
 } from "../tex/header";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
-import { isCompressed, texFormatName } from "../tex/types";
 import { isPowerOfTwo, resizeForMerge, roundToPowerOfTwo } from "./texture";
-
-/** Branch A on a BC-compressed source needs Tex.MergePixelData's nvtt re-encode back to the original
- *  BC format, which we have no port of (no BC encoder in the repo). Thrown so the load-fix caller can
- *  FAIL LOUD instead of silently dropping (a faithful drop) or emitting a wrong-format A8R8G8B8 file.
- *  Latent — needs an old-version TTMP with a BC NPOT-with-mips tex; no corpus pack reaches it. Gated
- *  behind docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md. Design §3.4. */
-export class UnportedBcReencode extends Error {}
 
 export function validateTexFileData(
   uncompressedTex: Uint8Array,
@@ -28,11 +20,10 @@ export function validateTexFileData(
   // EndwalkerUpgrade.cs:2107 — (!IsPow2(W) || !IsPow2(H)) && MipCount > 1.
   if (npot && tex.mipCount > 1) {
     // EndwalkerUpgrade.cs:2110 — ResizeXivTx(tex, RoundToPowerOfTwo(Width), RoundToPowerOfTwo(WIDTH),
-    // false): Width is passed for BOTH dimensions (TexTools bug, docs/TEXTOOLS_BUGS.md). Reproduced.
+    // false): Width passed for BOTH dims (TexTools bug, docs/TEXTOOLS_BUGS.md). Reproduced.
     const round = roundToPowerOfTwo(tex.width);
     // resizeForMerge fires MergePixelData's two faithful guards (unsupported format, <64 non-BC7),
-    // which at THIS seam drop the file (FromWizardGroup catch). It succeeds only for a format
-    // MergePixelData supports; the compressed subset of those we still cannot re-encode → fail loud.
+    // which at the load seam DROP the file. It succeeds for every format MergePixelData supports.
     const src = resizeForMerge(
       decodeToRgba(tex),
       tex.width,
@@ -41,13 +32,12 @@ export function validateTexFileData(
       round,
       tex.format,
     );
-    if (isCompressed(tex.format)) {
-      throw new UnportedBcReencode(
-        `validateTexFileData: BC re-encode unported for format ${texFormatName(tex.format)}`,
-      );
-    }
-    // A8R8G8B8 (the only uncompressed format MergePixelData accepts) → lossless BGRA round-trip →
-    // ToUncompressedTex yields the same bytes our uncompressed encoder produces. Byte-exact.
+    // Emit the resized image as A8R8G8B8 for EVERY decodable format. A8R8G8B8 source → byte-exact
+    // (MergePixelData maps it to lossless BGRA and ToUncompressedTex stores A8R8G8B8). A BC source →
+    // TexTools re-encodes back to its ORIGINAL BC format via nvtt, which we have no encoder for, so
+    // we diverge: same resized image, uncompressed instead of BC. This is the same MergePixelData
+    // elision the material-round mask/index paths ship, a CONFIRMED divergence (design §3.4;
+    // docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md; real pack KK_Sportcar reaches it).
     return encodeUncompressedTex(src.rgba, src.width, src.height, {
       mips: true,
     });

@@ -39,11 +39,11 @@ describe("makeTtmpLoadFix .tex branch", () => {
     expect(fix("chara/x/v01_x.tex", junk)).toBeNull();
   });
 
-  it("aborts (fails loud) on a BC NPOT-with-mips source", () => {
-    // 96x96 DXT5 → Branch A → UnportedBcReencode, which must PROPAGATE past the drop-catch.
-    expect(() =>
-      fix("chara/x/v01_x.tex", texFile(makeSolidDxt5Tex(96, 96))),
-    ).toThrow();
+  it("keeps and produces A8R8G8B8 for a BC NPOT-with-mips source (confirmed divergence, no abort)", () => {
+    // 96x96 DXT5 → Branch A → resized + re-encoded A8R8G8B8 (we have no BC encoder). The file is KEPT
+    // (a confirmed divergence), not aborted. See design spec §3.4.
+    const out = fix("chara/x/v01_x.tex", texFile(makeSolidDxt5Tex(96, 96)));
+    expect(out).not.toBeNull();
   });
 
   it("leaves a ui/*.tex untouched (MakeFileStorageInformationDictionary carve-out)", () => {

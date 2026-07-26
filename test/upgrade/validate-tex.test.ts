@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { encodeUncompressedTex, parseTex } from "../../src/tex/tex";
-import {
-  UnportedBcReencode,
-  validateTexFileData,
-} from "../../src/upgrade/validate-tex";
+import { A8R8G8B8 } from "../../src/tex/types";
+import { validateTexFileData } from "../../src/upgrade/validate-tex";
 import { makeSolidDxt5Tex } from "../tex/tex-fixtures";
 
 function solidRgba(w: number, h: number): Uint8Array {
@@ -32,23 +30,27 @@ describe("validateTexFileData", () => {
     expect(tex.height).toBe(64);
   });
 
-  it("Branch A: BC source throws UnportedBcReencode", () => {
-    // 96x96 DXT5, NPOT, 2 mips; rounds to 64x64 (>=64, so it clears the <64 drop guard and reaches
-    // the BC-abort). resizeForMerge decodes+resizes, then the compressed-format check fails loud.
-    const dxt5 = makeSolidDxt5Tex(96, 96);
-    expect(() => validateTexFileData(dxt5)).toThrow(UnportedBcReencode);
+  it("Branch A: BC source produces a valid A8R8G8B8 tex (confirmed divergence, no abort)", () => {
+    // 96x96 DXT5, NPOT, 2 mips → rounds to 64x64 (width-for-both bug). We have no BC encoder, so we
+    // emit the resized image as A8R8G8B8 rather than re-encoding to DXT5 (design §3.4). Byte parity
+    // with the golden is confirmed separately by a DIVERGENCE_RULES entry over the real KK_Sportcar
+    // pack; here we assert we produce a structurally valid resized A8R8G8B8 tex, not an abort.
+    const out = validateTexFileData(makeSolidDxt5Tex(96, 96));
+    expect(out).not.toBeNull();
+    const tex = parseTex(out!);
+    expect(tex.format).toBe(A8R8G8B8);
+    expect(tex.width).toBe(64);
+    expect(tex.height).toBe(64);
   });
 
-  it("Branch A: BC source rounding below 64 hits the size-guard drop, NOT the BC abort (order is load-bearing)", () => {
+  it("Branch A: BC source rounding below 64 drops via the size guard", () => {
     // 48x96 DXT5, NPOT, 2 mips. validateTexFileData rounds WIDTH (48 → 32) for both dims, so the
-    // target is 32x32 (<64). Because resizeForMerge is called BEFORE the isCompressed abort, this
-    // throws MergePixelData's "too small" guard (a faithful DROP at the load seam), not UnportedBcReencode.
-    // If the two were reordered, it would throw UnportedBcReencode instead — so this pins the ordering.
+    // target is 32x32 (<64). resizeForMerge's own "too small" guard fires — a faithful DROP at the
+    // load seam.
     const dxt5 = makeSolidDxt5Tex(48, 96);
     expect(() => validateTexFileData(dxt5)).toThrow(
       "Image is too small for DDS Compressor. (64x64 Minimum Size)",
     );
-    expect(() => validateTexFileData(dxt5)).not.toThrow(UnportedBcReencode);
   });
 
   it("Branch B: a mipCount==2 tex with a broken offset throws the ToBytes ordering guard (TEXTOOLS_BUGS #19)", () => {
