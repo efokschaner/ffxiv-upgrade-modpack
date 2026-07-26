@@ -96,7 +96,7 @@ type MipOffsetFixable = Pick<
  *  table using total file size as a heuristic, returning whether anything changed and the size the
  *  .tex SHOULD be.
  *
- *  STRUCT-COPY QUIRK, load-bearing (docs/TEXTOOLS_BUGS.md). C# passes `TexHeader` BY VALUE. Its
+ *  STRUCT-COPY QUIRK, load-bearing (docs/TEXTOOLS_BUGS.md #21). C# passes `TexHeader` BY VALUE. Its
  *  writes to the reference-typed `uint[]` fields (`MipMapOffsets`, `LoDMips`) reach the caller
  *  (shared array), but its writes to the scalar `MipCount` stay on the local copy. ValidateTexFileData
  *  then serializes the header with the ORIGINAL `MipCount` and the FIXED offset/lod tables. We

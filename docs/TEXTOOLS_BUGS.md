@@ -635,3 +635,91 @@ exercise the intended repair without tripping this defect. No corpus pack is kno
 **Upstream fix:** `LoD2Mip = newMipCount > 2 ? 2 : (newMipCount > 1 ? 1 : 0)` (i.e. `Math.Min(2,
 newMipCount - 1)` clamped at 0) in `CreateTexFileHeader`, matching the completion the `>1` guard
 already applies to LoD1.
+
+---
+
+## 20. `ValidateTexFileData` resizes NPOT textures using `Width` for both dimensions
+
+**Status:** reproduced · **Where:** `EndwalkerUpgrade.cs:2110` (`ValidateTexFileData`) — see
+`src/upgrade/validate-tex.ts`, `validateTexFileData`
+
+Branch A of `ValidateTexFileData` resizes a texture whose width or height is not a power of two and
+which carries more than one mip:
+
+```csharp
+await Tex.ResizeXivTx(tex, IOUtil.RoundToPowerOfTwo(header.Width),
+                           IOUtil.RoundToPowerOfTwo(header.Width), false);   // :2110
+```
+
+`ResizeXivTx`'s third parameter is `newHeight`, but the call passes `RoundToPowerOfTwo(header.Width)`
+again instead of `RoundToPowerOfTwo(header.Height)`. A non-square NPOT source (e.g. 96×192) is
+therefore squished to a **square** `roundW×roundW` (here 64×64) rather than the natural
+`roundW×roundH` (64×128) the sibling material-round resize sites (`CreateIndexFromNormal`,
+`UpgradeMaskTex`, `UpdateEndwalkerHairTextures`) compute correctly, each independently rounding both
+dimensions. Plain transcription defect — a copy-pasted argument, not a format rule.
+
+**Us:** `validateTexFileData` (`src/upgrade/validate-tex.ts`) reproduces it verbatim — it calls
+`resizeForMerge` with `roundToPowerOfTwo(tex.width)` for BOTH the target width and height. Pinned by
+`test/upgrade/validate-tex.test.ts` ("Branch A: reproduces the Width-for-both-dims bug (96x192
+A8R8G8B8 → 64x64, not 64x128)"). No corpus pack is known to carry a non-square NPOT-with-mips `.tex`
+in an old (`needsTexFix`) pack, so the squish itself is latent; the real pack that does reach this
+call site, `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`, happens to carry a **square** NPOT source
+(2048×2048), so its target dimensions are the same with or without the bug and it does not exercise
+the asymmetry.
+
+**Upstream fix:** pass `RoundToPowerOfTwo(header.Height)` for the third argument, matching what the
+other three `ResizeXivTx` call sites already do.
+
+---
+
+## 21. `FixUpBrokenMipOffsets`'s `MipCount` reduction is lost to the struct-copy, so `ValidateTexFileData` serializes a stale `MipCount`
+
+**Status:** reproduced · **Where:** `Tex.TexHeader.FixUpBrokenMipOffsets` (`Tex.cs:168-235`) vs its
+caller `EndwalkerUpgrade.ValidateTexFileData` (`EndwalkerUpgrade.cs:2116-2124`) — see
+`src/tex/header.ts`, `fixUpBrokenMipOffsets`
+
+`TexHeader` is a **struct** (`public struct TexHeader`, `Tex.cs:71`), and `FixUpBrokenMipOffsets`
+takes it **by value** (`internal static (bool HeaderChanged, long CalculatedTexSize)
+FixUpBrokenMipOffsets(TexHeader header, long texSizeIncludingHeader)`, `:168`). When the file's
+claimed mip count extends past what the function can actually verify against the file's true size, it
+clamps the count by writing the **local** copy's scalar field:
+
+```csharp
+header.MipCount = 1;                                    // :182 — local copy only
+...
+header.MipCount = (byte)(mipLevel + 1);                  // :209 — local copy only
+```
+
+Those writes never escape the function — `MipCount` is a `byte` field on a value type passed by
+value, so the caller's `header` is untouched. The function's writes to `header.MipMapOffsets[…]` and
+`header.LoDMips[…]` **do** escape, because arrays are reference types even inside a struct: the same
+backing array is shared between caller and callee, so element writes are visible to both. The
+asymmetry is confined to exactly this one field — a defect in how the fix communicates its result to
+its caller, not a format rule.
+
+`ValidateTexFileData` then serializes the header the caller still holds:
+
+```csharp
+byte[] newData = new byte[fixupResult.CalculatedTexSize];
+Array.Copy(header.ToBytes(), newData, Tex._TexHeaderSize);   // :2121 — header.MipCount is UNCHANGED
+```
+
+So when a fixup trims mips (a file whose claimed mip table extends past EOF), the rewritten `.tex`
+carries the **original, too-high** `MipCount` alongside the **fixed, fewer** offset/LoD entries — a
+header that claims more mips than it has valid offsets for. `ToBytes()`'s own ordering guard
+(`Tex.cs:138-145`, entry 19 above) does not catch this shape: a trimmed table's offsets and `LoDMips`
+stay internally consistent with each other (`LoDMips` is separately clamped below the reduced local
+mip count, `:212-220`); only `MipCount` itself goes stale.
+
+**Us:** `fixUpBrokenMipOffsets` (`src/tex/header.ts`) reproduces the split deliberately: it mutates
+`header.mipMapOffsets`/`header.lodMips` in place (mirroring the shared-array escape) and tracks the
+trimmed count in a **local** `mipCount` variable that is never written back to `header.mipCount` —
+the same asymmetry the C# struct-copy produces by accident. `serializeTexHeader` then emits the
+caller's still-stale `mipCount`. Pinned by `test/tex/tex-header.test.ts` ("leaves mipCount untouched
+on the passed header (struct-copy quirk)"). No corpus pack is known to trim mips at this call site
+yet (the two `/resave`-forced real packs, `Bloodlust - Bibo+.ttmp2` and `chained_collars_v1_1_0.ttmp2`,
+only move offset-table bytes, not the mip count), so the visible stale-`MipCount` effect is latent.
+
+**Upstream fix:** change `FixUpBrokenMipOffsets` to return the corrected `MipCount` (it already
+returns a tuple) and have the caller apply it to `header` before calling `ToBytes()` — or make
+`TexHeader` a class, which would fix the whole family of struct-copy surprises at once.

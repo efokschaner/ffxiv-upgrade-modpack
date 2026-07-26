@@ -65,7 +65,22 @@ the unported `CalculateTangents` recompute (then #1) **shipped** — the full bi
 recompute branch (`ModelModifiers.cs:2140-2253`) + `GetWeldedMeshData` (`:1935-2100`) are ported;
 `gar_b0_m0112.mdl` now byte-matches the `/resave` golden except the v6 version byte (its own item).
 See `docs/superpowers/specs/2026-07-24-tangent-recompute-design.md`. Its item was deleted per this
-file's own convention, shifting the former 2–9 to 1–8.
+file's own convention, shifting the former 2–9 to 1–8. **2026-07-25:** the T3 ImageSharp Bicubic
+resampler item (then #1, narrowed to T2's load-time `ValidateTexFileData` resize) **shipped in full**
+— see
+[`docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`](superpowers/specs/2026-07-25-validate-tex-load-seam-design.md).
+`validateTexFileData` (`src/upgrade/validate-tex.ts`) now ports both branches of TexTools'
+`ValidateTexFileData` load-seam fixup: the NPOT resize (reproducing a genuine width-for-both-dims bug,
+`docs/TEXTOOLS_BUGS.md` #20) and the broken mip-offset-table repair (reproducing the `FixUpBrokenMipOffsets`
+struct-copy `MipCount` quirk, `docs/TEXTOOLS_BUGS.md` #21) — the latter alone shrank or removed diffs
+across 30+ real corpus packs. On a BC-compressed NPOT source the resize is a confirmed divergence (we
+emit A8R8G8B8 where TexTools re-encodes to the source's original BC format; no BC encoder), reached for
+real by `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`. Its item was deleted per this file's own convention,
+shifting the former 2–8 to 1–7. That same work also **falsifies** this file's 2026-07-25 survey
+conclusion on the BC-encoder item below ("keep unprioritized — leverage not urgency, ~0 probability of
+a corpus pack reaching the gap"): a real pack now reaches the identical `MergePixelData` BC-reencode
+gap via this load seam, so "zero corpus packs reach it" no longer holds, even though it remains
+unprioritized on rank (see the Textures section below for the corrected item).
 
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
@@ -91,16 +106,7 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. [T3 — ImageSharp Bicubic resampler](backlog/2026-07-10-imagesharp-resampler.md) — **much narrower
-   as of 2026-07-22**, and demoted accordingly. `createIndexFromNormal` and `upgradeMaskTex` now
-   NPOT-normalize for real, and `TextureResizeUnsupported` no longer exists (see
-   `docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`), so the "silent partial upgrade"
-   framing that used to rank this item here is gone. **All that remains is T2's *load-time*
-   `ValidateTexFileData` NPOT resize.** Note this item's old claim that no NPOT source exists in the
-   corpus scan was **falsified** by `Club Cyberia Motorbike` (a 400×400 normal) — see the item for why
-   that over-read matters more than the branch it mis-ranked.
-
-2. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
+1. [`hair-texture-exists` is namespace-scoped but asked out-of-namespace questions](backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
    — the last remaining silent-fallback table of this shape; its sibling (`index-path-overrides`)
    shipped a complete, item-seeded enumeration 2026-07-20
    (`docs/superpowers/specs/2026-07-20-index-path-resolution-design.md`,
@@ -108,7 +114,7 @@ unchanged by deployment; only probability moves.
    sampler path outside the bundled hair/zear/tail texture namespace (a `chara/common/…` mashup, or an
    id > 500); the oracle answers a hard `false`, silently suppressing a rename TexTools would perform.
 
-3. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
+2. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
    first, so it is described here rather than filed.)* `unclaimed-hair.ts:197-204` faithfully
    reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing genuine
    parse failures. (It used to swallow the modeled `TextureResizeUnsupported` gap too; that type no
@@ -122,7 +128,7 @@ unchanged by deployment; only probability moves.
    harness's matched-*reason* assertion), which means they no longer name *which* texture failed —
    faithful, but a real debuggability cost this channel is the right place to repay.
 
-4. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+3. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -133,14 +139,14 @@ unchanged by deployment; only probability moves.
    messages. One hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI
    must **not** offer an output-format picker. Should start in parallel with 1-2, not after them.
 
-5. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
+4. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
    machine, gitignored, with no CI. Code coverage is strong (92.98% lines / 84.6% branches — the 0%
    files are re-export barrels), so the residual risk is **data and inputs, not code paths**, which
    is exactly what more packs buy and coverage cannot. This is the only entry that finds the
    unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
    design §8.4's thin-coverage note.
 
-6. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+5. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
    — **the highest-severity item that no corpus pack reaches.** Rubric class #1: a group TexTools
    drops from the wizard model entirely survives our TTMP read and gets re-emitted, so the user's
    upgraded pack carries a group the golden does not, with no diff to warn us (no baseline entry
@@ -151,7 +157,7 @@ unchanged by deployment; only probability moves.
    is already masked downstream by `groupHasData` (by the same predicate C# uses), so the genuinely
    open surface is the TTMP path. **Moved here from *Unprioritized → Other ported code*, 2026-07-20b.**
 
-7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+6. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -165,7 +171,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-8. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+7. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -258,7 +264,12 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   elides the nvtt re-encode `Tex.ResizeXivTx` performs (`Tex.cs:637-706`), which is exact for a lossless
   source (`A8R8G8B8` → `BGRA`, measured byte-identical) and exact on the index path (quantization absorbs
   it), but reaches the output bytes on the mask path. Bracketed by three synthetic packs: smooth content
-  max delta **9**, adversarial content max delta **116**. Uniquely on this list it has **no**
+  max delta **9**, adversarial content max delta **116**. **Stays unprioritized on rank (2026-07-25
+  survey: leverage-not-urgency, large standalone effort), but its "zero corpus packs reach it" basis is
+  now corrected** — the `ValidateTexFileData` load-seam port (see the 2026-07-25 dated pass note above)
+  reaches the identical `MergePixelData` BC-reencode gap for real, via
+  `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2` (see the item file's Reachability section). Uniquely on this
+  list it has **no**
   `DIVERGENCE_RULES` entry — a tolerance was considered and rejected because, unlike the global `.tex` ±1
   rule, there is no provable bound to pin one to. Closing it means a BC encoder matching TexImpNet/nvtt.
 - [`[Inako] Lilith Wish.pmp` — `/resave` diverges on ~30 eye/face `.tex` payloads](backlog/2026-07-17-lilith-wish-resave-tex-divergence.md)
@@ -279,9 +290,14 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   mip-offset-table fixup, which `/resave` now empirically forces (same format, same length, differing
   header bytes). The offset half needs no resampler and can land independently.
 - [PMP load-time `.tex` fixup (`FastValidateTexFile`)](backlog/2026-07-13-pmp-load-time-tex-fixup.md)
-  — a *different* gap from T2 (PMP-load-gated, not TTMP): shares `FixUpBrokenMipOffsets` but also
-  truncates trailing null padding. Blast radius is bigger than a byte diff — dedup keys on loaded
-  content, so it changes `common/N` **member names**. Must land before member-name parity is complete.
+  — a *different* gap from T2 (PMP-load-gated, not TTMP): shares `FixUpBrokenMipOffsets` (now ported,
+  ready to wire) but also truncates trailing null padding, which remains unported. Blast radius is
+  bigger than a byte diff — dedup keys on loaded content, so it changes `common/N` **member names**.
+  Must land before member-name parity is complete.
+- [Synthetic `/upgrade` goldens for the `ValidateTexFileData` load-seam port](backlog/2026-07-25-validate-tex-load-seam-synthetics.md)
+  — the load-seam resize (Branch A) and mip-offset fixup (Branch B) shipped 2026-07-25 with unit +
+  real-corpus coverage but no dedicated synthetic pack golden through the real oracle. Needs
+  `ttmp2-builder.ts` changes (an old-`TTMPVersion` param, a Type-4 tex payload writer) to build.
 
 ### Metadata
 

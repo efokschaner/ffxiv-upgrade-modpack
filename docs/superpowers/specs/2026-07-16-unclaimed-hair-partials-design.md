@@ -221,9 +221,9 @@ synthetics/units; any line reachable by neither must be a fail-loud guard.
 - **Eye mask stays deferred in this landing**: the glue computes `contained` and calls the hair pass
   only; the eye call is not added, preserving the existing baselined gap rather than half-porting it.
   (Closed by a later follow-up, see `docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md`.)
-- **Resampler gap** (backlog `2026-07-10-imagesharp-resampler.md`): NPOT / size-mismatch hair inputs
-  degrade to the raw-copy diff described in §4.4 (baselined), matching how `texture.ts` already
-  handles the resampler gap.
+- **Resampler gap** (then tracked by the T3 backlog item, folded into T2 and closed 2026-07-25): NPOT /
+  size-mismatch hair inputs degrade to the raw-copy diff described in §4.4 (baselined), matching how
+  `texture.ts` already handles the resampler gap.
 - **Extraction completeness** is the load-bearing assumption behind the existence-oracle invariant
   (§3.1/§3.3); the script fails loud on any unavailable probe/extract rather than emitting a partial
   table that would silently mis-skip.

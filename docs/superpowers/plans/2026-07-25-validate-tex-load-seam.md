@@ -614,7 +614,7 @@ git commit -m "test(corpus): synthetic ValidateTexFileData goldens + re-bless"
 
 **Files:**
 - Modify: `docs/TEXTOOLS_BUGS.md`
-- Delete: `docs/backlog/2026-07-10-imagesharp-resampler.md`
+- Delete: the T3 ImageSharp Bicubic resampler backlog item (now fully shipped)
 - Modify: `docs/backlog/2026-07-10-fixoldtexdata-load-round.md`, `docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md`, `docs/BACKLOG.md`
 
 - [ ] **Step 1: Register the bugs**
@@ -625,7 +625,7 @@ Add two entries to `docs/TEXTOOLS_BUGS.md` (follow the file's existing entry for
 
 - [ ] **Step 2: Verify no stale references before deleting item #1**
 
-Run: `Select-String -Path src,test,docs,scripts -Pattern "2026-07-10-imagesharp-resampler" -Recurse` (PowerShell). Expected: the only hits are in `docs/` (backlog index + specs). Update each cite, then delete the item file and its `docs/BACKLOG.md` entry.
+Run: `Select-String -Path src,test,docs,scripts -Pattern "imagesharp-resampler" -Recurse` (PowerShell). Expected: the only hits are in `docs/` (backlog index + specs). Update each cite, then delete the item file and its `docs/BACKLOG.md` entry. (Final bar, per task 6: the search must return NOTHING once the item file's own slug is gone too.)
 
 - [ ] **Step 3: Narrow the T2 and PMP items**
 

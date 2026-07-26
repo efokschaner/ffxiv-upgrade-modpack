@@ -20,7 +20,7 @@ export function validateTexFileData(
   // EndwalkerUpgrade.cs:2107 — (!IsPow2(W) || !IsPow2(H)) && MipCount > 1.
   if (npot && tex.mipCount > 1) {
     // EndwalkerUpgrade.cs:2110 — ResizeXivTx(tex, RoundToPowerOfTwo(Width), RoundToPowerOfTwo(WIDTH),
-    // false): Width passed for BOTH dims (TexTools bug, docs/TEXTOOLS_BUGS.md). Reproduced.
+    // false): Width passed for BOTH dims (TexTools bug, docs/TEXTOOLS_BUGS.md #20). Reproduced.
     const round = roundToPowerOfTwo(tex.width);
     // resizeForMerge fires MergePixelData's two faithful guards (unsupported format, <64 non-BC7),
     // which at the load seam DROP the file. It succeeds for every format MergePixelData supports.

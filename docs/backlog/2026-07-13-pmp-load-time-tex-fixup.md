@@ -55,6 +55,15 @@ Deliberately deferred, same shape as T2: port the mip-offset half together with 
 `FixUpBrokenMipOffsets` / `ValidateTexFileData` logic) and the null-padding truncation as a small
 addition, gated on PMP rather than on `DoesModpackNeedFix`.
 
+**Update (2026-07-25): the shared half is now ported and ready to wire.** `fixUpBrokenMipOffsets`
+(`src/tex/header.ts`) shipped as part of T2's `ValidateTexFileData` load-seam port (see
+[`docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`](../superpowers/specs/2026-07-25-validate-tex-load-seam-design.md)),
+wired today only to the TTMP load seam (`ttmpNeedsTexFix`-gated). Reusing it here needs no new
+mip-offset logic — only a PMP-gated call site plus the **null-padding truncation**, which is genuinely
+unported (`FixUpBrokenMipOffsets` alone does not truncate trailing padding; that is
+`FastValidateTexFile`'s own second step, `EndwalkerUpgrade.cs:2149-2165`). That truncation half remains
+the only unported piece of this item.
+
 ## Update (2026-07-13): confirmed on the `/upgrade` side too, not just `/resave`
 
 Turning on `checkPayloadMembers` (payload zip-member NAME comparison) for every PMP golden, not just

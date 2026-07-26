@@ -29,8 +29,9 @@ already have in the C#.
 **Closed:** `docs/backlog/2026-07-21-monster-index-tex-generation-gap.md` (then prioritized #1) —
 deleted 2026-07-22 per `docs/BACKLOG.md`'s shipped-item convention, so this spec is now its durable
 record; the name is left unlinked deliberately, the file is gone.
-**Narrowed:** [`docs/backlog/2026-07-10-imagesharp-resampler.md`](../../backlog/2026-07-10-imagesharp-resampler.md)
-(then #4, now #3) down to T2's load-time `ValidateTexFileData` resize.
+**Narrowed:** the T3 ImageSharp Bicubic resampler backlog item (then #4, now #3) down to T2's
+load-time `ValidateTexFileData` resize — since ported and closed 2026-07-25, folded into T2 (see
+`docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`).
 **Filed:** [`docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md)
 — the accepted mask-path divergence (§3.3, §6).
 
@@ -383,9 +384,11 @@ All done 2026-07-22:
 
 - `2026-07-21-monster-index-tex-generation-gap.md` — **deleted** (shipped), index entry removed, and
   the two references that cited it updated in the same change per `docs/BACKLOG.md`'s own rule.
-- `2026-07-10-imagesharp-resampler.md` — narrowed to T2's `ValidateTexFileData` resize only, demoted
-  #4 → #3, and its **falsified claim** ("no NPOT source exists anywhere in the ~940-pack scan")
+- The T3 ImageSharp Bicubic resampler item — narrowed to T2's `ValidateTexFileData` resize only,
+  demoted #4 → #3, and its **falsified claim** ("no NPOT source exists anywhere in the ~940-pack scan")
   corrected in place, with a note on why the over-read matters more than the branch it mis-ranked.
+  (That remaining scope shipped 2026-07-25 and the item was deleted; see
+  `docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`.)
 - `2026-07-22-bc-encoder-merge-pixel-data.md` — **new**, filed under *Unprioritized → Textures* for
   the accepted mask-path divergence.
 - `docs/BACKLOG.md` — prioritized list re-ranked 2–11 → 1–10, with a dated pass note. Item 5 (the

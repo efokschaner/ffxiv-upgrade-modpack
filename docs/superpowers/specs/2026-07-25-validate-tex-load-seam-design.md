@@ -3,9 +3,8 @@
 **Date:** 2026-07-25
 **Status:** Design (approved to plan)
 
-**Closes:** prioritized backlog item #1
-([`docs/backlog/2026-07-10-imagesharp-resampler.md`](../../backlog/2026-07-10-imagesharp-resampler.md))
-and the `ValidateTexFileData` bulk of the T2 item
+**Closes:** prioritized backlog item #1 (the T3 ImageSharp Bicubic resampler item, deleted — its
+remaining scope was exactly this load-seam resize) and the `ValidateTexFileData` bulk of the T2 item
 ([`docs/backlog/2026-07-10-fixoldtexdata-load-round.md`](../../backlog/2026-07-10-fixoldtexdata-load-round.md)),
 leaving only T2's deferred unconditional recompress.
 
@@ -249,15 +248,36 @@ Branch A must not fire on a POT-with-mips or a ≤1-mip texture (those take Bran
 no-op when offsets are already correct. Assert both explicitly so a future change can't silently swap
 branches.
 
-## 7. Backlog & docs outcome
+## 7. Backlog & docs outcome (as shipped, 2026-07-25)
 
-- `2026-07-10-imagesharp-resampler.md` (prioritized #1) — **delete** on ship; grep `src/`, `test/`,
-  `docs/` for references first (per `docs/BACKLOG.md`'s rule) and update each.
-- `2026-07-10-fixoldtexdata-load-round.md` (T2) — **narrow** to the deferred recompress remainder;
-  the `ValidateTexFileData` resize + mip-offset halves are done.
-- `2026-07-13-pmp-load-time-tex-fixup.md` — note that `fixUpBrokenMipOffsets` is now ported and ready
-  to wire; the PMP `FastValidateTexFile` truncation half remains.
-- `docs/TEXTOOLS_BUGS.md` — **add** the width-for-both-dims resize bug (§3.3); optionally append the
-  measured BC magnitude to #18 (§6.2).
-- `docs/BACKLOG.md` — re-rank after removing #1; record a dated pass note. BC-encoder item stays
-  unprioritized (§3.4 survey).
+- The T3 ImageSharp Bicubic resampler item (prioritized #1) — **deleted**. Grepped `src/`, `test/`,
+  `scripts/`, `docs/` for its filename first (per `docs/BACKLOG.md`'s rule); every reference —
+  including in durable specs that predate this one — was updated in the same change to describe the
+  work in prose rather than link a file that no longer exists.
+- `2026-07-10-fixoldtexdata-load-round.md` (T2) — **narrowed** to the deferred recompress remainder
+  (`Tex.CompressTexFile`, `TTMP.cs:1436`); the `ValidateTexFileData` resize + mip-offset halves are
+  recorded as done, citing this spec.
+- `2026-07-13-pmp-load-time-tex-fixup.md` — updated to note `fixUpBrokenMipOffsets` is now ported
+  (`src/tex/header.ts`) and ready to wire; only the PMP-side `FastValidateTexFile` truncation half
+  remains unported.
+- `docs/TEXTOOLS_BUGS.md` — **added #20** (the width-for-both-dims resize bug, §3.3) and **#21** (the
+  `FixUpBrokenMipOffsets` struct-copy `MipCount` quirk, §2/§6.1), both following #19 (registered
+  separately, ahead of this spec's own ship). `src/tex/header.ts` and `src/upgrade/validate-tex.ts`
+  now cite the specific entry numbers rather than the file generally.
+- `docs/BACKLOG.md` — re-ranked after removing #1 (former 2–8 shift to 1–7); a dated 2026-07-25 pass
+  note records the ship, that Branch B alone shrank/removed diffs across 30+ real packs, and that the
+  BC-source produce-A8R8G8B8 divergence is confirmed for `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`.
+- **Correction to this section's original plan:** the BC-encoder item
+  (`2026-07-22-bc-encoder-merge-pixel-data.md`) does **not** simply "stay unprioritized" unexamined —
+  its rank is unchanged, but its own "zero corpus packs reach it" claim is **falsified** by the same
+  `KK_Sportcar` pack this spec's Branch A reaches (a different call site, the identical
+  `MergePixelData`-elision gap), and the item file's Reachability section and `docs/BACKLOG.md`'s
+  Textures entry were both corrected to say so, per §3.4/§6.2 above.
+- **Synthetics deferred, not built.** §6.1/§6.2 called for two synthetic `/upgrade` goldens (an
+  A8R8G8B8 NPOT-with-mips `.tex` for Branch A, a POT broken-mip-offset `.tex` for Branch B). Neither
+  was built in this change — both branches already have unit-test + real-corpus coverage (§6), and
+  building the fixtures needs `ttmp2-builder.ts` changes (an old-`TTMPVersion` parameter, a Type-4 tex
+  payload writer) that were judged out of scope for this pass. Filed as
+  [`2026-07-25-validate-tex-load-seam-synthetics.md`](../../backlog/2026-07-25-validate-tex-load-seam-synthetics.md)
+  instead — the plan `test/helpers/upgrade-compare.ts`'s `confirmBcResizedAsA8` rule comment refers to
+  when it says a dedicated A8R8G8B8 synthetic is "planned."
