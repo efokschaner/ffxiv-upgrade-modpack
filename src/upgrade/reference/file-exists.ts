@@ -45,7 +45,7 @@ export function computeHash(path: string): number {
 /** IOUtil.cs:550 — note it is case-sensitive, so any uppercase character disqualifies a path. */
 const INVALID_RE = /[^a-z0-9./\-_{}]/;
 
-// XivDataFile folder keys (XivDataFile.cs:35-91). The 30 expansion keys ("bg/ex1/01_", "cut/ex3/",
+// XivDataFile folder keys (XivDataFile.cs:35-91). The 33 expansion keys ("bg/ex1/01_", "cut/ex3/",
 // "music/ex2/", ...) are all extensions of these 11, so for IsFFXIVInternalPath's prefix test this
 // list is complete. The full list only matters to GetDataFileFromPath's choice of index — and no key
 // extends "chara/", the one category we bundle, so that choice collapses to a single prefix test.

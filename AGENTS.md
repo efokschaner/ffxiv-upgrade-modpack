@@ -272,12 +272,13 @@ failure the guard existed to prevent.
 
 The rule:
 
-- **Port gaps throw `UnportedGapError`** (`src/util/errors.ts` — it sits below both the format layer
-  and the upgrade layer because guards in `src/mtrl/`, `src/tex/` and `src/upgrade/` all need to
-  reach it, and `src/mtrl/` must not import "up" from `src/upgrade/`), never a bare `Error`. This is
-  the signal that *our port* has not reproduced something. Every "not yet ported" / "unported"
-  guard is one of these.
-- **Every ported catch re-throws it** and swallows the rest:
+- **Port gaps must throw `UnportedGapError`** (`src/util/errors.ts` — it sits below both the format
+  layer and the upgrade layer because guards in `src/mtrl/`, `src/tex/` and `src/upgrade/` all need
+  to reach it, and `src/mtrl/` must not import "up" from `src/upgrade/`), never a bare `Error`. This
+  is the signal that *our port* has not reproduced something. Every "not yet ported" / "unported"
+  guard must be one of these — this is the rule to follow when adding or touching one, not a claim
+  that today's codebase is already fully retagged (it isn't; see the sweep note below).
+- **Every ported catch must re-throw it** and swallow the rest:
 
       } catch (err) {
         // Mirrors <C# file · symbol · lines>'s swallow. It must NOT absorb a port-gap signal.

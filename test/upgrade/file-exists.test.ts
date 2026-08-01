@@ -72,5 +72,18 @@ describe("fileExists", () => {
   it("computeHash matches HashGenerator (init -1, no final XOR, lowercased)", () => {
     // Same primitive as scripts/lib/game-index.ts; a stable known value guards regressions.
     expect(computeHash("")).toBe(0xffffffff);
+    // The empty-string case alone is satisfied by ANY CRC32 variant with init -1 (the loop body
+    // never runs), so it can't catch a wrong table or a wrong final-XOR choice. This second value
+    // actually exercises CRC_TABLE and the no-final-XOR property (HashGenerator.ComputeCRC,
+    // HashGenerator.cs:154-205): its byte-wise tail loop (:180-191) is table-driven CRC-32 (poly
+    // 0xEDB88320, reflected — CrcTable1 at HashGenerator.cs:28 starts 0x00000000, 0x77073096,
+    // 0xEE0E612C, ..., confirming the standard IEEE 802.3 table) with init -1 and no final
+    // complement — i.e. JAMCRC, the bitwise-NOT of the ubiquitous zlib/PKZIP CRC32. Its 4-byte-at-
+    // a-time branch (:172-178, CrcTable2-4) is the standard "slicing-by-4" optimization of that same
+    // table/poly/init and is mathematically equivalent byte-for-byte, not a different algorithm.
+    // 0x278081f3 is a PINNED REGRESSION BASELINE for computeHash("test"), cross-checked independently
+    // (not derived from this implementation) via Node's `zlib.crc32` — a maintained, external CRC32 —
+    // as `(~zlib.crc32(Buffer.from("test"))) >>> 0`, which also evaluates to 0x278081f3.
+    expect(computeHash("test")).toBe(0x278081f3);
   });
 });

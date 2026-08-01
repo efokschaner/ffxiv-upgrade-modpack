@@ -6,7 +6,7 @@ round 2 (Task 3 review finding + coordinator audit)
 `src/util/errors.ts`'s `UnportedGapError` distinguishes a gap in what THIS PORT reproduces from a
 failure the C# oracle can itself produce. This branch introduced it and retagged exactly two throw
 sites plus the one catch that sits above both: `src/upgrade/reference/file-exists.ts`'s
-out-of-chara-category throw and `src/mtrl/serialize.ts:44`'s empty-sampler placeholder gap, both
+out-of-chara-category throw and `src/mtrl/serialize.ts:45`'s empty-sampler placeholder gap, both
 reached through `src/upgrade/upgrade.ts`'s `materialRound` catch (`upgrade.ts:186`, mirroring
 `EndwalkerUpgrade.cs:522-539`'s per-material NRE swallow). That catch now re-throws
 `UnportedGapError` and swallows everything else.
@@ -29,7 +29,7 @@ verbatim so a future sweep does not have to re-derive them.
   that the furniture `.mdl` overrun "no longer aborts the whole pack — the load-fix
   `catch { return null }` now swallows it, so the user gets a pack silently missing models."
   Cross-reference that note when this is picked up.
-- **`src/upgrade/unclaimed-hair.ts:198`** — the bare catch-all reproducing `docs/TEXTOOLS_BUGS.md`
+- **`src/upgrade/unclaimed-hair.ts:211`** — the bare catch-all reproducing `docs/TEXTOOLS_BUGS.md`
   #12. Absorbs `src/tex/encode.ts:27`'s "NPOT resize not yet ported" throw. Note the history:
   `docs/BACKLOG.md` prioritized item 2 (the diagnostics-channel item) records that this catch "used
   to swallow the modeled `TextureResizeUnsupported` gap too; that type no longer exists as of
@@ -64,7 +64,7 @@ a catch above them later cannot silently re-open a gap without anyone noticing:
 
 1. Case-by-case adjudication of `load-fixes.ts:109` — separate the genuinely-faithful drops from the
    ones that are actually swallowing an unported gap, and retag only the latter.
-2. Retagging `load-fixes.ts:121` and `unclaimed-hair.ts:198`'s underlying throws
+2. Retagging `load-fixes.ts:121` and `unclaimed-hair.ts:211`'s underlying throws
    (`model.ts`'s `normalizeModel`, `mdl/model/serialize.ts:103`, `tex/encode.ts:27`) onto
    `UnportedGapError`, then deciding whether their enclosing catches re-throw it (which changes their
    failure mode from "silently drop this file/material" to "abort the whole upgrade") or whether that

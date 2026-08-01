@@ -12,6 +12,7 @@ import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
 import { buildCanonicalTexHeader } from "../../src/tex/header";
 import { parseTex } from "../../src/tex/tex";
 import { A8R8G8B8 } from "../../src/tex/types";
+import { fileExists } from "../../src/upgrade/reference/file-exists";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "../../src/upgrade/reference/hair-materials";
 import type { HairMaterialTable } from "../../src/upgrade/reference/hair-materials-types";
 import {
@@ -159,8 +160,10 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     const sOld =
       "chara/human/c0102/obj/hair/h0002/texture/c0102h0002_hir_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
-    // c0102h0002 is absent from hair-materials.ts, i.e. fileExists() is false for it -> the game-
-    // index gate continues before the (irrelevant, empty) table is ever consulted.
+    // c0102 is not a valid race code (see extract-index-table.ts's RACES grid), so this material
+    // genuinely does not exist in-game and fileExists() (chara-index.ts, an independent table from
+    // hair-materials.ts) is false for it -> the game-index gate continues before the (irrelevant,
+    // empty) table is ever consulted.
     updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map());
     const destNorm =
       "chara/human/c0102/obj/hair/h0002/texture/--c0102h0002_hir_norm.tex";
@@ -198,6 +201,11 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       "chara/human/c0101/obj/hair/h0002/texture/--c0101h0002_hir_norm.tex";
     const mask =
       "chara/human/c0101/obj/hair/h0002/texture/--c0101h0002_hir_mask.tex";
+    // Precondition: the game-index gate above only reaches the shader-pack check this test
+    // targets when fileExists(matPath) is true. Asserted explicitly so a future chara-index.ts
+    // regeneration that dropped this path would fail loud here, rather than the negative
+    // assertion below passing vacuously because the fileExists gate `continue`d first.
+    expect(fileExists(matPath)).toBe(true);
     const t: HairMaterialTable = new Map([
       [
         matPath,
@@ -423,6 +431,11 @@ describe("updateUnclaimedHairAccessory", () => {
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
     const sOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_s.tex";
+    // Precondition: the game-index gate above only reaches the "no maskDx11Path" logic this test
+    // targets when fileExists(ACC_MAT) is true. Asserted explicitly so a future chara-index.ts
+    // regeneration that dropped this path would fail loud here, rather than the negative
+    // assertions below passing vacuously because the fileExists gate `continue`d first.
+    expect(fileExists(ACC_MAT)).toBe(true);
     const t: HairMaterialTable = new Map([
       [
         ACC_MAT,

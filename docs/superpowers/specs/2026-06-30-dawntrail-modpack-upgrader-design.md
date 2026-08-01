@@ -508,7 +508,7 @@ probability × severity that a user gets a wrong or failed modpack.
   paths.
 
 - **Reproducing TexTools faithfully can still leave the user worse off — in one place.**
-  `unclaimed-hair.ts:197-204` reproduces TexTools' bare `catch { continue }`
+  `unclaimed-hair.ts:211-218` reproduces TexTools' bare `catch { continue }`
   (`TEXTOOLS_BUGS.md` #12), which is the correct port. But TexTools writes a `Trace` line
   and a webpage writes nothing, so the page would report success on a partial upgrade.
   The pipeline has no diagnostics channel out of `upgradeModpack` today; round 7 needs

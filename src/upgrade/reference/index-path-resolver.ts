@@ -52,11 +52,13 @@ const TABLE = (() => {
 export function resolveStolenIndexPath(
   materialPath: string,
 ): string | undefined {
-  // Fold case first: the C# resolution (FileExists / GetXivMtrl) is case-insensitive and `computeHash`
-  // already lowercases, but a TTMP2 keys on the raw `FullPath` (no lowercasing), so a mixed-case
-  // gamePath could otherwise miss the case-sensitive INDEX_EXCEPTIONS map (its keys, and the
-  // reconstructed output, are lowercase — base-game paths are lowercase). A no-op for the common
-  // already-lowercase case; keeps every resolution path uniformly case-insensitive.
+  // Fold case first. This resolver is only ever reached from material.ts under
+  // `fileExists(mtrl.mtrlPath)`, and `fileExists`'s `_InvalidRegex` gate (file-exists.ts) rejects
+  // any uppercase character outright — so a mixed-case `materialPath` can no longer actually reach
+  // here; the caller has already made that case unreachable. Kept anyway, purely defensively and at
+  // no cost: a no-op for the (only reachable) already-lowercase case, and it keeps this function
+  // correct in isolation — case-insensitive against the lowercase INDEX_EXCEPTIONS keys and
+  // reconstructed output — should a future caller ever reach it without that guarantee.
   const path = materialPath.toLowerCase();
   const exception = INDEX_EXCEPTIONS[path];
   if (exception !== undefined) return exception;

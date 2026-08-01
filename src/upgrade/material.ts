@@ -137,8 +137,21 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
   // overwriting a base-game material) and gate B (`!rtx.FileExists(idPath)` — the convention index
   // path is not itself a base-game file) are both the game-index oracle. When both hold, steal the
   // base material's own index-sampler path. `resolveStolenIndexPath` answers only the remaining
-  // question — WHICH path — from the bundled base-material table; a miss there means the material
-  // exists but binds no index sampler, which is the C#'s `idSamp == null` skip (:930-935).
+  // question — WHICH path — from the bundled base-material table (INDEX_TABLE,
+  // scripts/extract-index-table.ts:20-36). That table is complete over its own ENUMERATED DOMAIN
+  // only — item_sets.db equipment/accessory/weapon/monster/demihuman roots plus the hair/tail/zear/
+  // `_acc` customization grid — and does NOT enumerate face, body/skin, or any other non-item chara
+  // material. So a miss there has two possible causes: (1) the material genuinely binds no index
+  // sampler, the C#'s `idSamp == null` skip (:930-935), or (2) the material lies outside the table's
+  // enumerated domain altogether. Design §3.5
+  // (docs/superpowers/specs/2026-07-20-index-path-resolution-design.md) verified the domain the
+  // extractor excludes (human non-hair, indoor, outdoor) carries no index sampler at all in-game, so
+  // cause (2) collapses into cause (1) for exactly that excluded set — but that verification is a
+  // property of the extractor's own exclusions, not something this call site can re-derive from a
+  // miss alone. That is why this site, unlike unclaimed-hair.ts/eye-mask.ts (whose tables ARE
+  // complete over the chara-wide `fileExists` oracle itself, so a miss there with `fileExists` true
+  // is unambiguously a table gap and throws `UnportedGapError`), does NOT throw on a miss here: a
+  // miss is not provably a table gap, so we keep the C#'s silent convention-keep instead.
   if (fileExists(mtrl.mtrlPath) && !fileExists(idPath)) {
     const stolen = resolveStolenIndexPath(mtrl.mtrlPath);
     if (stolen !== undefined) {

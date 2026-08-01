@@ -115,7 +115,7 @@ non-UTF-8 zip name) rather than something only a specific game-data shape produc
 unchanged by deployment; only probability moves.
 
 1. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
-   first, so it is described here rather than filed.)* `unclaimed-hair.ts:197-204` faithfully
+   first, so it is described here rather than filed.)* `unclaimed-hair.ts:211-218` faithfully
    reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing genuine
    parse failures. (It used to swallow the modeled `TextureResizeUnsupported` gap too; that type no
    longer exists as of 2026-07-22, so parse failures are all that remain.) Reproducing it is
@@ -126,7 +126,21 @@ unchanged by deployment; only probability moves.
    identical, we only surface what was skipped. **A second motivation arrived 2026-07-22:** the two
    `MergePixelData` guards now throw TexTools' error text verbatim (required by the expected-failure
    harness's matched-*reason* assertion), which means they no longer name *which* texture failed —
-   faithful, but a real debuggability cost this channel is the right place to repay.
+   faithful, but a real debuggability cost this channel is the right place to repay. **A third
+   motivation arrived 2026-07-31:** `repath-hair-mashups.ts`'s nine `fileExists` calls per matched
+   material pass mod-authored sampler paths verbatim to the oracle, and `fileExists` now throws
+   `UnportedGapError` (`file-exists.ts:123-131`) for any valid FFXIV path outside `chara/` — so a
+   sampler path a mashup mod points at `common/`, `ui/`, `bg/`, or any other non-`chara/` folder key
+   now aborts the WHOLE pack with no catch between `repathHairMashups` and `upgradeModpack`'s caller,
+   where the old namespace-scoped oracle just answered a faithful `false` and skipped the rename. This
+   is deliberate and operator-approved
+   (`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §3, decision 2) and measured
+   at zero over the 85-pack corpus (same doc §2: no query reaches the throw). But this file's own
+   "deploying changes the probability term" rule (above) says corpus silence understates
+   hand-authorable triggers, and a mod-authored sampler path — freely chosen by the mod author, unlike
+   a game-data-derived path — is exactly that kind of trigger. Blast radius if hit: the whole pack
+   aborts with no diagnostic naming which sampler, material, or option triggered it — the same gap
+   this item's diagnostics channel exists to close.
 
 2. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
@@ -214,7 +228,7 @@ unchanged by deployment; only probability moves.
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression. **Traced
   2026-07-21** (C# path is `WritePmp`, PMP.cs:830-868): this is only **~5** baselined `structure`
   entries (`added`/`removed` shaped). The other ~42 are a *different*, tex-payload-shadow phenomenon —
-  now item 8 in the *Prioritized* list above.
+  now item 6 in the *Prioritized* list above.
 - [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
   — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
   separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw
