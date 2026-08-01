@@ -114,8 +114,13 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. **A diagnostics channel out of `upgradeModpack`.** *(No item file yet — needs a design decision
-   first, so it is described here rather than filed.)* `unclaimed-hair.ts:211-218` faithfully
+1. **A diagnostics channel out of `upgradeModpack`.** *(Designed 2026-08-01 —
+   [`docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md`](superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md).
+   The design decision this item was waiting on is made; not yet implemented. That spec's §2 also
+   records a trace-based parity oracle considered and **rejected**, and hands the general
+   "control flow differs but bytes match" problem to
+   [`2026-08-01-mutation-testing-latent-divergence.md`](backlog/2026-08-01-mutation-testing-latent-divergence.md).)*
+   `unclaimed-hair.ts:211-218` faithfully
    reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing genuine
    parse failures. (It used to swallow the modeled `TextureResizeUnsupported` gap too; that type no
    longer exists as of 2026-07-22, so parse failures are all that remain.) Reproducing it is
@@ -418,6 +423,14 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   the corpus is gitignored and often partial, so a naive "delete what no pack references" pruner would
   wipe every real pack's baseline on a fresh clone — and a missing baseline reads as "no known
   divergences", not as an error.
+- [Mutation testing as a latent-divergence detector](backlog/2026-08-01-mutation-testing-latent-divergence.md)
+  — the general instrument for "control flow differs but bytes match": a decision our port makes that
+  no corpus input distinguishes. A surviving mutant is literally that failure mode, and unlike a
+  golden diff it needs no oracle (goldens are cached), while its output is a worklist of synthetics to
+  author — feeding the existing `scripts/generate-synthetics/` loop. Report-only, per-directory,
+  never in the `npm test` gate. Filed 2026-08-01 from the diagnostics-channel design, which rejected a
+  narrower trace-based oracle for addressing only a keyhole of this class. Costs to size first:
+  runtime, Stryker-vs-custom-runner integration, and equivalent-mutant triage.
 - [Audit temp-dir usage for leaks](backlog/2026-07-10-temp-dir-leaks.md) — several `mkdtempSync`
   sites never remove their directory; the two worst run on every `npm test`.
 - [Vet page-load and upgrade-operation performance](backlog/2026-07-11-webapp-performance-vetting.md)
