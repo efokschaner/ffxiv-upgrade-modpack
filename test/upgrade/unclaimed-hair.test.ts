@@ -1,7 +1,7 @@
 // Tests for the hair/tail/ear rescue (EndwalkerUpgrade.cs:1342-1503) AND the tail-only
 // constant-swap material rewrite (EndwalkerUpgrade.cs:1504-1516), see
-// src/upgrade/unclaimed-hair.ts for provenance. No accessory coverage here (Task 6); this file
-// exercises the shared match->group->winnow->copy->transform path plus the tail rewrite.
+// src/upgrade/unclaimed-hair.ts for provenance. Covers the shared match->group->winnow->copy->
+// transform path, the tail rewrite, and updateUnclaimedHairAccessory (see the describe block below).
 import { describe, expect, it } from "vitest";
 import {
   FileStorageType,

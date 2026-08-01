@@ -78,9 +78,10 @@ describe("updateEyeMask", () => {
     );
   });
 
-  it("skips (no throw) a mask whose race digits are not a real race (round-trips to c0000, table miss)", () => {
+  it("skips (no throw) a mask whose race digits are not a real race (round-trips to c0000, index miss)", () => {
     // c9998 is not a XivRace Description -> GetXivRace defaults to All_Races -> code "0000" ->
-    // iris path mt_c0000f... -> table miss -> faithful skip (spec §3.3).
+    // iris path mt_c0000f... -> fileExists(matPath) is false (no such in-game material) -> the
+    // split existence gate returns before the table is ever consulted -> faithful skip.
     const bogus =
       "chara/human/c9998/obj/face/f0002/texture/--c9998f0002_iri_s.tex";
     const o = opt({ [bogus]: buildMinimalTex() });

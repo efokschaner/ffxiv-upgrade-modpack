@@ -1,8 +1,9 @@
 # A complete `FileExists` oracle for the chara category
 
-Filed: 2026-07-31 · Closes
-[`docs/backlog/2026-07-20-hair-texture-exists-namespace-scope.md`](../../backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
-(the #1 prioritized backlog item) · Roadmap: `2026-06-30-dawntrail-modpack-upgrader-design.md` §8
+Filed: 2026-07-31 · Closes the `hair-texture-exists` namespace-scope item
+(`docs/backlog/2026-07-20-hair-texture-exists-namespace-scope.md`, the #1 prioritized backlog item;
+item file deleted per `docs/BACKLOG.md`'s "when an item ships" convention) · Roadmap:
+`2026-06-30-dawntrail-modpack-upgrader-design.md` §8
 
 ## 1. The problem
 
