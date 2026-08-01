@@ -23,6 +23,7 @@ import {
   EUpgradeTextureUsage,
   type UpgradeInfo,
 } from "../../src/upgrade/upgrade-info";
+import { UnportedGapError } from "../../src/util/errors";
 import { buildMinimalMtrl } from "../mtrl/make-mtrl";
 import { buildMinimalTex, buildMinimalTexSized } from "../tex/make-tex";
 
@@ -152,30 +153,51 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     expect(o.files.has(HAIR_MASK_DEST)).toBe(false);
   });
 
-  it("skips a (race,id) whose canonical material is missing from the table (FileExists false)", () => {
+  it("skips a (race,id) whose canonical material genuinely does not exist in-game (FileExists false)", () => {
     const nOld =
       "chara/human/c0102/obj/hair/h0002/texture/c0102h0002_hir_n.tex";
     const sOld =
       "chara/human/c0102/obj/hair/h0002/texture/c0102h0002_hir_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
-    // Fresh empty table -> lookup miss -> continue.
+    // c0102h0002 is absent from hair-materials.ts, i.e. fileExists() is false for it -> the game-
+    // index gate continues before the (irrelevant, empty) table is ever consulted.
     updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map());
     const destNorm =
       "chara/human/c0102/obj/hair/h0002/texture/--c0102h0002_hir_norm.tex";
     expect(o.files.has(destNorm)).toBe(false);
   });
 
-  it("skips when the shader pack gate does not match hair.shpk", () => {
+  it("throws UnportedGapError when fileExists is true but the table is missing the entry (table gap)", () => {
+    // HAIR_MAT (c0101h0001 hir_a) is a real DT hair -- fileExists(HAIR_MAT) is true -- but this
+    // test deliberately passes an empty table, reproducing exactly the "table gap" scenario the
+    // new split gate exists to catch loudly instead of silently `continue`ing.
     const nOld =
-      "chara/human/c0103/obj/hair/h0003/texture/c0103h0003_hir_n.tex";
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
     const sOld =
-      "chara/human/c0103/obj/hair/h0003/texture/c0103h0003_hir_s.tex";
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
+    const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
+    expect(() =>
+      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map()),
+    ).toThrow(UnportedGapError);
+    expect(() =>
+      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map()),
+    ).toThrow(/hair-materials table is missing/);
+  });
+
+  it("skips when the shader pack gate does not match hair.shpk", () => {
+    // c0101h0002: a real DT hair (fileExists true — see hair-materials.ts), needed now that the
+    // gate above checks the game index directly; a fictional path would be skipped by that gate
+    // before ever reaching the shader-pack check this test targets.
+    const nOld =
+      "chara/human/c0101/obj/hair/h0002/texture/c0101h0002_hir_n.tex";
+    const sOld =
+      "chara/human/c0101/obj/hair/h0002/texture/c0101h0002_hir_s.tex";
     const matPath =
-      "chara/human/c0103/obj/hair/h0003/material/v0001/mt_c0103h0003_hir_a.mtrl";
+      "chara/human/c0101/obj/hair/h0002/material/v0001/mt_c0101h0002_hir_a.mtrl";
     const norm =
-      "chara/human/c0103/obj/hair/h0003/texture/--c0103h0003_hir_norm.tex";
+      "chara/human/c0101/obj/hair/h0002/texture/--c0101h0002_hir_norm.tex";
     const mask =
-      "chara/human/c0103/obj/hair/h0003/texture/--c0103h0003_hir_mask.tex";
+      "chara/human/c0101/obj/hair/h0002/texture/--c0101h0002_hir_mask.tex";
     const t: HairMaterialTable = new Map([
       [
         matPath,
@@ -237,12 +259,14 @@ describe("updateUnclaimedHairTextures (hair)", () => {
 });
 
 describe("updateUnclaimedHairTextures (tail)", () => {
+  // c0701t0001: a real DT tail (fileExists true — see hair-materials.ts), needed now that the
+  // gate above checks the game index directly rather than only this test's local table.
   const TAIL_MAT =
-    "chara/human/c0201/obj/tail/t0005/material/v0001/mt_c0201t0005_a.mtrl";
+    "chara/human/c0701/obj/tail/t0001/material/v0001/mt_c0701t0001_a.mtrl";
   const TAIL_NORM_DEST =
-    "chara/human/c0201/obj/tail/t0005/texture/--c0201t0005_etc_norm.tex";
+    "chara/human/c0701/obj/tail/t0001/texture/--c0701t0001_etc_norm.tex";
   const TAIL_MASK_DEST =
-    "chara/human/c0201/obj/tail/t0005/texture/--c0201t0005_etc_mask.tex";
+    "chara/human/c0701/obj/tail/t0001/texture/--c0701t0001_etc_mask.tex";
 
   // Fixture canonical tail mtrl with HideBackfaces explicitly CLEARED, so the assertion below
   // actually exercises the rewrite (buildMinimalMtrl()'s raw materialFlags happens to already
@@ -268,9 +292,9 @@ describe("updateUnclaimedHairTextures (tail)", () => {
 
   it("tail: writes the canonical material with HideBackfaces set", () => {
     const nOld =
-      "chara/human/c0201/obj/tail/t0005/texture/c0201t0005_etc_n.tex";
+      "chara/human/c0701/obj/tail/t0001/texture/c0701t0001_etc_n.tex";
     const sOld =
-      "chara/human/c0201/obj/tail/t0005/texture/c0201t0005_etc_s.tex";
+      "chara/human/c0701/obj/tail/t0001/texture/c0701t0001_etc_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
     updateUnclaimedHairTextures(o, new Set([nOld, sOld]), tailTable);
@@ -290,12 +314,14 @@ describe("updateUnclaimedHairTextures (tail)", () => {
   it("skips the rewrite when the canonical tail material already has HideBackfaces (no tailRewriteMtrlBase64)", () => {
     // Matches the generator's real invariant (hair-materials-types.ts): tailRewriteMtrlBase64 is
     // present ONLY for tail entries lacking HideBackfaces, so an already-set entry has none.
+    // c0804t0001: a real DT tail with hideBackfaces already set (fileExists true), needed for the
+    // same reason as TAIL_MAT above.
     const mat =
-      "chara/human/c0201/obj/tail/t0006/material/v0001/mt_c0201t0006_a.mtrl";
+      "chara/human/c0804/obj/tail/t0001/material/v0001/mt_c0804t0001_a.mtrl";
     const normDest =
-      "chara/human/c0201/obj/tail/t0006/texture/--c0201t0006_etc_norm.tex";
+      "chara/human/c0804/obj/tail/t0001/texture/--c0804t0001_etc_norm.tex";
     const maskDest =
-      "chara/human/c0201/obj/tail/t0006/texture/--c0201t0006_etc_mask.tex";
+      "chara/human/c0804/obj/tail/t0001/texture/--c0804t0001_etc_mask.tex";
     const t: HairMaterialTable = new Map([
       [
         mat,
@@ -308,9 +334,9 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       ],
     ]);
     const nOld =
-      "chara/human/c0201/obj/tail/t0006/texture/c0201t0006_etc_n.tex";
+      "chara/human/c0804/obj/tail/t0001/texture/c0804t0001_etc_n.tex";
     const sOld =
-      "chara/human/c0201/obj/tail/t0006/texture/c0201t0006_etc_s.tex";
+      "chara/human/c0804/obj/tail/t0001/texture/c0804t0001_etc_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
     updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t);
@@ -373,6 +399,23 @@ describe("updateUnclaimedHairAccessory", () => {
 
     expect(o.files.has(ACC_NORM_DEST)).toBe(true);
     expect(o.files.has(ACC_DIFF_DEST)).toBe(true);
+  });
+
+  it("throws UnportedGapError when fileExists is true but the table is missing the entry (table gap)", () => {
+    // ACC_MAT (c0101h0001 acc_b) is a real DT accessory material -- fileExists(ACC_MAT) is true --
+    // but this test deliberately passes an empty table, reproducing the "table gap" scenario the
+    // new split gate exists to catch loudly instead of silently `continue`ing.
+    const nOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_n.tex";
+    const dOld =
+      "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_acc_d.tex";
+    const o = opt({ [nOld]: buildMinimalTex(), [dOld]: buildMinimalTex() });
+    expect(() =>
+      updateUnclaimedHairAccessory(o, new Set([nOld, dOld]), new Map()),
+    ).toThrow(UnportedGapError);
+    expect(() =>
+      updateUnclaimedHairAccessory(o, new Set([nOld, dOld]), new Map()),
+    ).toThrow(/hair-materials table is missing/);
   });
 
   it("skips the whole (race,id) -- nothing copied -- when a specular tex is present but the entry has no maskDx11Path", () => {
