@@ -22,8 +22,10 @@ import {
   parseTex,
 } from "../../src/tex/tex";
 import { requireBytes, restore } from "../../src/upgrade/upgrade";
+import { UnportedGapError } from "../../src/util/errors";
 import { firstCorpusModel } from "../helpers/corpus-models";
 import { filesMap } from "../helpers/make-packs";
+import { buildEmptySamplerColorsetMtrl } from "../mtrl/make-mtrl";
 
 function sampleData(): ModpackData {
   return {
@@ -273,6 +275,92 @@ describe("upgradeModpack (material round)", () => {
     );
     expect(idxTex).toBeDefined();
     expect(ESamplerId.g_SamplerIndex).toBe(0x565f8fd8);
+  });
+});
+
+function characterColorsetMtrlWithNormal(
+  mtrlPath: string,
+  normalPath: string,
+): XivMtrl {
+  return {
+    signature: 0x00000301,
+    shaderPackRaw: SHPK_CHARACTER,
+    additionalData: new Uint8Array(4),
+    textures: [
+      {
+        texturePath: normalPath,
+        flags: 0,
+        sampler: {
+          samplerIdRaw: ESamplerId.g_SamplerNormal,
+          samplerSettingsRaw: 0,
+        },
+      },
+    ],
+    uvMapStrings: [{ value: "", flags: 0 }],
+    colorsetStrings: [],
+    colorSetData: new Array<number>(256).fill(0),
+    colorSetDyeData: new Uint8Array(0),
+    shaderKeys: [],
+    shaderConstants: [],
+    materialFlags: 0,
+    materialFlags2: 0,
+    mtrlPath,
+  };
+}
+
+describe("upgradeModpack (material round) - unported gap propagation", () => {
+  // Fix round 1, Task 3 review finding: idPath (material.ts:130-134) is derived from the MOD'S OWN
+  // normal-texture path, which is not constrained to chara/ the way mtrl.mtrlPath is (that
+  // constraint is IS_CHARA_MTRL, upgrade.ts:156/166, gating only the material path). If the normal
+  // sampler points outside chara/ into another bundled FOLDER_KEYS prefix (ui/, vfx/, ...), gate B's
+  // fileExists(idPath) (material.ts:142) throws UnportedGapError instead of returning a boolean.
+  // That must propagate out of upgradeModpack, not be silently absorbed by materialRound's
+  // per-material catch (which exists to mirror EndwalkerUpgrade.cs:522-539's NRE swallow, a
+  // C#-reachable failure -- this port-gap signal is not one).
+  it("propagates UnportedGapError rather than leaving the file byte-untouched, when the normal sampler's convention idPath falls outside chara/ (gate B)", () => {
+    // A REAL base-game material (see build-synthetic-index-fallback.ts's header comment #1 for the
+    // same confirmed path) so gate A (fileExists(mtrl.mtrlPath)) is true and evaluation reaches
+    // gate B's fileExists(idPath) rather than short-circuiting on a false gate A.
+    const mtrlPath =
+      "chara/equipment/e0194/material/v0001/mt_c0201e0194_top_a.mtrl";
+    // Normal sampler outside chara/: convention idPath ("ui/uld/dummy_id.tex") falls in the bundled
+    // "ui/" FOLDER_KEYS prefix, which file-exists.ts does not bundle data for.
+    const uncompressed = serializeMtrl(
+      characterColorsetMtrlWithNormal(mtrlPath, "ui/uld/dummy_n.tex"),
+    );
+    const input = modpackWithSingleFile(
+      mtrlPath,
+      uncompressed,
+      FileStorageType.RawUncompressed,
+    );
+
+    let thrown: unknown;
+    try {
+      upgradeModpack(input);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(UnportedGapError);
+  });
+
+  // Amendment to fix round 1: the SAME UnportedGapError category also covers serializeMtrl's
+  // empty-sampler placeholder gap (mtrl/serialize.ts:43-47) -- pre-existing before this branch, but
+  // reached from the SAME materialRound catch (upgrade.ts:182 calls serializeMtrl inside the try),
+  // so today it was silently swallowed and the material left byte-untouched. Must propagate too.
+  it("propagates UnportedGapError rather than leaving the file byte-untouched, when the upgraded material still carries an empty-sampler placeholder (serializeMtrl's gap)", () => {
+    const input = modpackWithSingleFile(
+      "chara/foo/material/mt_foo.mtrl",
+      buildEmptySamplerColorsetMtrl(),
+      FileStorageType.RawUncompressed,
+    );
+
+    let thrown: unknown;
+    try {
+      upgradeModpack(input);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(UnportedGapError);
   });
 });
 

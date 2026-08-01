@@ -348,6 +348,16 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   `Vector3.Normalize` / TexTools' `.Normalized()` (`ModelModifiers.cs:2225-2226`) leave the vector
   unchanged below a ~1e-6 zero-tolerance. Latent (degenerate-geometry-only; no corpus model's
   recompute reaches it) and deferred because the extension's source isn't vendored in `reference/`.
+- [Sweep the rest of `src/` for catches that can absorb an `UnportedGapError`](backlog/2026-07-31-unported-gap-error-sweep.md)
+  — `feat/complete-file-exists-oracle`'s fix round 2 introduced `UnportedGapError` (the signal that
+  THIS PORT hasn't reproduced something, as distinct from a C#-reachable failure) and retagged
+  exactly the `file-exists.ts` out-of-chara throw and `mtrl/serialize.ts`'s empty-sampler placeholder
+  gap, both reached through `materialRound`'s catch. A full audit found three more catches that can
+  still silently absorb a port gap (`load-fixes.ts:121` mdl load fix, `unclaimed-hair.ts:198`'s
+  bare catch-all which used to have a typed gap here and lost it, `load-fixes.ts:109` tex load fix —
+  lower confidence, needs case-by-case adjudication) plus four uncaught fail-loud guards that should
+  be retagged as future-proofing. Recorded verbatim rather than fixed; each retag can change which
+  corpus packs pass today's ratchet baselines and needs the same scrutiny as a byte-moving fix.
 
 ### Harness & housekeeping
 

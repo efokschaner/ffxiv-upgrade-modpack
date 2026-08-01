@@ -14,6 +14,7 @@
 //     only the always-present ending sentinel, i.e. no real synonyms; scripts/extract-chara-index.ts
 //     asserts this at generation time and fails loud if a patch ever changes it.
 import { base64ToBytes } from "../../util/base64";
+import { UnportedGapError } from "../../util/errors";
 import {
   CHARA_INDEX_COUNTS,
   CHARA_INDEX_FILES,
@@ -121,7 +122,7 @@ export function fileExists(path: string): boolean {
   if (INVALID_RE.test(path)) return false; // _InvalidRegex (IOUtil.cs:556)
   if (!path.startsWith(CHARA_KEY)) {
     if (FOLDER_KEYS.some((key) => path.startsWith(key))) {
-      throw new Error(
+      throw new UnportedGapError(
         `upgrade: FileExists asked about "${path}", but only the chara (040000) category is ` +
           `bundled. Bundling another category is unported — see ` +
           `docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md §3.`,

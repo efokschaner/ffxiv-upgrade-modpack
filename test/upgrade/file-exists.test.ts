@@ -3,6 +3,7 @@ import {
   computeHash,
   fileExists,
 } from "../../src/upgrade/reference/file-exists";
+import { UnportedGapError } from "../../src/util/errors";
 
 describe("fileExists", () => {
   // In the old bundled namespace (hair/zear/tail textures): c0101 h0001, a real DT hair.
@@ -53,6 +54,19 @@ describe("fileExists", () => {
     expect(() =>
       fileExists("bgcommon/hou/indoor/general/0000/texture/foo.tex"),
     ).toThrow(/only the chara \(040000\) category is bundled/);
+  });
+
+  // The out-of-chara throw must be the shared UnportedGapError, not a bare Error, so a catch written
+  // to mirror a specific C#-reachable failure (e.g. materialRound's per-material try/catch,
+  // EndwalkerUpgrade.cs:522-539) can single it out and re-throw rather than swallow it.
+  it("throws UnportedGapError specifically (not a bare Error) for the out-of-chara case", () => {
+    let thrown: unknown;
+    try {
+      fileExists("bgcommon/hou/indoor/general/0000/texture/foo.tex");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(UnportedGapError);
   });
 
   it("computeHash matches HashGenerator (init -1, no final XOR, lowercased)", () => {
