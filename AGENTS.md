@@ -76,6 +76,9 @@ intuition** when the two conflict:
 - **Fail loud, never silently diverge.** Meet a structure or code path the port does
   not yet reproduce faithfully? **Throw.** A documented gap that fails loudly is safe;
   a best-effort wrong output corrupts a mod and can slip past the golden diff.
+  A throw only stays loud if nothing swallows it — see *Port-gap errors vs. ported
+  catches* below, which is how a fail-loud guard survives contact with a ported
+  `catch`.
 - **Confidence comes from AB-testing TexTools.** We prove parity by running our
   pipeline over the mod corpus and diffing every byte against the cached TexTools
   golden, backed by synthetic unit tests for logic real mods don't exercise, with
@@ -257,6 +260,47 @@ The C# source is the map we navigate by, so keep the port traceable back to it.
   divergence hiding a gap. Prefer TexTools' own cheap in-process primitive over a brute probe
   (e.g. CRC32-hash a candidate path against the once-read `.index`, as `IndexFile.FileExists`
   does — do not spawn a subprocess per candidate).
+
+### Port-gap errors vs. ported catches
+
+TexTools is full of broad `catch (Exception ex) { Trace.WriteLine(ex); continue; }` handlers, and
+we reproduce them faithfully — several are registered in `docs/TEXTOOLS_BUGS.md` precisely because
+swallowing everything is a defect we copy rather than fix. That creates a trap unique to a port:
+**our own fail-loud guards throw inside code a ported catch-all wraps**, so a "throw" that was
+meant to stop the pipeline instead becomes a silently skipped file — the class-1 silent-wrong-output
+failure the guard existed to prevent.
+
+The rule:
+
+- **Port gaps throw `UnportedGapError`** (`src/util/errors.ts` — it must sit below both the format
+  layer and the upgrade layer, since guards in `src/mtrl/`, `src/tex/` and `src/upgrade/` all throw
+  it), never a bare `Error`. This is
+  the signal that *our port* has not reproduced something. Every "not yet ported" / "unported"
+  guard is one of these.
+- **Every ported catch re-throws it** and swallows the rest:
+
+      } catch (err) {
+        // Mirrors <C# file · symbol · lines>'s swallow. It must NOT absorb a port-gap signal.
+        if (err instanceof UnportedGapError) throw err;
+        return f;
+      }
+
+- **Do not invert this** into catching an explicit list and re-throwing the rest, even though that
+  is the better default in ordinary code. The two sets are asymmetric: what we must swallow is
+  every failure *the C# can also produce* — open-ended, unlabelled, and spread across every parser
+  and validator we call — while what we must propagate is our own small, self-identifying set. A
+  selective catch that misses one C#-reachable throw crashes a user's upgrade on a malformed mod
+  TexTools merely skips, which is both a user-facing regression and a divergence from the golden.
+  Catch-all-plus-re-throw keeps the C#'s control flow (which is the thing being ported) and puts
+  the maintenance burden on the small set instead of the large one.
+- **Adding a `catch` is a gap audit.** Before wrapping a call in a ported catch, check what
+  fail-loud guards live under it. Adding a catch above an untagged guard silently re-opens it —
+  which has already happened here once: the `TextureResizeUnsupported` type that used to keep
+  `unclaimed-hair.ts`'s catch-all from eating the NPOT resize gap was removed in 2026-07-22, and
+  the gap went quiet again.
+
+Not every guard is tagged yet; the remaining sweep is tracked in
+`docs/backlog/2026-07-31-unported-gap-error-sweep.md`.
 
 ## Conventions
 
