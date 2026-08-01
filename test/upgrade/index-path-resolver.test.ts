@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  idTexExists,
-  resolveStolenIndexPath,
-} from "../../src/upgrade/reference/index-path-resolver";
+import { resolveStolenIndexPath } from "../../src/upgrade/reference/index-path-resolver";
 
 describe("index-path-resolver", () => {
   it("drops the variant letter where the game does (e0194)", () => {
@@ -51,13 +48,5 @@ describe("index-path-resolver", () => {
         "chara/equipment/e9999/material/v0001/mt_c0101e9999_xyz_a.mtrl",
       ),
     ).toBeUndefined();
-  });
-  it("idTexExists is true for a real base index texture, false otherwise", () => {
-    expect(
-      idTexExists("chara/equipment/e0194/texture/v01_c0201e0194_top_id.tex"),
-    ).toBe(true);
-    expect(idTexExists("chara/equipment/e0194/texture/made_up_a_id.tex")).toBe(
-      false,
-    );
   });
 });

@@ -4,7 +4,7 @@
 // itself HashGenerator.ComputeCRC (HashGenerator.cs:154-205).
 import { base64ToBytes } from "../../util/base64";
 import { reconstructIndexPath } from "./index-path-reconstruct";
-import { ID_TEX_PACKED, INDEX_EXCEPTIONS, INDEX_PACKED } from "./index-table";
+import { INDEX_EXCEPTIONS, INDEX_PACKED } from "./index-table";
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -45,16 +45,6 @@ const TABLE = (() => {
   return map;
 })();
 
-const ID_TEX_ENTRIES = (() => {
-  const bin = base64ToBytes(ID_TEX_PACKED);
-  const dv = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
-  const set = new Set<string>();
-  for (let p = 0; p + 8 <= bin.byteLength; p += 8) {
-    set.add(`${dv.getUint32(p, true)}:${dv.getUint32(p + 4, true)}`);
-  }
-  return set;
-})();
-
 /** The base material's stolen index (_id.tex) path, or `undefined` if `materialPath` is not a
  *  base-game material carrying an index sampler (EndwalkerUpgrade.cs:923-936). Checks the
  *  INDEX_EXCEPTIONS literal map first, then the packed (version, keepLetter) table reconstructed
@@ -76,13 +66,4 @@ export function resolveStolenIndexPath(
   const rec = TABLE.get(key);
   if (rec === undefined) return undefined;
   return reconstructIndexPath(path, rec.version, rec.keepLetter) ?? undefined;
-}
-
-/** True iff `path` (folder + "/" + file) is in the bundled base-game `_id.tex` set (gate B:
- *  `!FileExists(idPath)` in EndwalkerUpgrade.cs). Same membership idiom as fileExists. */
-export function idTexExists(path: string): boolean {
-  const slash = path.lastIndexOf("/");
-  if (slash < 0) return false;
-  const key = `${computeHash(path.slice(0, slash))}:${computeHash(path.slice(slash + 1))}`;
-  return ID_TEX_ENTRIES.has(key);
 }

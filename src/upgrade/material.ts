@@ -10,6 +10,7 @@ import {
 } from "../mtrl/shader";
 import type { MtrlTexture, XivMtrl } from "../mtrl/types";
 import { upgradeColorsetData, upgradeDyeData } from "./colorset-upgrade";
+import { fileExists } from "./reference/file-exists";
 import {
   GLASS_ADDITIONAL_DATA,
   GLASS_SHADER_CONSTANTS,
@@ -19,10 +20,7 @@ import {
   HAIR_ADDITIONAL_DATA,
   HAIR_SHADER_CONSTANTS,
 } from "./reference/hair-shader-params";
-import {
-  idTexExists,
-  resolveStolenIndexPath,
-} from "./reference/index-path-resolver";
+import { resolveStolenIndexPath } from "./reference/index-path-resolver";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
 const OLD_SHADER_CONSTANT_1 = 0x36080ad0;
@@ -135,14 +133,17 @@ function upgradeColorsetMaterial(mtrl: XivMtrl): UpgradeInfo[] {
     idPath = normalPath.replaceAll("_n.tex", "_id.tex");
   }
 
-  // EndwalkerUpgrade.cs:923-936. Gate A (mod overwrites a base material with an index sampler) is answered by
-  // the resolver's table membership; gate B (!FileExists(convention idPath)) by idTexExists. When both hold,
-  // steal the base material's own index-sampler path. The table is complete over its enumerated domain
-  // (item_sets.db roots + the hair grid; see scripts/extract-index-table.ts and design §3.5 for the
-  // residual boundary), so a miss means "not a base material within that domain" — a faithful convention keep.
-  const stolen = resolveStolenIndexPath(mtrl.mtrlPath);
-  if (stolen !== undefined && !idTexExists(idPath)) {
-    idPath = stolen;
+  // EndwalkerUpgrade.cs:923-936. Gate A (`rtx.FileExists(mtrl.MTRLPath, true)` — the mod is
+  // overwriting a base-game material) and gate B (`!rtx.FileExists(idPath)` — the convention index
+  // path is not itself a base-game file) are both the game-index oracle. When both hold, steal the
+  // base material's own index-sampler path. `resolveStolenIndexPath` answers only the remaining
+  // question — WHICH path — from the bundled base-material table; a miss there means the material
+  // exists but binds no index sampler, which is the C#'s `idSamp == null` skip (:930-935).
+  if (fileExists(mtrl.mtrlPath) && !fileExists(idPath)) {
+    const stolen = resolveStolenIndexPath(mtrl.mtrlPath);
+    if (stolen !== undefined) {
+      idPath = stolen;
+    }
   }
 
   // EndwalkerUpgrade.cs:954-968
