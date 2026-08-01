@@ -4,7 +4,11 @@
 // Minimum surface: only the fields the transform reads. See
 // docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md §3.
 
-/** One existing DT canonical material. Absence from the table == absent in-game (FileExists false). */
+/**
+ * One existing DT canonical material. Existence is answered separately, by `fileExists` (the
+ * COMPLETE chara game index, ./file-exists.ts) — this table answers CONTENT only, so absence from
+ * the table when `fileExists` says the path exists is a port gap (`UnportedGapError`), not a skip.
+ */
 export interface HairMaterialEntry {
   /** Raw shader-pack name, e.g. "hair.shpk" (ShaderHelpers.cs:558-559). Gates the shader check. */
   shaderPackRaw: string;

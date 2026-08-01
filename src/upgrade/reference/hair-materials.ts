@@ -1,7 +1,8 @@
 // GENERATED — regenerate via `npx tsx scripts/extract-hair-materials.ts`. Do not edit by hand.
 // DT canonical hair/tail/ear/accessory materials that exist, with the minimum fields the
-// round-6 partials read (EndwalkerUpgrade.cs:1436-1516 / 1621-1713). The table IS the
-// FileExists oracle — a miss means the material is absent in-game (a faithful skip).
+// round-6 partials read (EndwalkerUpgrade.cs:1436-1516 / 1621-1713). fileExists (the COMPLETE
+// chara game index, ./file-exists.ts) answers existence; this table answers CONTENT only — a
+// miss on a path fileExists says exists is a port gap (UnportedGapError), not a skip.
 import type { HairMaterialTable } from "./hair-materials-types";
 
 export const HAIR_MATERIALS: HairMaterialTable = new Map([

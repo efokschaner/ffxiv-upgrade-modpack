@@ -3,8 +3,10 @@
 //
 // Enumerates the DT base-game iris materials that EXIST (in-process index hash, GameIndex) and,
 // for each hit, records its g_SamplerDiffuse texture path — the minimum UpdateEyeMask reads
-// (EndwalkerUpgrade.cs:2044-2059). The table's KEY doubles as the FileExists oracle (:2049): a
-// miss == absent in-game. See docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md §3.
+// (EndwalkerUpgrade.cs:2044-2059). fileExists (the COMPLETE chara game index) answers existence
+// (:2049); this table answers CONTENT only — a miss on a path fileExists says exists is a port gap
+// (UnportedGapError), not a skip. See docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md
+// §3 and docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md §6.
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -27,7 +29,8 @@ const SQPACK =
 
 // The full IDRaceDictionary race-code list (identical to extract-hair-materials.ts RACES). "0000"
 // is intentionally absent: no iris material exists for a race-less code, and the runtime maps an
-// unknown c-code to "0000" -> a table miss -> a faithful skip (spec §3.3).
+// unknown c-code to "0000" -> fileExists(irisPath) is false (no c0000 entry in the chara game
+// index) -> a faithful skip, before the table is ever consulted (spec §3.3).
 const RACES = [
   "0101",
   "0104",
@@ -117,9 +120,10 @@ const body = sorted
 writeFileSync(
   "src/upgrade/reference/eye-materials.ts",
   `// GENERATED — regenerate via \`npx tsx scripts/extract-eye-materials.ts\`. Do not edit by hand.\n` +
-    `// DT base-game iris materials that exist, with their g_SamplerDiffuse path. The table's KEY\n` +
-    `// IS the FileExists oracle — a miss means the iris material is absent in-game (a faithful\n` +
-    `// skip, EndwalkerUpgrade.cs:2049). See src/upgrade/reference/eye-materials-types.ts.\n` +
+    `// DT base-game iris materials that exist, with their g_SamplerDiffuse path. fileExists (the\n` +
+    `// COMPLETE chara game index) answers existence (EndwalkerUpgrade.cs:2049); this table answers\n` +
+    `// CONTENT only — a miss on a path fileExists says exists is a port gap (UnportedGapError), not\n` +
+    `// a skip. See src/upgrade/reference/eye-materials-types.ts.\n` +
     `import type { EyeMaterialTable } from "./eye-materials-types";\n\n` +
     `export const EYE_MATERIALS: EyeMaterialTable = new Map([\n${body}\n]);\n`,
 );

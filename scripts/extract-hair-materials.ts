@@ -3,8 +3,11 @@
 //
 // Enumerates the DT canonical hair/tail/ear/accessory materials that EXIST (in-process index
 // hash, GameIndex) and, for each hit, /extracts its bytes and records the minimum fields the
-// round-6 partials read (EndwalkerUpgrade.cs:1436-1516 / 1621-1713). The table doubles as the
-// FileExists oracle: a miss == absent in-game. See docs/superpowers/specs/2026-07-16-...-design.md §3.
+// round-6 partials read (EndwalkerUpgrade.cs:1436-1516 / 1621-1713). Existence is answered
+// separately by fileExists (the COMPLETE chara game index, src/upgrade/reference/file-exists.ts);
+// this table answers CONTENT only, so a miss on a path fileExists says exists is a port gap
+// (UnportedGapError), not a skip. See docs/superpowers/specs/2026-07-16-...-design.md §3 and
+// docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md §6.
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -29,9 +32,11 @@ const SAMPLE_HAIR =
   "chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl";
 
 // Race codes: the FULL IDRaceDictionary (Character.cs:530-571) — every human race's playable
-// (xx01) AND NPC (xx04) variant, plus the two NPC catch-alls (9104/9204). Completeness is
-// load-bearing: the emitted table is the FileExists oracle, so a race with real DT materials that
-// is NOT enumerated here would be silently mis-skipped (see the design spec §3.1/§3.3/§6). The xx04
+// (xx01) AND NPC (xx04) variant, plus the two NPC catch-alls (9104/9204). Completeness is still
+// load-bearing, more so now: existence comes from fileExists (the COMPLETE chara game index), so a
+// race with real DT materials that is NOT enumerated here is no longer a silent mis-skip but a hard
+// `UnportedGapError` abort of the whole pack (fileExists-true + table-miss; see the design spec
+// §3.1/§3.3/§6 and docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md §6). The xx04
 // codes are NOT empty — they carry real hair/tail/accessory materials in retail.
 const RACES = [
   "0101",
@@ -167,8 +172,9 @@ writeFileSync(
   "src/upgrade/reference/hair-materials.ts",
   `// GENERATED — regenerate via \`npx tsx scripts/extract-hair-materials.ts\`. Do not edit by hand.\n` +
     `// DT canonical hair/tail/ear/accessory materials that exist, with the minimum fields the\n` +
-    `// round-6 partials read (EndwalkerUpgrade.cs:1436-1516 / 1621-1713). The table IS the\n` +
-    `// FileExists oracle — a miss means the material is absent in-game (a faithful skip).\n` +
+    `// round-6 partials read (EndwalkerUpgrade.cs:1436-1516 / 1621-1713). fileExists (the COMPLETE\n` +
+    `// chara game index, ./file-exists.ts) answers existence; this table answers CONTENT only — a\n` +
+    `// miss on a path fileExists says exists is a port gap (UnportedGapError), not a skip.\n` +
     `import type { HairMaterialTable } from "./hair-materials-types";\n\n` +
     `export const HAIR_MATERIALS: HairMaterialTable = new Map([\n${body}\n]);\n\n` +
     `/** _SampleHair (EndwalkerUpgrade.cs:56) raw bytes, base64 — source of the tail constant swap. */\n` +

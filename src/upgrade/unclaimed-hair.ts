@@ -2,8 +2,10 @@
 // (EndwalkerUpgrade.cs:1342-1716): rescues loose hair/tail/ear/accessory textures shipped
 // without their material by copying them to the canonical DT Dx11 paths, running the hair
 // pixel transform for hair/tail/ear (accessory is a pure repath copy). Driven by the bundled
-// hair-material table (the FileExists oracle; src/upgrade/reference/hair-materials-types.ts).
-// See docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md §4.2-§4.4.
+// hair-material table (content only; existence is `fileExists`, the COMPLETE chara game index —
+// src/upgrade/reference/hair-materials-types.ts, src/upgrade/reference/file-exists.ts).
+// See docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md §4.2-§4.4 and
+// docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md §6.
 //
 // This module covers both the shared hair/tail/ear function, INCLUDING the tail-specific
 // constant-swap material rewrite (EndwalkerUpgrade.cs:1504-1516), and the accessory variant

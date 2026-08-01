@@ -19,6 +19,13 @@ wires the shared `unusedTextures`/`contained` filter and calls only the hair pas
 remains an unported, already-baselined gap here (closed by a later follow-up, see
 `docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md`).
 
+**Update 2026-07-31:** §3.1's "table-as-existence-oracle" invariant (a table miss faithfully means
+absent-in-game, no throw) was superseded by
+`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §6: existence is now answered
+separately by `fileExists` (the COMPLETE chara game index, `src/upgrade/reference/file-exists.ts`),
+and this table answers CONTENT only — a table miss on a path `fileExists` says exists is now a hard
+`UnportedGapError` abort, not a skip. Kept below for history, not as the current architecture.
+
 ---
 
 ## 1. Why this pass needs game data we don't have at runtime

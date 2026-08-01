@@ -1,7 +1,8 @@
 // GENERATED — regenerate via `npx tsx scripts/extract-eye-materials.ts`. Do not edit by hand.
-// DT base-game iris materials that exist, with their g_SamplerDiffuse path. The table's KEY
-// IS the FileExists oracle — a miss means the iris material is absent in-game (a faithful
-// skip, EndwalkerUpgrade.cs:2049). See src/upgrade/reference/eye-materials-types.ts.
+// DT base-game iris materials that exist, with their g_SamplerDiffuse path. fileExists (the
+// COMPLETE chara game index) answers existence (EndwalkerUpgrade.cs:2049); this table answers
+// CONTENT only — a miss on a path fileExists says exists is a port gap (UnportedGapError), not
+// a skip. See src/upgrade/reference/eye-materials-types.ts.
 import type { EyeMaterialTable } from "./eye-materials-types";
 
 export const EYE_MATERIALS: EyeMaterialTable = new Map([
