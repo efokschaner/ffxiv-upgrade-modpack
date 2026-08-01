@@ -1,13 +1,13 @@
 # PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug
 
-Filed: 2026-07-21 · Status: open · Priority: last (item 8, cosmetic + derivative of the resampler
-item #1) · Surfaced while tracing `2026-07-17-pmp-writer-orphan-member-retention.md` (which owns the
-*other* ~5 `structure` entries)
+Filed: 2026-07-21 · Status: open · Priority: last (item 7 as of 2026-07-25, cosmetic + derivative of
+the `.tex` payload bulk) · Surfaced while tracing `2026-07-17-pmp-writer-orphan-member-retention.md`
+(which owns the *other* ~5 `structure` entries)
 
 Of the ~47 `kind:"structure"` entries in `.upgrade-baseline`, ~5 are the genuine orphan/rename
 writer gap (that sibling item). The remaining **~42 are shadows of the `.tex` payload divergences**
-(design spec `2026-06-30-…-design.md` §8.3's `.tex` bulk — the float-precision resize/decode tail;
-primary open item `2026-07-10-imagesharp-resampler.md`), in two mechanical shapes. Neither is an
+(design spec `2026-06-30-…-design.md` §8.3's `.tex` bulk — the float-precision resize/decode tail),
+in two mechanical shapes. Neither is an
 independent root, so **there is nothing to fix here directly** — this item exists to record the
 coupling (so it isn't rediscovered as a phantom numbering bug) and to pin the verification gate.
 

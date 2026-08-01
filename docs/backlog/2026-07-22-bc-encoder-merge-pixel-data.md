@@ -152,10 +152,20 @@ careful reading.
 
 ## Reachability
 
-**Zero corpus packs reach it.** No real pack has an NPOT mask or an NPOT hair texture; the three
-`npot-mask-*` packs are authored fixtures. Per `docs/BACKLOG.md`'s "deploying changes the probability
-term" note, a hand-authored NPOT mask is plausible enough for a public upload endpoint that this
-should not be treated as extinct — but it is not a live defect in anything we have seen.
+**Corrected 2026-07-25 — no longer "zero corpus packs reach it."** That claim was accurate only for
+the *specific* mask/hair material-round call sites this item was filed against: no real pack has an
+NPOT mask or an NPOT hair texture, and the three `npot-mask-*` packs bracketing the cost above remain
+authored fixtures. But the underlying capability gap this item tracks — no BC encoder matching
+TexImpNet/nvtt, so `MergePixelData`'s re-encode is elided wherever we resize a BC source — is not
+confined to those two call sites. The `ValidateTexFileData` load-seam port
+(`docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`) wires the identical
+`resizeForMerge` primitive into the load-time NPOT-resize branch, and the real pack
+`KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2` reaches it there: a DXT1 2048×2048 NPOT-with-mips demihuman
+specular (`v01_d1022e0001_dwn_s.tex`) resizes to A8R8G8B8 where the golden re-encodes to DXT1 (measured
+mip0 max delta 254/255, noise-magnitude — see `test/helpers/upgrade-compare.ts`'s
+`confirmBcResizedAsA8` rule). So a real pack now depends on this same gap; it is fresh evidence for
+re-weighing this item's priority (`docs/BACKLOG.md`'s "deploying changes the probability term" note),
+even though the mask/hair call sites this item is scoped to remain unreached by any known corpus pack.
 
 ## Test that pins it
 

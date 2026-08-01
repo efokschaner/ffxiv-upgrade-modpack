@@ -29,7 +29,7 @@ import {
 import { resolveFile } from "./upgrade";
 import { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade-info";
 
-function isPowerOfTwo(n: number): boolean {
+export function isPowerOfTwo(n: number): boolean {
   return n > 0 && (n & (n - 1)) === 0;
 }
 
@@ -48,7 +48,7 @@ function ceilPow2(x: number): number {
   if (x < 2) return 1;
   return 2 ** Math.trunc(Math.log(x - 1) / Math.log(2) + 1);
 }
-function roundToPowerOfTwo(x: number): number {
+export function roundToPowerOfTwo(x: number): number {
   const min = floorPow2(x);
   const max = ceilPow2(x);
   return max - x < x - min ? max : min;
@@ -74,13 +74,13 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * Already-pow2 input is returned untouched — C# only calls ResizeXivTx inside the NPOT branch,
  * so nothing here runs for a pow2 texture.
  *
- * Those three are the TRANSFORM-ROUND sites. Two nearby calls are deliberately not routed here:
+ * Those three are the TRANSFORM-ROUND sites. Two nearby calls are handled elsewhere:
  *   - :1205's ResizeImages is not a resize of this kind at all — it calls TextureHelpers.ResizeImage
  *     directly (TextureHelpers.cs:336-337) with no MergePixelData behind it, so neither guard below
  *     applies and the hair path resizes to the common max size with a bare resizeBicubic instead.
- *   - :2110 (ValidateTexFileData) IS a genuine fourth ResizeXivTx call, but it is LOAD-time and
- *     wholly unported — see docs/backlog/2026-07-10-fixoldtexdata-load-round.md. When it lands it
- *     should come through this helper too.
+ *   - :2110 (ValidateTexFileData) IS a genuine fourth ResizeXivTx call; it is the LOAD-time seam and
+ *     now routes through this helper's extracted core `resizeForMerge` from src/upgrade/validate-tex.ts
+ *     (see docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md).
  *
  * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
  * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt. The caller
@@ -160,6 +160,49 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * both are plain Errors here. They are checked before the resize rather than after purely to
  * avoid wasted work — either way the call throws.
  */
+export function resizeForMerge(
+  rgba: Uint8Array,
+  srcW: number,
+  srcH: number,
+  dstW: number,
+  dstH: number,
+  format: number,
+): { rgba: Uint8Array; width: number; height: number } {
+  // Message is Tex.GetCompressionFormat's `default:` arm, verbatim (Tex.cs:743 —
+  // `"Format is currently unsupported: " + format.ToString()`), not decorated: the expected-failure
+  // harness (assertMatchedUpgradeFailure, test/helpers/corpus-upgrade.ts) asserts our thrown message
+  // is a literal substring of ConsoleTools' captured trace, so it must match the C# text exactly
+  // rather than merely mention it. resize-context (${srcW}x${srcH} -> ${dstW}x${dstH}, this format
+  // number) stays in this comment instead. Pinned by test/corpus/upgrade-error/npot-dxt3-mask.ttmp2.
+  if (!MERGE_SUPPORTED_FORMATS.has(format)) {
+    throw new Error(
+      `Format is currently unsupported: ${texFormatName(format)}`,
+    );
+  }
+  // Tex.cs:656-660, gated to the non-BC7 arm: BC7 takes the DDS.TexConvRawPixels path
+  // (Tex.cs:650-653), which carries no size guard. The dims tested are the POST-resize ones —
+  // ResizeXivTx overwrites tex.Width/Height (Tex.cs:417-418) before calling MergePixelData.
+  // Message is Tex.cs:659's InvalidDataException text, verbatim, for the same substring-match
+  // reason as the format guard above (resize context: ${srcW}x${srcH} -> ${dstW}x${dstH}). Pinned
+  // by test/corpus/upgrade-error/npot-tiny-mask.ttmp2.
+  if (format !== BC7 && (dstW < 64 || dstH < 64)) {
+    throw new Error(
+      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
+    );
+  }
+  return {
+    rgba: resizeBicubic(rgba, srcW, srcH, dstW, dstH),
+    width: dstW,
+    height: dstH,
+  };
+}
+
+/** NPOT->pow2 wrapper over resizeForMerge for the three TRANSFORM-ROUND sites above: rounds each
+ *  dimension independently (IOUtil.RoundToPowerOfTwo) and short-circuits a pow2 input BEFORE any
+ *  guard — see resizeForMerge's doc comment above for the ELIDED MergePixelData round-trip and its
+ *  measured divergence, which applies here unchanged. The load seam (src/upgrade/validate-tex.ts)
+ *  calls resizeForMerge directly instead, to reproduce a Width-for-both-dimensions TexTools bug
+ *  that this wrapper's per-dimension rounding does not exhibit. */
 function resizeToPow2ForMerge(
   rgba: Uint8Array,
   width: number,
@@ -171,35 +214,14 @@ function resizeToPow2ForMerge(
   }
   // RoundToPowerOfTwo is never equal to an NPOT input, so ResizeImage's equal-dims early return
   // (TextureHelpers.cs:368) is unreachable from here.
-  const w = roundToPowerOfTwo(width);
-  const h = roundToPowerOfTwo(height);
-  // Message is Tex.GetCompressionFormat's `default:` arm, verbatim (Tex.cs:743 —
-  // `"Format is currently unsupported: " + format.ToString()`), not decorated: the expected-failure
-  // harness (assertMatchedUpgradeFailure, test/helpers/corpus-upgrade.ts) asserts our thrown message
-  // is a literal substring of ConsoleTools' captured trace, so it must match the C# text exactly
-  // rather than merely mention it. resize-context (${width}x${height} -> ${w}x${h}, this format
-  // number) stays in this comment instead. Pinned by test/corpus/upgrade-error/npot-dxt3-mask.ttmp2.
-  if (!MERGE_SUPPORTED_FORMATS.has(format)) {
-    throw new Error(
-      `Format is currently unsupported: ${texFormatName(format)}`,
-    );
-  }
-  // Tex.cs:656-660, gated to the non-BC7 arm: BC7 takes the DDS.TexConvRawPixels path
-  // (Tex.cs:650-653), which carries no size guard. The dims tested are the POST-resize ones —
-  // ResizeXivTx overwrites tex.Width/Height (Tex.cs:417-418) before calling MergePixelData.
-  // Message is Tex.cs:659's InvalidDataException text, verbatim, for the same substring-match
-  // reason as the format guard above (resize context: ${width}x${height} -> ${w}x${h}). Pinned by
-  // test/corpus/upgrade-error/npot-tiny-mask.ttmp2.
-  if (format !== BC7 && (w < 64 || h < 64)) {
-    throw new Error(
-      "Image is too small for DDS Compressor. (64x64 Minimum Size)",
-    );
-  }
-  return {
-    rgba: resizeBicubic(rgba, width, height, w, h),
-    width: w,
-    height: h,
-  };
+  return resizeForMerge(
+    rgba,
+    width,
+    height,
+    roundToPowerOfTwo(width),
+    roundToPowerOfTwo(height),
+    format,
+  );
 }
 
 /** Port of CreateIndexFromNormal (EndwalkerUpgrade.cs:1083-1113). Decodes the normal,

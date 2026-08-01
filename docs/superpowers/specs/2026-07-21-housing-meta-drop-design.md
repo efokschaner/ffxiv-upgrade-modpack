@@ -180,7 +180,7 @@ as an earlier draft of this doc claimed. The real split, counted from the baseli
 | 9 | `.mdl` `added` | `bgcommon/hou/**/bgparts/*.mdl` gap (the furniture `bgparts` writer, since shipped 2026-07-23) |
 | 9 | manifest `added` | same gap — the index shift the missing models leave in their options' manifests |
 | 50 | manifest `mismatch` | `Name`/`Category` re-derivation & option file order (`docs/backlog/2026-07-13-resave-ttmp2-name-category.md` and its file-order sibling) |
-| 29 | `.tex` `mismatch` | the texture float-precision bulk (roadmap design §8, `docs/backlog/2026-07-10-imagesharp-resampler.md`) |
+| 29 | `.tex` `mismatch` | the texture float-precision bulk (roadmap design §8; then tracked by the T3 resampler item, folded into T2 and closed 2026-07-25) |
 
 Only 18 of the 97 (the `.mdl` gap's slice) trace to this change's companion item; the other 79 are
 pre-existing, unrelated gaps the corpus expansion happened to surface at the same time.

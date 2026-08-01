@@ -54,9 +54,10 @@ is confirmed so far.
 2. Bisect the constant 80-byte delta: dump both `.tex` payloads' headers and mip-offset tables
    (`src/tex/...` — wherever the `.tex` container header is parsed/written) and diff them byte-for-byte
    on the smallest affected file (`eye01_mask.tex`, 11 KB) first.
-3. Decide the bucket: a resize gap (T3, `docs/backlog/2026-07-10-imagesharp-resampler.md`), a load-time
-   fixup gap (T2, `docs/backlog/2026-07-10-fixoldtexdata-load-round.md` / the PMP-load
-   `docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md`), or a genuine writer bug not yet tracked.
+3. Decide the bucket: a load-time fixup gap (T2, `docs/backlog/2026-07-10-fixoldtexdata-load-round.md`
+   — shipped 2026-07-25 for TTMP, so re-check against the current `/upgrade`/`/resave` output first —
+   or the PMP-load `docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md`), or a genuine writer bug not
+   yet tracked.
 4. If it turns out to be one of the already-tracked tex items above, fold this pack in as its repro
    and close this item; otherwise file the writer bug directly.
 5. Once fixed, move the pack back to `test/corpus/real/` (or drop the `upgrade-error` scoping) so

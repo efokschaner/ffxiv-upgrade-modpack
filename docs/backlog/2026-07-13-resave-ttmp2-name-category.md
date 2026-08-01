@@ -14,7 +14,7 @@ directly, not just `/resave` — `writeGeneratedTex`/`writeGeneratedMtrl` (`src/
 build a brand-new `ModpackFile` with no `ttmp` field at all, so a REGENERATED entry loses `Name`/
 `Category`/`DatFile` outright (empty string via `ttmp2.ts`'s `f.ttmp?.category ?? ""`) rather than
 round-tripping the source's stale values. `Misty_Hairstyle_Female.ttmp2` newly exercises this: once
-the hair-resize skip was wired up (`2026-07-10-imagesharp-resampler.md`), its two regenerated hair
+the hair-resize skip was wired up (the ImageSharp Bicubic resampler landing 2026-07-16), its two regenerated hair
 option pairs (4 gamePaths — normal+mask `.tex`, `_n`/`_s` suffix) went from "left untouched by
 `writeGeneratedTex`, so kept the source's `ttmp`" to "regenerated, so `ttmp` is dropped", surfacing
 as 10 new `ModsJsons/N/{Category,DatFile,Name}` mismatches (all bare-`/upgrade`, not `/resave`) —

@@ -38,8 +38,8 @@ per AGENTS.md ("Fail loud, never silently diverge").
 - **The one real blocker is ImageSharp float math.** `ConvertEyeMaskToDiffuse`
   (`EndwalkerUpgrade.cs:1910-2003`) runs a chain of ImageSharp operations we do **not** port:
   Bicubic `Resize`, NearestNeighbor `Resize`, `BoxBlur(w/128)`, and two `DrawImage` alpha composites
-  (positioned `SrcOver`, then `SrcAtop`). This is the T3 resampler backlog item
-  (`docs/backlog/2026-07-10-imagesharp-resampler.md`) **plus** blur **plus** compositing, and
+  (positioned `SrcOver`, then `SrcAtop`). This is the ImageSharp Bicubic resampler work (then tracked
+  as the T3 backlog item, since folded into T2 and closed 2026-07-25) **plus** blur **plus** compositing, and
   byte-parity against ImageSharp's float pipeline is uncertain — it would very likely require a
   `DIVERGENCE_RULES` "close-enough" pixel rule, which cannot be authored or blessed without a corpus
   golden to compare against. It is its own sub-project; see §5.
@@ -149,8 +149,8 @@ mod correctly, and the two avenues the operator flagged:
 
 - **The pixel pipeline** `ConvertEyeMaskToDiffuse` (`:1910-2003`): Bicubic + NearestNeighbor
   `Resize`, `BoxBlur(w/128)`, positioned-`SrcOver` and `SrcAtop` `DrawImage`, plus the pure helpers
-  `ExpandChannel`/`MaskImage`/`SwizzleRB`. Depends on and subsumes T3
-  (`docs/backlog/2026-07-10-imagesharp-resampler.md`).
+  `ExpandChannel`/`MaskImage`/`SwizzleRB`. Depends on and subsumes the T3 resampler work (folded into
+  T2 and closed 2026-07-25).
 - **Bundled base-game eye textures** `chara/common/texture/eye/eye01_base.tex` and `eye01_mask.tex`
   (`:1928-1929`) — their raw pixels, extracted by the same script pass.
 - **The write-back** reuses `encodeUncompressedTex` + `writeGeneratedTex` (already byte-exact); the

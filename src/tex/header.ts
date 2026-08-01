@@ -86,3 +86,84 @@ export function buildCanonicalTexHeader(
   out.set(b.toUint8Array());
   return out; // remaining bytes are zero-padding to 80
 }
+
+type MipOffsetFixable = Pick<
+  XivTex,
+  "format" | "width" | "height" | "mipCount" | "lodMips" | "mipMapOffsets"
+>;
+
+/** Port of Tex.TexHeader.FixUpBrokenMipOffsets (Tex.cs:168-235). Rebuilds a broken mip-offset
+ *  table using total file size as a heuristic, returning whether anything changed and the size the
+ *  .tex SHOULD be.
+ *
+ *  STRUCT-COPY QUIRK, load-bearing (docs/TEXTOOLS_BUGS.md #21). C# passes `TexHeader` BY VALUE. Its
+ *  writes to the reference-typed `uint[]` fields (`MipMapOffsets`, `LoDMips`) reach the caller
+ *  (shared array), but its writes to the scalar `MipCount` stay on the local copy. ValidateTexFileData
+ *  then serializes the header with the ORIGINAL `MipCount` and the FIXED offset/lod tables. We
+ *  reproduce that exactly: mutate `header.mipMapOffsets` / `header.lodMips` in place and NEVER write
+ *  `header.mipCount` (a local `mipCount` mirrors the C# copy's field). Getting this wrong moves bytes
+ *  on real corpus packs. */
+export function fixUpBrokenMipOffsets(
+  header: MipOffsetFixable,
+  texSizeIncludingHeader: number,
+): { headerChanged: boolean; calculatedTexSize: number } {
+  let modified = false;
+  let originalMipCount = header.mipCount;
+  let mipOffset = 80; // Tex._TexHeaderSize
+  if (originalMipCount > 13) originalMipCount = 13;
+
+  // Throws for unknown formats, exactly like DDS.CalculateMipMapSizes (Tex.cs:179 comment).
+  const mipSizes = texMipSizes(header.format, header.width, header.height);
+
+  // Local mip count == the C# copy's header.MipCount; deliberately NOT written back to `header`.
+  let mipCount = 1;
+  if (header.mipMapOffsets[0] !== mipOffset) modified = true;
+  header.mipMapOffsets[0] = mipOffset;
+  mipOffset += mipSizes[0]!;
+
+  let mipLevel: number;
+  for (mipLevel = 1; mipLevel < originalMipCount; ++mipLevel) {
+    if (mipLevel >= mipSizes.length) break;
+    const mipSize = mipSizes[mipLevel]!;
+    if (mipOffset + mipSize > texSizeIncludingHeader) break;
+    if (header.mipMapOffsets[mipLevel] !== mipOffset) modified = true;
+    header.mipMapOffsets[mipLevel] = mipOffset;
+    mipOffset += mipSize;
+    mipCount = mipLevel + 1;
+  }
+
+  for (let lodLevel = 0; lodLevel < 3; ++lodLevel) {
+    if (header.lodMips[lodLevel]! >= mipCount) {
+      modified = true;
+      header.lodMips[lodLevel] = mipCount - 1;
+    }
+  }
+
+  for (; mipLevel < 13; ++mipLevel) {
+    if (header.mipMapOffsets[mipLevel] !== 0) {
+      modified = true;
+      header.mipMapOffsets[mipLevel] = 0;
+    }
+  }
+
+  if (mipCount !== originalMipCount) modified = true;
+
+  return { headerChanged: modified, calculatedTexSize: mipOffset };
+}
+
+/** The write-time validation Tex.TexHeader.ToBytes performs before emitting header bytes
+ *  (Tex.cs:138-145), messages verbatim. Kept SEPARATE from serializeTexHeader (which writes retained
+ *  headers verbatim and must not throw on them); called only where ToBytes' guard is part of the
+ *  ported behaviour (validateTexFileData Branch B), where a throw drops the file at the load seam. */
+export function assertTexHeaderWritable(
+  tex: Pick<XivTex, "lodMips" | "mipCount" | "mipFlag">,
+): void {
+  if (tex.lodMips[1] < tex.lodMips[0] || tex.lodMips[2] < tex.lodMips[1])
+    throw new Error("LoDMips is not in non-descending order.");
+  if (tex.lodMips[2] >= tex.mipCount)
+    throw new Error("All LoDMips must be strictly lesser than MipCount.");
+  if (tex.mipFlag > 15)
+    throw new Error("MipFlag must be strictly lesser than 16.");
+  if (tex.mipCount > 13)
+    throw new Error("MipCount must be strictly lesser than 14.");
+}

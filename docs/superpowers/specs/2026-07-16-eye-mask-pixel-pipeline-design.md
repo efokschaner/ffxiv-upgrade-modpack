@@ -5,8 +5,8 @@
 **Foundation:** completes the sibling control-flow spec
 (`docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md`), which shipped the `UpdateEyeMask`
 gate + iris table and left a **fail-loud throw** at the pixel step. Closes the round-6 eye-mask
-partial backlog item, and ports (verifies, not closes) the resampler half of
-`docs/backlog/2026-07-10-imagesharp-resampler.md` (T3). Extends the roadmap design
+partial backlog item, and ports (verifies, not closes) the resampler half of the T3 backlog item
+(folded into T2 and closed 2026-07-25). Extends the roadmap design
 (`docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md`, §5 bundled assets, §8
 burndown).
 
@@ -266,7 +266,7 @@ faithful (real ImageSharp bytes, no blur/compositing confound). Re-bless those p
 baselines. Confirm each resize call site's sampler/filter against the C# before wiring (`:1195`
 pow2 pre-step filter vs `:1205` Bicubic).
 
-**Out of scope (left to the T3 item, `docs/backlog/2026-07-10-imagesharp-resampler.md`):** the T2
+**Out of scope (left to the T3 item, since folded into T2 and closed 2026-07-25):** the T2
 `FixOldTexData` NPOT resize and full T3 closure. `resizeToPowerOfTwo` (`src/tex/encode.ts`) keeps its
 fail-loud throw until then. Update the T3 backlog item to record that the resampler itself is now
 ported (in `src/tex/imagesharp/resample.ts`) and only its remaining call-site wiring stays open.
