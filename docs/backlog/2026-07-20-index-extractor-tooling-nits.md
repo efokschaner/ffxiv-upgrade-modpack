@@ -22,7 +22,7 @@ Three small items surfaced by review, deliberately not fixed in the shipping cha
    `docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` — narrowing this from three copies
    to two.) Hoist to `scripts/lib` the next time one of them is touched.
 
-3. **Gate-B *suppression* direction is untested by a golden.** `material.ts:142-146`'s
+3. **Gate-B *suppression* direction is untested by a golden.** `material.ts:155-160`'s
    `fileExists(mtrl.mtrlPath) && !fileExists(idPath)` gate, followed by `resolveStolenIndexPath`, is
    exercised for gate B *holding* (the synthetic `index-fallback.pmp` golden) and `fileExists` is
    unit-tested both ways in isolation, but no test exercises the combined *suppression* path (a convention

@@ -10,7 +10,7 @@
 // steal, by running the same real ConsoleTools /upgrade oracle the rest of the corpus does.
 //
 // Gate conditions (mirrors the fileExists(mtrl.mtrlPath) / fileExists(idPath) call site,
-// material.ts:138-145):
+// material.ts:155-160):
 //
 // 1. Gate A — `fileExists(mtrl.mtrlPath)`: the mod's material path must be a REAL base-game
 //    material. `chara/equipment/e0194/material/v0001/mt_c0201e0194_top_a.mtrl` is a genuine

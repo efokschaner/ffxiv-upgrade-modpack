@@ -188,7 +188,7 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
       // a material C# abandons via its own NRE, e.g. a colorset material with no resolvable normal
       // texture) -> leave the file byte-untouched. It must NOT also absorb an UnportedGapError: that
       // category signals a gap in what THIS PORT reproduces (e.g. fileExists' out-of-chara bundling
-      // gap via upgradeMaterial's gate at material.ts:142, or serializeMtrl's empty-sampler
+      // gap via upgradeMaterial's gate at material.ts:155, or serializeMtrl's empty-sampler
       // placeholder gap at the `restore` call just above) rather than anything the C# itself can
       // throw here, so it must escape rather than be silently treated like a faithfully-reproduced
       // C# failure.

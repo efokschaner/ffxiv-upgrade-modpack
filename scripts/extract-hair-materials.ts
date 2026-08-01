@@ -73,7 +73,14 @@ const RACES = [
   "9104",
   "9204",
 ];
-const ID_MAX = 500; // _SCAN_LIMIT (Character.cs:335)
+// _SCAN_LIMIT (Character.cs:335). Same-shaped bound as extract-eye-materials.ts's FACE_MAX: since
+// unclaimed-hair.ts split existence from content (fileExists — the COMPLETE chara game index —
+// answers existence; this table answers content, unclaimed-hair.ts:140-143/294-295), a hair/tail/
+// ear/accessory id ABOVE this bound that DOES exist in-game is fileExists-true + table-miss, a hard
+// `UnportedGapError` abort of the whole pack, not a faithful skip. Unlike FACE_MAX this bound is
+// TexTools' OWN scan limit (Character.cs:335), so it is also the bound ConsoleTools itself uses to
+// build the retail set this table mirrors — nothing to independently re-probe here.
+const ID_MAX = 500;
 type Part = {
   name: "hair" | "tail" | "ear" | "accessory";
   fmt: (r: string, i: string) => string;

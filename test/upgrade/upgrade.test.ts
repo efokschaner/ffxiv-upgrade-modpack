@@ -311,9 +311,9 @@ function characterColorsetMtrlWithNormal(
 describe("upgradeModpack (material round) - unported gap propagation", () => {
   // Fix round 1, Task 3 review finding: idPath (material.ts:130-134) is derived from the MOD'S OWN
   // normal-texture path, which is not constrained to chara/ the way mtrl.mtrlPath is (that
-  // constraint is IS_CHARA_MTRL, upgrade.ts:156/166, gating only the material path). If the normal
+  // constraint is IS_CHARA_MTRL, upgrade.ts:157/167, gating only the material path). If the normal
   // sampler points outside chara/ into another bundled FOLDER_KEYS prefix (ui/, vfx/, ...), gate B's
-  // fileExists(idPath) (material.ts:142) throws UnportedGapError instead of returning a boolean.
+  // fileExists(idPath) (material.ts:155) throws UnportedGapError instead of returning a boolean.
   // That must propagate out of upgradeModpack, not be silently absorbed by materialRound's
   // per-material catch (which exists to mirror EndwalkerUpgrade.cs:522-539's NRE swallow, a
   // C#-reachable failure -- this port-gap signal is not one).

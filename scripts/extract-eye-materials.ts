@@ -69,7 +69,15 @@ const RACES = [
   "9204",
 ];
 // Face IDs are low-numbered in retail; the mask path admits f[0-9]{4}. Scan a generous bound and
-// log it, so a face beyond it reads as a deliberate visible limit, not a silent mis-skip (spec §3.2).
+// log it. This bound is no longer merely a "visible limit, not a silent mis-skip" (spec §3.2): since
+// eye-mask.ts split existence from content (fileExists(irisPath) — the COMPLETE chara game index,
+// file-exists.ts — answers existence; this table answers content, eye-mask.ts:200-210), a face id
+// OUTSIDE this scanned range that DOES exist in-game is fileExists-true + table-miss, which is a hard
+// `UnportedGapError` abort of the whole pack, not a faithful skip. Nothing to fix today: the
+// runtime's FACE_REGEX admits f0000-f9999, but a live-index probe (2026-08-01, GameIndex.fileExists
+// over the 040000 index, all 38 RACES codes below x {f0000, f1000..f9999}, 342,038 candidates) found
+// zero iris materials outside the scanned 1..999 range — so raise FACE_MAX (and re-run this
+// extractor) if that ever changes.
 const FACE_MAX = 999;
 
 const d4 = (n: number) => n.toString().padStart(4, "0");

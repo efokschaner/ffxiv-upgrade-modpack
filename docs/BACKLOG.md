@@ -127,20 +127,34 @@ unchanged by deployment; only probability moves.
    `MergePixelData` guards now throw TexTools' error text verbatim (required by the expected-failure
    harness's matched-*reason* assertion), which means they no longer name *which* texture failed —
    faithful, but a real debuggability cost this channel is the right place to repay. **A third
-   motivation arrived 2026-07-31:** `repath-hair-mashups.ts`'s nine `fileExists` calls per matched
-   material pass mod-authored sampler paths verbatim to the oracle, and `fileExists` now throws
-   `UnportedGapError` (`file-exists.ts:123-131`) for any valid FFXIV path outside `chara/` — so a
-   sampler path a mashup mod points at `common/`, `ui/`, `bg/`, or any other non-`chara/` folder key
-   now aborts the WHOLE pack with no catch between `repathHairMashups` and `upgradeModpack`'s caller,
-   where the old namespace-scoped oracle just answered a faithful `false` and skipped the rename. This
-   is deliberate and operator-approved
-   (`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §3, decision 2) and measured
-   at zero over the 85-pack corpus (same doc §2: no query reaches the throw). But this file's own
-   "deploying changes the probability term" rule (above) says corpus silence understates
-   hand-authorable triggers, and a mod-authored sampler path — freely chosen by the mod author, unlike
-   a game-data-derived path — is exactly that kind of trigger. Blast radius if hit: the whole pack
-   aborts with no diagnostic naming which sampler, material, or option triggered it — the same gap
-   this item's diagnostics channel exists to close.
+   motivation arrived 2026-07-31, and now covers TWO call sites, not one:** both feed
+   mod-authored, unconstrained paths to the throwing oracle. `repath-hair-mashups.ts`'s nine
+   `fileExists` calls per matched material pass mod-authored sampler paths verbatim to the oracle,
+   and `fileExists` now throws `UnportedGapError` (`file-exists.ts:123-131`) for any valid FFXIV
+   path outside `chara/` — so a sampler path a mashup mod points at `common/`, `ui/`, `bg/`, or any
+   other non-`chara/` folder key now aborts the WHOLE pack with no catch between
+   `repathHairMashups` and `upgradeModpack`'s caller, where the old namespace-scoped oracle just
+   answered a faithful `false` and skipped the rename. **The same hazard reaches a second, more
+   heavily-travelled site:** `upgradeMaterial`'s gate B (`material.ts:155`) calls
+   `fileExists(idPath)`, where `idPath` (`material.ts:130-134`) is derived from the mod's own
+   normal-sampler texture path — equally mod-authored, equally unconstrained, and NEW to this
+   change (the retired `idTexExists` oracle it replaced never threw). Gate B is reached far more
+   often than the hair-mashup call sites: every Endwalker colorset material that overwrites a
+   base-game material's own path evaluates it, not just hair mashups.
+   `test/upgrade/upgrade.test.ts`'s "propagates UnportedGapError ... (gate B)" test (~:320)
+   constructs exactly this case. Both call sites are deliberate and operator-approved
+   (`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §3, decision 2). The
+   "measured at zero" figure, however, is narrower than it reads: it covered only the
+   `RepathHairMashups` query set (same doc §2's table) and says nothing about gate B's distinct
+   query set. A later, broader re-measurement ran `loadModpack` + `upgradeModpack` over all 110
+   local corpus packs (85 real + 20 synthetic + 5 upgrade-error) and counted zero
+   `UnportedGapError`s; the only 5 throws were the known expected-failure packs in
+   `test/corpus/upgrade-error/`. But this file's own "deploying changes the probability term" rule
+   (above) says corpus silence understates hand-authorable triggers, and a mod-authored
+   sampler/texture path — freely chosen by the mod author, unlike a game-data-derived path — is
+   exactly that kind of trigger, for BOTH call sites. Blast radius if hit, either site: the whole
+   pack aborts with no diagnostic naming which sampler, material, or option triggered it — the same
+   gap this item's diagnostics channel exists to close.
 
 2. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
@@ -367,7 +381,7 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   THIS PORT hasn't reproduced something, as distinct from a C#-reachable failure) and retagged
   exactly the `file-exists.ts` out-of-chara throw and `mtrl/serialize.ts`'s empty-sampler placeholder
   gap, both reached through `materialRound`'s catch. A full audit found three more catches that can
-  still silently absorb a port gap (`load-fixes.ts:121` mdl load fix, `unclaimed-hair.ts:198`'s
+  still silently absorb a port gap (`load-fixes.ts:121` mdl load fix, `unclaimed-hair.ts:211`'s
   bare catch-all which used to have a typed gap here and lost it, `load-fixes.ts:109` tex load fix —
   lower confidence, needs case-by-case adjudication) plus four uncaught fail-loud guards that should
   be retagged as future-proofing. Recorded verbatim rather than fixed; each retag can change which

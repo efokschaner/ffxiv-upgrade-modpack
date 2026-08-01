@@ -64,6 +64,16 @@ const FOLDER_KEYS = [
 ];
 const CHARA_KEY = "chara/";
 
+// Deliberate: a native-endian Uint32Array VIEW over a table scripts/extract-chara-index.ts packs
+// with writeUInt32LE (little-endian, matching the old hair-texture-exists.ts's explicit
+// DataView.getUint32(p, true) reads it replaced). Chosen for zero-copy access at this table's size
+// (avoids a DataView per-read call/bounds-check for every binary-search probe) over the strictly
+// portable but slower DataView.getUint32(p, true) alternative. Correct only on a little-endian
+// host, which is every browser and Node target this project ships to (there is no big-endian
+// build target). If that ever changed, every lookup here would silently read the wrong u32 and
+// FOLDERS/FILES/STARTS' binary search would miss entries that are actually present — this table's
+// FileExists would go all-false with no throw, faithfully-shaped-looking but wrong (see the
+// FileExists-oracle design spec).
 function u32View(b64: string): Uint32Array {
   const bytes = base64ToBytes(b64);
   return new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
