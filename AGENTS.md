@@ -272,9 +272,9 @@ failure the guard existed to prevent.
 
 The rule:
 
-- **Port gaps throw `UnportedGapError`** (`src/util/errors.ts` — it must sit below both the format
-  layer and the upgrade layer, since guards in `src/mtrl/`, `src/tex/` and `src/upgrade/` all throw
-  it), never a bare `Error`. This is
+- **Port gaps throw `UnportedGapError`** (`src/util/errors.ts` — it sits below both the format layer
+  and the upgrade layer because guards in `src/mtrl/`, `src/tex/` and `src/upgrade/` all need to
+  reach it, and `src/mtrl/` must not import "up" from `src/upgrade/`), never a bare `Error`. This is
   the signal that *our port* has not reproduced something. Every "not yet ported" / "unported"
   guard is one of these.
 - **Every ported catch re-throws it** and swallows the rest:
