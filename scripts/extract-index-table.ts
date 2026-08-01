@@ -54,7 +54,7 @@ import { computeHash, GameIndex } from "./lib/game-index";
 import { isImcSharingWeapon } from "./lib/imc-entries";
 
 // The game's sqpack folder, read in-process by GameIndex as the FileExists / read oracle
-// (same constant as scripts/extract-hair-texture-index.ts:12-13).
+// (same constant as scripts/extract-chara-index.ts:13-14).
 const SQPACK =
   "C:\\Program Files (x86)\\Steam\\steamapps\\common\\FINAL FANTASY XIV Online\\game\\sqpack\\ffxiv";
 
@@ -89,7 +89,7 @@ const SMOKE = INDEX_LIMIT !== Number.POSITIVE_INFINITY;
 const MAX_MATERIAL_VERSION = 255;
 
 // Full IDRaceDictionary race grid (Character.cs:530-571), copied from
-// scripts/extract-hair-texture-index.ts:16-55. These are the XivRace.GetRaceCode() strings
+// scripts/extract-hair-materials.ts:36-75. These are the XivRace.GetRaceCode() strings
 // (XivRace.cs:515-520) equipment/accessory racial model names iterate over.
 const RACES = [
   "0101",
@@ -541,8 +541,8 @@ if (!SMOKE) {
   );
 
   // Step 3: pack the regular table as fixed 10-byte records -- (folderHash,fileHash) LE uint32 pairs
-  // of the MATERIAL path (same convention as extract-hair-texture-index.ts:87-101), followed by a u16
-  // holding `version | (keepLetter ? 0x8000 : 0)`. Sort by (folderHash, fileHash) for a stable diff.
+  // of the MATERIAL path, followed by a u16 holding `version | (keepLetter ? 0x8000 : 0)`. Sort by
+  // (folderHash, fileHash) for a stable diff.
   function packRegular(
     entries: Array<{ matPath: string; version: number; keepLetter: boolean }>,
   ): string {
@@ -565,8 +565,8 @@ if (!SMOKE) {
     return out.toString("base64");
   }
 
-  // ID_TEX_PACKED stays the plain 8-byte (folderHash,fileHash) form -- identical to
-  // extract-hair-texture-index.ts:87-101 / HAIR_TEX_INDEX_PACKED, unchanged by this generalization.
+  // ID_TEX_PACKED stays the plain 8-byte (folderHash,fileHash) form used by earlier per-file
+  // existence tables (e.g. HAIR_TEX_INDEX_PACKED), unchanged by this generalization.
   function packHashPairs(paths: string[]): string {
     const hashed: [number, number][] = paths.map((p) => {
       const slash = p.lastIndexOf("/");

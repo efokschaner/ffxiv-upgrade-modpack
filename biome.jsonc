@@ -17,6 +17,8 @@
     //   - eye-materials.ts — scripts/extract-eye-materials.ts (one line per DT iris material)
     //   - index-table.ts — scripts/extract-index-table.ts (base64 packed hash+version records + one
     //     line per EXCEPTIONS entry; machine-emitted and byte-reproducible, must not be reformatted)
+    //   - chara-index.ts — scripts/extract-chara-index.ts (three base64-packed arrays covering the
+    //     complete 040000 index; ~2.2 MB, also exceeds Biome's default files.maxSize)
     // Listed by exact filename (not the whole reference folder) so any hand-written file added there is still linted.
     "includes": [
       "**",
@@ -24,7 +26,8 @@
       "!src/meta/reference/est-table.ts",
       "!src/upgrade/reference/hair-materials.ts",
       "!src/upgrade/reference/eye-materials.ts",
-      "!src/upgrade/reference/index-table.ts"
+      "!src/upgrade/reference/index-table.ts",
+      "!src/upgrade/reference/chara-index.ts"
     ]
   },
   "formatter": {

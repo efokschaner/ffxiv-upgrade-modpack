@@ -2,13 +2,13 @@
 // "mashup hair" half of the ResolveHighlightOptionsAndMashupHair pre-round. For each option's
 // hair/zear/tail .mtrl, retargets a Hair/Character material's normal/mask/diffuse sampler suffix to
 // its Dawntrail name when the old texture is gone from the game and the renamed one exists
-// (rtx.FileExists -> the bundled hairTextureExists oracle). Called from resolve-highlight.ts in
+// (rtx.FileExists -> the bundled fileExists oracle). Called from resolve-highlight.ts in
 // place of the deferred fail-loud throw.
 import type { ModpackData } from "../model/modpack";
 import { dx11Path } from "../mtrl/dx11-path";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
 import { ESamplerId, SHPK_CHARACTER, SHPK_HAIR } from "../mtrl/shader";
-import { hairTextureExists } from "./reference/hair-texture-exists";
+import { fileExists } from "./reference/file-exists";
 import { findSamplerUnguarded } from "./resolve-highlight";
 import { writeGeneratedMtrl } from "./texture";
 import { requireBytes } from "./upgrade";
@@ -50,11 +50,11 @@ function repathOne(data: ModpackData, regex: RegExp): void {
 
         // Normal: _n -> _norm, strip "--", gated on old-absent + new-present (:414-421).
         const nPath = dx11Path(norm);
-        if (!hairTextureExists(nPath)) {
+        if (!fileExists(nPath)) {
           const newPath = nPath
             .replaceAll("_n.tex", "_norm.tex")
             .replaceAll("--", "");
-          if (hairTextureExists(newPath)) {
+          if (fileExists(newPath)) {
             norm.texturePath = norm.texturePath
               .replaceAll("_n.tex", "_norm.tex")
               .replaceAll("--", "");
@@ -63,11 +63,11 @@ function repathOne(data: ModpackData, regex: RegExp): void {
 
         // Mask: first match of _m->_mask, _m->_mult, _s->_mask, _s->_mult wins (:423-453).
         const mPath = dx11Path(mask);
-        if (!hairTextureExists(mPath)) {
+        if (!fileExists(mPath)) {
           let found = false;
           const tryMask = (from: string, to: string): void => {
             const cand = mPath.replaceAll(from, to).replaceAll("--", "");
-            if (hairTextureExists(cand) && !found) {
+            if (fileExists(cand) && !found) {
               mask.texturePath = mask.texturePath
                 .replaceAll(from, to)
                 .replaceAll("--", "");
@@ -82,12 +82,12 @@ function repathOne(data: ModpackData, regex: RegExp): void {
 
         // Diffuse: _d -> _base (:455-463). NB C# uses the 1-arg FileExists here (no forceOriginal)
         // while norm/mask use the 2-arg forceOriginal:true form (:414, :423) — our bundled oracle
-        // (hairTextureExists) is base-game only either way, so both map to the same call here.
-        if (diff && !hairTextureExists(dx11Path(diff))) {
+        // (fileExists) is base-game only either way, so both map to the same call here.
+        if (diff && !fileExists(dx11Path(diff))) {
           const newPath = dx11Path(diff)
             .replaceAll("_d.tex", "_base.tex")
             .replaceAll("--", "");
-          if (hairTextureExists(newPath)) {
+          if (fileExists(newPath)) {
             diff.texturePath = diff.texturePath
               .replaceAll("_d.tex", "_base.tex")
               .replaceAll("--", "");

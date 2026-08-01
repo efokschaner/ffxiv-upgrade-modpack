@@ -21,7 +21,7 @@ const SAMPLE_BYTES = new Uint8Array(
 // SAMPLE_HAIR_MTRL_BASE64 parses (regardless of the path passed to parseMtrl) with a Hair-shader
 // norm/mask already pointing at c0801h0115's real DT texture paths (confirmed against the bundled
 // hair-materials table): .../c0801h0115_hir_norm.tex and .../c0801h0115_hir_mask.tex, both known
-// to exist in the bundled hairTextureExists oracle, with the old _n/_m suffixed forms confirmed
+// to exist in the bundled fileExists oracle, with the old _n/_m suffixed forms confirmed
 // absent from it.
 const MTRL_PATH =
   "chara/human/c0801/obj/hair/h0115/material/v0001/mt_c0801h0115_hir_a.mtrl";
@@ -237,8 +237,8 @@ describe("repathHairMashups — oracle-controlled branches", () => {
 
   it("prefers _m->_mask over _m->_mult when both DT targets exist (first-match-wins)", async () => {
     vi.resetModules();
-    vi.doMock("../../src/upgrade/reference/hair-texture-exists", () => ({
-      hairTextureExists: (p: string) =>
+    vi.doMock("../../src/upgrade/reference/file-exists", () => ({
+      fileExists: (p: string) =>
         p.includes("_norm.tex") ||
         p.includes("_mask.tex") ||
         p.includes("_mult.tex"),
@@ -257,14 +257,14 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mask\.tex$/);
 
-    vi.doUnmock("../../src/upgrade/reference/hair-texture-exists");
+    vi.doUnmock("../../src/upgrade/reference/file-exists");
     vi.resetModules();
   });
 
   it("prefers _m->_mult over _s variants when _m->_mask is absent but _m->_mult exists", async () => {
     vi.resetModules();
-    vi.doMock("../../src/upgrade/reference/hair-texture-exists", () => ({
-      hairTextureExists: (p: string) =>
+    vi.doMock("../../src/upgrade/reference/file-exists", () => ({
+      fileExists: (p: string) =>
         p.includes("_norm.tex") || p.endsWith("_mult.tex"),
       computeHash: () => 0,
     }));
@@ -281,14 +281,14 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mult\.tex$/);
 
-    vi.doUnmock("../../src/upgrade/reference/hair-texture-exists");
+    vi.doUnmock("../../src/upgrade/reference/file-exists");
     vi.resetModules();
   });
 
   it("falls back to _s->_mask when the mask sampler uses the _s suffix and no _m targets exist", async () => {
     vi.resetModules();
-    vi.doMock("../../src/upgrade/reference/hair-texture-exists", () => ({
-      hairTextureExists: (p: string) =>
+    vi.doMock("../../src/upgrade/reference/file-exists", () => ({
+      fileExists: (p: string) =>
         p.includes("_norm.tex") || p.endsWith("_mask.tex"),
       computeHash: () => 0,
     }));
@@ -305,14 +305,14 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mask\.tex$/);
 
-    vi.doUnmock("../../src/upgrade/reference/hair-texture-exists");
+    vi.doUnmock("../../src/upgrade/reference/file-exists");
     vi.resetModules();
   });
 
   it("falls back to _s->_mult as the last resort when no other mask target exists", async () => {
     vi.resetModules();
-    vi.doMock("../../src/upgrade/reference/hair-texture-exists", () => ({
-      hairTextureExists: (p: string) =>
+    vi.doMock("../../src/upgrade/reference/file-exists", () => ({
+      fileExists: (p: string) =>
         p.includes("_norm.tex") || p.endsWith("_mult.tex"),
       computeHash: () => 0,
     }));
@@ -329,14 +329,14 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mult\.tex$/);
 
-    vi.doUnmock("../../src/upgrade/reference/hair-texture-exists");
+    vi.doUnmock("../../src/upgrade/reference/file-exists");
     vi.resetModules();
   });
 
   it("retargets diffuse _d->_base on a Character-shader material", async () => {
     vi.resetModules();
-    vi.doMock("../../src/upgrade/reference/hair-texture-exists", () => ({
-      hairTextureExists: (p: string) =>
+    vi.doMock("../../src/upgrade/reference/file-exists", () => ({
+      fileExists: (p: string) =>
         p.includes("_norm.tex") ||
         p.includes("_mask.tex") ||
         p.endsWith("_base.tex"),
@@ -361,7 +361,7 @@ describe("repathHairMashups — oracle-controlled branches", () => {
       /_base\.tex$/,
     );
 
-    vi.doUnmock("../../src/upgrade/reference/hair-texture-exists");
+    vi.doUnmock("../../src/upgrade/reference/file-exists");
     vi.resetModules();
   });
 });
