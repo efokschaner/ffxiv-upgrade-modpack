@@ -13,6 +13,7 @@ import { raceCodeFromPath, updateEyeMask } from "../../src/upgrade/eye-mask";
 import { EYE_MATERIALS } from "../../src/upgrade/reference/eye-materials";
 import type { EyeMaterialTable } from "../../src/upgrade/reference/eye-materials-types";
 import { upgradeModpack } from "../../src/upgrade/upgrade";
+import { UnportedGapError } from "../../src/util/errors";
 import { buildMinimalTex } from "../tex/make-tex";
 
 function opt(files: Record<string, Uint8Array>): ModpackOption {
@@ -57,14 +58,30 @@ describe("updateEyeMask", () => {
     expect(() => updateEyeMask(o, other, table)).not.toThrow();
   });
 
-  it("skips (no throw) when the iris material is absent — FileExists false (EndwalkerUpgrade.cs:2049)", () => {
-    const o = opt({ [MASK]: buildMinimalTex() });
-    expect(() => updateEyeMask(o, MASK, empty)).not.toThrow();
+  it("skips (no throw) when the iris material genuinely does not exist in-game — FileExists false (EndwalkerUpgrade.cs:2049)", () => {
+    // f9999 on the same real race (c0801) has no in-game iris material -- fileExists() is false --
+    // so the game-index gate returns before the (irrelevant, empty) table is ever consulted.
+    const absentMask =
+      "chara/human/c0801/obj/face/f9999/texture/--c0801f9999_iri_s.tex";
+    const o = opt({ [absentMask]: buildMinimalTex() });
+    expect(() => updateEyeMask(o, absentMask, empty)).not.toThrow();
   });
 
-  it("skips (no throw) a mask whose race digits are not a real race (round-trips to c0000, table miss)", () => {
+  it("throws UnportedGapError when fileExists is true but the table is missing the entry (table gap)", () => {
+    // IRIS_MAT (c0801f0002 iri_a) is a real DT iris material -- fileExists(IRIS_MAT) is true --
+    // but this test deliberately passes an empty table, reproducing exactly the "table gap"
+    // scenario the new split gate exists to catch loudly instead of silently `return`ing.
+    const o = opt({ [MASK]: buildMinimalTex() });
+    expect(() => updateEyeMask(o, MASK, empty)).toThrow(UnportedGapError);
+    expect(() => updateEyeMask(o, MASK, empty)).toThrow(
+      /eye-materials table is missing/,
+    );
+  });
+
+  it("skips (no throw) a mask whose race digits are not a real race (round-trips to c0000, index miss)", () => {
     // c9998 is not a XivRace Description -> GetXivRace defaults to All_Races -> code "0000" ->
-    // iris path mt_c0000f... -> table miss -> faithful skip (spec §3.3).
+    // iris path mt_c0000f... -> fileExists(matPath) is false (no such in-game material) -> the
+    // split existence gate returns before the table is ever consulted -> faithful skip.
     const bogus =
       "chara/human/c9998/obj/face/f0002/texture/--c9998f0002_iri_s.tex";
     const o = opt({ [bogus]: buildMinimalTex() });

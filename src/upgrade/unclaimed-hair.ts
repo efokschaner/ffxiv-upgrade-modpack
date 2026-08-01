@@ -2,8 +2,10 @@
 // (EndwalkerUpgrade.cs:1342-1716): rescues loose hair/tail/ear/accessory textures shipped
 // without their material by copying them to the canonical DT Dx11 paths, running the hair
 // pixel transform for hair/tail/ear (accessory is a pure repath copy). Driven by the bundled
-// hair-material table (the FileExists oracle; src/upgrade/reference/hair-materials-types.ts).
-// See docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md §4.2-§4.4.
+// hair-material table (content only; existence is `fileExists`, the COMPLETE chara game index —
+// src/upgrade/reference/hair-materials-types.ts, src/upgrade/reference/file-exists.ts).
+// See docs/superpowers/specs/2026-07-16-unclaimed-hair-partials-design.md §4.2-§4.4 and
+// docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md §6.
 //
 // This module covers both the shared hair/tail/ear function, INCLUDING the tail-specific
 // constant-swap material rewrite (EndwalkerUpgrade.cs:1504-1516), and the accessory variant
@@ -11,6 +13,8 @@
 import type { ModpackFile, ModpackOption } from "../model/modpack";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
 import { base64ToBytes } from "../util/base64";
+import { UnportedGapError } from "../util/errors";
+import { fileExists } from "./reference/file-exists";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "./reference/hair-materials";
 import type {
   HairMaterialEntry,
@@ -135,9 +139,10 @@ function copyRaw(option: ModpackOption, src: ModpackFile, dest: string): void {
 /** Port of the shared body of UpdateUnclaimedHairTextures (EndwalkerUpgrade.cs:1342-1503),
  *  dispatched over the hair/tail/ear regex sets (:1326-1328). `contained` is the pass-3
  *  unused-texture set intersected with the option (spec §4.1) — the texture-match source
- *  (:1360); `option.files.keys()` is the separate material-scan source (:1347). `table` is
- *  the bundled canonical-material lookup standing in for `rtx.FileExists` + `Mtrl.GetXivMtrl`
- *  (:1430-1436): a miss means the path does not exist in DT (or invalid), matching `continue`. */
+ *  (:1360); `option.files.keys()` is the separate material-scan source (:1347). `rtx.FileExists`
+ *  (:1430-1434) is answered by the bundled game index (`fileExists`); `table` answers the
+ *  SEPARATE `Mtrl.GetXivMtrl` read that follows it (:1430-1436) — a table miss on a path the
+ *  index says exists is a table gap, fail-loud rather than a faithful `continue`. */
 export function updateUnclaimedHairTextures(
   option: ModpackOption,
   contained: Set<string>,
@@ -154,8 +159,18 @@ export function updateUnclaimedHairTextures(
     );
     for (const g of groups) {
       const matPath = set.matFormat(d4(g.race), d4(g.id));
+      // EndwalkerUpgrade.cs:1430-1434 — `!rtx.FileExists(matPath, true)` -> continue. The bundled
+      // table answers the SEPARATE question the C# asks next (GetXivMtrl of that material), so a
+      // table miss on a material the game index says exists is a gap in the table, not a skip the
+      // C# performs — fail loud rather than silently dropping the option's textures.
+      if (!fileExists(matPath)) continue;
       const entry = table.get(matPath);
-      if (!entry) continue; // FileExists false (spec §3.1, EndwalkerUpgrade.cs:1430-1434)
+      if (!entry) {
+        throw new UnportedGapError(
+          `upgrade: hair-materials table is missing ${matPath}, which the game index says exists. ` +
+            `Regenerate it with \`npx tsx scripts/extract-hair-materials.ts\`.`,
+        );
+      }
       if (entry.shaderPackRaw !== "hair.shpk") continue; // (EndwalkerUpgrade.cs:1438)
       const normDest = entry.normalDx11Path;
       const maskDest = entry.maskDx11Path;
@@ -278,8 +293,16 @@ export function updateUnclaimedHairAccessory(
   );
   for (const g of groups) {
     const matPath = ACCESSORY_REGEXES.matFormat(d4(g.race), d4(g.id));
+    // EndwalkerUpgrade.cs:1615-1619 — same split as updateUnclaimedHairTextures above: the index
+    // answers existence, the table answers content, and a disagreement is a table gap.
+    if (!fileExists(matPath)) continue;
     const entry = table.get(matPath);
-    if (!entry) continue; // FileExists false (EndwalkerUpgrade.cs:1615-1619)
+    if (!entry) {
+      throw new UnportedGapError(
+        `upgrade: hair-materials table is missing ${matPath}, which the game index says exists. ` +
+          `Regenerate it with \`npx tsx scripts/extract-hair-materials.ts\`.`,
+      );
+    }
     if (
       entry.shaderPackRaw !== "character.shpk" &&
       entry.shaderPackRaw !== "characterlegacy.shpk"

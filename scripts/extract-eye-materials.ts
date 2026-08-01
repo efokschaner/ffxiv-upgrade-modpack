@@ -3,8 +3,10 @@
 //
 // Enumerates the DT base-game iris materials that EXIST (in-process index hash, GameIndex) and,
 // for each hit, records its g_SamplerDiffuse texture path — the minimum UpdateEyeMask reads
-// (EndwalkerUpgrade.cs:2044-2059). The table's KEY doubles as the FileExists oracle (:2049): a
-// miss == absent in-game. See docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md §3.
+// (EndwalkerUpgrade.cs:2044-2059). fileExists (the COMPLETE chara game index) answers existence
+// (:2049); this table answers CONTENT only — a miss on a path fileExists says exists is a port gap
+// (UnportedGapError), not a skip. See docs/superpowers/specs/2026-07-16-eye-mask-partial-design.md
+// §3 and docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md §6.
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -27,7 +29,8 @@ const SQPACK =
 
 // The full IDRaceDictionary race-code list (identical to extract-hair-materials.ts RACES). "0000"
 // is intentionally absent: no iris material exists for a race-less code, and the runtime maps an
-// unknown c-code to "0000" -> a table miss -> a faithful skip (spec §3.3).
+// unknown c-code to "0000" -> fileExists(irisPath) is false (no c0000 entry in the chara game
+// index) -> a faithful skip, before the table is ever consulted (spec §3.3).
 const RACES = [
   "0101",
   "0104",
@@ -69,7 +72,15 @@ const RACES = [
   "9204",
 ];
 // Face IDs are low-numbered in retail; the mask path admits f[0-9]{4}. Scan a generous bound and
-// log it, so a face beyond it reads as a deliberate visible limit, not a silent mis-skip (spec §3.2).
+// log it. This bound is no longer merely a "visible limit, not a silent mis-skip" (spec §3.2): since
+// eye-mask.ts split existence from content (fileExists(irisPath) — the COMPLETE chara game index,
+// file-exists.ts — answers existence; this table answers content, eye-mask.ts:200-210), a face id
+// OUTSIDE this scanned range that DOES exist in-game is fileExists-true + table-miss, which is a hard
+// `UnportedGapError` abort of the whole pack, not a faithful skip. Nothing to fix today: the
+// runtime's FACE_REGEX admits f0000-f9999, but a live-index probe (2026-08-01, GameIndex.fileExists
+// over the 040000 index, all 38 RACES codes below x {f0000, f1000..f9999}, 342,038 candidates) found
+// zero iris materials outside the scanned 1..999 range — so raise FACE_MAX (and re-run this
+// extractor) if that ever changes.
 const FACE_MAX = 999;
 
 const d4 = (n: number) => n.toString().padStart(4, "0");
@@ -109,9 +120,10 @@ const body = sorted
 writeFileSync(
   "src/upgrade/reference/eye-materials.ts",
   `// GENERATED — regenerate via \`npx tsx scripts/extract-eye-materials.ts\`. Do not edit by hand.\n` +
-    `// DT base-game iris materials that exist, with their g_SamplerDiffuse path. The table's KEY\n` +
-    `// IS the FileExists oracle — a miss means the iris material is absent in-game (a faithful\n` +
-    `// skip, EndwalkerUpgrade.cs:2049). See src/upgrade/reference/eye-materials-types.ts.\n` +
+    `// DT base-game iris materials that exist, with their g_SamplerDiffuse path. fileExists (the\n` +
+    `// COMPLETE chara game index) answers existence (EndwalkerUpgrade.cs:2049); this table answers\n` +
+    `// CONTENT only — a miss on a path fileExists says exists is a port gap (UnportedGapError), not\n` +
+    `// a skip. See src/upgrade/reference/eye-materials-types.ts.\n` +
     `import type { EyeMaterialTable } from "./eye-materials-types";\n\n` +
     `export const EYE_MATERIALS: EyeMaterialTable = new Map([\n${body}\n]);\n`,
 );

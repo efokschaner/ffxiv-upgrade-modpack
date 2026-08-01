@@ -1,6 +1,6 @@
 // Enumerator + encoder for the base-game material -> index-sampler (_id.tex) path table —
 // extraction tooling only (NOT shipped port code), same status as scripts/lib/game-index.ts and
-// scripts/lib/imc-entries.ts. Builds two in-memory collections (`pairs`, `idTexPaths`), classifies
+// scripts/lib/imc-entries.ts. Builds an in-memory collection (`pairs`), classifies
 // each pair against the regular-case reconstruction (index-path-reconstruct.ts), packs the result,
 // and writes the generated src/upgrade/reference/index-table.ts. A `--experimental-sqlite` full run
 // (no INDEX_LIMIT) also cross-checks completeness against the local corpus (see the corpus scan
@@ -54,7 +54,7 @@ import { computeHash, GameIndex } from "./lib/game-index";
 import { isImcSharingWeapon } from "./lib/imc-entries";
 
 // The game's sqpack folder, read in-process by GameIndex as the FileExists / read oracle
-// (same constant as scripts/extract-hair-texture-index.ts:12-13).
+// (same constant as scripts/extract-chara-index.ts:13-14).
 const SQPACK =
   "C:\\Program Files (x86)\\Steam\\steamapps\\common\\FINAL FANTASY XIV Online\\game\\sqpack\\ffxiv";
 
@@ -89,7 +89,7 @@ const SMOKE = INDEX_LIMIT !== Number.POSITIVE_INFINITY;
 const MAX_MATERIAL_VERSION = 255;
 
 // Full IDRaceDictionary race grid (Character.cs:530-571), copied from
-// scripts/extract-hair-texture-index.ts:16-55. These are the XivRace.GetRaceCode() strings
+// scripts/extract-hair-materials.ts:36-75. These are the XivRace.GetRaceCode() strings
 // (XivRace.cs:515-520) equipment/accessory racial model names iterate over.
 const RACES = [
   "0101",
@@ -258,7 +258,6 @@ const problems: string[] = [];
 
 // Step 2-5 outputs.
 const pairs = new Map<string, string>(); // materialPath -> indexPath
-const idTexPaths = new Set<string>(); // every base-game _id.tex observed
 const presentMaterials = new Set<string>(); // dedup across models before reading
 
 let modelsPresent = 0;
@@ -356,12 +355,11 @@ for (const matPath of presentMaterials) {
   // index sampler never sets 0x8000 and Dx11Path === TexturePath here. The shortcut is therefore
   // exact for this domain, not merely close.
   pairs.set(matPath, idx.texturePath);
-  idTexPaths.add(idx.texturePath);
 }
 
 console.log(
   `Counts: roots=${roots.length} modelsPresent=${modelsPresent} ` +
-    `materialsPresent=${presentMaterials.size} pairs=${pairs.size} idTexPaths=${idTexPaths.size}`,
+    `materialsPresent=${presentMaterials.size} pairs=${pairs.size}`,
 );
 
 if (SMOKE) {
@@ -541,8 +539,8 @@ if (!SMOKE) {
   );
 
   // Step 3: pack the regular table as fixed 10-byte records -- (folderHash,fileHash) LE uint32 pairs
-  // of the MATERIAL path (same convention as extract-hair-texture-index.ts:87-101), followed by a u16
-  // holding `version | (keepLetter ? 0x8000 : 0)`. Sort by (folderHash, fileHash) for a stable diff.
+  // of the MATERIAL path, followed by a u16 holding `version | (keepLetter ? 0x8000 : 0)`. Sort by
+  // (folderHash, fileHash) for a stable diff.
   function packRegular(
     entries: Array<{ matPath: string; version: number; keepLetter: boolean }>,
   ): string {
@@ -565,24 +563,7 @@ if (!SMOKE) {
     return out.toString("base64");
   }
 
-  // ID_TEX_PACKED stays the plain 8-byte (folderHash,fileHash) form -- identical to
-  // extract-hair-texture-index.ts:87-101 / HAIR_TEX_INDEX_PACKED, unchanged by this generalization.
-  function packHashPairs(paths: string[]): string {
-    const hashed: [number, number][] = paths.map((p) => {
-      const slash = p.lastIndexOf("/");
-      return [computeHash(p.slice(0, slash)), computeHash(p.slice(slash + 1))];
-    });
-    hashed.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const out = Buffer.alloc(hashed.length * 8);
-    hashed.forEach(([f, x], i) => {
-      out.writeUInt32LE(f >>> 0, i * 8);
-      out.writeUInt32LE(x >>> 0, i * 8 + 4);
-    });
-    return out.toString("base64");
-  }
-
   const indexPacked = packRegular(regular);
-  const idTexPacked = packHashPairs([...idTexPaths]);
 
   // Step 4: emit the generated module. Only when the completeness cross-check AND the round-trip
   // self-check found no problems -- a known-incomplete or lossy encoding must not silently overwrite
@@ -617,13 +598,10 @@ if (!SMOKE) {
       "// (~28%) materials, ~54% pointing at the shared chara/common/texture/id_*.tex namespace). Correctness is\n" +
       "// unaffected either way: this map always stores the literal path read from the base-game\n" +
       "// material.\n" +
-      "// ID_TEX_PACKED: (folderHash,fileHash) pairs for every base-game _id.tex path observed during\n" +
-      "// enumeration, for gate B (!FileExists(idPath)) in the runtime resolver.\n" +
       `export const INDEX_PACKED = ${JSON.stringify(indexPacked)};\n` +
       "export const INDEX_EXCEPTIONS: Record<string, string> = {\n" +
       exceptionsBody +
-      "\n};\n" +
-      `export const ID_TEX_PACKED = ${JSON.stringify(idTexPacked)};\n`;
+      "\n};\n";
     const outPath = join(
       dirname(fileURLToPath(import.meta.url)),
       "..",

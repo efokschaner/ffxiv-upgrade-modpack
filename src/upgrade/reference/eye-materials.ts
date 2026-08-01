@@ -1,7 +1,8 @@
 // GENERATED — regenerate via `npx tsx scripts/extract-eye-materials.ts`. Do not edit by hand.
-// DT base-game iris materials that exist, with their g_SamplerDiffuse path. The table's KEY
-// IS the FileExists oracle — a miss means the iris material is absent in-game (a faithful
-// skip, EndwalkerUpgrade.cs:2049). See src/upgrade/reference/eye-materials-types.ts.
+// DT base-game iris materials that exist, with their g_SamplerDiffuse path. fileExists (the
+// COMPLETE chara game index) answers existence (EndwalkerUpgrade.cs:2049); this table answers
+// CONTENT only — a miss on a path fileExists says exists is a port gap (UnportedGapError), not
+// a skip. See src/upgrade/reference/eye-materials-types.ts.
 import type { EyeMaterialTable } from "./eye-materials-types";
 
 export const EYE_MATERIALS: EyeMaterialTable = new Map([
@@ -97,6 +98,7 @@ export const EYE_MATERIALS: EyeMaterialTable = new Map([
   ["chara/human/c0301/obj/face/f0209/material/mt_c0301f0209_iri_a.mtrl", {"diffusePath":"chara/common/texture/eye/eye01_base.tex"}],
   ["chara/human/c0301/obj/face/f0210/material/mt_c0301f0210_iri_a.mtrl", {"diffusePath":"chara/common/texture/eye/eye01_base.tex"}],
   ["chara/human/c0301/obj/face/f0211/material/mt_c0301f0211_iri_a.mtrl", {"diffusePath":"chara/common/texture/eye/eye11_base.tex"}],
+  ["chara/human/c0301/obj/face/f0212/material/mt_c0301f0212_iri_a.mtrl", {"diffusePath":"chara/common/texture/eye/eye11_base.tex"}],
   ["chara/human/c0401/obj/face/f0101/material/mt_c0401f0101_iri_a.mtrl", {"diffusePath":"chara/common/texture/eye/eye11_base.tex"}],
   ["chara/human/c0401/obj/face/f0102/material/mt_c0401f0102_iri_a.mtrl", {"diffusePath":"chara/common/texture/eye/eye11_base.tex"}],
   ["chara/human/c0401/obj/face/f0103/material/mt_c0401f0103_iri_a.mtrl", {"diffusePath":"chara/common/texture/eye/eye11_base.tex"}],

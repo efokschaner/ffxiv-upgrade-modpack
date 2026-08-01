@@ -9,19 +9,21 @@
 // `resolveStolenIndexPath` (src/upgrade/reference/index-path-resolver.ts) reproduces the same
 // steal, by running the same real ConsoleTools /upgrade oracle the rest of the corpus does.
 //
-// Gate conditions (mirrors resolveStolenIndexPath / idTexExists' call site, material.ts:138-145):
+// Gate conditions (mirrors the fileExists(mtrl.mtrlPath) / fileExists(idPath) call site,
+// material.ts:155-160):
 //
-// 1. Gate A — the mod's material path must be a REAL base-game material with an index sampler,
-//    present in the resolver's generated table. `chara/equipment/e0194/material/v0001/
-//    mt_c0201e0194_top_a.mtrl` is confirmed by test/upgrade/index-path-resolver.test.ts ("drops
-//    the variant letter where the game does (e0194)") to resolve to the stolen path
+// 1. Gate A — `fileExists(mtrl.mtrlPath)`: the mod's material path must be a REAL base-game
+//    material. `chara/equipment/e0194/material/v0001/mt_c0201e0194_top_a.mtrl` is a genuine
+//    in-game material, and resolveStolenIndexPath additionally confirms (per
+//    test/upgrade/index-path-resolver.test.ts, "drops the variant letter where the game does
+//    (e0194)") that it carries an index sampler resolving to the stolen path
 //    `chara/equipment/e0194/texture/v01_c0201e0194_top_id.tex`.
-// 2. Gate B — the convention `_id.tex` sibling of the material's normal texture must be ABSENT
-//    from the base game. The normal path passed to buildEwColorsetMtrl,
+// 2. Gate B — `!fileExists(idPath)`: the convention `_id.tex` sibling of the material's normal
+//    texture must be ABSENT from the base game. The normal path passed to buildEwColorsetMtrl,
 //    `chara/equipment/e0194/texture/c0201e0194_top_a_n.tex`, has convention idPath
 //    `chara/equipment/e0194/texture/c0201e0194_top_a_id.tex` — distinct from the real
 //    `v01_c0201e0194_top_id.tex` above (no `v01_` prefix, keeps the `_a` variant letter), so
-//    idTexExists misses it and gate B holds.
+//    fileExists misses it and gate B holds.
 // 3. The normal texture itself must NOT be packed, so the second upgrade round's Files-key guard
 //    misses and no index texture is generated for this option — see buildEwColorsetMtrl's own doc
 //    comment (synthetic-mtrl.ts) for the mechanism this exercises.

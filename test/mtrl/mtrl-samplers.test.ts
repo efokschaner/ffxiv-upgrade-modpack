@@ -6,6 +6,7 @@ import {
   SAMPLER_COLOR_MAP_0,
   SAMPLER_NORMAL_MAP_0,
 } from "../../src/mtrl/types";
+import { UnportedGapError } from "../../src/util/errors";
 import { buildDoubleUvMtrl, buildEmptySamplerMtrl } from "./make-mtrl";
 
 describe("mtrl sampler handling", () => {
@@ -38,5 +39,16 @@ describe("mtrl sampler handling", () => {
     // is the lowercased ESamplerId name, not our numeric raw id), so serialize throws until pinned.
     const m = parseMtrl(buildEmptySamplerMtrl());
     expect(() => serializeMtrl(m)).toThrow(/empty-sampler placeholder/);
+  });
+
+  it("throws UnportedGapError specifically for the empty-sampler placeholder gap (fix round 2: a port gap, not a C#-reachable failure, so callers must not silently swallow it)", () => {
+    const m = parseMtrl(buildEmptySamplerMtrl());
+    let thrown: unknown;
+    try {
+      serializeMtrl(m);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(UnportedGapError);
   });
 });

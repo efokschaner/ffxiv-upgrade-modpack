@@ -12,8 +12,10 @@ import {
   resizeNearestNeighbor,
 } from "../tex/imagesharp/resample";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
+import { UnportedGapError } from "../util/errors";
 import { EYE01_BASE, EYE01_MASK } from "./reference/eye-base-textures";
 import type { EyeMaterialTable } from "./reference/eye-materials-types";
+import { fileExists } from "./reference/file-exists";
 import { writeGeneratedTex } from "./texture";
 import { resolveFile } from "./upgrade";
 
@@ -152,8 +154,10 @@ export function raceCodeFromPath(path: string): string {
 
 /** Port of UpdateEyeMask (EndwalkerUpgrade.cs:2007-2079), single-path (called per `contained` entry,
  *  ModpackUpgrader.cs:174-177). Reproduces every skip guard, then converts the mask to a diffuse
- *  (ConvertEyeMaskToDiffuse, :2064) and writes it. `table` stands in for `rTx.FileExists(irisPath)`
- *  (:2049): a miss == absent in-game -> faithful skip. */
+ *  (ConvertEyeMaskToDiffuse, :2064) and writes it. `rTx.FileExists(irisPath)` (:2049) is answered by
+ *  the bundled game index (`fileExists`) -> faithful skip on a miss; `table` answers the separate
+ *  g_SamplerDiffuse read that follows it (:2056-2059) -> a miss on an index-confirmed path is a
+ *  table gap, fail-loud rather than a skip. */
 export function updateEyeMask(
   option: ModpackOption,
   maskPath: string,
@@ -193,14 +197,24 @@ export function updateEyeMask(
   const race = raceCodeFromPath(maskPath); // :2041/2045
   const face = Number.parseInt(fm[1]!, 10).toString().padStart(4, "0"); // :2042 (Int32.Parse.ToString("D4"))
   const irisPath = `chara/human/c${race}/obj/face/f${face}/material/mt_c${race}f${face}_iri_a.mtrl`; // :2044-2045
-  // :2049 — FileExists false ("// Hmmm...", :2051) -> return.
-  if (!table.has(irisPath)) return;
+  // :2049 — FileExists false ("// Hmmm...", :2051) -> return. Existence comes from the game index;
+  // the bundled table answers the separate question the C# asks next (:2056-2059, reading the iris
+  // material's g_SamplerDiffuse path), so a table miss on a material the index says exists is a gap
+  // in the table rather than the C#'s early return.
+  if (!fileExists(irisPath)) return;
+  const entry = table.get(irisPath);
+  if (entry === undefined) {
+    throw new UnportedGapError(
+      `upgrade: eye-materials table is missing ${irisPath}, which the game index says exists. ` +
+        `Regenerate it with \`npx tsx scripts/extract-eye-materials.ts\`.`,
+    );
+  }
   // :2056-2059 — reads the iris material's g_SamplerDiffuse texture path. C# takes
   // `mtrlTex.TexturePath` unguarded off a `FirstOrDefault` that can be null when no g_SamplerDiffuse
   // sampler is bound — a NullReferenceException at :2059. Our table records that case as
   // `diffusePath === undefined` (eye-materials-types.ts) and fails loud here instead of crashing on
   // a null dereference — the deferred NRE case.
-  const diffusePath = table.get(irisPath)!.diffusePath;
+  const diffusePath = entry.diffusePath;
   if (diffusePath === undefined) {
     // Genuine C# defect, not a transcribed quirk — docs/TEXTOOLS_BUGS.md §14.
     throw new Error(

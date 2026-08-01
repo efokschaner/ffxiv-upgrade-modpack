@@ -16,15 +16,19 @@ Three small items surfaced by review, deliberately not fixed in the shipping cha
    - `read()` peeks the first 4 bytes for `headerLength`, then re-reads them inside the full header slice —
      one redundant tiny positioned read.
 
-2. **`RACES` grid is a third copy.** The 38-entry race grid in `scripts/extract-index-table.ts` duplicates
-   the identical arrays in `scripts/extract-hair-texture-index.ts:16-55` and `extract-hair-materials.ts`.
-   Hoist to `scripts/lib` the next time one of them is touched.
+2. **`RACES` grid is duplicated.** The 38-entry race grid in `scripts/extract-index-table.ts` duplicates
+   the identical array in `extract-hair-materials.ts`. (A third copy in `scripts/extract-hair-texture-index.ts`
+   was deleted 2026-07-31 along with that script — see
+   `docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` — narrowing this from three copies
+   to two.) Hoist to `scripts/lib` the next time one of them is touched.
 
-3. **Gate-B *suppression* direction is untested by a golden.** `material.ts:143`'s
-   `stolen !== undefined && !idTexExists(idPath)` is exercised for gate B *holding* (the synthetic
-   `index-fallback.pmp` golden) and `idTexExists` is unit-tested both ways in isolation, but no test
-   exercises the combined *suppression* path (a convention `_id.tex` that exists in-game, so the steal is
-   skipped). Low risk — and behaviourally hard to observe, since when the convention path exists it is
-   usually the canonical path the steal would have produced anyway, so the output is identical either way,
-   which is why no golden pins it. Close with a targeted unit test on `resolveStolenIndexPath` +
-   `idTexExists` composition if the coverage gap is ever worth it.
+3. **Gate-B *suppression* direction is untested by a golden.** `material.ts:155-160`'s
+   `fileExists(mtrl.mtrlPath) && !fileExists(idPath)` gate, followed by `resolveStolenIndexPath`, is
+   exercised for gate B *holding* (the synthetic `index-fallback.pmp` golden) and `fileExists` is
+   unit-tested both ways in isolation, but no test exercises the combined *suppression* path (a convention
+   `_id.tex` that exists in-game, so the steal is skipped). Low risk — and behaviourally hard to observe,
+   since when the convention path exists it is usually the canonical path the steal would have produced
+   anyway, so the output is identical either way, which is why no golden pins it. Close with a targeted
+   unit test on `resolveStolenIndexPath` + `fileExists` composition if the coverage gap is ever worth it.
+   (Renamed from `idTexExists` 2026-07-31 — the gate-B oracle is now the shared `fileExists`, per
+   `docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md`.)

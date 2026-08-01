@@ -16,6 +16,15 @@ It retargets pre-Dawntrail hair/`zear`/`tail` material texture suffixes (`_n→_
 names, **but only when the old texture is gone from the game and the renamed one exists** — a
 decision gated on the live game index (`rtx.FileExists`).
 
+**Update 2026-07-31:** the oracle described below (`hairTextureExists` over the namespace-scoped
+`hair-texture-index.ts`) was namespace-scoped to hair/`zear`/`tail` textures and answered a silent
+`false` for a sampler path pointing anywhere else — registered as
+`docs/backlog/2026-07-20-hair-texture-exists-namespace-scope.md` and shipped by
+`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md`. `repath-hair-mashups.ts`'s
+nine call sites now call `fileExists` (`src/upgrade/reference/file-exists.ts`) over the complete
+`chara-index.ts` table instead; the design below (§3) documents the superseded oracle as it shipped
+2026-07-18 and is kept for history, not as the current architecture.
+
 ---
 
 ## 1. Why this needs game data, and how much (measured, not assumed)

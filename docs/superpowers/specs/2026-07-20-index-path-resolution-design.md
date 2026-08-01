@@ -2,9 +2,15 @@
 
 Filed: 2026-07-20 · Supersedes the corpus-scoped `INDEX_PATH_OVERRIDES` table.
 Closes backlog item T4 (`index-path-overrides`; shipped 2026-07-20, its item file deleted per
-`docs/BACKLOG.md`'s "when an item ships" convention) and is the template its sibling consideration
-[`hair-texture-exists` namespace scope](../../backlog/2026-07-20-hair-texture-exists-namespace-scope.md)
-should adopt — the item-seeded enumeration pattern (§3.3) both should share.
+`docs/BACKLOG.md`'s "when an item ships" convention) and is the template its sibling consideration,
+the `hair-texture-exists` namespace scope, should adopt — the item-seeded enumeration pattern (§3.3)
+both should share.
+
+**Update 2026-07-31:** that sibling shipped too — see
+`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md`. Its item file
+(`docs/backlog/2026-07-20-hair-texture-exists-namespace-scope.md`) is deleted per the same
+convention, so the bare reference above is now historical prose, not a live link. Gate B's
+`ID_TEX_PACKED` (§3.2, §3.3 below) was retired onto the same shipped oracle (`fileExists`).
 
 ## 1. Problem
 
@@ -94,7 +100,8 @@ if (stolen !== undefined && !ID_TEX_MEMBERSHIP.has(idPath))   // gate B
   `!FileExists(idPath)` for the arbitrary author-derived convention path. This closes the "second
   approximation" the old comment documented.
 - Both structures are **hash-keyed** `(folderHash, fileHash)` CRC pairs, exactly like
-  `src/upgrade/reference/hair-texture-index.ts`. The runtime hashes the author path and does a membership
+  `src/upgrade/reference/hair-texture-index.ts` was (superseded 2026-07-31 by the complete
+  `chara-index.ts`, same shape). The runtime hashes the author path and does a membership
   lookup — uniform for any input shape (the safe answer to §2.2). For a `INDEX_TABLE` hit, the value is
   reconstructed from the mod's material-path string (which the runtime holds) plus the stored bit; see §3.2.
 
@@ -135,8 +142,8 @@ Strategy **C — item-seeded**, reproducing TexTools' dependency graph most cano
 1. **Roots** — read the `roots` table from `item_sets.db` over every `Imc.UsesImc` primary type
    (equipment, accessory, weapon, monster, demihuman) — the same canonical, exhaustive source
    `extract-meta-reference.ts:299-306` already trusts. Add **hair** roots via the race×hairID grid
-   (`extract-hair-materials.ts` / `extract-hair-texture-index.ts` share it) since hair is customization, not
-   an item.
+   (`extract-hair-materials.ts`'s copy — the sibling copy in `extract-hair-texture-index.ts` was deleted
+   2026-07-31 along with that script) since hair is customization, not an item.
 2. **Models** — derive each root's model path(s) by the known root formulas
    (`XivDependencyRoot.GetRawModelPath` per type), keep those present in the game index.
 3. **Materials** — read each model natively (§3.4) → `pathData.materialList` (the referenced material
@@ -225,7 +232,10 @@ Per AGENTS.md "a found divergence is a test-coverage gap too":
 
 - No change to how the index texture is *generated* (`createIndexFromNormal`) — only which path it is
   written to / referenced at.
-- The sibling `hair-texture-exists` namespace item is not fixed here, but this establishes the
-  item-seeded enumeration pattern it should adopt.
+- ~~The sibling `hair-texture-exists` namespace item is not fixed here, but this establishes the
+  item-seeded enumeration pattern it should adopt.~~ **Shipped 2026-07-31** — see the Update note
+  above. It did not end up reusing this enumeration pattern; it bundles the complete `040000` index
+  instead (`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §3, weighing and
+  rejecting a filtered-by-type-4 subset in favor of zero assumptions).
 - Cross-format (TTMP↔PMP) conversion is out of scope (`src/index.ts:80-84` rejects it).
 ```

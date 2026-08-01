@@ -1,4 +1,5 @@
 import { ByteBuilder } from "../util/binary";
+import { UnportedGapError } from "../util/errors";
 import { writeColorset } from "./colorset";
 import { writeDye } from "./dye";
 import {
@@ -41,7 +42,7 @@ export function serializeMtrl(mtrl: XivMtrl): Uint8Array {
   // emit our (opposite) excluded output, which silently diverges from the golden. See
   // docs/backlog/2026-07-08-mtrl-empty-sampler-placeholders.md.
   if (mtrl.textures.some(isEmptySampler)) {
-    throw new Error(
+    throw new UnportedGapError(
       "mtrl: empty-sampler placeholder serialization not yet ported (C# writes them via a lowercase/StartsWith case-mismatch quirk; needs a synthetic modpack to pin the bytes)",
     );
   }

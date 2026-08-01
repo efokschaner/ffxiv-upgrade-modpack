@@ -20,6 +20,13 @@ pixel pipeline (`ConvertEyeMaskToDiffuse`). This converts today's **silent diver
 unclaimed `iri_s.tex` passes through unchanged, where TexTools would convert it) into a loud gap,
 per AGENTS.md ("Fail loud, never silently diverge").
 
+**Update 2026-07-31:** §3.1/§3.2/§3.3 below describe the iris table's KEY as *itself* the
+`FileExists` oracle (a miss ⇒ faithful skip). That was superseded by
+`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §6: existence is now answered
+separately by `fileExists` (the COMPLETE chara game index, `src/upgrade/reference/file-exists.ts`),
+and the table answers CONTENT only — a table miss on a path `fileExists` says exists is now a hard
+`UnportedGapError` abort, not a skip. Kept below for history, not as the current architecture.
+
 ---
 
 ## 1. What splits, and why the split lands here
