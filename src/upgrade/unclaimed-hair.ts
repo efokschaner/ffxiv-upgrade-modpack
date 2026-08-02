@@ -210,13 +210,20 @@ export function updateUnclaimedHairTextures(
           res.mask,
           option.files.get(maskDest)!,
         );
-      } catch {
+      } catch (err) {
         // Bare catch-all, faithfully reproducing EndwalkerUpgrade.cs:1498-1501
         // (`catch (Exception ex) { Trace.WriteLine(ex); continue; }`): it swallows ANY transform
         // failure — a genuinely corrupt or malformed input as much as any other — leaving the raw
         // copies already written above in place.
         // See docs/TEXTOOLS_BUGS.md #12 for why this catch-all is itself a TexTools defect we
         // reproduce rather than narrow.
+        //
+        // It must NOT absorb a port-gap signal. Only failures the C# can ITSELF produce may be
+        // swallowed here; an UnportedGapError says our port is incomplete, which the C# cannot
+        // express and which must reach the boundary as a fatal ok:false (spec §4.1). This site
+        // has form: the TextureResizeUnsupported type that used to keep the NPOT-resize gap out of
+        // this catch was removed in 2026-07-22 and the gap went quiet again (AGENTS.md).
+        if (err instanceof UnportedGapError) throw err;
         continue;
       }
       // Tail-only constant-swap rewrite (EndwalkerUpgrade.cs:1504-1516). Only fires when the
