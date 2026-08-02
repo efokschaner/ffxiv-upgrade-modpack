@@ -273,6 +273,26 @@ consequence for `option`: `materialRound` receives a bare `ModpackOption` (`upgr
 `ModpackGroup.name` is never passed down, so the `{group, option}` pair can **only** be annotated by
 `upgradeModpack`'s own loop, which is the only frame holding both.
 
+### 4.4 Non-fatal diagnostics need a collector, and that is not a contradiction
+
+§4.3 covers the **fatal** path only. A swallowed failure — `unclaimed-hair.ts:213`, the archetype —
+never throws, so there is no error instance to ride out on and no unwinding frame to annotate. Those
+sites need a **collector passed in**.
+
+This does not reopen the alternative §4.3 rejected. What was rejected there was threading a collector
+through the whole ported surface *to carry context for errors that already propagate on their own*.
+Here the collector is threaded only to **actual emitting sites** — on day one exactly one call chain,
+`partials` → `unclaimedHair`. The two mechanisms divide cleanly by who needs what:
+
+| Path | Mechanism | Why |
+|---|---|---|
+| Fatal (throws) | Context annotated onto the error (§4.3) | The error already propagates; only its labelling is missing. |
+| Non-fatal (swallowed) | Collector parameter to the emitting site | Nothing propagates; the report has to be handed somewhere. |
+
+The collector is a plain `Diagnostic[]` that `upgradeModpack` owns and appends to the result. Keep its
+reach minimal: a function takes it **only if it or its callees emit**. Widening it "for symmetry" is
+the signature churn §4.3 declined, and it makes byte-inertness (§6.1) harder to argue.
+
 ## 5. Scope
 
 `upgradeModpack` only, matching the backlog item. `loadModpack` and `writeModpack` have their own
