@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadModpack, upgradeModpack, writeModpack } from "../../src/index";
+import {
+  loadModpack,
+  type ModpackData,
+  type UpgradeResult,
+  upgradeModpack,
+  writeModpack,
+} from "../../src/index";
 import { readZip } from "../../src/zip/zip";
 import { packHasFileSwaps } from "./archive-redirects";
 import { oracleKey } from "./oracle";
@@ -27,15 +33,24 @@ const BLESS = process.env.UPDATE_UPGRADE_BASELINE === "1";
 export function assertMatchedUpgradeFailure(
   name: string,
   oracleMessage: string,
-  runUpgrade: () => void,
+  runUpgrade: () => UpgradeResult<ModpackData>,
 ): void {
-  let ourError: unknown;
+  // TWO channels, because the two halves of the pipeline fail differently (spec §6.6):
+  //   - `loadModpack` is out of scope for the diagnostics channel (spec §5) and still THROWS. It is
+  //     deliberately called inside this assertion (see registerUpgradeCheck) because a pack the
+  //     oracle refuses at LOAD is refused just as legitimately by our loader.
+  //   - `upgradeModpack` no longer throws; it returns ok:false.
+  let ourMessage: string | undefined;
   try {
-    runUpgrade();
+    const result = runUpgrade();
+    if (!result.ok) {
+      // The fatal diagnostic is the LAST one — execution aborted there (spec §4).
+      ourMessage = result.diagnostics[result.diagnostics.length - 1]?.message;
+    }
   } catch (e) {
-    ourError = e;
+    ourMessage = e instanceof Error ? e.message : String(e);
   }
-  if (ourError === undefined) {
+  if (ourMessage === undefined) {
     expect.fail(
       `${name}: ConsoleTools /upgrade errored but our upgrade SUCCEEDED — divergence.\n` +
         `Oracle error was:\n${oracleMessage}`,
@@ -46,8 +61,6 @@ export function assertMatchedUpgradeFailure(
   // regression that throws a DIFFERENT error on this pack (e.g. the pre-round stops throwing and a
   // later round throws for another reason) fails here instead of passing silently.
   const norm = (s: string): string => s.replace(/\s+/g, " ").trim();
-  const ourMessage =
-    ourError instanceof Error ? ourError.message : String(ourError);
   const ourNorm = norm(ourMessage);
   if (ourNorm.length === 0 || !norm(oracleMessage).includes(ourNorm)) {
     expect.fail(
@@ -99,7 +112,20 @@ export function registerUpgradeCheck(pack: string): void {
       // source ExtraFiles key set). Safe because upgradeModpack cloneModpack()s and never mutates
       // its argument (src/upgrade/upgrade.ts). Re-loading cost ~3s per big PMP, three times over.
       const source = loadModpack(name, bytes);
-      const oursModel = upgradeModpack(source);
+      const oursResult = upgradeModpack(source);
+      // The oracle produced a pack and we did not — a divergence, and the corpus-wide net under spec
+      // §4.2 catching a fatal site quietly downgraded. `writeModpack` would reject a null anyway (it
+      // takes ModpackData, not ModpackData | null), but a type error names no pack and gives no
+      // reasons; this does. It also forecloses a careless `.data!` here later.
+      if (!oursResult.ok) {
+        expect.fail(
+          `${name}: ConsoleTools /upgrade produced a pack but OUR upgrade failed — divergence.\n` +
+            oursResult.diagnostics
+              .map((d) => `  [${d.code}] ${d.message}`)
+              .join("\n"),
+        );
+      }
+      const oursModel = oursResult.data;
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
       const reference = golden.kind === "noop" ? source : golden.data;

@@ -296,7 +296,10 @@ describe("upgradeModpack pre-round wiring", () => {
       [N, tex(1)],
     ]);
     const b = option("Has Mask", [[M, tex(2)]]);
-    const out = upgradeModpack(pack([a, b]));
+    const r = upgradeModpack(pack([a, b]));
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("unreachable");
+    const out = r.data;
     expect(out.groups[0]!.options[0]!.files.has(M)).toBe(true);
     expect(out.groups[0]!.options[1]!.files.has(N)).toBe(true);
   });

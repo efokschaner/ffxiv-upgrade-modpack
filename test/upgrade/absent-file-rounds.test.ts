@@ -14,6 +14,17 @@ import {
 } from "../../src/upgrade/upgrade-info";
 import { filesMap } from "../helpers/make-packs";
 
+/** Narrows an `UpgradeResult`, throwing a clear failure message if the upgrade did not succeed. */
+function upgradedOk(input: ModpackData): ModpackData {
+  const r = upgradeModpack(input);
+  if (!r.ok) {
+    throw new Error(
+      `expected a successful upgrade, got: ${r.diagnostics.map((d) => `${d.code}: ${d.message}`).join("; ")}`,
+    );
+  }
+  return r.data;
+}
+
 /** A file the archive did not contain: present in the option, no bytes (PMP.cs:1071-1102). */
 function absent(gamePath: string): [string, ModpackFile] {
   return [gamePath, { storage: FileStorageType.RawUncompressed }];
@@ -69,7 +80,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
         absent("chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl"),
       ]),
     );
-    const out = upgradeModpack(data);
+    const out = upgradedOk(data);
     const f = out.groups[0]!.options[0]!.files.get(
       "chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl",
     )!;
@@ -85,7 +96,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
     const data = packOf(
       optionOf([absent("chara/equipment/e0001/model/c0101e0001_top.mdl")]),
     );
-    const out = upgradeModpack(data);
+    const out = upgradedOk(data);
     const f = out.groups[0]!.options[0]!.files.get(
       "chara/equipment/e0001/model/c0101e0001_top.mdl",
     )!;
@@ -154,7 +165,10 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
         absent("chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.meta"),
       ]),
     );
-    expect(() => upgradeModpack(data)).toThrow(/file has no bytes/);
+    const r = upgradeModpack(data);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("unreachable");
+    expect(r.diagnostics[0]!.message).toMatch(/file has no bytes/);
   });
 
   it("HairMaps THROWS when a key-present normal has no bytes (:1187)", () => {

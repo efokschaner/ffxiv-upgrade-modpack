@@ -16,6 +16,12 @@ import {
   encodeSqPackFile,
   SqPackType,
 } from "../sqpack/sqpack";
+import {
+  type Diagnostic,
+  DiagnosticCode,
+  mergeGapContext,
+  type UpgradeResult,
+} from "../util/diagnostic";
 import { UnportedGapError } from "../util/errors";
 import { updateEyeMask } from "./eye-mask";
 import { upgradeMaterial } from "./material";
@@ -320,6 +326,34 @@ function targetKey(info: UpgradeInfo): string {
   return info.files.mask_old!;
 }
 
+/** Convert an error escaping the pipeline into the fatal diagnostic the caller sees.
+ *
+ * Catches EVERY error type, not just `UnportedGapError` (spec §4.1): to someone holding a modpack
+ * that did not upgrade, "our port has not reproduced this" and "TexTools refuses this too" are the
+ * same event — no pack — and they are rendered through one list. The distinction survives in `code`
+ * and `cause`, which is what tests and the ratchet read.
+ *
+ * `message` is passed through UNCHANGED. `assertMatchedUpgradeFailure` substring-matches it against
+ * the oracle's captured trace, so any prefix here silently breaks the expected-failure golden.
+ */
+function toDiagnostic(err: unknown): Diagnostic {
+  const gap = err instanceof UnportedGapError ? err : undefined;
+  const ctx = mergeGapContext(gap?.context ?? []);
+  return {
+    severity: "error",
+    code: gap ? DiagnosticCode.UnportedGap : DiagnosticCode.UpgradeFailed,
+    message: err instanceof Error ? err.message : String(err),
+    gamePath: ctx.gamePath ?? ctx.material,
+    option:
+      ctx.group !== undefined && ctx.option !== undefined
+        ? { group: ctx.group, option: ctx.option }
+        : undefined,
+    provenance:
+      ctx.provenance ?? "src/upgrade/upgrade.ts · upgradeModpack · boundary",
+    cause: err,
+  };
+}
+
 /**
  * Upgrade a pre-Dawntrail modpack to Dawntrail (ModpackUpgrader.cs:88-144).
  *
@@ -340,35 +374,46 @@ function targetKey(info: UpgradeInfo): string {
  * EndwalkerUpgrade.cs:1910-2003) — see `partials`. Always returns a fresh ModpackData (never mutates
  * `data`).
  */
-export function upgradeModpack(data: ModpackData): ModpackData {
-  const out = cloneModpack(data);
-  // Pre-round (ModpackUpgrader.cs:83): resolve split Hair-shader highlight/visibility options
-  // BEFORE round 1, ungated by includePartials. Its throws propagate out of upgradeModpack — the
-  // C# pre-round sits outside the per-option try/catch that wraps round 1 (:97-116).
-  resolveHighlightOptionsAndMashupHair(out);
-  // Pass 1 (ModpackUpgrader.cs:88-120): material + metadata per option; collect
-  // texture-upgrade targets into a single first-wins-deduped map, and every option's `.tex`
-  // keys into `allTextures` (:108-109).
-  const targets = new Map<string, UpgradeInfo>();
-  const allTextures = new Set<string>();
-  for (const group of out.groups) {
-    for (const option of group.options) {
-      metadataRound(option);
-      for (const info of materialRound(option)) {
-        const k = targetKey(info);
-        if (!targets.has(k)) targets.set(k, info);
-      }
-      for (const p of option.files.keys()) {
-        if (p.endsWith(".tex")) allTextures.add(p);
+export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
+  const diagnostics: Diagnostic[] = [];
+  try {
+    const out = cloneModpack(data);
+    // Pre-round (ModpackUpgrader.cs:83): resolve split Hair-shader highlight/visibility options
+    // BEFORE round 1, ungated by includePartials. Its throws propagate out of upgradeModpack — the
+    // C# pre-round sits outside the per-option try/catch that wraps round 1 (:97-116).
+    resolveHighlightOptionsAndMashupHair(out);
+    // Pass 1 (ModpackUpgrader.cs:88-120): material + metadata per option; collect
+    // texture-upgrade targets into a single first-wins-deduped map, and every option's `.tex`
+    // keys into `allTextures` (:108-109).
+    const targets = new Map<string, UpgradeInfo>();
+    const allTextures = new Set<string>();
+    for (const group of out.groups) {
+      for (const option of group.options) {
+        metadataRound(option);
+        for (const info of materialRound(option)) {
+          const k = targetKey(info);
+          if (!targets.has(k)) targets.set(k, info);
+        }
+        for (const p of option.files.keys()) {
+          if (p.endsWith(".tex")) allTextures.add(p);
+        }
       }
     }
-  }
-  // Pass 2 (ModpackUpgrader.cs:124-144): apply the global targets to every option.
-  for (const group of out.groups) {
-    for (const option of group.options) {
-      upgradeRemainingTextures(option, targets);
+    // Pass 2 (ModpackUpgrader.cs:124-144): apply the global targets to every option.
+    for (const group of out.groups) {
+      for (const option of group.options) {
+        upgradeRemainingTextures(option, targets);
+      }
     }
+    partials(out, computeUnusedTextures(allTextures, targets));
+    return { ok: true, data: out, diagnostics };
+  } catch (err) {
+    // The ONE conversion point (spec §4.1). No `catch` inside the pipeline may do this: ported
+    // catch-alls must keep re-throwing UnportedGapError so a port gap never becomes a silent skip.
+    return {
+      ok: false,
+      data: null,
+      diagnostics: [...diagnostics, toDiagnostic(err)],
+    };
   }
-  partials(out, computeUnusedTextures(allTextures, targets));
-  return out;
 }

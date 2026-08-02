@@ -42,6 +42,12 @@ export {
 export type { XivTex } from "./tex/types";
 export { cloneModpack, upgradeModpack } from "./upgrade/upgrade";
 export { EUpgradeTextureUsage, type UpgradeInfo } from "./upgrade/upgrade-info";
+export {
+  type Diagnostic,
+  DiagnosticCode,
+  type UpgradeResult,
+} from "./util/diagnostic";
+export { UnportedGapError } from "./util/errors";
 
 // `makeTtmpLoadFix` fuses TexTools' load-time fixes into the read seam: loadModpack now returns
 // already-load-fixed data, matching WizardData.FromModpack (the load path both /upgrade and /resave
