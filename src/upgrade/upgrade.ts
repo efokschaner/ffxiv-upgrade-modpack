@@ -198,7 +198,13 @@ function materialRound(option: ModpackOption): UpgradeInfo[] {
       // placeholder gap at the `restore` call just above) rather than anything the C# itself can
       // throw here, so it must escape rather than be silently treated like a faithfully-reproduced
       // C# failure.
-      if (err instanceof UnportedGapError) throw err;
+      if (err instanceof UnportedGapError) {
+        // Annotate, then re-throw the SAME instance (spec §4.3): this frame knows the material,
+        // which neither the throw site (a bare path) nor the boundary does. Pushing before the
+        // throw does not weaken the re-throw contract — the statement is still `throw err`.
+        err.context.push({ material: path });
+        throw err;
+      }
       return f;
     }
   }
@@ -389,13 +395,24 @@ export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
     const allTextures = new Set<string>();
     for (const group of out.groups) {
       for (const option of group.options) {
-        metadataRound(option);
-        for (const info of materialRound(option)) {
-          const k = targetKey(info);
-          if (!targets.has(k)) targets.set(k, info);
-        }
-        for (const p of option.files.keys()) {
-          if (p.endsWith(".tex")) allTextures.add(p);
+        try {
+          metadataRound(option);
+          for (const info of materialRound(option)) {
+            const k = targetKey(info);
+            if (!targets.has(k)) targets.set(k, info);
+          }
+          for (const p of option.files.keys()) {
+            if (p.endsWith(".tex")) allTextures.add(p);
+          }
+        } catch (err) {
+          // NOT a ported catch — it swallows nothing and changes no control flow. It exists only to
+          // annotate: this is the only frame holding BOTH the group and the option, because
+          // materialRound takes a bare ModpackOption and ModpackGroup.name is never passed down
+          // (spec §4.3). Everything is re-thrown, port gap or not.
+          if (err instanceof UnportedGapError) {
+            err.context.push({ group: group.name, option: option.name });
+          }
+          throw err;
         }
       }
     }

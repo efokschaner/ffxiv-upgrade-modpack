@@ -354,8 +354,17 @@ describe("upgradeModpack (material round) - unported gap propagation", () => {
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("unreachable");
     expect(r.diagnostics).toHaveLength(1);
-    expect(r.diagnostics[0]!.code).toBe(DiagnosticCode.UnportedGap);
-    expect(r.diagnostics[0]!.cause).toBeInstanceOf(UnportedGapError);
+    const d = r.diagnostics[0]!;
+    expect(d.code).toBe(DiagnosticCode.UnportedGap);
+    // A DIRECT instanceof, not a cause-chain walk — that is exactly why spec §4.3 annotates the
+    // error in place instead of wrapping it at each frame.
+    expect(d.cause).toBeInstanceOf(UnportedGapError);
+    // Motivation 3: the fatal report now names WHICH material aborted the pack, and which
+    // group/option it lived in — which the bare propagating throw never did even though
+    // materialRound's and upgradeModpack's own frames knew them. modpackWithSingleFile
+    // (:124-166) names its lone group "G" and its lone option "O".
+    expect(d.gamePath).toBe(mtrlPath);
+    expect(d.option).toEqual({ group: "G", option: "O" });
   });
 
   // Amendment to fix round 1: the SAME UnportedGapError category also covers serializeMtrl's
@@ -363,8 +372,9 @@ describe("upgradeModpack (material round) - unported gap propagation", () => {
   // reached from the SAME materialRound catch (upgrade.ts:182 calls serializeMtrl inside the try),
   // so today it was silently swallowed and the material left byte-untouched. Must propagate too.
   it("propagates UnportedGapError rather than leaving the file byte-untouched, when the upgraded material still carries an empty-sampler placeholder (serializeMtrl's gap)", () => {
+    const mtrlPath = "chara/foo/material/mt_foo.mtrl";
     const input = modpackWithSingleFile(
-      "chara/foo/material/mt_foo.mtrl",
+      mtrlPath,
       buildEmptySamplerColorsetMtrl(),
       FileStorageType.RawUncompressed,
     );
@@ -373,8 +383,13 @@ describe("upgradeModpack (material round) - unported gap propagation", () => {
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("unreachable");
     expect(r.diagnostics).toHaveLength(1);
-    expect(r.diagnostics[0]!.code).toBe(DiagnosticCode.UnportedGap);
-    expect(r.diagnostics[0]!.cause).toBeInstanceOf(UnportedGapError);
+    const d = r.diagnostics[0]!;
+    expect(d.code).toBe(DiagnosticCode.UnportedGap);
+    expect(d.cause).toBeInstanceOf(UnportedGapError);
+    // Same annotation proof as the gate-B case above, for the OTHER materialRound throw site
+    // (serializeMtrl, reached via the `restore` call rather than gate B's fileExists).
+    expect(d.gamePath).toBe(mtrlPath);
+    expect(d.option).toEqual({ group: "G", option: "O" });
   });
 });
 
