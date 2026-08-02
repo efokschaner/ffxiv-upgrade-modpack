@@ -277,7 +277,14 @@ export function updateSkinPaths(option: ModpackOption): void {
  * `UpdateEyeMask` (:174-177), which ports the full control flow including the ImageSharp pixel
  * conversion (`src/upgrade/eye-mask.ts`, `convertEyeMaskToDiffuse`).
  */
-function partials(data: ModpackData, unused: Set<string>): void {
+function partials(
+  data: ModpackData,
+  unused: Set<string>,
+  /** Collector for swallowed-failure reports (spec §4.4), forwarded to the one callee that emits:
+   *  `updateUnclaimedHairTextures`. NOT threaded into `updateUnclaimedHairAccessory` (pure copy,
+   *  no try/catch to report from) or `updateEyeMask` -- reach stays minimal per spec §4.4. */
+  diagnostics: Diagnostic[],
+): void {
   for (const group of data.groups) {
     for (const option of group.options) {
       updateSkinPaths(option); // ForAllOptions (ModpackUpgrader.cs:158)
@@ -288,7 +295,12 @@ function partials(data: ModpackData, unused: Set<string>): void {
       // ModpackUpgrader.cs:171: `unusedTextures.Where(x => o.StandardData.Files.ContainsKey(x))`.
       // Snapshotted here (== the C# `.ToList()` at :172) for the hair/accessory calls.
       const contained = new Set([...unused].filter((t) => option.files.has(t)));
-      updateUnclaimedHairTextures(option, contained, HAIR_MATERIALS);
+      updateUnclaimedHairTextures(
+        option,
+        contained,
+        HAIR_MATERIALS,
+        diagnostics,
+      );
       updateUnclaimedHairAccessory(option, contained, HAIR_MATERIALS);
       // ModpackUpgrader.cs:174-177: the eye loop re-enumerates the LAZY `contained` query, so it
       // sees any file the hair pass just added/removed — re-filter `unused` against live files here.
@@ -422,7 +434,7 @@ export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
         upgradeRemainingTextures(option, targets);
       }
     }
-    partials(out, computeUnusedTextures(allTextures, targets));
+    partials(out, computeUnusedTextures(allTextures, targets), diagnostics);
     return { ok: true, data: out, diagnostics };
   } catch (err) {
     // The ONE conversion point (spec §4.1). No `catch` inside the pipeline may do this: ported

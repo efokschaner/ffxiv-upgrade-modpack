@@ -13,6 +13,7 @@
 import type { ModpackFile, ModpackOption } from "../model/modpack";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
 import { base64ToBytes } from "../util/base64";
+import { type Diagnostic, DiagnosticCode } from "../util/diagnostic";
 import { UnportedGapError } from "../util/errors";
 import { fileExists } from "./reference/file-exists";
 import { SAMPLE_HAIR_MTRL_BASE64 } from "./reference/hair-materials";
@@ -147,6 +148,9 @@ export function updateUnclaimedHairTextures(
   option: ModpackOption,
   contained: Set<string>,
   table: HairMaterialTable,
+  /** Collector for swallowed-failure reports (spec §4.4). Non-fatal diagnostics cannot ride out on
+   *  an error the way port gaps do (§4.3), because this path deliberately throws nothing. */
+  diagnostics: Diagnostic[],
 ): void {
   for (const set of [HAIR_REGEXES, TAIL_REGEXES, EAR_REGEXES]) {
     const isTail = set === TAIL_REGEXES;
@@ -224,6 +228,18 @@ export function updateUnclaimedHairTextures(
         // has form: the TextureResizeUnsupported type that used to keep the NPOT-resize gap out of
         // this catch was removed in 2026-07-22 and the gap went quiet again (AGENTS.md).
         if (err instanceof UnportedGapError) throw err;
+        // Report what TexTools also skipped. NOT fatal: the C# swallows here, so the upgrade
+        // completes and the bytes still match the golden -- the raw pre-transform copies written
+        // above stay in place. This is spec §4's `ok: true` + severity "error" archetype.
+        diagnostics.push({
+          severity: "error",
+          code: DiagnosticCode.HairTransformFailed,
+          message: err instanceof Error ? err.message : String(err),
+          gamePath: normDest,
+          provenance:
+            "EndwalkerUpgrade.cs · UpdateUnclaimedHairTextures · 1498-1501",
+          cause: err,
+        });
         continue;
       }
       // Tail-only constant-swap rewrite (EndwalkerUpgrade.cs:1504-1516). Only fires when the
