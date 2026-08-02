@@ -45,7 +45,12 @@ export function assertMatchedUpgradeFailure(
     const result = runUpgrade();
     if (!result.ok) {
       // The fatal diagnostic is the LAST one — execution aborted there (spec §4).
-      ourMessage = result.diagnostics[result.diagnostics.length - 1]?.message;
+      // Note: the type does not enforce that ok:false always includes at least one diagnostic.
+      // Supply a sentinel so the empty-string guard below fires the correct "error mismatch" failure
+      // instead of the backwards "succeeded when it should have failed" message.
+      ourMessage =
+        result.diagnostics[result.diagnostics.length - 1]?.message ??
+        "<upgrade failed with no diagnostics>";
     }
   } catch (e) {
     ourMessage = e instanceof Error ? e.message : String(e);
@@ -123,6 +128,12 @@ export function registerUpgradeCheck(pack: string): void {
             oursResult.diagnostics
               .map((d) => `  [${d.code}] ${d.message}`)
               .join("\n"),
+        );
+      }
+      if (oursResult.diagnostics.length > 0) {
+        console.log(
+          `[upgrade] ${name}: ${oursResult.diagnostics.length} diagnostics — ` +
+            oursResult.diagnostics.map((d) => d.code).join(", "),
         );
       }
       const oursModel = oursResult.data;
