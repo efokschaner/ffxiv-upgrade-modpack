@@ -1,4 +1,5 @@
 import { concatBytes } from "../util/binary";
+import { UnportedGapError } from "../util/errors";
 import { buildCanonicalTexHeader } from "./header";
 import { A8R8G8B8 } from "./types";
 
@@ -23,7 +24,12 @@ export function resizeToPowerOfTwo(
   const tw = nextPow2(width),
     th = nextPow2(height);
   if (tw === width && th === height) return { rgba, width, height };
-  throw new Error(
+  // UnportedGapError, not a bare Error: when this encoder is eventually wired in, this throw lands
+  // under unclaimed-hair.ts's swallowing catch. As a bare Error it would be swallowed into an
+  // ok: true + diagnostic (spec §4.4) instead of the fatal ok: false a port gap requires (spec
+  // §4.1) -- the exact erosion AGENTS.md's "Port-gap errors vs. ported catches" section warns
+  // against (the TextureResizeUnsupported precedent removed 2026-07-22).
+  throw new UnportedGapError(
     `tex: NPOT resize (${width}x${height} -> ${tw}x${th}) not yet ported (C# uses a Bicubic filter; point sampling would diverge)`,
   );
 }
