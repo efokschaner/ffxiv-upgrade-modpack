@@ -89,6 +89,15 @@ out-of-namespace. The index-path steal's gate B (`idTexExists` over `ID_TEX_PACK
 the same shared `fileExists` oracle. The hair/eye material tables' existence gates were split from
 their content lookups and now **fail loud** (`UnportedGapError`) on a table gap instead of silently
 skipping. Its item was deleted per this file's own convention, shifting the former 2–7 to 1–6.
+**2026-08-02:** the diagnostics-channel item (then #1) **shipped** — see
+`docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md`. `upgradeModpack` now
+returns `{ ok, data, diagnostics }`; a port gap stays fatal (`ok: false`, never a diagnostic beside a
+returned pack), and `unclaimed-hair.ts:213`'s catch now re-throws `UnportedGapError` before emitting
+its diagnostic, satisfying the precondition `docs/backlog/2026-07-31-unported-gap-error-sweep.md` was
+waiting on. Corpus measurement (Task 6) found **zero** diagnostics across all ~105 local packs — the
+sole emitting site (the swallowed `MergePixelData` failure inside `updateEndwalkerHairTextures`) is
+reached by no local pack and is pinned only by synthetic tests. Its item was deleted per this file's
+own convention, shifting the former 2–6 to 1–5.
 
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
@@ -114,54 +123,7 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. **A diagnostics channel out of `upgradeModpack`.** *(Designed 2026-08-01 —
-   [`docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md`](superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md).
-   The design decision this item was waiting on is made; not yet implemented. That spec's §2 also
-   records a trace-based parity oracle considered and **rejected**, and hands the general
-   "control flow differs but bytes match" problem to
-   [`2026-08-01-mutation-testing-latent-divergence.md`](backlog/2026-08-01-mutation-testing-latent-divergence.md).)*
-   `unclaimed-hair.ts:211-218` faithfully
-   reproduces TexTools' bare `catch { continue }` (`docs/TEXTOOLS_BUGS.md` #12), swallowing genuine
-   parse failures. (It used to swallow the modeled `TextureResizeUnsupported` gap too; that type no
-   longer exists as of 2026-07-22, so parse failures are all that remain.) Reproducing it is
-   **correct** — but TexTools writes a `Trace` line and a webpage writes nothing, so the page would
-   report success on a partial upgrade. This is the one place where faithfully matching TexTools'
-   behaviour still leaves the *user* worse off, which makes a warnings channel a port-level
-   requirement rather than UI polish. Note it is not a divergence: the transform behaviour stays
-   identical, we only surface what was skipped. **A second motivation arrived 2026-07-22:** the two
-   `MergePixelData` guards now throw TexTools' error text verbatim (required by the expected-failure
-   harness's matched-*reason* assertion), which means they no longer name *which* texture failed —
-   faithful, but a real debuggability cost this channel is the right place to repay. **A third
-   motivation arrived 2026-07-31, and now covers TWO call sites, not one:** both feed
-   mod-authored, unconstrained paths to the throwing oracle. `repath-hair-mashups.ts`'s nine
-   `fileExists` calls per matched material pass mod-authored sampler paths verbatim to the oracle,
-   and `fileExists` now throws `UnportedGapError` (`file-exists.ts:123-131`) for any valid FFXIV
-   path outside `chara/` — so a sampler path a mashup mod points at `common/`, `ui/`, `bg/`, or any
-   other non-`chara/` folder key now aborts the WHOLE pack with no catch between
-   `repathHairMashups` and `upgradeModpack`'s caller, where the old namespace-scoped oracle just
-   answered a faithful `false` and skipped the rename. **The same hazard reaches a second, more
-   heavily-travelled site:** `upgradeMaterial`'s gate B (`material.ts:155`) calls
-   `fileExists(idPath)`, where `idPath` (`material.ts:130-134`) is derived from the mod's own
-   normal-sampler texture path — equally mod-authored, equally unconstrained, and NEW to this
-   change (the retired `idTexExists` oracle it replaced never threw). Gate B is reached far more
-   often than the hair-mashup call sites: every Endwalker colorset material that overwrites a
-   base-game material's own path evaluates it, not just hair mashups.
-   `test/upgrade/upgrade.test.ts`'s "propagates UnportedGapError ... (gate B)" test (~:320)
-   constructs exactly this case. Both call sites are deliberate and operator-approved
-   (`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §3, decision 2). The
-   "measured at zero" figure, however, is narrower than it reads: it covered only the
-   `RepathHairMashups` query set (same doc §2's table) and says nothing about gate B's distinct
-   query set. A later, broader re-measurement ran `loadModpack` + `upgradeModpack` over all 110
-   local corpus packs (85 real + 20 synthetic + 5 upgrade-error) and counted zero
-   `UnportedGapError`s; the only 5 throws were the known expected-failure packs in
-   `test/corpus/upgrade-error/`. But this file's own "deploying changes the probability term" rule
-   (above) says corpus silence understates hand-authorable triggers, and a mod-authored
-   sampler/texture path — freely chosen by the mod author, unlike a game-data-derived path — is
-   exactly that kind of trigger, for BOTH call sites. Blast radius if hit, either site: the whole
-   pack aborts with no diagnostic naming which sampler, material, or option triggered it — the same
-   gap this item's diagnostics channel exists to close.
-
-2. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+1. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -172,14 +134,14 @@ unchanged by deployment; only probability moves.
    messages. One hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI
    must **not** offer an output-format picker. Should start in parallel with 1-2, not after them.
 
-3. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
+2. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
    machine, gitignored, with no CI. Code coverage is strong (92.98% lines / 84.6% branches — the 0%
    files are re-export barrels), so the residual risk is **data and inputs, not code paths**, which
    is exactly what more packs buy and coverage cannot. This is the only entry that finds the
    unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
    design §8.4's thin-coverage note.
 
-4. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+3. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
    — **the highest-severity item that no corpus pack reaches.** Rubric class #1: a group TexTools
    drops from the wizard model entirely survives our TTMP read and gets re-emitted, so the user's
    upgraded pack carries a group the golden does not, with no diff to warn us (no baseline entry
@@ -190,7 +152,7 @@ unchanged by deployment; only probability moves.
    is already masked downstream by `groupHasData` (by the same predicate C# uses), so the genuinely
    open surface is the TTMP path. **Moved here from *Unprioritized → Other ported code*, 2026-07-20b.**
 
-5. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+4. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -204,7 +166,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-6. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+5. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -247,7 +209,7 @@ unchanged by deployment; only probability moves.
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression. **Traced
   2026-07-21** (C# path is `WritePmp`, PMP.cs:830-868): this is only **~5** baselined `structure`
   entries (`added`/`removed` shaped). The other ~42 are a *different*, tex-payload-shadow phenomenon —
-  now item 6 in the *Prioritized* list above.
+  now item 5 in the *Prioritized* list above.
 - [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
   — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
   separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw

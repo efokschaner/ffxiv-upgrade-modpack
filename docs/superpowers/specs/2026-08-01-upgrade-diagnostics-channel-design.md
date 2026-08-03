@@ -1,6 +1,6 @@
 # Upgrade diagnostics channel
 
-Status: designed, not implemented
+Status: implemented (`feat/upgrade-diagnostics-channel`)
 Backlog item: `docs/BACKLOG.md` prioritized #1, which was described inline for want of a design
 decision. This spec is that decision; the index entry now links here and is deleted when this ships.
 
@@ -330,6 +330,14 @@ No new oracle or harness infrastructure.
    error diagnostic, which *does* reach the ratchet. So the expected count is not "just
    `unclaimed-hair.ts:213`, fire rate unknown" — it is that site plus whatever MergePixelData
    failures the hair path absorbs.
+
+   **Measured, 2026-08-02 (Task 6):** the day-one count came back **zero**, across all ~105 local
+   packs (85 real + 20 synthetic). Neither the bare `unclaimed-hair.ts:213` swallow nor a
+   hair-path-absorbed `MergePixelData` failure is reached by any local corpus pack. The prediction
+   above stands as the reasoning for *why* a non-zero count would not have been surprising; the corpus
+   simply doesn't carry an input that reaches either shape. The site is pinned by synthetic unit tests
+   instead (§6 item 3), and the ratchet integration (§7) therefore started from an empty day-one
+   diagnostic set.
 3. **Content assertions are synthetic unit tests, one per emitting site.** Hand-built minimal input
    forcing the skip; assert `code` and `gamePath`. Per AGENTS.md, a site no corpus pack reaches must
    be pinned by a synthetic test or it should have been a fail-loud guard instead.

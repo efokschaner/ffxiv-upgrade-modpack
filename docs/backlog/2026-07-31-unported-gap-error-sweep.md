@@ -29,13 +29,16 @@ verbatim so a future sweep does not have to re-derive them.
   that the furniture `.mdl` overrun "no longer aborts the whole pack — the load-fix
   `catch { return null }` now swallows it, so the user gets a pack silently missing models."
   Cross-reference that note when this is picked up.
-- **`src/upgrade/unclaimed-hair.ts:211`** — the bare catch-all reproducing `docs/TEXTOOLS_BUGS.md`
-  #12. Absorbs `src/tex/encode.ts:27`'s "NPOT resize not yet ported" throw. Note the history:
-  `docs/BACKLOG.md` prioritized item 2 (the diagnostics-channel item) records that this catch "used
-  to swallow the modeled `TextureResizeUnsupported` gap too; that type no longer exists as of
-  2026-07-22." So this repo previously HAD a typed port-gap error at exactly this seam and lost it —
+- **`src/upgrade/unclaimed-hair.ts:211`** — **DONE, 2026-08-02.** The bare catch-all reproducing
+  `docs/TEXTOOLS_BUGS.md` #12 (which absorbed `src/tex/encode.ts:27`'s "NPOT resize not yet ported"
+  throw) now re-throws `UnportedGapError` before emitting its diagnostic, per
+  `docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md` §4.1's precondition. Note
+  the history: `docs/BACKLOG.md` prioritized item 2 (the diagnostics-channel item) records that this
+  catch "used to swallow the modeled `TextureResizeUnsupported` gap too; that type no longer exists as
+  of 2026-07-22." So this repo previously HAD a typed port-gap error at exactly this seam and lost it —
   the strongest argument that `UnportedGapError` should be the permanent shape here rather than a
-  one-off introduced for the file-exists/serialize pair.
+  one-off introduced for the file-exists/serialize pair. That argument is now realized for this one
+  instance; the other two confirmed-open instances below are unaffected.
 - **`src/upgrade/load-fixes.ts:109`** — `catch { return null }` on the TTMP load-time **tex** fix.
   Lower confidence than the two above: its own comment says it deliberately drops on "a resize guard
   TexTools also aborts on", so some of what it swallows is a faithful match rather than a port gap.
@@ -64,10 +67,11 @@ a catch above them later cannot silently re-open a gap without anyone noticing:
 
 1. Case-by-case adjudication of `load-fixes.ts:109` — separate the genuinely-faithful drops from the
    ones that are actually swallowing an unported gap, and retag only the latter.
-2. Retagging `load-fixes.ts:121` and `unclaimed-hair.ts:211`'s underlying throws
-   (`model.ts`'s `normalizeModel`, `mdl/model/serialize.ts:103`, `tex/encode.ts:27`) onto
-   `UnportedGapError`, then making their enclosing catches re-throw it — which changes their failure
-   mode from "silently drop this file/material" to "abort the whole upgrade".
+2. Retagging `load-fixes.ts:121`'s underlying throws (`model.ts`'s `normalizeModel`,
+   `mdl/model/serialize.ts:103`) onto `UnportedGapError`, then making its enclosing catch re-throw
+   it — which changes its failure mode from "silently drop this model" to "abort the whole upgrade".
+   (`unclaimed-hair.ts:211`'s sibling half of this retag — `tex/encode.ts:27`'s throw plus the
+   enclosing catch's re-throw — **shipped 2026-08-02**; see that instance's entry above.)
 
    **This item's open question is now decided.** It previously read as waiting on the
    diagnostics-channel item so that a re-thrown gap could "surface to the user without failing the
