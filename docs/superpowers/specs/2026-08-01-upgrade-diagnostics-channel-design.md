@@ -339,6 +339,12 @@ No new oracle or harness infrastructure.
    simply doesn't carry an input that reaches either shape. The site is pinned by synthetic unit tests
    instead (§6 item 3), and the ratchet integration (§7) therefore started from an empty day-one
    diagnostic set.
+
+   **Corrected, 2026-08-02 (follow-on):** a zero day-one count is a measurement of the corpus, not a
+   permanent property of it. The corpus now carries an AUTHORED pack that reaches the swallow —
+   `test/corpus/synthetic/hair-transform-failure.pmp`
+   (`scripts/generate-synthetics/build-synthetic-hair-transform-failure.ts`) — so the corpus-wide count
+   is **one**, from that one pack. See §7's 2026-08-02 update for why a pack alone was not sufficient.
 3. **Content assertions are synthetic unit tests, one per emitting site.** Hand-built minimal input
    forcing the skip; assert `code` and `gamePath`. Per AGENTS.md, a site no corpus pack reaches must
    be pinned by a synthetic test or it should have been a fail-loud guard instead.
@@ -421,6 +427,38 @@ deliberately excludes `detail` as cosmetic, so:
 - **`index` is "position within this path's sorted diff list" (`upgrade-diff.ts:30`)** — undefined
   for a diagnostic. Define the ordering that assigns it, or the ratchet identity is unstable across
   runs and every run reads as a regression.
+
+### 7.1 The ratchet alone cannot pin the wiring (update, 2026-08-02)
+
+The plan above — land a pack that emits a diagnostic, bless it — gives the `"diagnostic"` kind its
+first live data but does **not** make the wiring testable, and shipping it that way would have left
+the gap open. `compareToBaseline` passes when `actual ⊆ baseline`, because a *disappeared* diff is
+deliberately read as an improvement (the right semantics for a burn-down ratchet). So with the
+diagnostic blessed into the baseline, deleting `...diagnostics` from `registerUpgradeCheck`'s
+`diff.files` spread makes `actual` empty — still a subset, still green.
+
+The fix is an **exact-match** expectation alongside the subset ratchet:
+`EXPECTED_PACK_DIAGNOSTICS` + `assertExpectedDiagnostics` (`test/helpers/corpus-upgrade.ts`), a
+committed per-pack table of `{code, gamePath}` asserted with `toEqual` against the `"diagnostic"`
+entries of **`diff.files`** — the assembled array, not the local `diagnostics` variable. Reading it
+off `diff.files` is the whole point: that is what turns dropping the spread into a red test.
+
+- **What it pins:** emitter (`unclaimed-hair.ts`'s swallow) → `diagnosticsToFileDiffs` → `diff.files`.
+- **What it does not:** the last hop, `diff.files` → `compareToBaseline`/`saveBaseline`. That stays
+  covered by `test/helpers/upgrade-baseline.test.ts` and by the two-line locality at the call site.
+- **`detail` is deliberately outside the expectation** — it is the raw wording of the underlying parse
+  failure, which §3 leaves free to change, and `idOf` never reads it.
+- `test/corpus-guard.test.ts` additionally fails when a pack named in the table is absent from the
+  corpus, so deleting or failing to rebuild the pack cannot retire the pin in silence.
+
+**The pack, and why its bytes still match the golden.** `hair-transform-failure.pmp` carries one loose
+hair normal/specular pair for a real DT hair (c0101 h0001) with no material, so the rescue path runs;
+the normal's header claims 8x8 A8R8G8B8 but ships only 64 of the 256 bytes of mip 0, so the transform
+throws inside the swallowing try. `EndwalkerUpgrade.cs:1478-1492` has already copied both textures to
+their Dx11 destinations, and `:1498-1501` swallows, leaving those raw copies in place — on both sides.
+**Verified against the real oracle, 2026-08-02:** ConsoleTools `/upgrade` succeeds on this pack and its
+output is byte-identical to ours at every gamePath, so the pack's baseline is the single
+`HairTransformFailed` entry and nothing else.
 
 ## 8. Follow-ons
 
