@@ -452,13 +452,33 @@ off `diff.files` is the whole point: that is what turns dropping the spread into
   corpus, so deleting or failing to rebuild the pack cannot retire the pin in silence.
 
 **The pack, and why its bytes still match the golden.** `hair-transform-failure.pmp` carries one loose
-hair normal/specular pair for a real DT hair (c0101 h0001) with no material, so the rescue path runs;
-the normal's header claims 8x8 A8R8G8B8 but ships only 64 of the 256 bytes of mip 0, so the transform
-throws inside the swallowing try. `EndwalkerUpgrade.cs:1478-1492` has already copied both textures to
-their Dx11 destinations, and `:1498-1501` swallows, leaving those raw copies in place — on both sides.
-**Verified against the real oracle, 2026-08-02:** ConsoleTools `/upgrade` succeeds on this pack and its
-output is byte-identical to ours at every gamePath, so the pack's baseline is the single
-`HairTransformFailed` entry and nothing else.
+hair normal/specular pair for a real DT hair (c0101 h0001) with no material, so the rescue path runs.
+The normal is a **well-formed 40x40 A8R8G8B8** single-mip texture — nothing about the file is malformed.
+`UpdateEndwalkerHairTextures` NPOT-normalizes it first (`EndwalkerUpgrade.cs:1195-1198` →
+`Tex.ResizeXivTx`), and `RoundToPowerOfTwo(40) = 32` (`IOUtil.cs:905-911`; `|40-32| = 8 < |64-40| = 24`,
+so it floors). `MergePixelData`'s size guard (`Tex.cs:656-660`, `tex.Width < 64 || tex.Height < 64`) is
+tested on the **post**-resize dims (`ResizeXivTx` assigns them before calling, `Tex.cs:417-419`), so it
+throws `"Image is too small for DDS Compressor. (64x64 Minimum Size)"` inside the swallowing try. The
+specular is 64x64 (power-of-two and ≥ 64) so it short-circuits the resize and can never be the thing
+that fails — the pack has exactly one cause of failure. `EndwalkerUpgrade.cs:1478-1492` has already
+copied both textures to their Dx11 destinations, and `:1498-1501` swallows, leaving those raw copies in
+place — on both sides. **Verified against the real oracle, 2026-08-02:** ConsoleTools `/upgrade` succeeds
+on this pack and its output is byte-identical to ours at every gamePath, so the single
+`HairTransformFailed` diagnostic is the pack's only diff.
+
+**Why NOT a truncated `.tex`** — the other obvious way to force the throw, and the recipe the in-memory
+fixture at `test/upgrade/unclaimed-hair.test.ts` uses. It works against the oracle too (measured —
+ConsoleTools swallows a short mip identically), but a **corpus pack** is not an in-memory fixture: it also
+flows through the `assets` check family, whose `.tex` decode smoke (`test/helpers/corpus-tex.ts`) treats
+an undecodable texture as a hard failure. A truncated normal would therefore turn one intended diagnostic
+into an unrelated red test, and buying it back would mean a carve-out in a harness that has nothing to do
+with diagnostics. A 40x40 texture is perfectly decodable; only the DDS compressor downstream refuses it.
+**Keep the corruption out of the file format**: the constraint is that the *pack* must survive every other
+corpus check untouched, so the failure has to live in the transform, not in the bytes. (Same reasoning
+pins the never-zero byte fill in the builder: PMP load runs every `.tex` through
+`FastValidateTexFile`'s trailing-NUL truncation, `EndwalkerUpgrade.cs:2149-2165`, which we have not ported
+— see `docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md` — so a NUL-tailed payload would be a length
+divergence with nothing to do with what this pack is for.)
 
 ## 8. Follow-ons
 

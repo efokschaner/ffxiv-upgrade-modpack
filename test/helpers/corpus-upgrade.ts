@@ -180,9 +180,12 @@ export const EXPECTED_PACK_DIAGNOSTICS: ReadonlyMap<
 > = new Map([
   [
     // scripts/generate-synthetics/build-synthetic-hair-transform-failure.ts — one loose hair
-    // normal/specular pair whose normal is truncated, so EndwalkerUpgrade.cs:1498-1501's swallow
-    // fires exactly once. ConsoleTools /upgrade swallows identically (verified 2026-08-02), so the
-    // pack's BYTES match the golden and this diagnostic is its only recorded diff.
+    // normal/specular pair whose normal is a well-formed 40x40 A8R8G8B8 texture. The NPOT pre-resize
+    // (EndwalkerUpgrade.cs:1195-1198) rounds 40 down to 32 (IOUtil.cs:905-911), so MergePixelData's
+    // post-resize `< 64` size guard (Tex.cs:656-660) throws and EndwalkerUpgrade.cs:1498-1501's
+    // swallow fires exactly once. (NOT a truncated .tex — see that builder's header.) ConsoleTools
+    // /upgrade swallows identically (verified 2026-08-02), so the pack's BYTES match the golden and
+    // this diagnostic is its only recorded diff.
     "hair-transform-failure.pmp",
     [
       {
