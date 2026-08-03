@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  type Diagnostic,
   loadModpack,
   type ModpackData,
   type UpgradeResult,
@@ -79,6 +80,66 @@ export function assertMatchedUpgradeFailure(
   );
 }
 
+/** Plain relational string comparison (UTF-16 code-unit order), NOT `localeCompare`. This
+ * comparator's entire purpose is a cross-RUN-stable sort order, and `localeCompare` with no
+ * explicit locale is collation-aware and ICU/locale-dependent — not guaranteed to return the same
+ * ordering across Node builds or host locales. `<`/`>` on strings has no such dependency: it is
+ * pure UTF-16 code-unit comparison, defined by the language spec. */
+function compareOrdinal(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Map a completed upgrade's diagnostics onto the ratchet's `FileDiff` shape (diagnostics-channel
+ * spec §7). Exported for unit testing (test/helpers/corpus-upgrade.test.ts) — this is the ONLY
+ * thing that pins the assigned `index`, and `idOf` (upgrade-baseline.ts) keys on it, so the sort
+ * here must be a genuine total order, not something that quietly falls back to array insertion
+ * order on a tie.
+ *
+ * Sort key: `(gamePath, code, message)`, all three via `compareOrdinal`.
+ *  - `gamePath` then `code` group diagnostics the way the ratchet identity does (idOf keys on
+ *    exactly those two, plus `status`/`kind`, for this kind).
+ *  - `message` is the tiebreak this round adds. It discriminates the reachable collision this was
+ *    written for: `HairTransformFailed` (src/upgrade/unclaimed-hair.ts:234-242) carries a
+ *    `gamePath` (the shared destination texture, unique within an option but NOT across options —
+ *    unclaimed-hair.ts:180-187) and a fixed `code`, but no `option`, so two different options
+ *    failing the SAME hair-texture destination collide on both `idOf` keys. `message` is
+ *    `err.message` from the swallowed transform failure (unclaimed-hair.ts:237), which stringifies
+ *    details specific to that option's own source texture bytes (e.g. dimensions) — genuinely
+ *    different failures on the two options normally produce different messages, breaking the tie.
+ *
+ * Residual case, and why it's harmless rather than "STOP, need more data": if `gamePath`, `code`
+ * AND `message` are ALL equal, no field on today's `Diagnostic` (src/util/diagnostic.ts) can
+ * distinguish the two — `severity`/`provenance` are constant per code, and `cause`/`option` are
+ * either non-serializable or, for this exact diagnostic, never populated (spec §4.3: `option` can
+ * only be annotated by `upgradeModpack`'s own loop, which `partials` never does for this
+ * collector). But `idOf` does not read `detail` (the field `message` becomes on `FileDiff`), only
+ * `kind`/`gamePath`/`index`/`status`/`code` — so for a same-(gamePath,code,message) pair, EVERY
+ * assignment of {index, index+1} to the two diagnostics yields the exact same PAIR of identity
+ * strings (`...#index:added@code`, `...#index+1:added@code`); which physical diagnostic backs
+ * which index is unobservable to the ratchet. So an unbroken final tie is provably inert for
+ * baseline correctness, not a gap — widening `Diagnostic`'s shape (e.g. carrying `option`) to chase
+ * it further is exactly the design change this comment declines to make unasked. */
+export function diagnosticsToFileDiffs(diagnostics: Diagnostic[]): FileDiff[] {
+  return [...diagnostics]
+    .sort(
+      (a, b) =>
+        compareOrdinal(a.gamePath ?? "", b.gamePath ?? "") ||
+        compareOrdinal(a.code, b.code) ||
+        compareOrdinal(a.message, b.message),
+    )
+    .map((d, i) => ({
+      kind: "diagnostic" as const,
+      // `gamePath` is required on FileDiff but optional on Diagnostic (a diagnostic whose context
+      // never reached an annotating frame has none) — supply an explicit sentinel rather than
+      // letting it fall through as `undefined` (spec §7).
+      gamePath: d.gamePath ?? "(no path)",
+      index: i,
+      status: "added" as const,
+      code: d.code,
+      detail: d.message,
+    }));
+}
+
 // End-to-end golden check: our upgrade pipeline vs the cached ConsoleTools /upgrade output,
 // diffed per gamePath on decompressed content, exact-byte except for confirmed intentional
 // divergences, ratcheted against a gitignored per-pack baseline (see the harness design spec).
@@ -130,23 +191,7 @@ export function registerUpgradeCheck(pack: string): void {
               .join("\n"),
         );
       }
-      // Stable identity requires a stable ORDER (idOf keys on index), so sort before indexing: by
-      // gamePath then code. `gamePath` is required on FileDiff but optional on Diagnostic, so a
-      // diagnostic with no path gets an explicit sentinel rather than falling through as undefined.
-      const diagnostics: FileDiff[] = [...oursResult.diagnostics]
-        .sort(
-          (a, b) =>
-            (a.gamePath ?? "").localeCompare(b.gamePath ?? "") ||
-            a.code.localeCompare(b.code),
-        )
-        .map((d, i) => ({
-          kind: "diagnostic" as const,
-          gamePath: d.gamePath ?? "(no path)",
-          index: i,
-          status: "added" as const,
-          code: d.code,
-          detail: d.message,
-        }));
+      const diagnostics = diagnosticsToFileDiffs(oursResult.diagnostics);
       const oursModel = oursResult.data;
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
