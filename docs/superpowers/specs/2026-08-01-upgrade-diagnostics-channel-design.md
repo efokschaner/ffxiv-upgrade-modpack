@@ -59,9 +59,10 @@ input that makes it visible. That decomposes into two failure modes with differe
   feeds the existing `scripts/generate-synthetics/` loop. **Filed as a separate backlog item.**
 - **(b) C# behaviour never ported at all.** No branch to mutate, no line to be uncovered — coverage
   is blind to it by construction. Stays answered by the citation-and-reading discipline plus corpus
-  widening (prioritized item 3). A C#-side coverage harness was considered and rejected: we
-  deliberately split modules, and a large fraction of C# branches (every `files == null` half) are
-  structurally unreachable on the modpack path, so the signal arrives buried in noise.
+  widening (`docs/BACKLOG.md` prioritized item 2, "Widen the corpus"). A C#-side coverage harness
+  was considered and rejected: we deliberately split modules, and a large fraction of C# branches
+  (every `files == null` half) are structurally unreachable on the modpack path, so the signal
+  arrives buried in noise.
 
 ## 3. The seam
 
