@@ -18,18 +18,28 @@ export type DiffKind =
   | "manifest"
   | "structure"
   | "roundtrip"
-  | "transform";
+  | "transform"
+  | "diagnostic";
 // "transform" is likewise NOT an oracle comparison. It records that OUR upgrade transform changed
 // an option's file set for a pack ConsoleTools /upgrade left alone (it wrote no output at all), so
 // there is no TexTools artifact on the other side of it -- see
 // docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md §3.2. It mirrors the exact
 // predicate the oracle itself branches on (ModpackUpgrader.cs · AnyChanges · 25-49).
+// "diagnostic" is the THIRD non-oracle kind, alongside "roundtrip" and "transform": it records OUR
+// upgrade reporting that it skipped or failed something, with no TexTools artifact on the other
+// side. Only ok:true runs reach it — a pack the oracle refuses returns early on the error branch,
+// and a pack the oracle upgraded but we could not fails hard at the !ours.ok guard. So a
+// "diagnostic" entry always describes a COMPLETED, DEGRADED upgrade, which is what makes "a new
+// one is a regression" the right reading. See the diagnostics-channel spec §7.
 export interface FileDiff {
   kind: DiffKind;
   gamePath: string; // for manifest/structure diffs this holds the archive member name
   index: number; // position within this path's sorted diff list — a stable id for the ratchet
   status: DiffStatus;
   detail?: string;
+  /** Diagnostic code, for `kind: "diagnostic"` only. Part of the ratchet identity — see idOf in
+   * upgrade-baseline.ts. */
+  code?: string;
 }
 export interface PackDiff {
   pack: string;

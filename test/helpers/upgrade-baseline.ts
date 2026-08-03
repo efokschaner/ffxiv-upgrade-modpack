@@ -45,7 +45,14 @@ function baselinePath(key: string, dir: string): string {
 // aware DIVERGENCE_RULE), this coarseness is moot: an empty baseline rejects any divergence outright.
 // Ratchet identity. `kind` defaults to "payload" so pre-kind baselines (payload-only) still match.
 function idOf(f: FileDiff): string {
-  return `${f.kind ?? "payload"}|${f.gamePath}#${f.index}:${f.status}`;
+  // `code` participates for diagnostics ONLY. It cannot ride in `status`: DiffStatus is a closed
+  // union shared by every other kind, and the regression printout (corpus-upgrade.ts) prints
+  // `gamePath#index:status` without `kind`, so a bare code there would read ambiguously. Narrowing
+  // the extension to this kind keeps the blast radius to one line: every other kind's identity
+  // string is byte-identical to before this change, so existing baselines keep matching. See the
+  // diagnostics-channel spec §7.
+  const code = f.kind === "diagnostic" && f.code ? `@${f.code}` : "";
+  return `${f.kind ?? "payload"}|${f.gamePath}#${f.index}:${f.status}${code}`;
 }
 
 export function loadBaseline(

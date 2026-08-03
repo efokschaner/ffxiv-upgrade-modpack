@@ -130,12 +130,23 @@ export function registerUpgradeCheck(pack: string): void {
               .join("\n"),
         );
       }
-      if (oursResult.diagnostics.length > 0) {
-        console.log(
-          `[upgrade] ${name}: ${oursResult.diagnostics.length} diagnostics — ` +
-            oursResult.diagnostics.map((d) => d.code).join(", "),
-        );
-      }
+      // Stable identity requires a stable ORDER (idOf keys on index), so sort before indexing: by
+      // gamePath then code. `gamePath` is required on FileDiff but optional on Diagnostic, so a
+      // diagnostic with no path gets an explicit sentinel rather than falling through as undefined.
+      const diagnostics: FileDiff[] = [...oursResult.diagnostics]
+        .sort(
+          (a, b) =>
+            (a.gamePath ?? "").localeCompare(b.gamePath ?? "") ||
+            a.code.localeCompare(b.code),
+        )
+        .map((d, i) => ({
+          kind: "diagnostic" as const,
+          gamePath: d.gamePath ?? "(no path)",
+          index: i,
+          status: "added" as const,
+          code: d.code,
+          detail: d.message,
+        }));
       const oursModel = oursResult.data;
       // A no-op upgrade writes no golden; the correct reference is the original input, so this
       // still exercises our whole load->upgrade->reduce->serialize pipeline end to end.
@@ -240,7 +251,13 @@ export function registerUpgradeCheck(pack: string): void {
 
       const diff = {
         ...payload,
-        files: [...payload.files, ...archive, ...selfDiffs, ...transform],
+        files: [
+          ...payload.files,
+          ...archive,
+          ...selfDiffs,
+          ...transform,
+          ...diagnostics,
+        ],
       };
       const key = oracleKey(bytes);
 
