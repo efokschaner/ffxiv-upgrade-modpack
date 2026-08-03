@@ -29,6 +29,13 @@ verbatim so a future sweep does not have to re-derive them.
   that the furniture `.mdl` overrun "no longer aborts the whole pack — the load-fix
   `catch { return null }` now swallows it, so the user gets a pack silently missing models."
   Cross-reference that note when this is picked up.
+- **`src/upgrade/load-fixes.ts:109`** — `catch { return null }` on the TTMP load-time **tex** fix.
+  Lower confidence than `load-fixes.ts:121` above: its own comment says it deliberately drops on "a
+  resize guard TexTools also aborts on", so some of what it swallows is a faithful match rather than
+  a port gap. Needs case-by-case adjudication when picked up — do not assume it is a defect wholesale.
+
+## Shipped instances
+
 - **`src/upgrade/unclaimed-hair.ts:211`** — **DONE, 2026-08-02.** The bare catch-all reproducing
   `docs/TEXTOOLS_BUGS.md` #12 (which absorbed `src/tex/encode.ts:27`'s "NPOT resize not yet ported"
   throw) now re-throws `UnportedGapError` before emitting its diagnostic, per
@@ -38,11 +45,11 @@ verbatim so a future sweep does not have to re-derive them.
   of 2026-07-22." So this repo previously HAD a typed port-gap error at exactly this seam and lost it —
   the strongest argument that `UnportedGapError` should be the permanent shape here rather than a
   one-off introduced for the file-exists/serialize pair. That argument is now realized for this one
-  instance; the other two confirmed-open instances below are unaffected.
-- **`src/upgrade/load-fixes.ts:109`** — `catch { return null }` on the TTMP load-time **tex** fix.
-  Lower confidence than the two above: its own comment says it deliberately drops on "a resize guard
-  TexTools also aborts on", so some of what it swallows is a faithful match rather than a port gap.
-  Needs case-by-case adjudication when picked up — do not assume it is a defect wholesale.
+  instance; the two confirmed-open instances above are unaffected. `src/tex/encode.ts:26`'s
+  underlying throw (the sibling half of this retag — see "What a full sweep would involve" below) was
+  its own separate gap until this repo's 2026-08-02 diagnostics-channel fix wave also retagged it onto
+  `UnportedGapError`, so the two-halves claim this entry makes is now fully accurate rather than
+  aspirational.
 
 ## Assessed and NOT instances (so a future sweep does not re-tread them)
 

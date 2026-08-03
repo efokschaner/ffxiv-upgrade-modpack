@@ -413,3 +413,12 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   `extract-*` scripts (down to two copies since `feat/complete-file-exists-oracle` deleted the third,
   2026-07-31), and the one uncovered test direction (gate-B *suppression*, behaviourally hard to
   observe). None block correctness.
+- [The §7 diagnostics ratchet integration has no live test](backlog/2026-08-02-diagnostic-ratchet-integration-unpinned.md)
+  — deleting `test/helpers/corpus-upgrade.ts`'s `...diagnostics` spread (~:304) breaks nothing in
+  `npm test`, because every corpus pack today emits zero diagnostics (design spec §6 item 2's
+  measurement). `diagnosticsToFileDiffs` and `compareToBaseline`'s `code` identity are each
+  unit-tested in isolation, but nothing exercises them wired together. Proposed fix: a synthetic
+  `.ttmp2` (loose hair normal/mask pair, normal with a truncated header — the fixture already exists
+  at `test/upgrade/unclaimed-hair.test.ts:264-268`) that TexTools swallows identically
+  (`EndwalkerUpgrade.cs:1498-1501`), so the bytes match the golden and its one `HairTransformFailed`
+  diagnostic becomes the pack's only baseline entry — the `"diagnostic"` `DiffKind`'s first live data.
