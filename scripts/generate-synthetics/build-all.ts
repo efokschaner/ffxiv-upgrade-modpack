@@ -14,6 +14,7 @@ import "./build-synthetic-absent-file-upgraded";
 import "./build-synthetic-selection-type";
 import "./build-synthetic-selection-type-absent";
 import "./build-synthetic-unclaimed-hair";
+import "./build-synthetic-hair-transform-failure";
 import "./build-synthetic-eye-mask";
 import "./build-synthetic-highlight";
 import "./build-synthetic-mashup-hair";

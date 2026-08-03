@@ -29,6 +29,82 @@ describe("ratchet idOf / compareToBaseline", () => {
     ];
     expect(compareToBaseline(actual, baseline).ok).toBe(false);
   });
+
+  it("distinguishes two diagnostics on the same file by code", () => {
+    const a: FileDiff = {
+      kind: "diagnostic",
+      gamePath: "x.tex",
+      index: 0,
+      status: "added",
+      code: "hair-transform-failed",
+    };
+    const b: FileDiff = {
+      kind: "diagnostic",
+      gamePath: "x.tex",
+      index: 0,
+      status: "added",
+      code: "unported-gap",
+    };
+    // b must NOT be allowed by a baseline containing only a — otherwise a regression to a different
+    // failure on the same file passes silently.
+    expect(compareToBaseline([b], [a]).ok).toBe(false);
+    expect(compareToBaseline([a], [a]).ok).toBe(true);
+  });
+
+  it("is UNAFFECTED for non-diagnostic kinds by a stray `code` field — old baselines keep matching", () => {
+    // `code` is only supposed to participate in identity for kind: "diagnostic". A "payload" entry
+    // carrying a `code` field (which should never happen in practice, but the type allows it since
+    // `code` is optional on the shared FileDiff) must key EXACTLY as it did before this field
+    // existed — otherwise every one of the ~85 existing payload/manifest/structure/roundtrip/
+    // transform baseline entries could silently stop matching their recorded baseline.
+    const baseline: FileDiff[] = [
+      { kind: "payload", gamePath: "a.tex", index: 0, status: "mismatch" },
+    ];
+    const actualNoCode: FileDiff[] = [
+      { kind: "payload", gamePath: "a.tex", index: 0, status: "mismatch" },
+    ];
+    const actualWithStrayCode: FileDiff[] = [
+      {
+        kind: "payload",
+        gamePath: "a.tex",
+        index: 0,
+        status: "mismatch",
+        code: "some-code",
+      },
+    ];
+    expect(compareToBaseline(actualNoCode, baseline).ok).toBe(true);
+    expect(compareToBaseline(actualWithStrayCode, baseline).ok).toBe(true);
+  });
+});
+
+describe("diagnostic FileDiff round-trips through the baseline store", () => {
+  it("saveBaseline -> loadBaseline -> compareToBaseline preserves a diagnostic entry intact", () => {
+    const dir = mkdtempSync(join(tmpdir(), "baseline-"));
+    try {
+      const diagnostic: FileDiff[] = [
+        {
+          kind: "diagnostic",
+          gamePath: "chara/hair/x.tex",
+          index: 0,
+          status: "added",
+          code: "hair-transform-failed",
+          detail: "MergePixelData failed: shape mismatch",
+        },
+      ];
+      saveBaseline("k", diagnostic, dir);
+      const loaded = loadBaseline("k", dir);
+      expect(loaded).toEqual(diagnostic);
+      // Round-tripped entry still confirms itself, and still rejects a same-file diagnostic with a
+      // different code (the identity-carrying field survived serialization).
+      expect(compareToBaseline(diagnostic, loaded ?? []).ok).toBe(true);
+      const differentCode: FileDiff[] = [
+        { ...diagnostic[0]!, code: "unported-gap" },
+      ];
+      expect(compareToBaseline(differentCode, loaded ?? []).ok).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("saveBaseline: an empty diff set removes the file", () => {

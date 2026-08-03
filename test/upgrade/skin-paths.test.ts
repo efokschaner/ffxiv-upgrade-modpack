@@ -122,8 +122,10 @@ function packWith(gamePath: string, data: Uint8Array): ModpackData {
 describe("upgradeModpack partials (skin repath e2e)", () => {
   it("aliases a skin diffuse texture during the partials round", () => {
     const bytes = new Uint8Array([4, 2]);
-    const out = upgradeModpack(packWith(OLD, bytes));
-    const files = out.groups[0]!.options[0]!.files;
+    const r = upgradeModpack(packWith(OLD, bytes));
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("unreachable");
+    const files = r.data.groups[0]!.options[0]!.files;
     expect(files.has(NEW)).toBe(true);
   });
 });

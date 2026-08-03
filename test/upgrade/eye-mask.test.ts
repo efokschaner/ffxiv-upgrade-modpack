@@ -16,6 +16,17 @@ import { upgradeModpack } from "../../src/upgrade/upgrade";
 import { UnportedGapError } from "../../src/util/errors";
 import { buildMinimalTex } from "../tex/make-tex";
 
+/** Narrows an `UpgradeResult`, throwing a clear failure message if the upgrade did not succeed. */
+function upgradedOk(input: Parameters<typeof upgradeModpack>[0]) {
+  const r = upgradeModpack(input);
+  if (!r.ok) {
+    throw new Error(
+      `expected a successful upgrade, got: ${r.diagnostics.map((d) => `${d.code}: ${d.message}`).join("; ")}`,
+    );
+  }
+  return r.data;
+}
+
 function opt(files: Record<string, Uint8Array>): ModpackOption {
   return {
     name: "o",
@@ -172,7 +183,7 @@ const realMask = `chara/human/c${rc[1]}/obj/face/f${rc[2]}/texture/--c${rc[1]}f$
 
 describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () => {
   it("writes a converted diffuse for an unclaimed iri_s.tex whose iris material exists", () => {
-    const out = upgradeModpack(pack({ [realMask]: buildMinimalTex() }));
+    const out = upgradedOk(pack({ [realMask]: buildMinimalTex() }));
     const diffuse = EYE_MATERIALS.get(
       `chara/human/c${rc[1]}/obj/face/f${rc[2]}/material/mt_c${rc[1]}f${rc[2]}_iri_a.mtrl`,
     )!.diffusePath!;
@@ -184,8 +195,7 @@ describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () =
 
   it("does not throw when the iris material is absent (bogus face f9999)", () => {
     const absent = `chara/human/c${rc[1]}/obj/face/f9999/texture/--c${rc[1]}f9999_iri_s.tex`;
-    expect(() =>
-      upgradeModpack(pack({ [absent]: buildMinimalTex() })),
-    ).not.toThrow();
+    const r = upgradeModpack(pack({ [absent]: buildMinimalTex() }));
+    expect(r.ok).toBe(true);
   });
 });

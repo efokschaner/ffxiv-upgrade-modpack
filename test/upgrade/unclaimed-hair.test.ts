@@ -5,7 +5,9 @@
 import { describe, expect, it } from "vitest";
 import {
   FileStorageType,
+  type ModpackData,
   type ModpackFile,
+  ModpackFormat,
   type ModpackOption,
 } from "../../src/model/modpack";
 import { parseMtrl, serializeMtrl } from "../../src/mtrl/mtrl";
@@ -19,12 +21,18 @@ import {
   updateUnclaimedHairAccessory,
   updateUnclaimedHairTextures,
 } from "../../src/upgrade/unclaimed-hair";
-import { computeUnusedTextures, resolveFile } from "../../src/upgrade/upgrade";
+import {
+  computeUnusedTextures,
+  resolveFile,
+  upgradeModpack,
+} from "../../src/upgrade/upgrade";
 import {
   EUpgradeTextureUsage,
   type UpgradeInfo,
 } from "../../src/upgrade/upgrade-info";
+import { type Diagnostic, DiagnosticCode } from "../../src/util/diagnostic";
 import { UnportedGapError } from "../../src/util/errors";
+import { filesMap } from "../helpers/make-packs";
 import { buildMinimalMtrl } from "../mtrl/make-mtrl";
 import { buildMinimalTex, buildMinimalTexSized } from "../tex/make-tex";
 
@@ -89,7 +97,12 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     const sOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table);
+    // Happy path: the raw copies alone (written before the try, unclaimed-hair.ts:198-199) would
+    // also make the two `files.has` assertions below pass even if the transform were silently
+    // swallowed -- asserting the collector stayed empty proves the transform actually ran.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, diagnostics);
+    expect(diagnostics).toEqual([]);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
   });
@@ -104,7 +117,7 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       [sOld]: buildMinimalTex(),
       [HAIR_MAT]: buildMinimalTex(),
     });
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table);
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, []);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(false);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(false);
   });
@@ -113,7 +126,7 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     const nOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
     const o = opt({ [nOld]: buildMinimalTex() });
-    updateUnclaimedHairTextures(o, new Set([nOld]), table);
+    updateUnclaimedHairTextures(o, new Set([nOld]), table, []);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(false);
   });
 
@@ -134,7 +147,15 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       [nOldDx11]: buildMinimalTexSized(2, 2),
       [sOld]: buildMinimalTexSized(2, 2),
     });
-    updateUnclaimedHairTextures(o, new Set([nOldPlain, nOldDx11, sOld]), table);
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(
+      o,
+      new Set([nOldPlain, nOldDx11, sOld]),
+      table,
+      diagnostics,
+    );
+    // Happy path -- see the "copies a loose normal+mask" test above for why this matters.
+    expect(diagnostics).toEqual([]);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
     const normFile = o.files.get(HAIR_NORM_DEST)!;
@@ -149,7 +170,7 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
     // Both files exist in the option, but `contained` (the pass-3 unused-texture set) is empty.
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
-    updateUnclaimedHairTextures(o, new Set(), table);
+    updateUnclaimedHairTextures(o, new Set(), table, []);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(false);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(false);
   });
@@ -164,7 +185,7 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     // genuinely does not exist in-game and fileExists() (chara-index.ts, an independent table from
     // hair-materials.ts) is false for it -> the game-index gate continues before the (irrelevant,
     // empty) table is ever consulted.
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map());
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map(), []);
     const destNorm =
       "chara/human/c0102/obj/hair/h0002/texture/--c0102h0002_hir_norm.tex";
     expect(o.files.has(destNorm)).toBe(false);
@@ -180,10 +201,10 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
     expect(() =>
-      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map()),
+      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map(), []),
     ).toThrow(UnportedGapError);
     expect(() =>
-      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map()),
+      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), new Map(), []),
     ).toThrow(/hair-materials table is missing/);
   });
 
@@ -218,7 +239,7 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       ],
     ]);
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t);
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t, []);
     expect(o.files.has(norm)).toBe(false);
   });
 
@@ -232,7 +253,7 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       [sOld]: buildMinimalTex(),
       [HAIR_NORM_DEST]: buildMinimalTex(), // already converted
     });
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table);
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, []);
     // The mask destination must NOT have been written either -- the whole (race,id) is skipped.
     expect(o.files.has(HAIR_MASK_DEST)).toBe(false);
   });
@@ -254,12 +275,22 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     const maskBytes = buildMinimalTexSized(2, 2);
     const o = opt({ [nOld]: normBytes, [sOld]: maskBytes });
 
+    const diagnostics: Diagnostic[] = [];
     expect(() =>
-      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table),
+      updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, diagnostics),
     ).not.toThrow();
 
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
+    // The swallow is now reported (spec §4.4): ok:true-shaped, not fatal -- TexTools swallows
+    // here too, so the raw pre-transform copies asserted below stay in place either way.
+    expect(diagnostics).toHaveLength(1);
+    expect(diagnostics[0]!.severity).toBe("error");
+    expect(diagnostics[0]!.code).toBe(DiagnosticCode.HairTransformFailed);
+    expect(diagnostics[0]!.gamePath).toBe(HAIR_NORM_DEST);
+    expect(diagnostics[0]!.provenance).toContain("EndwalkerUpgrade.cs");
+    // message is the raw, unwrapped originating error -- never prefixed (spec §3).
+    expect(diagnostics[0]!.message).not.toMatch(/^upgrade:/);
     // Bytes at the destinations equal the raw source bytes verbatim -- untransformed.
     expect(o.files.get(HAIR_NORM_DEST)!.data).toEqual(normBytes);
     expect(o.files.get(HAIR_MASK_DEST)!.data).toEqual(maskBytes);
@@ -305,7 +336,15 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       "chara/human/c0701/obj/tail/t0001/texture/c0701t0001_etc_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), tailTable);
+    // Happy path -- see "copies a loose normal+mask" (top of file) for why this matters.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(
+      o,
+      new Set([nOld, sOld]),
+      tailTable,
+      diagnostics,
+    );
+    expect(diagnostics).toEqual([]);
 
     const written = o.files.get(TAIL_MAT);
     expect(written).toBeDefined();
@@ -347,7 +386,11 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       "chara/human/c0804/obj/tail/t0001/texture/c0804t0001_etc_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t);
+    // Happy path (the texture rescue itself succeeds here, even though the material rewrite is
+    // deliberately skipped) -- see "copies a loose normal+mask" (top of file) for why this matters.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t, diagnostics);
+    expect(diagnostics).toEqual([]);
 
     // Textures are still rescued...
     expect(o.files.has(normDest)).toBe(true);
@@ -363,7 +406,10 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table);
+    // Happy path -- see "copies a loose normal+mask" (top of file) for why this matters.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, diagnostics);
+    expect(diagnostics).toEqual([]);
 
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
@@ -614,5 +660,102 @@ describe("updateUnclaimedHairAccessory", () => {
     // so a size mismatch that would throw in the hair pixel transform is a non-issue here.
     expect(o.files.get(ACC_NORM_DEST)!.data).toEqual(normBytes);
     expect(o.files.get(ACC_DIFF_DEST)!.data).toEqual(diffBytes);
+  });
+});
+
+// e2e through the REAL production seam, `upgradeModpack` (src/upgrade/upgrade.ts), proving the
+// spec §4's archetype `ok: true` + severity "error" diagnostic end to end: the swallow at
+// EndwalkerUpgrade.cs:1498-1501 is non-fatal (TexTools skips too, so the pack still upgrades and
+// the bytes still match the golden), and reporting it must not perturb the transform. Contrast with
+// test/upgrade/unclaimed-hair-port-gap.test.ts, which drives the SAME catch with a mocked
+// UnportedGapError to pin the other branch: `ok: false`, no diagnostic-only downgrade.
+describe("reports a swallowed hair-transform failure (e2e through upgradeModpack)", () => {
+  // c0101h0001: a real DT hair (fileExists true, HAIR_MATERIALS has a hair.shpk entry -- see
+  // src/upgrade/reference/hair-materials.ts), whose real normalDx11Path is asserted below rather
+  // than assumed.
+  const NORM_OLD =
+    "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
+  const SPEC_OLD =
+    "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
+  const NORM_DEST =
+    "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_norm.tex";
+
+  function buildHairRescuePack(
+    normBytes: Uint8Array,
+    specBytes: Uint8Array,
+  ): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Ttmp2,
+      isSimple: false,
+      meta: {
+        name: "M",
+        author: "A",
+        version: "1",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      groups: [
+        {
+          name: "G",
+          description: "",
+          image: "",
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [
+            {
+              name: "O",
+              description: "",
+              image: "",
+              priority: 0,
+              selected: false,
+              fileSwaps: {},
+              manipulations: [],
+              files: filesMap([
+                [
+                  NORM_OLD,
+                  { data: normBytes, storage: FileStorageType.RawUncompressed },
+                ],
+                [
+                  SPEC_OLD,
+                  { data: specBytes, storage: FileStorageType.RawUncompressed },
+                ],
+              ]),
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("reports the swallowed failure instead of silently leaving raw copies unremarked", () => {
+    // Same truncated-mip-data recipe as "leaves the raw copies untransformed..." above -- a
+    // genuine parse failure inside updateEndwalkerHairTextures, no mocking.
+    const truncatedHeader = buildCanonicalTexHeader(A8R8G8B8, 2, 2, 1);
+    const normBytes = new Uint8Array(80 + 4);
+    normBytes.set(truncatedHeader, 0);
+    const specBytes = buildMinimalTexSized(2, 2);
+
+    const r = upgradeModpack(buildHairRescuePack(normBytes, specBytes));
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("unreachable");
+    const d = r.diagnostics.find(
+      (x) => x.code === DiagnosticCode.HairTransformFailed,
+    );
+    expect(d).toBeDefined();
+    expect(d?.severity).toBe("error");
+    expect(d?.gamePath).toBe(NORM_DEST);
+    expect(d?.provenance).toContain("EndwalkerUpgrade.cs");
+    // The raw pre-transform copy written at unclaimed-hair.ts before the try is still in place,
+    // untransformed -- reporting must not change the transform.
+    expect(r.data.groups[0]!.options[0]!.files.has(NORM_DEST)).toBe(true);
+    expect(r.data.groups[0]!.options[0]!.files.get(NORM_DEST)!.data).toEqual(
+      normBytes,
+    );
   });
 });

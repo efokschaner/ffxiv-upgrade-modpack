@@ -175,6 +175,7 @@ describe("load-fix + collapse ordering (WizardData.FromWizardGroup, WizardData.c
     const decoded = decodeSqPackFile(files.get(path)!.data!);
     expect(parseMdl(decoded.data, path).header.version).toBe(6);
     // The corrupt later copy was DROPPED at load, so the whole pipeline no longer throws.
-    expect(() => upgradeModpack(data)).not.toThrow();
+    const r = upgradeModpack(data);
+    expect(r.ok).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { upgradeModpack } from "../../src/index";
+import { DiagnosticCode, upgradeModpack } from "../../src/index";
 import {
   FileStorageType,
   type ModpackData,
@@ -26,6 +26,18 @@ import { UnportedGapError } from "../../src/util/errors";
 import { firstCorpusModel } from "../helpers/corpus-models";
 import { filesMap } from "../helpers/make-packs";
 import { buildEmptySamplerColorsetMtrl } from "../mtrl/make-mtrl";
+
+/** Narrows an `UpgradeResult`, throwing a clear failure message if the upgrade did not succeed.
+ * Not for the boundary/propagation tests below, which assert the outcome rather than consume it. */
+function upgradedOk(input: ModpackData): ModpackData {
+  const r = upgradeModpack(input);
+  if (!r.ok) {
+    throw new Error(
+      `expected a successful upgrade, got: ${r.diagnostics.map((d) => `${d.code}: ${d.message}`).join("; ")}`,
+    );
+  }
+  return r.data;
+}
 
 function sampleData(): ModpackData {
   return {
@@ -217,7 +229,7 @@ describe("upgradeModpack (material round passthrough)", () => {
       FileStorageType.RawUncompressed,
     );
 
-    const out = upgradeModpack(input);
+    const out = upgradedOk(input);
     const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
@@ -231,7 +243,7 @@ describe("upgradeModpack (material round passthrough)", () => {
       FileStorageType.RawUncompressed,
     );
 
-    const out = upgradeModpack(input);
+    const out = upgradedOk(input);
     const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual([1, 2, 3, 4, 5]);
@@ -245,7 +257,7 @@ describe("upgradeModpack (material round passthrough)", () => {
       FileStorageType.RawUncompressed,
     );
 
-    const out = upgradeModpack(input);
+    const out = upgradedOk(input);
     const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
@@ -262,7 +274,7 @@ describe("upgradeModpack (material round)", () => {
       FileStorageType.SqPackCompressed,
     );
 
-    const out = upgradeModpack(input);
+    const out = upgradedOk(input);
     const [outGamePath, outFile] = [...out.groups[0]!.options[0]!.files][0]!;
 
     expect(outFile.storage).toBe(FileStorageType.SqPackCompressed);
@@ -334,13 +346,25 @@ describe("upgradeModpack (material round) - unported gap propagation", () => {
       FileStorageType.RawUncompressed,
     );
 
-    let thrown: unknown;
-    try {
-      upgradeModpack(input);
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(UnportedGapError);
+    // The boundary catches every throw (spec §4.1), so propagation is no longer visible as a raised
+    // exception here: it shows up as a fatal `ok: false` whose diagnostic wraps the SAME
+    // UnportedGapError as `cause`, rather than `ok: true` with the file left byte-untouched (which
+    // is what a silent swallow by materialRound's per-material catch would produce instead).
+    const r = upgradeModpack(input);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("unreachable");
+    expect(r.diagnostics).toHaveLength(1);
+    const d = r.diagnostics[0]!;
+    expect(d.code).toBe(DiagnosticCode.UnportedGap);
+    // A DIRECT instanceof, not a cause-chain walk — that is exactly why spec §4.3 annotates the
+    // error in place instead of wrapping it at each frame.
+    expect(d.cause).toBeInstanceOf(UnportedGapError);
+    // Motivation 3: the fatal report now names WHICH material aborted the pack, and which
+    // group/option it lived in — which the bare propagating throw never did even though
+    // materialRound's and upgradeModpack's own frames knew them. modpackWithSingleFile
+    // (:124-166) names its lone group "G" and its lone option "O".
+    expect(d.gamePath).toBe(mtrlPath);
+    expect(d.option).toEqual({ group: "G", option: "O" });
   });
 
   // Amendment to fix round 1: the SAME UnportedGapError category also covers serializeMtrl's
@@ -348,26 +372,31 @@ describe("upgradeModpack (material round) - unported gap propagation", () => {
   // reached from the SAME materialRound catch (upgrade.ts:182 calls serializeMtrl inside the try),
   // so today it was silently swallowed and the material left byte-untouched. Must propagate too.
   it("propagates UnportedGapError rather than leaving the file byte-untouched, when the upgraded material still carries an empty-sampler placeholder (serializeMtrl's gap)", () => {
+    const mtrlPath = "chara/foo/material/mt_foo.mtrl";
     const input = modpackWithSingleFile(
-      "chara/foo/material/mt_foo.mtrl",
+      mtrlPath,
       buildEmptySamplerColorsetMtrl(),
       FileStorageType.RawUncompressed,
     );
 
-    let thrown: unknown;
-    try {
-      upgradeModpack(input);
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(UnportedGapError);
+    const r = upgradeModpack(input);
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("unreachable");
+    expect(r.diagnostics).toHaveLength(1);
+    const d = r.diagnostics[0]!;
+    expect(d.code).toBe(DiagnosticCode.UnportedGap);
+    expect(d.cause).toBeInstanceOf(UnportedGapError);
+    // Same annotation proof as the gate-B case above, for the OTHER materialRound throw site
+    // (serializeMtrl, reached via the `restore` call rather than gate B's fileExists).
+    expect(d.gamePath).toBe(mtrlPath);
+    expect(d.option).toEqual({ group: "G", option: "O" });
   });
 });
 
 describe("upgradeModpack (skeleton)", () => {
   it("returns content-equal data", () => {
     const input = sampleData();
-    const out = upgradeModpack(input);
+    const out = upgradedOk(input);
     expect(out.meta.name).toBe("M");
     const outFile = out.groups[0]!.options[0]!.files.get("a/b.mtrl")!;
     expect(Array.from(outFile.data!)).toEqual([1, 2, 3]);
@@ -375,7 +404,7 @@ describe("upgradeModpack (skeleton)", () => {
 
   it("does not mutate the input when the output is edited (fresh containers)", () => {
     const input = sampleData();
-    const out = upgradeModpack(input);
+    const out = upgradedOk(input);
     expect(out).not.toBe(input);
     expect(out.groups).not.toBe(input.groups);
     expect(out.groups[0]!.options[0]!.files).not.toBe(
@@ -491,7 +520,7 @@ describe("upgradeModpack texture round (e2e)", () => {
       "chara/x/tex/foo_n.tex",
       encodeUncompressedTex(rgba, w, h, { mips: false }),
     );
-    const out = upgradeModpack(data);
+    const out = upgradedOk(data);
     const files = out.groups[0]!.options[0]!.files;
     const idx = files.get("chara/x/tex/foo_id.tex");
     expect(idx).toBeDefined();
@@ -537,5 +566,30 @@ describe("restore threads the source SqPack type", () => {
     const re = decodeSqPackFile(restore(f, dec.bytes, dec.type).data);
     expect(re.type).toBe(SqPackType.Model);
     expect(Array.from(re.data)).toEqual(Array.from(bytes));
+  });
+});
+
+describe("upgradeModpack (boundary)", () => {
+  it("returns ok:true and the upgraded data on success", () => {
+    const r = upgradeModpack(sampleData());
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("unreachable");
+    expect(r.data).toBeDefined();
+    expect(r.diagnostics).toEqual([]);
+  });
+
+  it("converts an escaping throw into ok:false with a null data pack, never re-throwing", () => {
+    // meta-drop's `parseMetaRoot` guard is a fail-loud throw with no C# analogue; it is the
+    // cheapest way to reach the boundary from a constructed input.
+    const input = modpackWithSingleFile(
+      "chara/nonsense/root.meta",
+      new Uint8Array([0, 0, 0, 0]),
+      FileStorageType.RawUncompressed,
+    );
+    const r = upgradeModpack(input);
+    expect(r.ok).toBe(false);
+    expect(r.data).toBeNull();
+    expect(r.diagnostics).toHaveLength(1);
+    expect(r.diagnostics[0]!.severity).toBe("error");
   });
 });

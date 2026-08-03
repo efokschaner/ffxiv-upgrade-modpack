@@ -174,18 +174,25 @@ describe("metadataRound: reconstruction of manipulation-bearing .meta files", ()
     // This only fires now for a meta that reached the transform at all -- a segment-less housing meta
     // never gets this far in the real pipeline, having been dropped at load.
     const path = "bgcommon/hou/indoor/general/0613/i0613.meta";
-    expect(() =>
-      upgradeModpack(
-        packWithFiles([[path, metaBytes(path, { imc: [new Uint8Array(6)] })]]),
-      ),
-    ).toThrow(/unrecognized root path/);
+    const r = upgradeModpack(
+      packWithFiles([[path, metaBytes(path, { imc: [new Uint8Array(6)] })]]),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) throw new Error("unreachable");
+    // .at(-1): the fatal diagnostic is always LAST (test/helpers/corpus-upgrade.ts:52-53's
+    // [...diagnostics, toDiagnostic(err)] boundary shape, design spec §4) -- [0] happens to agree
+    // here only because this pack emits no non-fatal diagnostics.
+    expect(r.diagnostics.at(-1)!.message).toMatch(/unrecognized root path/);
   });
 
   it("reconstructs a present-but-empty EQDP meta, backfilling it to 18 races", () => {
     const path = "chara/equipment/e0208/e0208_met.meta";
-    const out = upgradeModpack(
+    const r = upgradeModpack(
       packWithFiles([[path, metaBytes(path, { eqdp: new Map() })]]),
     );
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error("unreachable");
+    const out = r.data;
     expect([...outFiles(out).keys()]).toEqual([path]);
     const decoded = decodeSqPackFile(outFiles(out).get(path)!.data!);
     const reconstructed = deserializeMeta(decoded.data);

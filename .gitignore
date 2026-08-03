@@ -10,6 +10,9 @@ dist/
 coverage/
 *.log
 
+# Test verification scratch (e.g. npm test output captures)
+*_output.txt
+
 # OS
 Thumbs.db
 .DS_Store

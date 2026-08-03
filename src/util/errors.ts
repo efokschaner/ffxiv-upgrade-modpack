@@ -1,3 +1,5 @@
+import type { GapContextFrame } from "./diagnostic";
+
 /**
  * Signals that OUR PORT has not (yet) reproduced some C# behaviour or data — a gap in the port
  * itself, as distinct from a failure the C# oracle can also produce (a malformed input, a
@@ -20,4 +22,11 @@
  * boundary this codebase otherwise keeps one-directional (mtrl/tex/mdl are lower-level than
  * upgrade, which orchestrates them).
  */
-export class UnportedGapError extends Error {}
+export class UnportedGapError extends Error {
+  /** Context frames pushed by ported catches as this error unwinds (spec §4.3). The catches that
+   * already re-throw this type push a frame FIRST and re-throw the SAME instance, so the boundary
+   * can name the sampler, the material and the option without any signature changing and without
+   * wrapping (which would nest `cause` and risk mangling `message`). Pushing before `throw err` does
+   * not weaken the re-throw contract — the statement is still `throw err`, merely better labelled. */
+  readonly context: GapContextFrame[] = [];
+}
