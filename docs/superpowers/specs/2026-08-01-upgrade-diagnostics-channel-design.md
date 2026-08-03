@@ -480,6 +480,38 @@ pins the never-zero byte fill in the builder: PMP load runs every `.tex` through
 — see `docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md` — so a NUL-tailed payload would be a length
 divergence with nothing to do with what this pack is for.)
 
+### 7.2 A confirmed diagnostic is consumed, not ratcheted (update, 2026-08-02)
+
+§7.1's pin makes the diagnostic a **committed, exact** expectation, which is strictly stronger than a
+baseline entry — so it should *replace* the baseline entry, not sit alongside one.
+`assertExpectedDiagnostics` therefore **returns** the `"diagnostic"` entries it confirmed, and
+`registerUpgradeCheck` **subtracts them** from the array it hands to `compareToBaseline` /
+`saveBaseline`. This is the *confirm, don't merely tolerate* shape `DIVERGENCE_RULES`
+(`test/helpers/upgrade-compare.ts`) already uses for payload bytes: a difference a rule has positively
+identified is consumed by that rule; everything else goes to the ratchet.
+
+The alternative — leave it in and bless it — was rejected on two grounds. `hair-transform-failure.pmp`'s
+only diff *is* its diagnostic, so it would need a **permanent, non-burn-down-able** baseline entry, and
+AGENTS.md is explicit that a divergence recorded only in a gitignored ratchet baseline is not
+documented. The practical cost is worse: nothing removes the entry before the ratchet, so on any machine
+that has not blessed, a fresh `npm run synthetics` goes red with
+`upgrade regressions in hair-transform-failure.pmp: chara/…/c0101h0001_hir_norm.tex#0:added` — naming no
+cause and giving no instruction. With the entry consumed, **the pack needs no baseline file at all**.
+
+What the change deliberately preserves — each is load-bearing, do not relax one to simplify the others:
+
+- The exact-match assertion still runs against the **assembled `diff.files`**, *before* any filtering.
+  Deleting `...diagnostics` from `registerUpgradeCheck`'s spread is still a red test; that is §7.1's
+  entire point and the filtering must not weaken it.
+- It still runs **before** the `if (BLESS)` early return, so a bless cannot launder a wrong diagnostic
+  set into a baseline.
+- A diagnostic on an **unlisted** pack is confirmed by nothing (`assertExpectedDiagnostics` returns
+  `[]`), so nothing is subtracted and it still reaches the ratchet as a regression. §7's day-one
+  behaviour is unchanged for every pack except the one carrying a committed expectation.
+- An **extra** diagnostic on a listed pack fails the exact match, before filtering is reached at all.
+- Subtraction is by **object identity** on the `FileDiff`s `diff.files` was assembled from, not by a
+  re-derived key — so it cannot accidentally swallow a byte diff that happens to share a `gamePath`.
+
 ## 8. Follow-ons
 
 - **Mutation testing** as the general instrument for latent divergence (§2). Separate backlog item.

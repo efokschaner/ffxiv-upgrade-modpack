@@ -167,7 +167,9 @@ function compareDiagnosticIdentity(
 }
 
 /**
- * Packs whose `"diagnostic"` diff set is asserted EXACTLY, on top of being ratcheted.
+ * Packs whose `"diagnostic"` diff set is asserted EXACTLY — and, having been confirmed, is then
+ * CONSUMED rather than ratcheted (see `assertExpectedDiagnostics`' return value and its use in
+ * `registerUpgradeCheck`).
  *
  * WHY THIS EXISTS, and why the ratchet alone is not enough. `compareToBaseline` passes when
  * `actual ⊆ baseline` — a diff that DISAPPEARS is deliberately read as an improvement. That is the
@@ -186,6 +188,15 @@ function compareDiagnosticIdentity(
  * WHAT IT PINS (and what it does not): emitter -> `diagnosticsToFileDiffs` -> `diff.files`. It does
  * NOT pin the last hop, `diff.files` -> `compareToBaseline`/`saveBaseline`; that stays covered by
  * `test/helpers/upgrade-baseline.test.ts` plus the two-line locality at the call site below.
+ *
+ * AND IT REPLACES A BASELINE ENTRY. Once confirmed here, these entries are dropped from what
+ * `registerUpgradeCheck` ratchets — the same "confirm, don't merely tolerate" shape DIVERGENCE_RULES
+ * (upgrade-compare.ts) uses for payload bytes. The alternative (bless the diagnostic into the
+ * gitignored baseline) was rejected: this pack's ONLY diff is its diagnostic, so that entry would be
+ * permanent and un-burn-down-able, AGENTS.md is explicit that a divergence recorded only in a
+ * gitignored baseline is not documented, and any fresh setup that ran `npm run synthetics` without
+ * blessing would go red with a regression naming a gamePath and no cause. Consuming it here means
+ * the pack needs no baseline file at all. See the diagnostics-channel spec §7.2.
  *
  * Keyed by pack file name (lowercased). A pack listed here must be present in the corpus — enforced
  * by test/corpus-guard.test.ts, so deleting the pack cannot silently retire the pin either.
@@ -216,16 +227,24 @@ export const EXPECTED_PACK_DIAGNOSTICS: ReadonlyMap<
 ]);
 
 /** Assert a listed pack's `"diagnostic"` entries in `files` are EXACTLY the expected set (see
- * EXPECTED_PACK_DIAGNOSTICS). Unlisted packs are not constrained here — they stay on the ratchet
- * alone. Exported for unit testing (test/helpers/corpus-upgrade.test.ts). */
+ * EXPECTED_PACK_DIAGNOSTICS), and RETURN those entries as CONFIRMED — the caller drops them from
+ * what it ratchets, so a pack whose only diff is its committed diagnostic needs no baseline file.
+ *
+ * Returns `[]` for an unlisted pack: nothing confirms its diagnostics, so nothing is consumed and
+ * they reach the ratchet as regressions exactly as before. Returning `[]` on the throwing path is
+ * moot — `expect.fail` never returns.
+ *
+ * Note the return is the ORIGINAL FileDiff objects out of `files` (identity, not copies), which is
+ * what lets the caller subtract them by reference without re-deriving an identity. Exported for unit
+ * testing (test/helpers/corpus-upgrade.test.ts). */
 export function assertExpectedDiagnostics(
   name: string,
   files: FileDiff[],
-): void {
+): FileDiff[] {
   const expected = EXPECTED_PACK_DIAGNOSTICS.get(name.toLowerCase());
-  if (expected === undefined) return;
-  const actual = files
-    .filter((f) => f.kind === "diagnostic")
+  if (expected === undefined) return [];
+  const confirmed = files.filter((f) => f.kind === "diagnostic");
+  const actual = confirmed
     .map((f) => ({ code: f.code, gamePath: f.gamePath }))
     .sort(compareDiagnosticIdentity);
   expect(
@@ -234,6 +253,8 @@ export function assertExpectedDiagnostics(
       `emitting site stopped emitting or the diagnostics wiring no longer reaches diff.files — ` +
       `neither of which the subset-based ratchet can see. An EXTRA one is a new swallowed failure.`,
   ).toEqual([...expected].sort(compareDiagnosticIdentity));
+  // Only reached when the assertion held, so every entry here is one the table confirms.
+  return confirmed;
 }
 
 // End-to-end golden check: our upgrade pipeline vs the cached ConsoleTools /upgrade output,
@@ -412,23 +433,44 @@ export function registerUpgradeCheck(pack: string): void {
         ],
       };
       // Runs on BOTH branches (before the bless early-return): blessing must not be able to record
-      // a diagnostic set that differs from the one this pack is committed to produce.
-      assertExpectedDiagnostics(name, diff.files);
+      // a diagnostic set that differs from the one this pack is committed to produce. And it runs
+      // against the ASSEMBLED `diff.files`, BEFORE the filtering below — that is what makes deleting
+      // `...diagnostics` from the spread above a red test rather than a silent downgrade.
+      const confirmedDiagnostics = new Set(
+        assertExpectedDiagnostics(name, diff.files),
+      );
+      // A CONFIRMED diagnostic is consumed by that expectation and never ratcheted — the same shape
+      // DIVERGENCE_RULES (upgrade-compare.ts) gives a confirmed payload divergence. It is a stronger
+      // assertion than a baseline entry (exact match, committed, versus a gitignored subset), so
+      // ratcheting it too would only add a permanent baseline file that no one can burn down and
+      // that fails a fresh, unblessed setup for no legible reason. An UNCONFIRMED diagnostic — any
+      // diagnostic on a pack with no table entry — is untouched here and still reaches the ratchet
+      // as a regression. See the diagnostics-channel spec §7.2.
+      const ratcheted =
+        confirmedDiagnostics.size === 0
+          ? diff.files
+          : diff.files.filter((f) => !confirmedDiagnostics.has(f));
       const key = oracleKey(bytes);
 
       if (BLESS) {
-        saveBaseline(key, diff.files);
+        saveBaseline(key, ratcheted);
         console.log(
-          `[upgrade] blessed ${name}: ${diff.matched} matched, ${diff.files.length} recorded`,
+          `[upgrade] blessed ${name}: ${diff.matched} matched, ${ratcheted.length} recorded` +
+            (confirmedDiagnostics.size > 0
+              ? ` (${confirmedDiagnostics.size} confirmed diagnostic(s) not ratcheted)`
+              : ""),
         );
         return;
       }
 
       const baseline = loadBaseline(key) ?? [];
-      const { ok, regressions } = compareToBaseline(diff.files, baseline);
+      const { ok, regressions } = compareToBaseline(ratcheted, baseline);
       console.log(
-        `[upgrade] ${name}: ${diff.matched} matched, ${diff.files.length} diffs, ` +
-          `${regressions.length} regressions (baseline ${baseline.length})`,
+        `[upgrade] ${name}: ${diff.matched} matched, ${ratcheted.length} diffs, ` +
+          `${regressions.length} regressions (baseline ${baseline.length})` +
+          (confirmedDiagnostics.size > 0
+            ? `, ${confirmedDiagnostics.size} confirmed diagnostic(s)`
+            : ""),
       );
       if (!ok) {
         expect.fail(

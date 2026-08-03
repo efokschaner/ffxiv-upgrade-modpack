@@ -222,4 +222,37 @@ describe("assertExpectedDiagnostics", () => {
       assertExpectedDiagnostics(PACK, filesWith(withOtherDetail)),
     ).not.toThrow();
   });
+
+  // The RETURN value is what registerUpgradeCheck subtracts from the set it ratchets, so a pack
+  // whose only diff is its committed diagnostic needs no baseline file (spec §7.2). These pin the
+  // two halves of that contract.
+  describe("returns the CONFIRMED entries, for the caller to consume", () => {
+    it("returns exactly the diagnostic FileDiffs (by identity), not the byte diffs", () => {
+      const diagnostics = expected!.map(asDiff);
+      const files = filesWith(diagnostics);
+      const confirmed = assertExpectedDiagnostics(PACK, files);
+      // Identity, not deep equality: the caller subtracts by reference (`Set.has`), so returning
+      // copies would silently subtract nothing and quietly re-introduce the baseline entry.
+      expect(confirmed).toHaveLength(diagnostics.length);
+      for (const d of diagnostics) expect(confirmed).toContain(d);
+      // Reproduce the call site's subtraction and assert what the ratchet would actually see.
+      const set = new Set(confirmed);
+      const ratcheted = files.filter((f) => !set.has(f));
+      expect(ratcheted.every((f) => f.kind !== "diagnostic")).toBe(true);
+      expect(ratcheted).toHaveLength(files.length - diagnostics.length);
+    });
+
+    it("returns NOTHING for an unlisted pack, so its diagnostics still reach the ratchet", () => {
+      const stray = asDiff({
+        code: DiagnosticCode.HairTransformFailed,
+        gamePath: "chara/human/c9999/obj/hair/h0001/texture/x_norm.tex",
+      });
+      const files = filesWith([stray]);
+      const confirmed = assertExpectedDiagnostics("some-real-mod.pmp", files);
+      expect(confirmed).toEqual([]);
+      // Nothing subtracted => the unconfirmed diagnostic is still scored as a regression.
+      const set = new Set(confirmed);
+      expect(files.filter((f) => !set.has(f))).toContain(stray);
+    });
+  });
 });
