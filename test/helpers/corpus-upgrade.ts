@@ -150,6 +150,22 @@ interface ExpectedDiagnostic {
   gamePath: string;
 }
 
+/** Total order on a diagnostic's `(gamePath, code)` identity — the two fields `idOf`
+ * (upgrade-baseline.ts) keys on for this kind. Hoisted so BOTH sides of
+ * `assertExpectedDiagnostics`' comparison sort by it. Sorting only `actual` would be correct today
+ * (one entry), but the EXPECTED table is hand-authored: a second entry written out of order would
+ * fail the `toEqual` and the message would blame the emitter for what is really a table-ordering
+ * artifact. */
+function compareDiagnosticIdentity(
+  a: { gamePath: string; code?: string },
+  b: { gamePath: string; code?: string },
+): number {
+  return (
+    compareOrdinal(a.gamePath, b.gamePath) ||
+    compareOrdinal(a.code ?? "", b.code ?? "")
+  );
+}
+
 /**
  * Packs whose `"diagnostic"` diff set is asserted EXACTLY, on top of being ratcheted.
  *
@@ -211,17 +227,13 @@ export function assertExpectedDiagnostics(
   const actual = files
     .filter((f) => f.kind === "diagnostic")
     .map((f) => ({ code: f.code, gamePath: f.gamePath }))
-    .sort(
-      (a, b) =>
-        compareOrdinal(a.gamePath, b.gamePath) ||
-        compareOrdinal(a.code ?? "", b.code ?? ""),
-    );
+    .sort(compareDiagnosticIdentity);
   expect(
     actual,
     `${name}: the pack's "diagnostic" diffs must match EXACTLY. A MISSING one means either the ` +
       `emitting site stopped emitting or the diagnostics wiring no longer reaches diff.files — ` +
       `neither of which the subset-based ratchet can see. An EXTRA one is a new swallowed failure.`,
-  ).toEqual([...expected]);
+  ).toEqual([...expected].sort(compareDiagnosticIdentity));
 }
 
 // End-to-end golden check: our upgrade pipeline vs the cached ConsoleTools /upgrade output,
@@ -256,6 +268,17 @@ export function registerUpgradeCheck(pack: string): void {
         assertMatchedUpgradeFailure(name, golden.message, () =>
           upgradeModpack(loadModpack(name, bytes)),
         );
+        // This branch returns BEFORE `assertExpectedDiagnostics` runs, so a pack with a committed
+        // expectation landing here would silently stop being pinned — and nothing else would notice:
+        // corpus-guard.test.ts only checks the pack is PRESENT, and it is; it is just no longer
+        // exercised. Reachable without anyone touching this file (a future ConsoleTools that refuses
+        // the pack, or a stale/spurious `.error` marker left in the cache), so say so loudly.
+        if (EXPECTED_PACK_DIAGNOSTICS.has(name.toLowerCase())) {
+          expect.fail(
+            `${name}: carries an exact diagnostic expectation but the ORACLE errored on it, so the ` +
+              `pin never runs. Delete its .upgrade-cache .error marker and re-run, or retire the entry.`,
+          );
+        }
         return;
       }
       // ONE load of the source, reused three ways below (upgrade input, no-op reference, and the
