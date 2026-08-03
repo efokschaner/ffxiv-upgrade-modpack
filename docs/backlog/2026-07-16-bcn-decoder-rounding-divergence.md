@@ -1,6 +1,6 @@
 # Deepen / re-evaluate the known ±1 BCn decoder divergence vs TexTools
 
-Filed: 2026-07-16 · Status: open · Priority: unprioritized · Surfaced while sourcing the bundled
+Filed: 2026-07-16 · Status: open · Surfaced while sourcing the bundled
 base eye textures for the eye-mask pixel pipeline
 (`docs/superpowers/specs/2026-07-16-eye-mask-pixel-pipeline-design.md` §5.6).
 

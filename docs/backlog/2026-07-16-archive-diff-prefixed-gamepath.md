@@ -1,6 +1,6 @@
 # `diffArchives`' payload-member `confirmDivergence` call passes a prefixed name, not the bare gamePath
 
-Filed: 2026-07-16 · Status: open · Priority: unprioritized (document/guard, not fix)
+Filed: 2026-07-16 · Status: open · Document/guard, not fix
 
 `diffPayloadMembers` (`test/helpers/upgrade-archive-diff.ts`), when comparing PMP zip payload
 members whose bytes differ, calls `confirmDivergence(gs[i], oBytes, gBytes)` — but `gs[i]` there is

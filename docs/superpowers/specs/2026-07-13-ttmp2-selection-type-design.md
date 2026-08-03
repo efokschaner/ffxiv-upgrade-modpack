@@ -2,7 +2,7 @@
 
 Date: 2026-07-13 · Status: implemented on branch `fix/ttmp2-selection-type` (PR #23, not yet merged)
 
-Fixes what was the top prioritized backlog item (`docs/backlog/2026-07-13-ttmp2-selection-type-spelling.md`, deleted when it shipped)
+Fixes the TTMP2 selection-type spelling backlog item (`docs/backlog/2026-07-13-ttmp2-selection-type-spelling.md`, deleted when it shipped)
 — **whose prescribed fix was wrong**, for reasons this spec records (§3). Related:
 [`2026-07-12-pmp-writer-regeneration-design.md`](2026-07-12-pmp-writer-regeneration-design.md),
 which built the `/resave` oracle that surfaced this and whose lessons section needs a correction

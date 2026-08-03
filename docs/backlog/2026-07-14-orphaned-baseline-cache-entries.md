@@ -1,6 +1,6 @@
 # Nothing prunes ratchet baselines / goldens for corpus packs that no longer exist
 
-Filed: 2026-07-14 · Status: open · Priority: unprioritized (harness & housekeeping)
+Filed: 2026-07-14 · Status: open · Harness & housekeeping
 
 Every ratchet baseline and cached golden is content-addressed by `sha256(input pack)`
 (`test/helpers/upgrade-baseline.ts` · `baselinePath`; `upgrade-golden.ts`, `resave-golden.ts`,

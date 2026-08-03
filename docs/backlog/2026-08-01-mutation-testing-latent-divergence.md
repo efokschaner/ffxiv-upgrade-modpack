@@ -44,8 +44,7 @@ no input in the corpus distinguishes. Properties that fit this repo:
 
 The sibling failure mode: **C# behaviour never ported at all**. There is no branch to mutate and no
 line to be uncovered, so mutation testing is blind to it by construction. That stays answered by the
-citation-and-reading discipline plus corpus widening (`docs/BACKLOG.md` prioritized item 2, "Widen
-the corpus"). A C#-side coverage harness was considered and rejected — we deliberately split
+citation-and-reading discipline plus corpus widening. A C#-side coverage harness was considered and rejected — we deliberately split
 modules, and a large fraction of C# branches (every `files == null` half of
 `EndwalkerUpgrade.cs`) is structurally unreachable on the modpack path, so the signal would arrive
 buried in noise.

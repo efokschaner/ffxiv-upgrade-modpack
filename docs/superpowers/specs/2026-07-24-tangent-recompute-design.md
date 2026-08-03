@@ -17,7 +17,7 @@ it dropped no line from covered to uncovered. **Retired**
 mesh that carries **no** binormals gets its `Binormal` and `Handedness` recomputed on load exactly as
 TexTools does — instead of our port silently emitting all-zero binormals.
 
-**Closes:** the prioritized-#1 backlog item `2026-07-21-unported-tangent-recompute.md` — deleted on
+**Closes:** the backlog item `2026-07-21-unported-tangent-recompute.md` — deleted on
 completion per docs/BACKLOG.md's convention (the name is left unlinked deliberately, the file is
 gone); this spec is now its durable record.
 

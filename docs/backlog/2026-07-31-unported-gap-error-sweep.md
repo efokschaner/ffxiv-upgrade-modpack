@@ -40,9 +40,9 @@ verbatim so a future sweep does not have to re-derive them.
   `docs/TEXTOOLS_BUGS.md` #12 (which absorbed `src/tex/encode.ts:27`'s "NPOT resize not yet ported"
   throw) now re-throws `UnportedGapError` before emitting its diagnostic, per
   `docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md` §4.1's precondition. Note
-  the history: `docs/BACKLOG.md` prioritized item 2 (the diagnostics-channel item) records that this
-  catch "used to swallow the modeled `TextureResizeUnsupported` gap too; that type no longer exists as
-  of 2026-07-22." So this repo previously HAD a typed port-gap error at exactly this seam and lost it —
+  the history: this catch used to swallow the modeled `TextureResizeUnsupported` gap too, and that
+  type no longer exists as of 2026-07-22. So this repo previously HAD a typed port-gap error at
+  exactly this seam and lost it —
   the strongest argument that `UnportedGapError` should be the permanent shape here rather than a
   one-off introduced for the file-exists/serialize pair. That argument is now realized for this one
   instance; the two confirmed-open instances above are unaffected. `src/tex/encode.ts:26`'s

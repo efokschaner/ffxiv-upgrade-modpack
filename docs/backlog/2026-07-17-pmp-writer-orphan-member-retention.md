@@ -1,6 +1,6 @@
 # PMP writer: TexTools retains unreferenced source zip members; we drop them
 
-Filed: 2026-07-17 · Status: open · Priority: unprioritized · Surfaced by the `highlight.pmp` synthetic
+Filed: 2026-07-17 · Status: open · Surfaced by the `highlight.pmp` synthetic
 (spec `docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md` Part C.2)
 
 When ConsoleTools re-writes a `.pmp`, its output **retains the original source zip members** even

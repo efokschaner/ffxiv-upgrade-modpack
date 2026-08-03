@@ -29,75 +29,106 @@ cold by someone with no context.
   with the item. Do **not** cite one as provenance for code that already works ("added as part of
   <item>"): that is what git history is for, and it leaves a dangling reference the day the item
   ships.
+- **The same test applies to prose, and it is stricter there.** A spec or a sibling item should name
+  the **mechanism** ("answered by corpus widening", "closing it needs a BC encoder") rather than link
+  the tracking item, unless the doc is genuinely *waiting* on that item. A "handled elsewhere, and by
+  the way it's tracked" pointer tells the reader nothing the mechanism's name didn't, and it dies the
+  day the item ships — while a **spec is durable and outlives the item by design**, so the dangling
+  reference is guaranteed rather than merely possible. Never record an item's **rank** inside its own
+  file: this index owns the ordering, for the same reason priority is not in the filename. (Both
+  failures had already happened and were cleaned up 2026-08-03: a shipped spec and a sibling item
+  both pointed at "prioritized item 2", and one item pointed at a diagnostics-channel entry that had
+  been deleted on shipping.)
 
 ## Prioritized
 
-Roughly highest-priority first (prioritization pass **2026-07-20b**, superseding 2026-07-20 and
-2026-07-17). **2026-07-21 insertion:** the minion/mount/furniture corpus expansion added three
-corpus-found items at the top (`bgcommon` housing-meta crash, silent mount `_id.tex` gap, furniture
-`.mdl` overrun), shifting the former 1–8 to 4–11, with the housing-meta crash placed first per an
-operator directive. **2026-07-21b:** the housing-meta crash **shipped** (see
-[`docs/superpowers/specs/2026-07-21-housing-meta-drop-design.md`](superpowers/specs/2026-07-21-housing-meta-drop-design.md))
-and its item was deleted per this file's own convention, and the furniture `.mdl` overrun's failure
-mode was found to have silently changed class in the process (it no longer aborts the whole pack —
-the load-fix `catch { return null }` now swallows it, so the user gets a pack silently missing
-models). The two remaining corpus-found items are now 1–2 below, both rubric class 1 (silent wrong
-output); the former 4–11 shift to 3–10. **2026-07-21c:** the furniture `.mdl` overrun's *parse* half
-shipped, which narrowed item 2 to its writer-side remainder and surfaced a third class-1 item — the
-unported `CalculateTangents` recompute, inserted at 3 — shifting the former 3–10 to 4–11. It also
-corrected the v6-bump-seam item (*Unprioritized → `/resave` findings*), which turns out to affect
-`/upgrade` output too, not only `/resave`. **2026-07-22:** the mount/monster `_id.tex` gap (then #1)
-**shipped** — see
-[`docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`](superpowers/specs/2026-07-21-npot-texture-resize-design.md)
-— and its item was deleted per this file's own convention, shifting the former 2–11 to 1–10. Its root
-cause turned out to be the unported NPOT resize (then #4, T3), not the monster-specific material-round
-branch the item hypothesized, so that item **narrowed to T2's load-time resize alone and was demoted**
-rather than closing. One new item was filed from the same work
-([`2026-07-22-bc-encoder-merge-pixel-data.md`](backlog/2026-07-22-bc-encoder-merge-pixel-data.md),
-*Unprioritized → Textures*): an accepted divergence, the only one in the repo carried by a ratchet
-rather than a `DIVERGENCE_RULES` confirmation. **2026-07-23:** the furniture `bgparts` `.mdl` item
-(then #1) **shipped** — the boneless-part writer now emits `HasBonelessParts`, the
-`furniturePartBoundingBoxCount`, and the per-part culling boxes (`Mdl.cs:2978-2984/3314-3318/3751-3772`;
-see the model-normalizer spec's 2026-07-23 update). The 3 corpus models it un-dropped now byte-match the
-golden except the MDL version at byte 0 — the known v6-bump-seam residual (baselined; see that item).
-Its item was deleted per this file's own convention, shifting the former 2–10 to 1–9. **2026-07-24:**
-the unported `CalculateTangents` recompute (then #1) **shipped** — the full binormal/handedness
-recompute branch (`ModelModifiers.cs:2140-2253`) + `GetWeldedMeshData` (`:1935-2100`) are ported;
-`gar_b0_m0112.mdl` now byte-matches the `/resave` golden except the v6 version byte (its own item).
-See `docs/superpowers/specs/2026-07-24-tangent-recompute-design.md`. Its item was deleted per this
-file's own convention, shifting the former 2–9 to 1–8. **2026-07-25:** the T3 ImageSharp Bicubic
-resampler item (then #1, narrowed to T2's load-time `ValidateTexFileData` resize) **shipped in full**
-— see
-[`docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`](superpowers/specs/2026-07-25-validate-tex-load-seam-design.md).
-`validateTexFileData` (`src/upgrade/validate-tex.ts`) now ports both branches of TexTools'
-`ValidateTexFileData` load-seam fixup: the NPOT resize (reproducing a genuine width-for-both-dims bug,
-`docs/TEXTOOLS_BUGS.md` #20) and the broken mip-offset-table repair (reproducing the `FixUpBrokenMipOffsets`
-struct-copy `MipCount` quirk, `docs/TEXTOOLS_BUGS.md` #21) — the latter alone shrank or removed diffs
-across 30+ real corpus packs. On a BC-compressed NPOT source the resize is a confirmed divergence (we
-emit A8R8G8B8 where TexTools re-encodes to the source's original BC format; no BC encoder), reached for
-real by `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`. Its item was deleted per this file's own convention,
-shifting the former 2–8 to 1–7. That same work also **falsifies** this file's 2026-07-25 survey
-conclusion on the BC-encoder item below ("keep unprioritized — leverage not urgency, ~0 probability of
-a corpus pack reaching the gap"): a real pack now reaches the identical `MergePixelData` BC-reencode
-gap via this load seam, so "zero corpus packs reach it" no longer holds, even though it remains
-unprioritized on rank (see the Textures section below for the corrected item).
-**2026-07-31:** the `hair-texture-exists` namespace-scope item (then #1) **shipped** — see
-`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md`. The oracle is now complete
-over `chara/` (a generated `chara-index.ts`, 333,072 entries across 82,369 folders, replacing the
-3,378-entry namespace-scoped table), so a miss provably means the file is absent rather than merely
-out-of-namespace. The index-path steal's gate B (`idTexExists` over `ID_TEX_PACKED`) was retired onto
-the same shared `fileExists` oracle. The hair/eye material tables' existence gates were split from
-their content lookups and now **fail loud** (`UnportedGapError`) on a table gap instead of silently
-skipping. Its item was deleted per this file's own convention, shifting the former 2–7 to 1–6.
-**2026-08-02:** the diagnostics-channel item (then #1) **shipped** — see
-`docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md`. `upgradeModpack` now
-returns `{ ok, data, diagnostics }`; a port gap stays fatal (`ok: false`, never a diagnostic beside a
-returned pack), and `unclaimed-hair.ts:213`'s catch now re-throws `UnportedGapError` before emitting
-its diagnostic, satisfying the precondition `docs/backlog/2026-07-31-unported-gap-error-sweep.md` was
-waiting on. Corpus measurement (Task 6) found **zero** diagnostics across all ~105 local packs — the
-sole emitting site (the swallowed `MergePixelData` failure inside `updateEndwalkerHairTextures`) is
-reached by no local pack and is pinned only by synthetic tests. Its item was deleted per this file's
-own convention, shifting the former 2–6 to 1–5.
+Roughly highest-priority first (prioritization pass **2026-08-03**, superseding 2026-07-20b,
+2026-07-20 and 2026-07-17). **This list is a total ordering.** Every entry is ranked and finishable;
+an entry that cannot be ranked or cannot be completed has not been prioritized, and does not belong
+here in that form.
+
+**Pass log.** A shipped item's file is deleted per the convention above, so its dated entry here is
+the only record left. **Rank movements are deliberately not logged** — this list's order is whatever
+it says today, and rank arithmetic about items that no longer exist ages into noise within a week.
+
+- **2026-07-21** — the minion/mount/furniture corpus expansion added three corpus-found items: the
+  `bgcommon` housing-meta crash, the silent mount `_id.tex` gap, and the furniture `.mdl` overrun.
+- **2026-07-21b** — the housing-meta crash **shipped**
+  ([spec](superpowers/specs/2026-07-21-housing-meta-drop-design.md)). The furniture `.mdl` overrun's
+  failure mode was found to have silently changed class in the process: it no longer aborts the whole
+  pack — the load-fix `catch { return null }` now swallows it, so the user gets a pack silently
+  missing models.
+- **2026-07-21c** — the furniture `.mdl` overrun's *parse* half shipped, narrowing that item to its
+  writer-side remainder and surfacing the unported `CalculateTangents` recompute. It also corrected
+  the v6-bump-seam item (*Unprioritized → `/resave` findings*), which turns out to affect `/upgrade`
+  output too, not only `/resave`.
+- **2026-07-22** — the mount/monster `_id.tex` gap **shipped**
+  ([spec](superpowers/specs/2026-07-21-npot-texture-resize-design.md)). Its root cause turned out to
+  be the unported NPOT resize (T3), not the monster-specific material-round branch the item
+  hypothesized, so the T3 item **narrowed to T2's load-time resize alone** rather than closing. One
+  new item was filed from the same work
+  ([`2026-07-22-bc-encoder-merge-pixel-data.md`](backlog/2026-07-22-bc-encoder-merge-pixel-data.md),
+  *Unprioritized → Textures*): an accepted divergence, the only one in the repo carried by a ratchet
+  rather than a `DIVERGENCE_RULES` confirmation.
+- **2026-07-23** — the furniture `bgparts` `.mdl` item **shipped**: the boneless-part writer now
+  emits `HasBonelessParts`, the `furniturePartBoundingBoxCount`, and the per-part culling boxes
+  (`Mdl.cs:2978-2984/3314-3318/3751-3772`; see the model-normalizer spec's 2026-07-23 update). The 3
+  corpus models it un-dropped now byte-match the golden except the MDL version at byte 0 — the known
+  v6-bump-seam residual (baselined; see that item).
+- **2026-07-24** — the unported `CalculateTangents` recompute **shipped**: the full
+  binormal/handedness recompute branch (`ModelModifiers.cs:2140-2253`) + `GetWeldedMeshData`
+  (`:1935-2100`) are ported; `gar_b0_m0112.mdl` now byte-matches the `/resave` golden except the v6
+  version byte (its own item). See `docs/superpowers/specs/2026-07-24-tangent-recompute-design.md`.
+- **2026-07-25** — the T3 ImageSharp Bicubic resampler item (by then narrowed to T2's load-time
+  `ValidateTexFileData` resize) **shipped in full**
+  ([spec](superpowers/specs/2026-07-25-validate-tex-load-seam-design.md)). `validateTexFileData`
+  (`src/upgrade/validate-tex.ts`) now ports both branches of TexTools' `ValidateTexFileData`
+  load-seam fixup: the NPOT resize (reproducing a genuine width-for-both-dims bug,
+  `docs/TEXTOOLS_BUGS.md` #20) and the broken mip-offset-table repair (reproducing the
+  `FixUpBrokenMipOffsets` struct-copy `MipCount` quirk, `docs/TEXTOOLS_BUGS.md` #21) — the latter
+  alone shrank or removed diffs across 30+ real corpus packs. On a BC-compressed NPOT source the
+  resize is a confirmed divergence (we emit A8R8G8B8 where TexTools re-encodes to the source's
+  original BC format; no BC encoder), reached for real by `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`.
+  That same work **falsifies** the 2026-07-25 survey conclusion on the BC-encoder item below ("keep
+  unprioritized — leverage not urgency, ~0 probability of a corpus pack reaching the gap"): a real
+  pack now reaches the identical `MergePixelData` BC-reencode gap via this load seam, so "zero corpus
+  packs reach it" no longer holds, even though the item stays unprioritized (see the Textures section
+  below for the corrected item).
+- **2026-07-31** — the `hair-texture-exists` namespace-scope item **shipped** (see
+  `docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md`). The oracle is now complete
+  over `chara/` (a generated `chara-index.ts`, 333,072 entries across 82,369 folders, replacing the
+  3,378-entry namespace-scoped table), so a miss provably means the file is absent rather than merely
+  out-of-namespace. The index-path steal's gate B (`idTexExists` over `ID_TEX_PACKED`) was retired
+  onto the same shared `fileExists` oracle. The hair/eye material tables' existence gates were split
+  from their content lookups and now **fail loud** (`UnportedGapError`) on a table gap instead of
+  silently skipping.
+- **2026-08-02** — the diagnostics-channel item **shipped** (see
+  `docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md`). `upgradeModpack` now
+  returns `{ ok, data, diagnostics }`; a port gap stays fatal (`ok: false`, never a diagnostic beside
+  a returned pack), and `unclaimed-hair.ts:213`'s catch now re-throws `UnportedGapError` before
+  emitting its diagnostic, satisfying the precondition
+  `docs/backlog/2026-07-31-unported-gap-error-sweep.md` was waiting on. Corpus measurement found
+  **zero** diagnostics across all ~105 local packs — the sole emitting site (the swallowed
+  `MergePixelData` failure inside `updateEndwalkerHairTextures`) is reached by no local pack and is
+  pinned only by synthetic tests.
+
+- **2026-08-03** — a **re-ranking pass**, the first since 2026-07-20b; everything above it is a
+  shipped-item record rather than a re-derivation, and two defects had accumulated behind that.
+  **(a)** The site (Round 7) had reached the top of the list by erosion rather than by decision — it
+  was authored fifth in the 2026-07-20 pass and carried upward as the items above it shipped, until
+  its own closing line told the reader to start it "in parallel with" itself. That placement
+  contradicted the rubric stated below, which "ranks a large, well-understood build (the UI) below
+  small, unbounded correctness holes", because the empty-group item beneath it is rubric class 1. The
+  empty-group item now leads and the site follows it; the deploying-changes-the-probability-term note
+  is what settles the order, since launching the site is precisely what converts the empty-group
+  trigger from latent to live. The "start in parallel" hedge went with it — the site's independence
+  from its neighbours is a scheduling fact, not a rank. **(b)** The corpus item described itself as
+  "a standing activity rather than a task with a done state"; an entry that can never complete cannot
+  be ranked, which makes the list something other than a prioritization. Per operator: corpus
+  widening is **bounded product-vetting work with specific goals**. Stale figures were refreshed in
+  the same pass (pack counts; the coverage percentages are now date-stamped as a 2026-07-20
+  measurement rather than asserted as current; the spec count). The pass also swept
+  rank-by-reference out of the rest of the repo — see the prose bullet under *How this works*.
 
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
@@ -123,34 +154,46 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
-   33 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
+1. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
+   — **the highest-severity item that no corpus pack reaches, and the only class-1 item that must
+   land before the site does.** Rubric class #1: a group TexTools drops from the wizard model
+   entirely survives our TTMP read and gets re-emitted, so the user's upgraded pack carries a group
+   the golden does not, with no diff to warn us (no baseline entry exists — it came from reading the
+   C#, not from an oracle). It leads on the **deploying-changes-the-probability-term** note above,
+   which is also what orders it against the site: a zero-option group is hand-authorable, corpus
+   silence is the only thing holding its probability down, and **launching the site is exactly what
+   removes that** — a public page accepting arbitrary uploads turns "no corpus pack reaches it" from
+   evidence of rarity into absence of evidence. Cheap to close and cheap to prove — a synthetic pack
+   with an authored empty group gets a real ConsoleTools golden. Note the PMP half is already masked
+   downstream by `groupHasData` (by the same predicate C# uses), so the genuinely open surface is the
+   TTMP path. **Moved to the Prioritized list from *Unprioritized → Other ported code*, 2026-07-20b.**
+
+2. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+   41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
    (it currently emits no HTML page); a **Web Worker** (`upgradeModpack` is synchronous and
    CPU-bound, so it freezes the tab); **lazy-loading the reference tables** (~3.23 MB of `src/` is
    eagerly-evaluated generated tables, `imc-table.ts` alone 2.34 MB constructing a `Map` at module
-   load); and surfacing the fail-loud guards as user-facing "this modpack isn't supported because…"
-   messages. One hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI
-   must **not** offer an output-format picker. Should start in parallel with 1-2, not after them.
+   load); and surfacing the fail-loud guards and the `diagnostics` channel (shipped 2026-08-02) as
+   user-facing "this modpack isn't supported because…" / "these files were skipped" messages. One
+   hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI must **not**
+   offer an output-format picker. Ranked below the empty-group item on the rubric — it is class 3
+   (doesn't exist yet) where that one is class 1 — but nothing blocks *starting* it, and its
+   one real dependency (a diagnostics channel, so the page cannot report success on a partial
+   upgrade) cleared 2026-08-02.
 
-2. **Widen the corpus.** Every gap on this list was found by the corpus; it is 70 packs on one
-   machine, gitignored, with no CI. Code coverage is strong (92.98% lines / 84.6% branches — the 0%
-   files are re-export barrels), so the residual risk is **data and inputs, not code paths**, which
-   is exactly what more packs buy and coverage cannot. This is the only entry that finds the
-   unknown-unknowns, and it is a standing activity rather than a task with a done state. See also
-   design §8.4's thin-coverage note.
-
-3. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
-   — **the highest-severity item that no corpus pack reaches.** Rubric class #1: a group TexTools
-   drops from the wizard model entirely survives our TTMP read and gets re-emitted, so the user's
-   upgraded pack carries a group the golden does not, with no diff to warn us (no baseline entry
-   exists — it came from reading the C#, not from an oracle). Ranked here rather than lower on the
-   **deploying-changes-the-probability-term** note above: a zero-option group is hand-authorable, and
-   corpus silence is the only thing holding its probability down. Cheap to close and cheap to prove —
-   a synthetic pack with an authored empty group gets a real ConsoleTools golden. Note the PMP half
-   is already masked downstream by `groupHasData` (by the same predicate C# uses), so the genuinely
-   open surface is the TTMP path. **Moved here from *Unprioritized → Other ported code*, 2026-07-20b.**
+3. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+   maintenance: the corpus is how every gap on this list was found, and widening it is how we
+   establish that the shipped page handles what real users will actually upload. It is **85 real
+   packs** (111 total, incl. 21 synthetic and 5 expected-failure) on one machine, gitignored, with no
+   CI. Code coverage was strong at the last measurement (92.98% lines / 84.6% branches as of
+   2026-07-20 — the 0% files are re-export barrels), so the residual risk is **data and inputs, not
+   code paths**, which is exactly what more packs buy and coverage cannot; this is the only entry
+   that finds the unknown-unknowns. ⚠️ **Acceptance criteria are unrecorded** — the operator has
+   specific goals for this (stated 2026-08-03) that are not yet written down here, and until they are
+   this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
+   thin-coverage note.
 
 4. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
@@ -209,7 +252,7 @@ unchanged by deployment; only probability moves.
   synthetics; `highlight.pmp`'s pure-orphan shape surfaced it explicitly. Not a regression. **Traced
   2026-07-21** (C# path is `WritePmp`, PMP.cs:830-868): this is only **~5** baselined `structure`
   entries (`added`/`removed` shaped). The other ~42 are a *different*, tex-payload-shadow phenomenon —
-  now item 5 in the *Prioritized* list above.
+  the tex-payload-shadow item in the *Prioritized* list above.
 - [Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty](backlog/2026-07-18-empty-vs-omitted-fileswaps-key.md)
   — `pmp.ts:446` unconditionally serializes `FileSwaps`, but Penumbra's own writer (`SubMod.cs`,
   separate repo) omits the key when the map is empty, same as `Files`. Only visible against a raw

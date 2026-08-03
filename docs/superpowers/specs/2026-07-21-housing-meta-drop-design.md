@@ -22,7 +22,7 @@ reachable from the corpus. Three corrections found during implementation, applie
    only.
 
 **Backlog item:** shipped. The item that tracked this
-(`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md`, formerly prioritized #1) was
+(`docs/backlog/2026-07-21-bgcommon-housing-meta-root-unsupported.md`) was
 deleted from `docs/BACKLOG.md` per this repo's shipped-item convention (`docs/BACKLOG.md`'s "When an
 item ships" rule) — this spec is now the durable record. Its companion, the furniture `bgparts`
 `.mdl` gap that this fix let surface (once furniture packs reached the model round), has since

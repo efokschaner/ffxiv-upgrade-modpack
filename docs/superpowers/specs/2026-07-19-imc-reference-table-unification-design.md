@@ -2,8 +2,8 @@
 
 Filed 2026-07-19 · Status: **implemented 2026-07-19.**
 
-This closed the top prioritized backlog item, "NonSet (weapon/monster/demihuman) IMC reference
-table" (filed 2026-07-10; deleted with this work, per the backlog's own ship-and-delete rule) — a
+This closed the backlog item "NonSet (weapon/monster/demihuman) IMC reference table" (filed
+2026-07-10; deleted with this work, per the backlog's own ship-and-delete rule) — a
 **silent divergence / fail-loud violation**: a weapon or monster `.meta` whose IMC segment *would*
 grow against the base game passed through unchanged, with no throw and no test catching it.
 

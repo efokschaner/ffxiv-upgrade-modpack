@@ -1,7 +1,7 @@
 # `diffPayloadSemantic` part 2 has narrower coverage than a casual read suggests
 
-Filed: 2026-07-18 · Status: open · Priority: unprioritized (documentation/coverage gap, not a known
-live bug) · Surfaced during the final-review pass on
+Filed: 2026-07-18 · Status: open · Documentation/coverage gap, not a known live bug · Surfaced
+during the final-review pass on
 `docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md`
 
 `diffPayloadSemantic` (`test/helpers/upgrade-archive-diff.ts`) is the relaxed-mode payload comparison

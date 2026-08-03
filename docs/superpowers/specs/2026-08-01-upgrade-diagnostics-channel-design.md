@@ -1,8 +1,9 @@
 # Upgrade diagnostics channel
 
 Status: implemented (`feat/upgrade-diagnostics-channel`)
-Backlog item: `docs/BACKLOG.md` prioritized #1, which was described inline for want of a design
-decision. This spec is that decision; the index entry now links here and is deleted when this ships.
+Backlog item: the diagnostics-channel entry in `docs/BACKLOG.md`, which was described inline for want
+of a design decision. This spec is that decision; the index entry now links here and is deleted when
+this ships.
 
 ## 1. Why
 
@@ -59,7 +60,7 @@ input that makes it visible. That decomposes into two failure modes with differe
   feeds the existing `scripts/generate-synthetics/` loop. **Filed as a separate backlog item.**
 - **(b) C# behaviour never ported at all.** No branch to mutate, no line to be uncovered — coverage
   is blind to it by construction. Stays answered by the citation-and-reading discipline plus corpus
-  widening (`docs/BACKLOG.md` prioritized item 2, "Widen the corpus"). A C#-side coverage harness
+  widening. A C#-side coverage harness
   was considered and rejected: we deliberately split modules, and a large fraction of C# branches
   (every `files == null` half) are structurally unreachable on the modpack path, so the signal
   arrives buried in noise.

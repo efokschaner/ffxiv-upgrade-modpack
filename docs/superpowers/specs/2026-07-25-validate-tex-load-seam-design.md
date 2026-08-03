@@ -3,8 +3,8 @@
 **Date:** 2026-07-25
 **Status:** Design (approved to plan)
 
-**Closes:** prioritized backlog item #1 (the T3 ImageSharp Bicubic resampler item, deleted — its
-remaining scope was exactly this load-seam resize) and the `ValidateTexFileData` bulk of the T2 item
+**Closes:** the T3 ImageSharp Bicubic resampler backlog item (deleted — its remaining scope was
+exactly this load-seam resize) and the `ValidateTexFileData` bulk of the T2 item
 ([`docs/backlog/2026-07-10-fixoldtexdata-load-round.md`](../../backlog/2026-07-10-fixoldtexdata-load-round.md)),
 leaving only T2's deferred unconditional recompress.
 
@@ -250,7 +250,7 @@ branches.
 
 ## 7. Backlog & docs outcome (as shipped, 2026-07-25)
 
-- The T3 ImageSharp Bicubic resampler item (prioritized #1) — **deleted**. Grepped `src/`, `test/`,
+- The T3 ImageSharp Bicubic resampler item — **deleted**. Grepped `src/`, `test/`,
   `scripts/`, `docs/` for its filename first (per `docs/BACKLOG.md`'s rule); every reference —
   including in durable specs that predate this one — was updated in the same change to describe the
   work in prose rather than link a file that no longer exists.
@@ -264,7 +264,7 @@ branches.
   `FixUpBrokenMipOffsets` struct-copy `MipCount` quirk, §2/§6.1), both following #19 (registered
   separately, ahead of this spec's own ship). `src/tex/header.ts` and `src/upgrade/validate-tex.ts`
   now cite the specific entry numbers rather than the file generally.
-- `docs/BACKLOG.md` — re-ranked after removing #1 (former 2–8 shift to 1–7); a dated 2026-07-25 pass
+- `docs/BACKLOG.md` — the shipped item removed; a dated 2026-07-25 pass
   note records the ship, that Branch B alone shrank/removed diffs across 30+ real packs, and that the
   BC-source produce-A8R8G8B8 divergence is confirmed for `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`.
 - **Correction to this section's original plan:** the BC-encoder item

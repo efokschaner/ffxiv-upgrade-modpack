@@ -1,7 +1,8 @@
 # PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug
 
-Filed: 2026-07-21 · Status: open · Priority: last (item 7 as of 2026-07-25, cosmetic + derivative of
-the `.tex` payload bulk) · Surfaced while tracing `2026-07-17-pmp-writer-orphan-member-retention.md`
+Filed: 2026-07-21 · Status: open · Cosmetic, and derivative of the `.tex` payload bulk (the two
+properties that place it where `docs/BACKLOG.md` places it; the index owns the rank, not this file)
+· Surfaced while tracing `2026-07-17-pmp-writer-orphan-member-retention.md`
 (which owns the *other* ~5 `structure` entries)
 
 Of the ~47 `kind:"structure"` entries in `.upgrade-baseline`, ~5 are the genuine orphan/rename

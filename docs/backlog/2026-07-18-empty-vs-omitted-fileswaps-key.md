@@ -1,7 +1,7 @@
 # Writer always emits `FileSwaps: {}`; Penumbra omits the key when empty
 
-Filed: 2026-07-18 · Status: open · Priority: unprioritized (documentation/coverage gap, not a known
-live bug on any `/upgrade`-transformed pack) · Surfaced during the final-review pass on
+Filed: 2026-07-18 · Status: open · Documentation/coverage gap, not a known live bug on any
+`/upgrade`-transformed pack · Surfaced during the final-review pass on
 `docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md`
 
 `src/container/pmp.ts:446` (`base.FileSwaps = o.fileSwaps`) unconditionally serializes the option's

@@ -26,10 +26,10 @@ carries, we produce. Four findings changed the design during implementation:
 when the source texture is non-power-of-two, by porting the Bicubic NPOT pre-step both call sites
 already have in the C#.
 
-**Closed:** `docs/backlog/2026-07-21-monster-index-tex-generation-gap.md` (then prioritized #1) —
-deleted 2026-07-22 per `docs/BACKLOG.md`'s shipped-item convention, so this spec is now its durable
-record; the name is left unlinked deliberately, the file is gone.
-**Narrowed:** the T3 ImageSharp Bicubic resampler backlog item (then #4, now #3) down to T2's
+**Closed:** `docs/backlog/2026-07-21-monster-index-tex-generation-gap.md` — deleted 2026-07-22 per
+`docs/BACKLOG.md`'s shipped-item convention, so this spec is now its durable record; the name is
+left unlinked deliberately, the file is gone.
+**Narrowed:** the T3 ImageSharp Bicubic resampler backlog item down to T2's
 load-time `ValidateTexFileData` resize — since ported and closed 2026-07-25, folded into T2 (see
 `docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`).
 **Filed:** [`docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md`](../../backlog/2026-07-22-bc-encoder-merge-pixel-data.md)
@@ -65,9 +65,10 @@ The `_c` normal is **400×400 — non-power-of-two** (DXT5). `createIndexFromNor
 (`src/upgrade/texture.ts:58-64`) throws `TextureResizeUnsupported` on NPOT, and
 `upgradeRemainingTextures`' dispatch catch (`:279`) swallows it. The file is simply never generated.
 
-This is not a new failure class: it is the `createIndexFromNormal` half of prioritized item 4.
+This is not a new failure class: it is the `createIndexFromNormal` half of the T3 ImageSharp Bicubic
+resampler item.
 
-**A load-bearing claim in item 4 is falsified.** That item states "**No NPOT source exists anywhere
+**A load-bearing claim in that item is falsified.** It states "**No NPOT source exists anywhere
 in the ~940-pack scan**", which is why this branch was ranked as latent. The 400×400 `_n_c.tex`
 disproves it. Correct the item when updating it.
 
@@ -79,8 +80,8 @@ identical NPOT throw at `:2086-2089`. It is in scope, for three reasons:
 1. **Same failure class.** A skipped `upgradeMaskTex` leaves an un-upgraded Endwalker mask sitting
    under a Dawntrail material — silent wrong output, same rubric class 1. Declining to fix it does
    not buy byte-parity; the skip diverges from the golden *and* breaks the mod.
-2. **The eye-mask spec already scoped both** (§7, cited above), and item 4 treats the two as one unit
-   of remaining work.
+2. **The eye-mask spec already scoped both** (§7, cited above), and the T3 resampler item treats the
+   two as one unit of remaining work.
 3. **An initial scoping argument against it did not survive the data** — see §3.3.
 
 Out of scope: T2's `ValidateTexFileData` NPOT resize (`EndwalkerUpgrade.cs:2100-2113`), a *load-time*
@@ -320,8 +321,9 @@ No synthetic for the NPOT *index* path: `Club Cyberia Motorbike` already gives i
 - `Club Cyberia Motorbike.ttmp2`: the 12 `payload/added` `_n_c_id.tex` entries → **zero**.
 - **Expected residual, stated up front:** the 12 `manifest/added` `ModsJsons/19` entries will *not*
   vanish. A 20th file per option shifts our `ModsJsons` ordering against the golden's, so they convert
-  into `FullPath`/`Name` mismatches of the already-known **prioritized item 10** class (option file
-  order + `Name`/`Category` re-derivation, which `writeGeneratedTex` does not carry). The class-1
+  into `FullPath`/`Name` mismatches of the already-known **option file order + `Name`/`Category`
+  re-derivation** class (the two `writeTtmp2` manifest backlog items, which `writeGeneratedTex` does
+  not carry). The class-1
   silent-loss gap closes; that cosmetic class absorbs the remainder.
 - A re-bless is required. Report exact before/after entry counts for every pack whose baseline moves.
 - Watch for collateral: any *other* pack whose baseline changes means an NPOT source we did not know
@@ -373,7 +375,7 @@ No synthetic for the NPOT *index* path: `Club Cyberia Motorbike` already gives i
   *reason*, not just "both threw". Meeting it required rewriting both guard messages to TexTools'
   text verbatim (`Tex.cs:659`, `Tex.cs:743`) — a fidelity gain, at the cost of the messages no longer
   naming which texture failed. That cost is itself TexTools-faithful (no upstream catch re-adds a
-  gamePath) and is the province of prioritized item 6, the diagnostics channel.
+  gamePath) and is the province of the diagnostics-channel item.
 
 - **Blast radius is narrow:** two source files (`src/upgrade/texture.ts`, plus `texFormatName` in
   `src/tex/types.ts`), the rest test/scaffolding. No writer, container, or manifest code changes.
@@ -391,8 +393,8 @@ All done 2026-07-22:
   `docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md`.)
 - `2026-07-22-bc-encoder-merge-pixel-data.md` — **new**, filed under *Unprioritized → Textures* for
   the accepted mask-path divergence.
-- `docs/BACKLOG.md` — prioritized list re-ranked 2–11 → 1–10, with a dated pass note. Item 5 (the
-  diagnostics channel) updated twice over: `TextureResizeUnsupported` no longer exists, so
+- `docs/BACKLOG.md` — prioritized list re-ranked, with a dated pass note. The diagnostics-channel
+  item updated twice over: `TextureResizeUnsupported` no longer exists, so
   `unclaimed-hair.ts:197` now swallows only genuine parse failures; and the guards' verbatim
   TexTools messages no longer name which texture failed, which is a second motivation for that
   channel.

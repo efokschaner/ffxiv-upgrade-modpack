@@ -7,7 +7,7 @@
 assets, §8 burndown) and completes the `ResolveHighlightOptionsAndMashupHair` pre-round whose
 highlight-resolution half shipped 2026-07-17
 (`docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md`). Closes backlog item
-`docs/backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md` (the top prioritized item).
+`docs/backlog/2026-07-15-resolve-highlight-mashup-hair-preround.md`.
 
 **Goal:** Port the still-deferred **`RepathHairMashups`** half of the pre-round
 (`ModpackUpgrader.cs:379-482`), replacing the fail-loud throw in `src/upgrade/resolve-highlight.ts`.
