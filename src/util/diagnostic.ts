@@ -64,5 +64,6 @@ export type UpgradeResult<T> =
  * by the catch closest to the throw), and later/outer frames overwrite earlier ones for the same
  * key because the outer frame knows more about WHERE the failure sits. */
 export function mergeGapContext(frames: GapContextFrame[]): GapContextFrame {
+  // biome-ignore lint/performance/noAccumulatingSpread: frames are bounded by unwind depth (2-4), not data size
   return frames.reduce<GapContextFrame>((acc, f) => ({ ...acc, ...f }), {});
 }
