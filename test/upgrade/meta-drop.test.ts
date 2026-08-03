@@ -179,7 +179,10 @@ describe("metadataRound: reconstruction of manipulation-bearing .meta files", ()
     );
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("unreachable");
-    expect(r.diagnostics[0]!.message).toMatch(/unrecognized root path/);
+    // .at(-1): the fatal diagnostic is always LAST (test/helpers/corpus-upgrade.ts:52-53's
+    // [...diagnostics, toDiagnostic(err)] boundary shape, design spec §4) -- [0] happens to agree
+    // here only because this pack emits no non-fatal diagnostics.
+    expect(r.diagnostics.at(-1)!.message).toMatch(/unrecognized root path/);
   });
 
   it("reconstructs a present-but-empty EQDP meta, backfilling it to 18 races", () => {

@@ -168,7 +168,10 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
     const r = upgradeModpack(data);
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error("unreachable");
-    expect(r.diagnostics[0]!.message).toMatch(/file has no bytes/);
+    // .at(-1): the fatal diagnostic is always LAST (test/helpers/corpus-upgrade.ts:52-53's
+    // [...diagnostics, toDiagnostic(err)] boundary shape, design spec §4) -- [0] happens to agree
+    // here only because this pack emits no non-fatal diagnostics.
+    expect(r.diagnostics.at(-1)!.message).toMatch(/file has no bytes/);
   });
 
   it("HairMaps THROWS when a key-present normal has no bytes (:1187)", () => {

@@ -44,8 +44,13 @@ describe("toDiagnostic's context-frame merge (upgrade.ts boundary conversion)", 
         const err = new UnportedGapError(
           "synthetic gap for context-mapping test",
         );
-        // Innermost frame (pushed first, deepest in the unwind).
-        err.context.push({ gamePath: "inner/path.tex" });
+        // Innermost frame (pushed first, deepest in the unwind). Carries BOTH gamePath and
+        // material so the assertion below actually proves toDiagnostic's `ctx.gamePath ??
+        // ctx.material` precedence, not merely that gamePath survives when material is absent.
+        err.context.push({
+          gamePath: "inner/path.tex",
+          material: "chara/foo/material/mt_foo.mtrl",
+        });
         // Outermost frame -- wins on any overlapping key, and is the only one carrying
         // group/option/provenance here.
         err.context.push({

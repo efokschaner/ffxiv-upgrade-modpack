@@ -97,7 +97,12 @@ describe("updateUnclaimedHairTextures (hair)", () => {
     const sOld =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, []);
+    // Happy path: the raw copies alone (written before the try, unclaimed-hair.ts:198-199) would
+    // also make the two `files.has` assertions below pass even if the transform were silently
+    // swallowed -- asserting the collector stayed empty proves the transform actually ran.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, diagnostics);
+    expect(diagnostics).toEqual([]);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
   });
@@ -142,12 +147,15 @@ describe("updateUnclaimedHairTextures (hair)", () => {
       [nOldDx11]: buildMinimalTexSized(2, 2),
       [sOld]: buildMinimalTexSized(2, 2),
     });
+    const diagnostics: Diagnostic[] = [];
     updateUnclaimedHairTextures(
       o,
       new Set([nOldPlain, nOldDx11, sOld]),
       table,
-      [],
+      diagnostics,
     );
+    // Happy path -- see the "copies a loose normal+mask" test above for why this matters.
+    expect(diagnostics).toEqual([]);
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
     const normFile = o.files.get(HAIR_NORM_DEST)!;
@@ -328,7 +336,15 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       "chara/human/c0701/obj/tail/t0001/texture/c0701t0001_etc_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), tailTable, []);
+    // Happy path -- see "copies a loose normal+mask" (top of file) for why this matters.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(
+      o,
+      new Set([nOld, sOld]),
+      tailTable,
+      diagnostics,
+    );
+    expect(diagnostics).toEqual([]);
 
     const written = o.files.get(TAIL_MAT);
     expect(written).toBeDefined();
@@ -370,7 +386,11 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       "chara/human/c0804/obj/tail/t0001/texture/c0804t0001_etc_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t, []);
+    // Happy path (the texture rescue itself succeeds here, even though the material rewrite is
+    // deliberately skipped) -- see "copies a loose normal+mask" (top of file) for why this matters.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), t, diagnostics);
+    expect(diagnostics).toEqual([]);
 
     // Textures are still rescued...
     expect(o.files.has(normDest)).toBe(true);
@@ -386,7 +406,10 @@ describe("updateUnclaimedHairTextures (tail)", () => {
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_s.tex";
     const o = opt({ [nOld]: buildMinimalTex(), [sOld]: buildMinimalTex() });
 
-    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, []);
+    // Happy path -- see "copies a loose normal+mask" (top of file) for why this matters.
+    const diagnostics: Diagnostic[] = [];
+    updateUnclaimedHairTextures(o, new Set([nOld, sOld]), table, diagnostics);
+    expect(diagnostics).toEqual([]);
 
     expect(o.files.has(HAIR_NORM_DEST)).toBe(true);
     expect(o.files.has(HAIR_MASK_DEST)).toBe(true);
