@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type Diagnostic,
+  DiagnosticCode,
   loadModpack,
   type ModpackData,
   type UpgradeResult,
@@ -138,6 +139,86 @@ export function diagnosticsToFileDiffs(diagnostics: Diagnostic[]): FileDiff[] {
       code: d.code,
       detail: d.message,
     }));
+}
+
+/** One expected `"diagnostic"` FileDiff, identified by the two fields `idOf` (upgrade-baseline.ts)
+ * keys on for this kind. `detail` (the diagnostic's `message`) is deliberately NOT asserted: it is
+ * the raw wording of an underlying parse failure, which is free to change (spec §3 pins only
+ * `code`), and `idOf` never reads it. */
+interface ExpectedDiagnostic {
+  code: DiagnosticCode;
+  gamePath: string;
+}
+
+/**
+ * Packs whose `"diagnostic"` diff set is asserted EXACTLY, on top of being ratcheted.
+ *
+ * WHY THIS EXISTS, and why the ratchet alone is not enough. `compareToBaseline` passes when
+ * `actual ⊆ baseline` — a diff that DISAPPEARS is deliberately read as an improvement. That is the
+ * right semantics for a burn-down ratchet of byte divergences, but it makes a blessed baseline
+ * useless as a pin on the machinery that PRODUCES the entry: bless the diagnostic in, then delete
+ * `...diagnostics` from `registerUpgradeCheck`'s `diff.files` spread, and `actual` becomes empty —
+ * still a subset, still green. The `"diagnostic"` kind would go back to having zero live coverage
+ * without a single test turning red. See
+ * docs/superpowers/specs/2026-08-01-upgrade-diagnostics-channel-design.md §7.
+ *
+ * So this table is an EXACT-match expectation, not a subset one, and `assertExpectedDiagnostics`
+ * reads it off `diff.files` — the assembled array the ratchet scores — rather than off the local
+ * `diagnostics` variable. That is what makes dropping the spread a failure rather than a silent
+ * downgrade.
+ *
+ * WHAT IT PINS (and what it does not): emitter -> `diagnosticsToFileDiffs` -> `diff.files`. It does
+ * NOT pin the last hop, `diff.files` -> `compareToBaseline`/`saveBaseline`; that stays covered by
+ * `test/helpers/upgrade-baseline.test.ts` plus the two-line locality at the call site below.
+ *
+ * Keyed by pack file name (lowercased). A pack listed here must be present in the corpus — enforced
+ * by test/corpus-guard.test.ts, so deleting the pack cannot silently retire the pin either.
+ */
+export const EXPECTED_PACK_DIAGNOSTICS: ReadonlyMap<
+  string,
+  readonly ExpectedDiagnostic[]
+> = new Map([
+  [
+    // scripts/generate-synthetics/build-synthetic-hair-transform-failure.ts — one loose hair
+    // normal/specular pair whose normal is truncated, so EndwalkerUpgrade.cs:1498-1501's swallow
+    // fires exactly once. ConsoleTools /upgrade swallows identically (verified 2026-08-02), so the
+    // pack's BYTES match the golden and this diagnostic is its only recorded diff.
+    "hair-transform-failure.pmp",
+    [
+      {
+        code: DiagnosticCode.HairTransformFailed,
+        // The hair table's Dx11 normal destination for c0101 h0001 (src/upgrade/reference/
+        // hair-materials.ts), which unclaimed-hair.ts:238 reports as the diagnostic's gamePath.
+        gamePath:
+          "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_norm.tex",
+      },
+    ],
+  ],
+]);
+
+/** Assert a listed pack's `"diagnostic"` entries in `files` are EXACTLY the expected set (see
+ * EXPECTED_PACK_DIAGNOSTICS). Unlisted packs are not constrained here — they stay on the ratchet
+ * alone. Exported for unit testing (test/helpers/corpus-upgrade.test.ts). */
+export function assertExpectedDiagnostics(
+  name: string,
+  files: FileDiff[],
+): void {
+  const expected = EXPECTED_PACK_DIAGNOSTICS.get(name.toLowerCase());
+  if (expected === undefined) return;
+  const actual = files
+    .filter((f) => f.kind === "diagnostic")
+    .map((f) => ({ code: f.code, gamePath: f.gamePath }))
+    .sort(
+      (a, b) =>
+        compareOrdinal(a.gamePath, b.gamePath) ||
+        compareOrdinal(a.code ?? "", b.code ?? ""),
+    );
+  expect(
+    actual,
+    `${name}: the pack's "diagnostic" diffs must match EXACTLY. A MISSING one means either the ` +
+      `emitting site stopped emitting or the diagnostics wiring no longer reaches diff.files — ` +
+      `neither of which the subset-based ratchet can see. An EXTRA one is a new swallowed failure.`,
+  ).toEqual([...expected]);
 }
 
 // End-to-end golden check: our upgrade pipeline vs the cached ConsoleTools /upgrade output,
@@ -304,6 +385,9 @@ export function registerUpgradeCheck(pack: string): void {
           ...diagnostics,
         ],
       };
+      // Runs on BOTH branches (before the bless early-return): blessing must not be able to record
+      // a diagnostic set that differs from the one this pack is committed to produce.
+      assertExpectedDiagnostics(name, diff.files);
       const key = oracleKey(bytes);
 
       if (BLESS) {

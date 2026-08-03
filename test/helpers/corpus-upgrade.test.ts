@@ -6,9 +6,12 @@ import {
   type UpgradeResult,
 } from "../../src/index";
 import {
+  assertExpectedDiagnostics,
   assertMatchedUpgradeFailure,
   diagnosticsToFileDiffs,
+  EXPECTED_PACK_DIAGNOSTICS,
 } from "./corpus-upgrade";
+import type { FileDiff } from "./upgrade-diff";
 
 const okResult = (): UpgradeResult<ModpackData> => ({
   ok: true,
@@ -131,5 +134,92 @@ describe("diagnosticsToFileDiffs", () => {
     };
     const [fd] = diagnosticsToFileDiffs([noPath]);
     expect(fd?.gamePath).toBe("(no path)");
+  });
+});
+
+// The exact-match pin the subset ratchet cannot provide (see EXPECTED_PACK_DIAGNOSTICS' doc
+// comment). These tests use the REAL table entry rather than a fixture one, so they also assert the
+// committed expectation is well-formed.
+describe("assertExpectedDiagnostics", () => {
+  const PACK = "hair-transform-failure.pmp";
+  const expected = EXPECTED_PACK_DIAGNOSTICS.get(PACK);
+
+  /** A `diff.files` array as registerUpgradeCheck assembles it: some unrelated byte diffs plus the
+   *  diagnostics the upgrade produced. */
+  const filesWith = (diagnostics: FileDiff[]): FileDiff[] => [
+    {
+      kind: "payload",
+      gamePath: "chara/other/x.tex",
+      index: 0,
+      status: "mismatch",
+    },
+    ...diagnostics,
+  ];
+  const asDiff = (e: { code: DiagnosticCode; gamePath: string }): FileDiff => ({
+    kind: "diagnostic",
+    gamePath: e.gamePath,
+    index: 0,
+    status: "added",
+    code: e.code,
+    detail: "some parse failure wording that is free to change",
+  });
+
+  it("is a no-op for a pack with no expectation recorded", () => {
+    expect(() =>
+      assertExpectedDiagnostics("some-real-mod.pmp", filesWith([])),
+    ).not.toThrow();
+  });
+
+  it("passes when the pack's diagnostic diffs are exactly the expected set", () => {
+    expect(expected).toBeDefined();
+    expect(() =>
+      assertExpectedDiagnostics(PACK, filesWith(expected!.map(asDiff))),
+    ).not.toThrow();
+  });
+
+  it("FAILS when the diagnostics never reached diff.files — the regression the ratchet cannot see", () => {
+    // Exactly what deleting `...diagnostics` from registerUpgradeCheck's spread looks like: the byte
+    // diffs are still there, the diagnostic entries are gone. compareToBaseline would call this an
+    // improvement (empty ⊆ baseline); this must call it a failure.
+    expect(() => assertExpectedDiagnostics(PACK, filesWith([]))).toThrow(
+      /must match EXACTLY/,
+    );
+  });
+
+  it("FAILS when an unexpected extra diagnostic appears", () => {
+    expect(() =>
+      assertExpectedDiagnostics(
+        PACK,
+        filesWith([
+          ...expected!.map(asDiff),
+          asDiff({
+            code: DiagnosticCode.HairTransformFailed,
+            gamePath: "chara/human/c0101/obj/hair/h0002/texture/x_norm.tex",
+          }),
+        ]),
+      ),
+    ).toThrow(/must match EXACTLY/);
+  });
+
+  it("FAILS when the diagnostic's code changes", () => {
+    expect(() =>
+      assertExpectedDiagnostics(
+        PACK,
+        filesWith(
+          expected!.map((e) =>
+            asDiff({ ...e, code: DiagnosticCode.UpgradeFailed }),
+          ),
+        ),
+      ),
+    ).toThrow(/must match EXACTLY/);
+  });
+
+  it("ignores `detail`, which is free-form wording idOf never reads", () => {
+    const withOtherDetail = expected!
+      .map(asDiff)
+      .map((f) => ({ ...f, detail: "completely different wording" }));
+    expect(() =>
+      assertExpectedDiagnostics(PACK, filesWith(withOtherDetail)),
+    ).not.toThrow();
   });
 });
