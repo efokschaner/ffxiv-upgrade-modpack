@@ -43,45 +43,79 @@ export interface SyntheticTtmpGroup {
   /** Written verbatim. `undefined` OMITS the key entirely — a case the typed TtmpModGroupJson
    * cannot express, and one WizardData.cs:652 still has to answer for. */
   selectionType?: string;
+  /** `true` emits `OptionList: []` — the zero-option shape `WizardGroupEntry.FromWizardGroup`
+   * (WizardData.cs:749-753) bails out on and returns `null` for. Unlike the PMP analogue
+   * (`FromPMPGroup:851-855`), the null this produces is discarded at the ADD site
+   * (`WizardPageEntry.FromWizardModpackPage:986`, `if (g == null) continue;`), so it never reaches
+   * `ClearNulls`' unguarded page-level check — see `docs/TEXTOOLS_BUGS.md` #22's "TTMP wizard path
+   * is unaffected" note. Default `false`/absent: every existing caller keeps building one option. */
+  optionless?: boolean;
+}
+
+/** The one ModsJson every group's sole option points at across every pack `writeTtmp2Pack` builds —
+ * the page/group STRUCTURE is what these fixtures probe, never the payload content, so one shared
+ * dummy entry (same gamePath, same offset into the shared `DUMMY_PAYLOAD` blob) is deliberately
+ * reused everywhere, including across multiple groups in the same pack. Kept EXACTLY as it always
+ * was (do not edit `Name`, see `MULTI_PAGE_MODS_JSON` below) — every existing single-page fixture's
+ * bytes, and cached golden, are keyed off it. */
+const DUMMY_MODS_JSON = {
+  Name: "Dummy",
+  Category: "Unknown",
+  FullPath: DUMMY_GAME_PATH,
+  ModOffset: 0,
+  ModSize: DUMMY_PAYLOAD.length,
+  DatFile: "040000",
+  IsDefault: false,
+};
+
+/** Same shape as `DUMMY_MODS_JSON`, `Name` only, for `writeTtmp2MultiPage`'s fixtures instead.
+ * `WriteWizardPack`'s `AddFile` (TTMPWriter.cs) RE-DERIVES `ModsJson.Name`/`.Category` from the
+ * game path on write (docs/backlog/2026-07-13-resave-ttmp2-name-category.md — a real, unrelated
+ * writer gap our port doesn't reproduce, so we round-trip the source's declared value instead). For
+ * `DUMMY_GAME_PATH`, an unresolvable path, that re-derivation lands on `"Unknown"` — empirically
+ * confirmed against the ConsoleTools /resave golden for all four page-renumbering fixtures,
+ * 2026-08-04. Declaring it here up front means these structure-only fixtures don't inherit that
+ * unrelated gap's diff at all, rather than needing a baseline entry for it. */
+const MULTI_PAGE_MODS_JSON = { ...DUMMY_MODS_JSON, Name: "Unknown" };
+
+/** Shared by `writeTtmp2Pack` and `writeTtmp2MultiPage` — same object-literal shape either always
+ * built inline before this was extracted, so hoisting it changes no emitted byte. */
+function buildModGroups(
+  groups: SyntheticTtmpGroup[],
+  modsJson = DUMMY_MODS_JSON,
+) {
+  return groups.map((g) => {
+    const sel =
+      g.selectionType === undefined ? {} : { SelectionType: g.selectionType };
+    return {
+      GroupName: g.name,
+      ...sel,
+      OptionList: g.optionless
+        ? []
+        : [
+            {
+              Name: "On",
+              Description: "",
+              ImagePath: "",
+              GroupName: g.name,
+              ...sel,
+              IsChecked: false,
+              ModsJsons: [modsJson],
+            },
+          ],
+    };
+  });
 }
 
 /** Writes a one-page wizard .ttmp2 into test/corpus/<root>/ (gitignored, like the real corpus;
  * `root` defaults to "synthetic" — see pmp-builder.ts's SyntheticRoot). Every group gets one
- * option carrying the same dummy payload. */
+ * option carrying the same dummy payload (unless `optionless`, see `SyntheticTtmpGroup`). */
 export function writeTtmp2Pack(
   fileName: string,
   packName: string,
   groups: SyntheticTtmpGroup[],
   root: SyntheticRoot = "synthetic",
 ): void {
-  const modsJson = {
-    Name: "Dummy",
-    Category: "Unknown",
-    FullPath: DUMMY_GAME_PATH,
-    ModOffset: 0,
-    ModSize: DUMMY_PAYLOAD.length,
-    DatFile: "040000",
-    IsDefault: false,
-  };
-  const modGroups = groups.map((g) => {
-    const sel =
-      g.selectionType === undefined ? {} : { SelectionType: g.selectionType };
-    return {
-      GroupName: g.name,
-      ...sel,
-      OptionList: [
-        {
-          Name: "On",
-          Description: "",
-          ImagePath: "",
-          GroupName: g.name,
-          ...sel,
-          IsChecked: false,
-          ModsJsons: [modsJson],
-        },
-      ],
-    };
-  });
   const mpl = {
     TTMPVersion: "2.1w",
     Name: packName,
@@ -90,7 +124,59 @@ export function writeTtmp2Pack(
     Description: "",
     Url: "",
     MinimumFrameworkVersion: "1.3.0.0",
-    ModPackPages: [{ PageIndex: 0, ModGroups: modGroups }],
+    ModPackPages: [{ PageIndex: 0, ModGroups: buildModGroups(groups) }],
+  };
+
+  const outDir = join(CORPUS_DIR, root);
+  mkdirSync(outDir, { recursive: true });
+  const out = join(outDir, fileName);
+  writeFileSync(
+    out,
+    zipSync(
+      {
+        "TTMPL.mpl": new TextEncoder().encode(JSON.stringify(mpl)),
+        "TTMPD.mpd": DUMMY_PAYLOAD,
+      },
+      { mtime: FIXED_MTIME },
+    ),
+  );
+  console.log("wrote", out);
+}
+
+export interface SyntheticTtmpPage {
+  /** The DECLARED `ModPackPageJson.PageIndex` (:39 above). For a TTMP source this is decorative —
+   * `WizardPageEntry.FromWizardModpackPage` (WizardData.cs:977-990) reads it only to build a
+   * display name — so a sparse, duplicated, or out-of-array-order value is legal input and exactly
+   * what the fixtures in build-synthetic-empty-group.ts (design spec §1.3) probe. */
+  pageIndex: number;
+  groups: SyntheticTtmpGroup[];
+}
+
+/** Writes a MULTI-page wizard .ttmp2. Page IDENTITY for a TTMP source is POSITIONAL, not the
+ * declared `pageIndex`: `WizardData.FromWizardTtmp` (:1180-1184) appends one `DataPages` entry per
+ * `ModPackPages` array element in ARRAY order, and `WriteWizardPack` (:1332-1357) then calls
+ * `ClearNulls()`, skips `!page.HasData` survivors, and renumbers what's left with a dense counter
+ * over `DataPages` in that same order — never sorting and never consulting the declared value. So
+ * `pages` here is emitted in exactly the array order given, whatever each entry's `pageIndex` claims
+ * — see this module's four `pageIndex`-probe fixtures for what that does and does not preserve. */
+export function writeTtmp2MultiPage(
+  fileName: string,
+  packName: string,
+  pages: SyntheticTtmpPage[],
+  root: SyntheticRoot = "synthetic",
+): void {
+  const mpl = {
+    TTMPVersion: "2.1w",
+    Name: packName,
+    Author: "synthetic",
+    Version: "1.0.0",
+    Description: "",
+    Url: "",
+    MinimumFrameworkVersion: "1.3.0.0",
+    ModPackPages: pages.map((p) => ({
+      PageIndex: p.pageIndex,
+      ModGroups: buildModGroups(p.groups, MULTI_PAGE_MODS_JSON),
+    })),
   };
 
   const outDir = join(CORPUS_DIR, root);
