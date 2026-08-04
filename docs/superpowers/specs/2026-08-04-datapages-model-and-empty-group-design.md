@@ -248,8 +248,10 @@ alone leaves a gap a regression can hide in (code review, 2026-08-05):
    zip layout has no reason to match ours. This catches exactly the two gaps above: an extra/missing
    manifest member is a `structure` diff, and a shifted prefix is a payload MEMBER NAME diff. It is
    anchored to the real oracle transitively: the sibling pack goes through the ordinary
-   `registerUpgradeCheck` elsewhere in the corpus, which diffs it (content and structure) against the
-   REAL ConsoleTools `/upgrade` golden directly.
+   `registerResaveCheck` elsewhere in the corpus (the `/resave` golden check), which diffs it
+   (content and structure) via our writer against the REAL ConsoleTools `/resave` output
+   unconditionally. The `/upgrade` harness cannot anchor structure here because both siblings are
+   no-ops under `/upgrade` and the harness skips `diffArchives` entirely on the no-op branch.
 
 Together they prove the divergence yields precisely what TexTools would have produced had the
 crash-triggering group not been there — content from the real oracle, structure from our own

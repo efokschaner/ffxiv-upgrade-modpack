@@ -58,9 +58,10 @@ function findCorpusPack(fileName: string): string | undefined {
  *     (`optionPrefixes`), so a hand-authored sibling's raw member names have no reason to match ours
  *     even when behaviour is identical. The sibling's own writer output is independently anchored to
  *     ConsoleTools: the sibling pack (`test/corpus/synthetic/`) goes through the ordinary
- *     `registerUpgradeCheck` elsewhere in the suite, which diffs it (content AND structure) against
- *     the REAL ConsoleTools /upgrade golden — so if the sibling's own pipeline drifted from TexTools,
- *     that unit already fails independently of this one.
+ *     `registerResaveCheck` elsewhere in the suite (the /resave golden check), which diffs it
+ *     (content AND structure) via our writer against the REAL ConsoleTools /resave output
+ *     unconditionally. The /upgrade harness cannot anchor structure here because both siblings are
+ *     no-ops under /upgrade and the harness skips diffArchives entirely on the no-op branch.
  *
  * The sibling lookup is guarded: a rule naming a pack absent from the corpus fails LOUDLY. A
  * silently-missing sibling would make this whole confirmation a no-op — exactly what AGENTS.md's
