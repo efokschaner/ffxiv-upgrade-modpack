@@ -216,7 +216,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   // (WizardData.cs:1152-1157) — `page` is read transiently from the parsed group JSON (`g.Page`
   // below) purely to route the group into `pages` construction further down; it is not a model
   // field (`WizardGroupEntry` carries no page of its own).
-  const realGroups: { page: number; group: ModpackGroup }[] = [];
+  const realGroups: { page: number; group: ModpackGroup | null }[] = [];
   for (const name of groupNames) {
     const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
     const g = parsePmpGroup(gRaw);
@@ -256,16 +256,18 @@ export function readPmp(bytes: Uint8Array): ModpackData {
           : (rawSettings & (1n << BigInt(idx & 63))) !== 0n;
       return opt;
     });
+    // WizardData.cs · FromPMPGroup · 851-855 — `if (group.Options.Count == 0) return null;`,
+    // BEFORE the backstop at :857-860. NOT a skip-the-push: FromPmp adds the result
+    // unconditionally (:1156) and ClearNulls prunes it afterwards (:1249), so the null must
+    // reach page.groups for the control flow to match.
+    if (options.length === 0) {
+      realGroups.push({ page: g.Page, group: null });
+      continue;
+    }
     // WizardData.cs:857-860 — FromPMPGroup's tail. Same "none selected" backstop as the TTMP seam
     // (which is a DIFFERENT C# symbol, FromWizardGroup:755-757, so it is transcribed there
-    // separately rather than shared). It never clamps a group with more than one selected. The
-    // `length > 0` guard stands in for the zero-option early return at :851-855, unported — see
-    // docs/backlog/2026-07-20-empty-group-not-dropped.md.
-    if (
-      g.Type === "Single" &&
-      options.length > 0 &&
-      !options.some((o) => o.selected)
-    ) {
+    // separately rather than shared). It never clamps a group with more than one selected.
+    if (g.Type === "Single" && !options.some((o) => o.selected)) {
       options[0]!.selected = true;
     }
     const built: ModpackGroup = {

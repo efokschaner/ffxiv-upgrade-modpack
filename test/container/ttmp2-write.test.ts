@@ -14,6 +14,7 @@ import {
   makeTtmp2Simple,
   makeTtmp2Wizard,
 } from "../helpers/make-packs";
+import { buildWizardTtmp2Pages, readMplFrom } from "../helpers/ttmp2-fixture";
 
 function roundTrip(bytes: Uint8Array) {
   const data = readTtmp2(bytes);
@@ -109,6 +110,51 @@ describe("writeTtmp2 round-trip", () => {
       ],
     };
     expect(() => writeTtmp2(data)).toThrow(/cannot write a file with no bytes/);
+  });
+});
+
+describe("writeTtmp2 page renumbering", () => {
+  it("renumbers PageIndex densely over surviving pages (WriteWizardPack:1348-1357)", () => {
+    // Measured against ConsoleTools /resave 2026-08-04: a source page whose only group is
+    // option-less is dropped, and the survivor is emitted as PageIndex 0, not 1.
+    const data = readTtmp2(
+      buildWizardTtmp2Pages([
+        { pageIndex: 0, groups: [{ name: "Empty", options: [] }] },
+        { pageIndex: 1, groups: [{ name: "Real", options: ["On"] }] },
+      ]),
+    );
+    const mplDoc = readMplFrom(writeTtmp2(data));
+    expect(mplDoc.ModPackPages).toHaveLength(1);
+    expect(mplDoc.ModPackPages![0]!.PageIndex).toBe(0);
+  });
+
+  it("emits pages in source array order, not sorted by PageIndex (:1349)", () => {
+    const data = readTtmp2(
+      buildWizardTtmp2Pages([
+        { pageIndex: 1, groups: [{ name: "Second", options: ["On"] }] },
+        { pageIndex: 0, groups: [{ name: "First", options: ["On"] }] },
+      ]),
+    );
+    const mplDoc = readMplFrom(writeTtmp2(data));
+    expect(mplDoc.ModPackPages!.map((p) => p.ModGroups[0]!.GroupName)).toEqual([
+      "Second",
+      "First",
+    ]);
+    expect(mplDoc.ModPackPages!.map((p) => p.PageIndex)).toEqual([0, 1]);
+  });
+
+  it("keeps two source pages sharing a PageIndex separate (:1349)", () => {
+    const data = readTtmp2(
+      buildWizardTtmp2Pages([
+        { pageIndex: 0, groups: [{ name: "Alpha", options: ["On"] }] },
+        { pageIndex: 0, groups: [{ name: "Beta", options: ["On"] }] },
+      ]),
+    );
+    const mplDoc = readMplFrom(writeTtmp2(data));
+    expect(mplDoc.ModPackPages!.map((p) => p.ModGroups[0]!.GroupName)).toEqual([
+      "Alpha",
+      "Beta",
+    ]);
   });
 });
 

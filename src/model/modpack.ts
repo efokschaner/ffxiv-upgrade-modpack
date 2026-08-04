@@ -109,11 +109,6 @@ export interface ModpackPage {
    *  (src/container/clear-nulls.ts) nulls it on every page it visits (WizardData.cs:1239), mirroring
    *  `p.FolderPath = null`. */
   folderPath?: string;
-  /** TRANSITIONAL (deleted in the dense-renumber task). The source ModPackPageJson.PageIndex, kept
-   *  only so writeTtmp2 can keep emitting today's value while the model migration lands separately
-   *  from the behaviour change. WizardPageEntry has no such field — page identity is positional
-   *  (FromWizardTtmp:1180-1184) and the number is re-derived at write (WriteWizardPack:1348-1357). */
-  sourcePageIndex?: number;
 }
 
 export interface ModpackMeta {

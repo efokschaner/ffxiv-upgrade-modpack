@@ -18,7 +18,7 @@ import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { concatBytes, fnv1aKey } from "../util/binary";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
-import { clearNulls } from "./clear-nulls";
+import { clearNulls, pageHasData } from "./clear-nulls";
 import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
   ModPackJson,
@@ -159,11 +159,11 @@ export function readTtmp2(
   const pages: ModpackPage[] = [];
   for (const page of mpl.ModPackPages ?? []) {
     // WizardData.cs · WizardPageEntry.FromWizardModpackPage · 977-990 — one page per ModPackPages
-    // element, in array order. `sourcePageIndex` is TRANSITIONAL only (see ModpackPage's doc
-    // comment) — WizardPageEntry itself carries no page-index field.
+    // element, in array order. WizardPageEntry itself carries no page-index field; page identity is
+    // positional and the writer re-derives PageIndex with a dense counter at write time
+    // (WriteWizardPack:1348-1357).
     const builtPage: ModpackPage = {
       groups: [],
-      sourcePageIndex: page.PageIndex,
     };
     for (const g of page.ModGroups) {
       const built: ModpackGroup = {
@@ -192,20 +192,21 @@ export function readTtmp2(
           files: filesFromMods(o.ModsJsons, mpd, loadFix),
         })),
       };
-      builtPage.groups.push(built);
+      // WizardData.cs · FromWizardGroup · 749-753 — `if (group.Options.Count == 0) return null;`,
+      // BEFORE the Single "none selected" backstop at :755-757. The caller,
+      // WizardPageEntry.FromWizardModpackPage (:983-988), discards the null at the call site
+      // (`if (g == null) continue;`, :986) — so a skip-the-push here is the honest transcription.
+      if (built.options.length === 0) continue;
       // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
       // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
-      // selected option. The `length > 0` guard stands in for the zero-option early return at
-      // :749-753 (C# returns null for an empty group; we do not port that pruning yet — see
-      // docs/backlog/2026-07-20-empty-group-not-dropped.md), so an option-less group cannot crash
-      // here.
+      // selected option.
       if (
         built.selectionType === "Single" &&
-        built.options.length > 0 &&
         !built.options.some((o) => o.selected)
       ) {
         built.options[0]!.selected = true;
       }
+      builtPage.groups.push(built);
     }
     pages.push(builtPage);
   }
@@ -323,8 +324,14 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
     // before anything else reads DataPages.
     const dataPages = allPages(data);
     clearNulls(dataPages);
-    const byPage = new Map<number, TtmpModGroupJsonWrite[]>();
+    // WizardData.cs · WriteWizardPack · 1348-1357 — pages are emitted in DataPages ORDER with a
+    // DENSE counter, not by the source PageIndex, and a page with no data is skipped entirely.
+    // Measured against ConsoleTools /resave 2026-08-04: a sparse source index (3) emits as 0; two
+    // pages sharing an index stay two pages; source array order is preserved rather than sorted.
+    const pages: TtmpModPackPageJsonWrite[] = [];
     for (const page of dataPages) {
+      if (!pageHasData(page)) continue; // :1351
+      const modGroups: TtmpModGroupJsonWrite[] = [];
       for (const g of page.groups) {
         // Narrow rather than assert: ClearNulls has already run (just above), so no page reaching
         // here holds a null.
@@ -343,14 +350,7 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
         // as "Multi". An option has no type of its own: it delegates to its group (:335-341), so the
         // same value is written at both levels.
         const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
-        // TRANSITIONAL (deleted along with `sourcePageIndex` in the dense-renumber task, §2/§6 of
-        // the design spec): keys `byPage` off the source PageIndex rather than array position, so
-        // this task's structural switch from `data.groups` to `data.pages` stays byte-neutral —
-        // Phase 2 replaces this with the dense per-page counter WriteWizardPack itself computes
-        // (:1348-1357).
-        const key = page.sourcePageIndex ?? 0;
-        const list = byPage.get(key) ?? [];
-        list.push({
+        modGroups.push({
           GroupName: g.name,
           SelectionType: selectionType,
           // Key order is ModOptionJson's C# declaration order (ModPackJson.cs · ModOptionJson ·
@@ -367,12 +367,9 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
             IsChecked: o.selected,
           })),
         });
-        byPage.set(key, list);
       }
+      pages.push({ PageIndex: pages.length, ModGroups: modGroups }); // :1355-1356
     }
-    const pages: TtmpModPackPageJsonWrite[] = [...byPage.keys()]
-      .sort((a, b) => a - b)
-      .map((p) => ({ PageIndex: p, ModGroups: byPage.get(p)! }));
     mpl.ModPackPages = pages;
   }
 
