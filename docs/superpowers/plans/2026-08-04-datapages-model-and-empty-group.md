@@ -92,8 +92,13 @@ describe("readPmp page construction (WizardData.FromPmp:1118-1159)", () => {
       defaultModFiles: { "chara/dummy/a.bin": "files\\a.bin" },
       groups: [{ name: "G", page: 0, optionNames: ["On"] }],
     }));
-    expect(data.pages).toHaveLength(1);
-    expect(data.pages[0]!.groups.map((g) => g?.name)).toEqual(["Default", "G"]);
+    // TWO pages: the Default page, plus the page built for index 0 that the off-by-one leaves
+    // empty (WizardData.cs:1144-1150 creates it, :1155 routes G to DataPages[0] instead). That
+    // orphaned page survives until ClearNulls prunes it — which FromPmp calls at :1159 but this
+    // task does not yet wire up (see the plan's Task 6).
+    expect(data.pages).toHaveLength(2);
+    expect(data.pages![0]!.groups.map((g) => g?.name)).toEqual(["Default", "G"]);
+    expect(data.pages![1]!.groups).toEqual([]);
   });
 });
 ```
@@ -247,7 +252,7 @@ Do **not** call `clearNulls` here yet — Task 6 adds it. Keep `data.pages` un-p
 
 - [ ] **Step 6: One page in `readLegacyTtmp`**
 
-`src/container/ttmp-legacy.ts` returns `pages: [{ groups: [group] }]`, with the same `FromSimpleTtmp` citation as Step 4 (a legacy pack loads through `FromSimpleTtmp` via the synthesized `"0.1s"` mpl, `TTMP.cs:453-462`). Delete `page: 0` from its group literal.
+`src/container/ttmp-legacy.ts` returns `pages: [{ groups: [group] }]` **in addition to** its existing `groups: [group]`, with the same `FromSimpleTtmp` citation as Step 4 (a legacy pack loads through `FromSimpleTtmp` via the synthesized `"0.1s"` mpl, `TTMP.cs:453-462`). **Keep** `page: 0` on its group literal — `ModpackGroup.page` is still required until Task 4, and `writeTtmp2` still buckets on it until Task 7.
 
 - [ ] **Step 7: Run the new test**
 
