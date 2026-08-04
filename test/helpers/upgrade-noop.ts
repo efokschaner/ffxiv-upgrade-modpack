@@ -136,13 +136,12 @@ export function transformChanges(
   after: ModpackData,
 ): FileDiff[] {
   const diffs: FileDiff[] = [];
-  // `allGroups` (not `.groups` directly): the pipeline mutates through `.pages`, and `.pages`'
-  // emptiness handling for a PMP's synthesized Default group correctly differs from the flat
-  // `.groups` list's unconditional-Default construction (src/container/pmp.ts's `readPmp`, its
-  // "byte-neutral migration scaffold" comment) — so `.groups` on `before` (straight from the reader)
-  // and `.groups` on `after` (derived from the transformed `.pages`, src/upgrade/upgrade.ts's
-  // `cloneModpack`) are not guaranteed to line up index-for-index. `allGroups` reads the same `.pages`
-  // view both sides of the transform actually operate on.
+  // `allGroups`, not a direct walk: `ModpackData` carries no flat group list (see its doc comment,
+  // src/model/modpack.ts) — `.pages` is the only representation, and `allGroups` is its one blessed
+  // accessor, walking every page's (already null-pruned) groups in page order. `before` and `after`
+  // are both `ModpackData`, produced by the same read → upgrade pipeline (`before` pre-transform,
+  // `after` post-), so walking them the identical way here is what guarantees their group lists line
+  // up index-for-index below.
   const beforeGroups = allGroups(before);
   const afterGroups = allGroups(after);
   const groupCount = Math.max(beforeGroups.length, afterGroups.length);

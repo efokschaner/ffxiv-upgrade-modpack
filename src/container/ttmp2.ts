@@ -273,6 +273,11 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
       `ttmp2: cannot write ExtraFiles (${data.extraFiles.size}) — TTMP has no equivalent container member`,
     );
   }
+  // Computed BEFORE `clearNulls` runs below (the wizard branch's, at :326), inverting
+  // `WriteWizardPack`'s order (`ClearNulls()` is its first statement, :1334). Verified inert: every
+  // page/group `clearNulls` can remove is, by construction, one with zero surviving options
+  // (`groupHasData`/`pageHasData`, src/container/clear-nulls.ts), so it contributes zero entries to
+  // `allFiles` either way — pruning it after the fact changes nothing this blob build reads.
   const files = allFiles(data);
   const { blob, place } = buildBlob(files.map((e) => e.file));
 
@@ -318,10 +323,20 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   };
 
   if (data.isSimple) {
+    // No `clearNulls` call on this branch, though `WriteWizardPack:1334` calls it unconditionally.
+    // Not a gap: C# never reaches WriteWizardPack for a simple pack at all (`isSimple` write is a
+    // wholly separate C# path, TTMP.CreateSimpleModPack/SimpleModPackData — a different class
+    // hierarchy this port merges into one module, see this file's own citations), so `ClearNulls`
+    // simply doesn't apply here. Inert either way: a simple pack's one hand-built page/group/option
+    // (readTtmp2's simple path, mirroring FromSimpleTtmp:1204-1231 — see
+    // docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md §4) can never be
+    // the zero-option/zero-group case `clearNulls` prunes.
     mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));
   } else {
-    // WizardData.cs · WriteWizardPack · 1334 — the first statement of the wizard write branch,
-    // before anything else reads DataPages.
+    // WizardData.cs · WriteWizardPack · 1334 — the first statement of the WHOLE FUNCTION, not of a
+    // "wizard branch" within it: WriteWizardPack has no isSimple/wizard split of its own (that split
+    // is this port's; see the comment above). It runs before anything else in this function reads
+    // DataPages.
     const dataPages = allPages(data);
     clearNulls(dataPages);
     // WizardData.cs · WriteWizardPack · 1348-1357 — pages are emitted in DataPages ORDER with a
@@ -339,7 +354,7 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
         // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
         // Groups.") as its first statement, before it builds the ModGroup or visits any option.
         // `selectionType === "Imc"` stands in for GroupType == EGroupType.Imc (:609-618), as at
-        // option-prefix.ts:288 and pmp.ts:485. Only a PMP source carries an Imc group, and /upgrade
+        // option-prefix.ts:197 and pmp.ts:625. Only a PMP source carries an Imc group, and /upgrade
         // never converts formats, so this is unreachable today.
         if (g.selectionType === "Imc") {
           throw new Error("ttmp2: TTMP Does not support IMC Groups.");

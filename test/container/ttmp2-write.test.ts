@@ -155,6 +155,9 @@ describe("writeTtmp2 page renumbering", () => {
       "Alpha",
       "Beta",
     ]);
+    // Measured against ConsoleTools /resave 2026-08-04: two source pages sharing a PageIndex stay
+    // TWO pages, densely renumbered 0 -> Alpha, 1 -> Beta — not collapsed into one.
+    expect(mplDoc.ModPackPages!.map((p) => p.PageIndex)).toEqual([0, 1]);
   });
 });
 

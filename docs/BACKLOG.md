@@ -181,7 +181,8 @@ unchanged by deployment; only probability moves.
 2. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
-   packs** (111 total, incl. 21 synthetic and 5 expected-failure) on one machine, gitignored, with no
+   packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
+   (2026-08-04) added 8 synthetic + 2 upgrade-error) on one machine, gitignored, with no
    CI. Code coverage was strong at the last measurement (92.98% lines / 84.6% branches as of
    2026-07-20 — the 0% files are re-export barrels), so the residual risk is **data and inputs, not
    code paths**, which is exactly what more packs buy and coverage cannot; this is the only entry

@@ -257,12 +257,14 @@ describe("resolveDuplicates", () => {
     expect(result.get(dupA)).toBe("common/1/a.tex");
   });
 
-  it("ignores FileSwaps on an option that buildPages PRUNED (no `prefixes` entry) without throwing", () => {
+  it("ignores FileSwaps on an option whose group never made it into a surviving page (no `prefixes` entry) without throwing", () => {
     const opt = option("Opt", [], {
       "chara/dest.tex": "chara/src.tex",
     });
-    // `prefixes` has NO entry for `opt` at all -- simulating a group/option that buildPages
-    // pruned out of the surviving pages. `data.pages` still carries it, though.
+    // `prefixes` has NO entry for `opt` at all -- simulating `optionPrefixes`' documented absent
+    // case (src/container/option-prefix.ts): the synthesized Default option when default_mod.json
+    // is empty, which `readPmp`'s `IsEmptyOption` check skips constructing at all. `data.pages`
+    // still carries it here, though, standing in for that real shape.
     const prefixes = new Map<ModpackOption, string>();
     const d = pack([group("G", [opt])]);
 

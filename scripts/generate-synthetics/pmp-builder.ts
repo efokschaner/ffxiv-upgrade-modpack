@@ -81,7 +81,7 @@ export const EMPTY_DEFAULT_MOD: PmpOptionJsonRaw = {
  * — PMP.cs:1107-1109 notes the value is the backslashed one) defaults to `{}`, which keeps both the
  * emitted key ORDER and the emitted bytes identical for every pack that does not pass it.
  *
- * `page` (PMPGroupJson.Page, PMP.cs:1399 — a genuine DataPages index, `WizardData.FromPmp:1155`)
+ * `page` (PMPGroupJson.Page, PMP.cs:1393 — a genuine DataPages index, `WizardData.FromPmp:1155`)
  * defaults to `0`, so every existing caller keeps emitting the same value it always did. */
 export function singleOptionGroup(
   name: string,

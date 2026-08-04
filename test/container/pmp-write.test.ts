@@ -496,8 +496,8 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
 });
 
 describe("writePmp default-mod absorption searches DataPages order, not just the real groups (WizardData.cs:1118-1138/:1553-1578)", () => {
-  // The absorption search must consider the SYNTHESIZED Default group (data.groups[0], built from
-  // default_mod.json) ahead of any REAL group, because FromPmp unshifts it onto the FRONT of
+  // The absorption search must consider the SYNTHESIZED Default group (data.pages[0]'s sole group,
+  // built from default_mod.json) ahead of any REAL group, because FromPmp unshifts it onto the FRONT of
   // DataPages whenever default_mod.json is non-empty and hardcodes its Name/Options[0].Name to the
   // literal "Default" (WizardData.cs:1118-1138) -- so it ALWAYS wins the search whenever it
   // survives. A pack with BOTH a non-empty default_mod.json AND a real "Default" group (one option,

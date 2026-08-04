@@ -45,11 +45,6 @@ function option(
   };
 }
 
-/** An empty (IsEmptyOption-true) option, for a Default group that should NOT get its own page. */
-function emptyOption(name = ""): ModpackOption {
-  return option(name, { files: [] });
-}
-
 function group(name: string, options: ModpackOption[]): ModpackGroup {
   return {
     name,
@@ -85,16 +80,16 @@ function data(pages: ModpackPage[]): ModpackData {
 }
 
 describe("optionPrefixes", () => {
-  it("1. empty default + one single-option group: default gets no entry, group collapses to '<group>/'", () => {
-    // The empty default group never made it into `pages` at all -- readPmp's IsEmptyOption check
-    // (src/container/pmp.ts) is exactly what decides that at load; here it is simply absent, mirroring
-    // the surviving structure that check produces.
-    const defaultGroup = group("Default", [emptyOption()]);
+  it("1. lone single-option group on a lone page: it collapses to '<group>/', with no page prefix", () => {
+    // No Default group here at all -- `pages` holds exactly what a load whose default_mod.json was
+    // empty produces (readPmp's IsEmptyOption check, src/container/pmp.ts, decides that at load; the
+    // absent-entry case for that empty Default option's OWN option is covered directly by
+    // test/container/pages-construction.test.ts, which reads readPmp's real output rather than a
+    // hand-built ModpackGroup this module's input never included).
     const g = group("Black Veil", [option("Black Veil")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
-    expect(prefixes.has(defaultGroup.options[0]!)).toBe(false);
     expect(prefixes.get(g.options[0]!)).toBe("black veil/");
   });
 

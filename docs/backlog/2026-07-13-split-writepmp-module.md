@@ -17,8 +17,9 @@ function in one module, unlike the rest of the PMP write path (`option-prefix.ts
 - `pmp-write.ts` — the `PMP.WritePmp`-shaped zip/JSON assembly (meta.json, default_mod.json,
   group_NNN.json serialization, the payload/ExtraFiles zip write); and
 - `wizard-write-pmp.ts` — the `WizardData.WritePmp`-shaped orchestration (DataPages walk, absorption
-  search, Page renumbering — already largely factored out into `buildPages` / `optionPrefixes`, this
-  would just relocate the remaining orchestration currently still inline in `writePmp`).
+  search, Page renumbering — already largely factored out into `readPmp`'s page construction,
+  `clear-nulls.ts`'s pruning, and `option-prefix.ts`, this would just relocate the remaining
+  orchestration currently still inline in `writePmp`).
 
 Deferred out of the write-regeneration review (2026-07-13) as a pure reorganization with no
 behavioral change — real risk is byte-for-byte parity regressions from a mechanical refactor with no
