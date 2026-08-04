@@ -435,7 +435,20 @@ In `src/model/modpack.ts`:
 
 Then delete every now-dead `page:` line from group literals in `src/container/pmp.ts`, `src/container/ttmp-legacy.ts`, `src/container/ttmp2.ts` and the `test/` fixtures. `readPmp` keeps a **local** page number per parsed group for its page-assignment loop — that is not the model field and must survive.
 
-- [ ] **Step 2: Typecheck**
+- [ ] **Step 2: Rewrite the one test the scaffold was propping up**
+
+`test/container/pmp-selected.test.ts` — "a zero-option Single group does not trip the backstop" still reads `data.groups![1]!`, the last consumer of the scaffold. Task 3 deliberately left it rather than change an assertion unilaterally.
+
+Rewrite it to assert the group is **absent**, read through `allGroups(data)`. That is already the true behaviour: Task 5 wired `clearNulls` into `readPmp` at the `FromPmp:1159` seam, and `ClearNulls`' group prune (`WizardData.cs:1249`) removes a zero-option group from `pages`. Name the test for what it now proves, e.g. "a zero-option group is pruned from the wizard model (ClearNulls, WizardData.cs:1249)".
+
+Task 7 later ports `FromPMPGroup`'s own early return (`:851-855`) for control-flow fidelity; it does not change this outcome, so this rewrite stands.
+
+- [ ] **Step 3: Clear the two deferred minors from Task 2**
+
+1. `writePmp` and `writeTtmp2` now **mutate** their `ModpackData` argument — `allPages(data)` returns `data.pages` by reference and `clearNulls` splices in place. This is faithful (`ClearNulls` mutates `this.DataPages` inside both C# writers) and currently inert, but undisclosed. Add one line to each function's doc comment saying so, citing `WizardData.cs:1462` / `:1334`.
+2. Four comments name symbols Task 2 deleted: `src/container/pmp.ts:169`, `:325`, `:814` (`isEmptyDefaultOption`, `buildPages`) and `src/container/resolve-duplicates.ts:44` (`buildPages`). Repoint each at where the logic actually lives now (`isEmptyPmpOption` in `readPmp`; page construction in `readPmp`; pruning in `clear-nulls.ts`). Line numbers are pre-Task-2 — locate by symbol name, not by line.
+
+- [ ] **Step 4: Typecheck**
 
 Run: `npm run typecheck`
 Expected: PASS, zero errors. Every remaining reference to `data.groups` or `group.page` is now a compile error, so this step is what proves the migration is complete rather than merely working.
