@@ -8,7 +8,7 @@
 // TS analogue of FromPmp's `fakeGroup` (WizardData.cs:1121-1129). `data.groups.slice(1)` are the
 // real PMP groups (`pmp.Groups` in the C#), each carrying its own `.page`.
 //
-// This module ports two TexTools bugs faithfully; see docs/TEXTOOLS_BUGS.md #1 and #6 for the
+// This module ports two TexTools bugs faithfully; see docs/TEXTOOLS_BUGS.md #7 and #6 for the
 // full writeups:
 //
 //   1. FromPmp's page-index off-by-one (WizardData.cs:1152-1157): when a Default page is
