@@ -36,9 +36,17 @@ import {
 } from "../model/modpack";
 import { folderSafeName } from "./pmp";
 
-// Port of MakePagePrefix (WizardData.cs:1362-1382).
-function makePagePrefix(pages: ModpackPage[], page: ModpackPage): string {
-  if (page.folderPath !== undefined) return page.folderPath;
+// Port of MakePagePrefix (WizardData.cs:1362-1382). `WizardPageEntry.FolderPath` (:967) is the C#'s
+// memo; `ModpackPage` carries no equivalent field (see its doc comment, src/model/modpack.ts), so
+// `pageFolderPaths` — local to this module's exported `optionPrefixes`, one per call — stands in for
+// it instead.
+function makePagePrefix(
+  pages: ModpackPage[],
+  page: ModpackPage,
+  pageFolderPaths: Map<ModpackPage, string>,
+): string {
+  const existing = pageFolderPaths.get(page);
+  if (existing !== undefined) return existing;
 
   let pagePrefix = "";
   if (pages.length > 1) {
@@ -50,7 +58,7 @@ function makePagePrefix(pages: ModpackPage[], page: ModpackPage): string {
     pagePrefix = "";
   }
 
-  page.folderPath = pagePrefix;
+  pageFolderPaths.set(page, pagePrefix);
   return pagePrefix;
 }
 
@@ -60,6 +68,7 @@ function makeGroupPrefix(
   page: ModpackPage,
   group: ModpackGroup,
   groupFolderPaths: Map<ModpackGroup, string>,
+  pageFolderPaths: Map<ModpackPage, string>,
 ): string {
   const existing = groupFolderPaths.get(group);
   if (existing !== undefined) return existing;
@@ -70,7 +79,7 @@ function makeGroupPrefix(
   let gName = folderSafeName(group.name);
   if (gName.trim() === "") gName = "Blank Group";
 
-  const pagePrefix = makePagePrefix(pages, page);
+  const pagePrefix = makePagePrefix(pages, page, pageFolderPaths);
   let prefix = pagePrefix;
   if (page.groups.length > 0) {
     // WizardData.cs:1398-1401 — always true whenever this runs (group is a member of page.groups),
@@ -157,6 +166,9 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   }));
   const groupFolderPaths = new Map<ModpackGroup, string>();
   const optionFolderPaths = new Map<ModpackOption, string>();
+  // Local stand-in for `WizardPageEntry.FolderPath` (see makePagePrefix's doc comment) — scoped to
+  // this one call, same lifetime as `groupFolderPaths`/`optionFolderPaths` above.
+  const pageFolderPaths = new Map<ModpackPage, string>();
 
   // TWO passes, mirroring WritePmp's own two separate loops over DataPages — reproduced as two
   // loops here (not one page/group/option nesting pass) because they resolve MakeGroupPrefix
@@ -188,6 +200,7 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
         page,
         group,
         groupFolderPaths,
+        pageFolderPaths,
       );
       for (const option of group.options) {
         makeOptionPrefix(group, groupFolderPath, option, optionFolderPaths);
@@ -201,6 +214,7 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
         page,
         group,
         groupFolderPaths,
+        pageFolderPaths,
       );
       for (const option of group.options) {
         makeOptionPrefix(group, groupFolderPath, option, optionFolderPaths);

@@ -57,12 +57,4 @@ describe("clearNulls (WizardData.cs:1234-1266)", () => {
     clearNulls(pages);
     expect(pages[0]!.groups.map((g) => g?.name)).toEqual(["Real"]);
   });
-
-  it("nulls each surviving page's folderPath (:1239)", () => {
-    const pages: ModpackPage[] = [
-      { groups: [group("Real", 1)], folderPath: "p1/" },
-    ];
-    clearNulls(pages);
-    expect(pages[0]!.folderPath).toBeUndefined();
-  });
 });

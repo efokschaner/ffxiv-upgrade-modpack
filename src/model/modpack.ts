@@ -104,12 +104,15 @@ export interface ModpackGroup {
  *  never admits one — FromWizardModpackPage discards it at the call site (:986). */
 export interface ModpackPage {
   groups: (ModpackGroup | null)[];
-  /** Mirrors `WizardPageEntry.FolderPath` (WizardData.cs:967) — a memo `optionPrefixes`'
-   *  `makePagePrefix` (src/container/option-prefix.ts) fills in on first computation. `clearNulls`
-   *  (src/container/clear-nulls.ts) nulls it on every page it visits (WizardData.cs:1239), mirroring
-   *  `p.FolderPath = null`. */
-  folderPath?: string;
 }
+// `WizardPageEntry.FolderPath` (WizardData.cs:967) has no field here. It is a per-COMPUTATION memo
+// (`WizardData.cs:1375` writes it, `:1239`/`:1462`/`:1334` null it before every recompute), not
+// model state a caller ever reads back — `optionPrefixes` (src/container/option-prefix.ts) owns the
+// only consumer, `makePagePrefix`, and keeps its own local memo across its own two passes instead
+// (code review, 2026-08-05: a `ModpackPage.folderPath` field existed here briefly, but
+// `optionPrefixes` computes over a SHALLOW COPY of `data.pages`, so every write to it landed on a
+// throwaway object and the field was permanently `undefined` on any real `ModpackData` — dead field,
+// not a bug in the copy).
 
 export interface ModpackMeta {
   // Name/Author/Description/Url are `string | null`: WizardMetaEntry.FromTtmp assigns all four

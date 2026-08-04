@@ -40,7 +40,9 @@ export function pageHasData(p: ModpackPage): boolean {
 export function clearNulls(pages: ModpackPage[]): void {
   // `DataPages.ToList()` (:1236) — iterate a SNAPSHOT while removing from the live list.
   for (const p of [...pages]) {
-    p.folderPath = undefined; // :1239 — `p.FolderPath = null`
+    // :1239 — `p.FolderPath = null`. Not ported: `ModpackPage` carries no `folderPath` field at all
+    // (see its doc comment, src/model/modpack.ts) — `optionPrefixes` owns that memo locally and
+    // never reads it back through this module, so there is nothing here to null.
     if (!pageHasData(p)) {
       pages.splice(pages.indexOf(p), 1); // :1242
       continue;
