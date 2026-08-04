@@ -4,6 +4,7 @@
 // transform path, the tail rewrite, and updateUnclaimedHairAccessory (see the describe block below).
 import { describe, expect, it } from "vitest";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -697,34 +698,44 @@ describe("reports a swallowed hair-transform failure (e2e through upgradeModpack
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [
+      pages: [
         {
-          name: "G",
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
+          groups: [
             {
-              name: "O",
+              name: "G",
               description: "",
               image: "",
+              page: 0,
               priority: 0,
-              selected: false,
-              fileSwaps: {},
-              manipulations: [],
-              files: filesMap([
-                [
-                  NORM_OLD,
-                  { data: normBytes, storage: FileStorageType.RawUncompressed },
-                ],
-                [
-                  SPEC_OLD,
-                  { data: specBytes, storage: FileStorageType.RawUncompressed },
-                ],
-              ]),
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: "O",
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  fileSwaps: {},
+                  manipulations: [],
+                  files: filesMap([
+                    [
+                      NORM_OLD,
+                      {
+                        data: normBytes,
+                        storage: FileStorageType.RawUncompressed,
+                      },
+                    ],
+                    [
+                      SPEC_OLD,
+                      {
+                        data: specBytes,
+                        storage: FileStorageType.RawUncompressed,
+                      },
+                    ],
+                  ]),
+                },
+              ],
             },
           ],
         },
@@ -753,9 +764,9 @@ describe("reports a swallowed hair-transform failure (e2e through upgradeModpack
     expect(d?.provenance).toContain("EndwalkerUpgrade.cs");
     // The raw pre-transform copy written at unclaimed-hair.ts before the try is still in place,
     // untransformed -- reporting must not change the transform.
-    expect(r.data.groups![0]!.options[0]!.files.has(NORM_DEST)).toBe(true);
-    expect(r.data.groups![0]!.options[0]!.files.get(NORM_DEST)!.data).toEqual(
-      normBytes,
-    );
+    expect(allGroups(r.data)[0]!.options[0]!.files.has(NORM_DEST)).toBe(true);
+    expect(
+      allGroups(r.data)[0]!.options[0]!.files.get(NORM_DEST)!.data,
+    ).toEqual(normBytes);
   });
 });

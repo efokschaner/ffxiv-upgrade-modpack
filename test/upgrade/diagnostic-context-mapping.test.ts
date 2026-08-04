@@ -33,7 +33,7 @@ function emptyModpack(): ModpackData {
     sourceFormat: ModpackFormat.Ttmp2,
     isSimple: false,
     meta: emptyMeta(),
-    groups: [],
+    pages: [{ groups: [] }],
   };
 }
 

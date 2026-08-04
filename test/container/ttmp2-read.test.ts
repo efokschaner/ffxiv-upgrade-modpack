@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ModPackJson } from "../../src/container/manifest-types";
 import { readTtmp2 } from "../../src/container/ttmp2";
-import { allFiles, FileStorageType } from "../../src/model/modpack";
+import { allFiles, allGroups, FileStorageType } from "../../src/model/modpack";
 import { writeZip } from "../../src/zip/zip";
 import { makeTtmp2Simple, makeTtmp2Wizard } from "../helpers/make-packs";
 
@@ -23,9 +23,9 @@ describe("readTtmp2", () => {
   it("reads a wizard pack into page/group/option tree", () => {
     const data = readTtmp2(makeTtmp2Wizard().bytes);
     expect(data.isSimple).toBe(false);
-    expect(data.groups).toHaveLength(1);
-    expect(data.groups![0]!.options).toHaveLength(2);
-    expect(data.groups![0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
+    expect(allGroups(data)).toHaveLength(1);
+    expect(allGroups(data)[0]!.options).toHaveLength(2);
+    expect(allGroups(data)[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
   });
 
   it("collapses a duplicate FullPath within one option last-write-wins (WizardData.cs:729-737)", () => {
@@ -88,7 +88,7 @@ describe("readTtmp2", () => {
     ]);
     const ttmp = writeZip(entries);
     const data = readTtmp2(ttmp);
-    const files = data.groups![0]!.options[0]!.files;
+    const files = allGroups(data)[0]!.options[0]!.files;
     expect(files.size).toBe(1);
     expect(files.get("chara/dup.tex")!.data).toEqual(bytesB);
   });

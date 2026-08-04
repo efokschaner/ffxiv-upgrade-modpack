@@ -21,51 +21,55 @@ describe("model", () => {
       sourceFormat: ModpackFormat.Ttmp2,
       isSimple: true,
       meta: emptyMeta(),
-      groups: [
+      pages: [
         {
-          name: "g",
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
+          groups: [
             {
-              name: "o1",
+              name: "g",
               description: "",
               image: "",
+              page: 0,
               priority: 0,
-              selected: false,
-              fileSwaps: {},
-              manipulations: [],
-              files: filesMap([
-                [
-                  "a.mdl",
-                  {
-                    data: new Uint8Array([1]),
-                    storage: FileStorageType.SqPackCompressed,
-                  },
-                ],
-              ]),
-            },
-            {
-              name: "o2",
-              description: "",
-              image: "",
-              priority: 0,
-              selected: false,
-              fileSwaps: {},
-              manipulations: [],
-              files: filesMap([
-                [
-                  "b.mtrl",
-                  {
-                    data: new Uint8Array([2]),
-                    storage: FileStorageType.SqPackCompressed,
-                  },
-                ],
-              ]),
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: "o1",
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  fileSwaps: {},
+                  manipulations: [],
+                  files: filesMap([
+                    [
+                      "a.mdl",
+                      {
+                        data: new Uint8Array([1]),
+                        storage: FileStorageType.SqPackCompressed,
+                      },
+                    ],
+                  ]),
+                },
+                {
+                  name: "o2",
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  fileSwaps: {},
+                  manipulations: [],
+                  files: filesMap([
+                    [
+                      "b.mtrl",
+                      {
+                        data: new Uint8Array([2]),
+                        storage: FileStorageType.SqPackCompressed,
+                      },
+                    ],
+                  ]),
+                },
+              ],
             },
           ],
         },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readPmp } from "../../src/container/pmp";
+import { allGroups } from "../../src/model/modpack";
 import { makePmpWithGroup } from "../helpers/make-packs";
 
 describe("readPmp selected", () => {
@@ -8,7 +9,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 1, optionCount: 3 }),
     );
-    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       false,
       true,
       false,
@@ -20,7 +21,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 9, optionCount: 3 }),
     );
-    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
       false,
@@ -36,7 +37,7 @@ describe("readPmp selected", () => {
         optionCount: 3,
       }),
     );
-    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
       true,
@@ -47,7 +48,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: 0, optionCount: 3 }),
     );
-    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       false,
       false,
       false,
@@ -60,7 +61,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: -1, optionCount: 3 }),
     );
-    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       true,
       true,
       true,
@@ -75,7 +76,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: 1, optionCount: 66 }),
     );
-    const selected = data.groups![1]!.options.map((o) => o.selected);
+    const selected = allGroups(data)[1]!.options.map((o) => o.selected);
     expect(selected.filter(Boolean)).toHaveLength(2);
     expect(selected[0]).toBe(true);
     expect(selected[64]).toBe(true);
@@ -94,6 +95,11 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
     );
+    // NOT allGroups(data): this test's own subject is readPmp's flat, still-unconditionally-built
+    // `groups` scaffold (pmp.ts's `groups` local, populated independently of `pages`/`clearNulls`) --
+    // see task-3-report.md's flagged finding. `allGroups(data)` already disagrees with this assertion
+    // today because clearNulls (landed ahead of schedule, Task 5) already prunes the zero-option group
+    // out of `pages`; converting this read is Task 7's job (design spec §8), not Task 3's.
     expect(data.groups![1]!.options).toEqual([]);
   });
 
@@ -103,6 +109,6 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 1 }),
     );
-    expect(data.groups![0]!.options.map((o) => o.selected)).toEqual([true]);
+    expect(allGroups(data)[0]!.options.map((o) => o.selected)).toEqual([true]);
   });
 });

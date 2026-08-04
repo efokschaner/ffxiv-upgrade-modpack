@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { upgradeModpack } from "../../src/index";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -100,19 +101,23 @@ function packWith(gamePath: string, data: Uint8Array): ModpackData {
       tags: ["t"],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
-          option([
-            [gamePath, { data, storage: FileStorageType.RawUncompressed }],
-          ]),
+        groups: [
+          {
+            name: "G",
+            description: "",
+            image: "",
+            page: 0,
+            priority: 0,
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              option([
+                [gamePath, { data, storage: FileStorageType.RawUncompressed }],
+              ]),
+            ],
+          },
         ],
       },
     ],
@@ -125,7 +130,7 @@ describe("upgradeModpack partials (skin repath e2e)", () => {
     const r = upgradeModpack(packWith(OLD, bytes));
     expect(r.ok).toBe(true);
     if (!r.ok) throw new Error("unreachable");
-    const files = r.data.groups![0]!.options[0]!.files;
+    const files = allGroups(r.data)[0]!.options[0]!.files;
     expect(files.has(NEW)).toBe(true);
   });
 });

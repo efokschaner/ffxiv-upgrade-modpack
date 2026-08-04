@@ -12,7 +12,7 @@ import {
 import { filesMap } from "../helpers/make-packs";
 
 // Minimal builders local to this test file. `resolveDuplicates` only reads gamePath/data off
-// ModpackFile and files/name off ModpackOption; `data.groups` is used only for the
+// ModpackFile and files/name off ModpackOption; `data.pages` is used only for the
 // prefixes<->data cross-check (see the "mismatched data/prefixes" test below), so these builders
 // don't need option-prefix.test.ts's Default-group scaffolding.
 
@@ -72,7 +72,7 @@ function pack(groups: ModpackGroup[]): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups,
+    pages: [{ groups }],
   };
 }
 
@@ -224,10 +224,10 @@ describe("resolveDuplicates", () => {
     expect(result.size).toBe(0);
   });
 
-  it("throws if prefixes references an option absent from data.groups (mismatched data/prefixes)", () => {
+  it("throws if prefixes references an option absent from data.pages (mismatched data/prefixes)", () => {
     const opt = option("Opt", [file("a.tex", bytes(1))]);
     const prefixes = new Map([[opt, "g/"]]);
-    const d = pack([]); // opt is reachable from nowhere in d.groups
+    const d = pack([]); // opt is reachable from nowhere in d.pages
 
     expect(() => resolveDuplicates(d, prefixes)).toThrow(/prefixes/);
   });
@@ -263,7 +263,7 @@ describe("resolveDuplicates", () => {
       "chara/dest.tex": "chara/src.tex",
     });
     // `prefixes` has NO entry for `opt` at all -- simulating a group/option that buildPages
-    // pruned out of the surviving pages. `data.groups` still carries it, though.
+    // pruned out of the surviving pages. `data.pages` still carries it, though.
     const prefixes = new Map<ModpackOption, string>();
     const d = pack([group("G", [opt])]);
 

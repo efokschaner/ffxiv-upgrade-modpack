@@ -7,6 +7,7 @@ import type {
 import { readPmp, writePmp } from "../../src/container/pmp";
 import {
   allFiles,
+  allGroups,
   FileStorageType,
   type ModpackData,
   ModpackFormat,
@@ -172,70 +173,80 @@ describe("writePmp model-building fallback (no raw)", () => {
         tags: ["tagA", "tagB"],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [
+      pages: [
         {
-          name: "Default",
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
+          groups: [
             {
-              // "Default": matches WritePmp's absorption predicate (WizardData.cs:1553-1578)
-              // structurally, exactly as FromPmp's REAL synthesized Default option would
-              // (Name hardcoded "Default", WizardData.cs:1122/1128) -- not a blank name, which the
-              // blank-name guard (WizardData.cs:1520-1523) would otherwise reject before absorption
-              // is ever considered.
               name: "Default",
               description: "",
               image: "",
+              page: 0,
               priority: 0,
-              selected: false,
-              files: filesMap([
-                [
-                  "chara/equipment/foo.tex",
-                  { data: fooBytes, storage: FileStorageType.RawUncompressed },
-                ],
-              ]),
-              fileSwaps: {},
-              manipulations: [],
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  // "Default": matches WritePmp's absorption predicate (WizardData.cs:1553-1578)
+                  // structurally, exactly as FromPmp's REAL synthesized Default option would
+                  // (Name hardcoded "Default", WizardData.cs:1122/1128) -- not a blank name, which the
+                  // blank-name guard (WizardData.cs:1520-1523) would otherwise reject before absorption
+                  // is ever considered.
+                  name: "Default",
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  files: filesMap([
+                    [
+                      "chara/equipment/foo.tex",
+                      {
+                        data: fooBytes,
+                        storage: FileStorageType.RawUncompressed,
+                      },
+                    ],
+                  ]),
+                  fileSwaps: {},
+                  manipulations: [],
+                },
+              ],
             },
-          ],
-        },
-        {
-          name: "Color Options",
-          description: "pick one",
-          image: "grp.png",
-          page: 0,
-          priority: 5,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
             {
-              name: "Red",
-              description: "the red one",
-              image: "red.png",
-              priority: 2,
-              selected: false,
-              files: filesMap([
-                [
-                  "chara/equipment/red.tex",
-                  { data: redBytes, storage: FileStorageType.RawUncompressed },
-                ],
-              ]),
-              // FileSwaps left empty here -- this fixture isn't exercising FileSwap
-              // preservation (a non-empty map is deliberately carried through unchanged, not
-              // rejected -- see the round-trip test above and
-              // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md).
-              fileSwaps: {},
-              // Every field a real PMPImcManipulationJson declares must be present: a document
-              // omitting one is NOT modeled as "absent from the output" (a bare `{ Type: "Imc" }`
-              // used to be pinned here, silently inventing that shape — see
-              // pmp-manipulation.test.ts and
-              // docs/backlog/2026-07-13-pmp-manipulation-field-defaults.md).
-              manipulations: [IMC_MANIPULATION],
+              name: "Color Options",
+              description: "pick one",
+              image: "grp.png",
+              page: 0,
+              priority: 5,
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: "Red",
+                  description: "the red one",
+                  image: "red.png",
+                  priority: 2,
+                  selected: false,
+                  files: filesMap([
+                    [
+                      "chara/equipment/red.tex",
+                      {
+                        data: redBytes,
+                        storage: FileStorageType.RawUncompressed,
+                      },
+                    ],
+                  ]),
+                  // FileSwaps left empty here -- this fixture isn't exercising FileSwap
+                  // preservation (a non-empty map is deliberately carried through unchanged, not
+                  // rejected -- see the round-trip test above and
+                  // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md).
+                  fileSwaps: {},
+                  // Every field a real PMPImcManipulationJson declares must be present: a document
+                  // omitting one is NOT modeled as "absent from the output" (a bare `{ Type: "Imc" }`
+                  // used to be pinned here, silently inventing that shape — see
+                  // pmp-manipulation.test.ts and
+                  // docs/backlog/2026-07-13-pmp-manipulation-field-defaults.md).
+                  manipulations: [IMC_MANIPULATION],
+                },
+              ],
             },
           ],
         },
@@ -319,7 +330,7 @@ describe("writePmp model-building fallback (no raw)", () => {
   // always has one.
   it("drops an absent file from Files in the model-building branch, keeping present ones", () => {
     const data = modeledData();
-    const redOption = data.groups![1]!.options[0]!;
+    const redOption = allGroups(data)[1]!.options[0]!;
     redOption.files.set("chara/equipment/missing.tex", {
       storage: FileStorageType.RawUncompressed,
       // no `data` -> absent (PMP.cs:883-888)
@@ -446,19 +457,23 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [
+      pages: [
         {
-          name: "Default",
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [],
+          groups: [
+            {
+              name: "Default",
+              description: "",
+              image: "",
+              page: 0,
+              priority: 0,
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [],
+            },
+            group("Choice", new Uint8Array([1, 2, 3])),
+            group("Choice.", secondBytes),
+          ],
         },
-        group("Choice", new Uint8Array([1, 2, 3])),
-        group("Choice.", secondBytes),
       ],
     };
   }
@@ -589,27 +604,6 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
   // the search's OWN `Options[0].Name == "Default"` check compares the UNTRIMMED option name; only
   // the emitted `Name` value downstream is affected.
   function modeledGroup(name: string, optionName: string): ModpackData {
-    const defaultGroup = {
-      name: "Default",
-      description: "",
-      image: "",
-      page: 0,
-      priority: 0,
-      selectionType: "Single",
-      defaultSettings: 0,
-      options: [
-        {
-          name: "",
-          description: "",
-          image: "",
-          priority: 0,
-          selected: false,
-          files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
-          fileSwaps: {},
-          manipulations: [],
-        },
-      ],
-    };
     const realGroup = {
       name,
       description: "",
@@ -652,12 +646,10 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [defaultGroup, realGroup],
       // Mirrors what readPmp would actually build (src/container/pmp.ts): the empty Default option
       // above is IsEmptyOption, so a real load never synthesizes a Default page for it at all -- only
-      // `realGroup` ends up in `pages`. `optionPrefixes`/`writePmp` read `pages`, not `groups` (Task 2,
-      // src/container/option-prefix.ts); `groups` above is kept only as this migration-scaffold
-      // fixture's flat mirror, unread by the code under test.
+      // `realGroup` ends up in `pages`, which `optionPrefixes`/`writePmp` read (Task 2,
+      // src/container/option-prefix.ts).
       pages: [{ groups: [realGroup] }],
     };
   }
@@ -720,27 +712,6 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
       fileSwaps: {},
       manipulations: [],
     }));
-    const defaultGroup = {
-      name: "Default",
-      description: "",
-      image: "",
-      page: 0,
-      priority: 0,
-      selectionType: "Single",
-      defaultSettings: 0,
-      options: [
-        {
-          name: "",
-          description: "",
-          image: "",
-          priority: 0,
-          selected: false,
-          files: filesMap([]),
-          fileSwaps: {},
-          manipulations: [],
-        },
-      ],
-    };
     const choiceGroup = {
       name: "Choice",
       description: "",
@@ -764,7 +735,6 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [defaultGroup, choiceGroup],
       // See modeledGroup's twin above ("writePmp trims group/option names"): the empty Default
       // option means readPmp would never synthesize a Default page, so only `choiceGroup` reaches
       // `pages`, which is what `optionPrefixes`/`writePmp` actually read (Task 2).
@@ -904,12 +874,6 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [
-        group("Default", 0, []), // empty -> IsEmptyOption -> no synthesized Default page at all
-        alphaGroup,
-        emptyGroup,
-        gammaGroup,
-      ],
       // Mirrors what readPmp would build: no Default page (empty), then one page per real group's
       // own `.page` (no off-by-one shift here, since there is no Default page to unshift onto the
       // front). `writePmp`'s own `clearNulls(pages)` call (src/container/pmp.ts, WritePmp:1462) is
@@ -945,27 +909,6 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
   // HasData's content check — a branch that is dead code on every load path this port reaches, since
   // ModOption is always set there (see option-prefix.ts's header comment).
   function buildData(): ModpackData {
-    const defaultGroup = {
-      name: "Default",
-      description: "",
-      image: "",
-      page: 0,
-      priority: 0,
-      selectionType: "Single",
-      defaultSettings: 0,
-      options: [
-        {
-          name: "",
-          description: "",
-          image: "",
-          priority: 0,
-          selected: false,
-          files: filesMap([]),
-          fileSwaps: {},
-          manipulations: [],
-        },
-      ],
-    };
     const emptyGroup = {
       name: "Empty",
       description: "",
@@ -1000,7 +943,6 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [defaultGroup, emptyGroup],
       // The Default option is empty -> readPmp would never synthesize a Default page for it; only
       // `emptyGroup` reaches `pages` (still kept -- it has one OPTION, just a content-free one; see
       // this describe block's own header comment on why that's not the same as zero options).
@@ -1279,54 +1221,58 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [
+      pages: [
         {
-          name: "Default",
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
+          groups: [
             {
-              name: "",
+              name: "Default",
               description: "",
               image: "",
+              page: 0,
               priority: 0,
-              selected: false,
-              files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
-              fileSwaps: {},
-              manipulations: [],
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: "",
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
+                  fileSwaps: {},
+                  manipulations: [],
+                },
+              ],
             },
-          ],
-        },
-        {
-          name: groupName,
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
             {
-              name: optionName,
+              name: groupName,
               description: "",
               image: "",
+              page: 0,
               priority: 0,
-              selected: false,
-              files: filesMap([
-                [
-                  "chara/x.tex",
-                  {
-                    data: new Uint8Array([1]),
-                    storage: FileStorageType.RawUncompressed,
-                  },
-                ],
-              ]),
-              fileSwaps: {},
-              manipulations: [],
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: optionName,
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  files: filesMap([
+                    [
+                      "chara/x.tex",
+                      {
+                        data: new Uint8Array([1]),
+                        storage: FileStorageType.RawUncompressed,
+                      },
+                    ],
+                  ]),
+                  fileSwaps: {},
+                  manipulations: [],
+                },
+              ],
             },
           ],
         },
@@ -1354,27 +1300,6 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
   // docs/backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md), so writePmp fails loud instead
   // of silently emitting a member TexTools would never write.
   function modeledData(gamePath: string): ModpackData {
-    const defaultGroup = {
-      name: "Default",
-      description: "",
-      image: "",
-      page: 0,
-      priority: 0,
-      selectionType: "Single",
-      defaultSettings: 0,
-      options: [
-        {
-          name: "",
-          description: "",
-          image: "",
-          priority: 0,
-          selected: false,
-          files: filesMap([]), // empty -> IsEmptyOption -> no synthesized Default page at all
-          fileSwaps: {},
-          manipulations: [],
-        },
-      ],
-    };
     const choiceGroup = {
       name: "Choice",
       description: "",
@@ -1417,7 +1342,6 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [defaultGroup, choiceGroup],
       // The Default option is empty -> readPmp would never synthesize a Default page; only
       // `choiceGroup` reaches `pages`.
       pages: [{ groups: [choiceGroup] }],

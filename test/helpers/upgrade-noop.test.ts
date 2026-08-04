@@ -51,7 +51,7 @@ function pack(...groups: ModpackGroup[]): ModpackData {
     sourceFormat: ModpackFormat.Pmp,
     isSimple: false,
     meta: emptyMeta(),
-    groups,
+    pages: [{ groups }],
   };
 }
 

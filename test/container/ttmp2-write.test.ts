@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readTtmp2, writeTtmp2 } from "../../src/container/ttmp2";
 import {
   allFiles,
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -35,7 +36,7 @@ describe("writeTtmp2 round-trip", () => {
     const pack = makeTtmp2Wizard();
     const out = roundTrip(pack.bytes);
     expect(out.isSimple).toBe(false);
-    expect(out.groups![0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
+    expect(allGroups(out)[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
     const byPath = new Map(
       allFiles(out).map(({ gamePath, file }) => [gamePath, file.data]),
     );
@@ -70,33 +71,39 @@ describe("writeTtmp2 round-trip", () => {
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [
+      pages: [
         {
-          name: "Default",
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
+          groups: [
             {
               name: "Default",
               description: "",
               image: "",
+              page: 0,
               priority: 0,
-              selected: false,
-              fileSwaps: {},
-              manipulations: [],
-              files: filesMap([
-                // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
-                // writeTtmp2's defensive runtime guard; structurally unreachable through any real
-                // reader (design spec §3.4), hence the cast.
-                [
-                  "chara/x.mtrl",
-                  { storage: FileStorageType.SqPackCompressed } as ModpackFile,
-                ],
-              ]),
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: "Default",
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  fileSwaps: {},
+                  manipulations: [],
+                  files: filesMap([
+                    // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
+                    // writeTtmp2's defensive runtime guard; structurally unreachable through any real
+                    // reader (design spec §3.4), hence the cast.
+                    [
+                      "chara/x.mtrl",
+                      {
+                        storage: FileStorageType.SqPackCompressed,
+                      } as ModpackFile,
+                    ],
+                  ]),
+                },
+              ],
             },
           ],
         },
@@ -118,8 +125,8 @@ function mpl(bytes: Uint8Array): Record<string, unknown> {
 describe("writeTtmp2 .mpl fidelity", () => {
   it("writes IsChecked on every option", () => {
     const data = readTtmp2(makeTtmp2Wizard().bytes);
-    data.groups![0]!.options[0]!.selected = true;
-    data.groups![0]!.options[1]!.selected = false;
+    allGroups(data)[0]!.options[0]!.selected = true;
+    allGroups(data)[0]!.options[1]!.selected = false;
     // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
     const out = mpl(writeTtmp2(data)) as any;
     expect(

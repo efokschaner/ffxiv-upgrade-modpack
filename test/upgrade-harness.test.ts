@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { writeTtmp2 } from "../src/container/ttmp2";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -89,33 +90,37 @@ function rawPack(files: Record<string, Uint8Array>): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "O",
+            name: "G",
             description: "",
             image: "",
+            page: 0,
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: new Map(
-              Object.entries(files).map(([gamePath, data]) => [
-                gamePath,
-                {
-                  data,
-                  storage: FileStorageType.RawUncompressed,
-                } satisfies ModpackFile,
-              ]),
-            ),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "O",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: new Map(
+                  Object.entries(files).map(([gamePath, data]) => [
+                    gamePath,
+                    {
+                      data,
+                      storage: FileStorageType.RawUncompressed,
+                    } satisfies ModpackFile,
+                  ]),
+                ),
+              },
+            ],
           },
         ],
       },
@@ -132,7 +137,7 @@ function addOption(
   gamePath: string,
   file: ModpackFile,
 ): void {
-  const group = data.groups![0]!;
+  const group = allGroups(data)[0]!;
   group.options.push({
     name: `extra-${group.options.length}`,
     description: "",
@@ -191,7 +196,7 @@ describe("diffUpgrade", () => {
     const raw = new Uint8Array([7, 7, 7, 7]);
     const entry = encodeSqPackFile(raw, SqPackType.Standard);
     const ours = rawPack({}); // start empty, then inject a compressed file
-    ours.groups![0]!.options[0]!.files.set("c.mtrl", {
+    allGroups(ours)[0]!.options[0]!.files.set("c.mtrl", {
       data: entry,
       storage: FileStorageType.SqPackCompressed,
     });
@@ -332,33 +337,37 @@ function rawPackTtmp2(): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "Default",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
             name: "Default",
             description: "",
             image: "",
+            page: 0,
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap([
-              [
-                "a/b.mtrl",
-                {
-                  data: new Uint8Array([1, 2, 3, 4]),
-                  storage: FileStorageType.SqPackCompressed,
-                },
-              ],
-            ]),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "Default",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap([
+                  [
+                    "a/b.mtrl",
+                    {
+                      data: new Uint8Array([1, 2, 3, 4]),
+                      storage: FileStorageType.SqPackCompressed,
+                    },
+                  ],
+                ]),
+              },
+            ],
           },
         ],
       },

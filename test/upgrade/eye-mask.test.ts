@@ -3,6 +3,7 @@
 // conversion (ConvertEyeMaskToDiffuse) that runs once every gate clears.
 import { describe, expect, it } from "vitest";
 import {
+  allGroups,
   emptyMeta,
   FileStorageType,
   type ModpackFile,
@@ -145,30 +146,37 @@ function pack(files: Record<string, Uint8Array>) {
     sourceFormat: ModpackFormat.Pmp,
     isSimple: false,
     meta: emptyMeta(),
-    groups: [
+    pages: [
       {
-        name: "g",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "o",
+            name: "g",
             description: "",
             image: "",
+            page: 0,
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: new Map(
-              Object.entries(files).map(([p, d]) => [
-                p,
-                { storage: FileStorageType.RawUncompressed, data: d } as const,
-              ]),
-            ),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "o",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: new Map(
+                  Object.entries(files).map(([p, d]) => [
+                    p,
+                    {
+                      storage: FileStorageType.RawUncompressed,
+                      data: d,
+                    } as const,
+                  ]),
+                ),
+              },
+            ],
           },
         ],
       },
@@ -187,7 +195,7 @@ describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () =
     const diffuse = EYE_MATERIALS.get(
       `chara/human/c${rc[1]}/obj/face/f${rc[2]}/material/mt_c${rc[1]}f${rc[2]}_iri_a.mtrl`,
     )!.diffusePath!;
-    const wrote = out.groups!.some((g) =>
+    const wrote = allGroups(out).some((g) =>
       g.options.some((o) => o.files.has(diffuse)),
     );
     expect(wrote).toBe(true);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DiagnosticCode, upgradeModpack } from "../../src/index";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -53,33 +54,37 @@ function sampleData(): ModpackData {
       tags: ["t"],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "O",
+            name: "G",
             description: "",
             image: "",
+            page: 0,
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap([
-              [
-                "a/b.mtrl",
-                {
-                  data: new Uint8Array([1, 2, 3]),
-                  storage: FileStorageType.SqPackCompressed,
-                },
-              ],
-            ]),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "O",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap([
+                  [
+                    "a/b.mtrl",
+                    {
+                      data: new Uint8Array([1, 2, 3]),
+                      storage: FileStorageType.SqPackCompressed,
+                    },
+                  ],
+                ]),
+              },
+            ],
           },
         ],
       },
@@ -139,25 +144,29 @@ function modpackWithSingleFile(
       tags: ["t"],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "O",
+            name: "G",
             description: "",
             image: "",
+            page: 0,
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap([[gamePath, { data, storage }]]),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "O",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap([[gamePath, { data, storage }]]),
+              },
+            ],
           },
         ],
       },
@@ -230,7 +239,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradedOk(input);
-    const outFile = [...out.groups![0]!.options[0]!.files.values()][0]!;
+    const outFile = [...allGroups(out)[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
@@ -244,7 +253,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradedOk(input);
-    const outFile = [...out.groups![0]!.options[0]!.files.values()][0]!;
+    const outFile = [...allGroups(out)[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual([1, 2, 3, 4, 5]);
   });
@@ -258,7 +267,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradedOk(input);
-    const outFile = [...out.groups![0]!.options[0]!.files.values()][0]!;
+    const outFile = [...allGroups(out)[0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
@@ -275,7 +284,9 @@ describe("upgradeModpack (material round)", () => {
     );
 
     const out = upgradedOk(input);
-    const [outGamePath, outFile] = [...out.groups![0]!.options[0]!.files][0]!;
+    const [outGamePath, outFile] = [
+      ...allGroups(out)[0]!.options[0]!.files,
+    ][0]!;
 
     expect(outFile.storage).toBe(FileStorageType.SqPackCompressed);
     const decoded = decodeSqPackFile(outFile.data!).data;
@@ -398,7 +409,7 @@ describe("upgradeModpack (skeleton)", () => {
     const input = sampleData();
     const out = upgradedOk(input);
     expect(out.meta.name).toBe("M");
-    const outFile = out.groups![0]!.options[0]!.files.get("a/b.mtrl")!;
+    const outFile = allGroups(out)[0]!.options[0]!.files.get("a/b.mtrl")!;
     expect(Array.from(outFile.data!)).toEqual([1, 2, 3]);
   });
 
@@ -406,15 +417,15 @@ describe("upgradeModpack (skeleton)", () => {
     const input = sampleData();
     const out = upgradedOk(input);
     expect(out).not.toBe(input);
-    expect(out.groups).not.toBe(input.groups);
-    expect(out.groups![0]!.options[0]!.files).not.toBe(
-      input.groups![0]!.options[0]!.files,
+    expect(out.pages).not.toBe(input.pages);
+    expect(out.pages![0]!.groups[0]!.options[0]!.files).not.toBe(
+      input.pages![0]!.groups[0]!.options[0]!.files,
     );
-    out.groups![0]!.options[0]!.files.set("x.tex", {
+    out.pages![0]!.groups[0]!.options[0]!.files.set("x.tex", {
       data: new Uint8Array(),
       storage: FileStorageType.RawUncompressed,
     });
-    expect(input.groups![0]!.options[0]!.files.size).toBe(1);
+    expect(input.pages![0]!.groups[0]!.options[0]!.files.size).toBe(1);
   });
 });
 
@@ -471,37 +482,44 @@ function buildColorsetPack(
       tags: ["t"],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "O",
+            name: "G",
             description: "",
             image: "",
+            page: 0,
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap([
-              [
-                "chara/x/mat/mt_foo.mtrl",
-                { data: mtrlBytes, storage: FileStorageType.RawUncompressed },
-              ],
-              [
-                normalPath,
-                {
-                  data: normalTexBytes,
-                  storage: FileStorageType.RawUncompressed,
-                },
-              ],
-            ]),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "O",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap([
+                  [
+                    "chara/x/mat/mt_foo.mtrl",
+                    {
+                      data: mtrlBytes,
+                      storage: FileStorageType.RawUncompressed,
+                    },
+                  ],
+                  [
+                    normalPath,
+                    {
+                      data: normalTexBytes,
+                      storage: FileStorageType.RawUncompressed,
+                    },
+                  ],
+                ]),
+              },
+            ],
           },
         ],
       },
@@ -521,7 +539,7 @@ describe("upgradeModpack texture round (e2e)", () => {
       encodeUncompressedTex(rgba, w, h, { mips: false }),
     );
     const out = upgradedOk(data);
-    const files = out.groups![0]!.options[0]!.files;
+    const files = allGroups(out)[0]!.options[0]!.files;
     const idx = files.get("chara/x/tex/foo_id.tex");
     expect(idx).toBeDefined();
     expect(Array.from(decodeToRgba(parseTex(idx!.data!)))).toEqual(

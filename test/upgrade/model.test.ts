@@ -11,7 +11,7 @@ function data(format: ModpackFormat, ttmp?: string): ModpackData {
     sourceFormat: format,
     isSimple: false,
     meta: { ...emptyMeta(), sourceTtmpVersion: ttmp },
-    groups: [],
+    pages: [{ groups: [] }],
   };
 }
 
