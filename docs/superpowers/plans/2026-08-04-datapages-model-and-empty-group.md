@@ -17,6 +17,7 @@
 - **Split, don't blend.** Logic from different C# symbols does not share a TS module or a helper.
 - **Port gaps throw `UnportedGapError`** (`src/util/errors.ts`), never a bare `Error`.
 - **End-of-task ritual, required before any task is considered done:** `npm run check`, then `npm run typecheck`, then `npm test` — all green.
+- **Every commit must typecheck.** A lefthook pre-commit hook runs Biome + `tsc --noEmit` on every commit, so a task may never leave the tree uncompilable "for the next task to fix". This is why Phase 1 migrates behind a compatibility scaffold (`pages` optional, `groups` retained) and removes the scaffold in one final task, rather than swapping the field out in one step.
 - **Baselines must not move in Phase 1.** Do **not** set `UPDATE_UPGRADE_BASELINE` during Tasks 1–6. If a baseline moves, that is the bug Phase 1 exists to catch.
 - Formatting is Biome's; never hand-format.
 - The corpus (`test/corpus/real`, `test/corpus/synthetic`, `test/corpus/upgrade-error`) is gitignored and local-only. Rebuild synthetics with `npm run synthetics`.
@@ -53,10 +54,12 @@
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `export interface ModpackPage { groups: (ModpackGroup | null)[] }`
-  - `ModpackData.pages: ModpackPage[]` — replaces `groups`.
-  - `export function allGroups(data: ModpackData): ModpackGroup[]` — flattens pages, dropping nulls.
-  - `allFiles(data)` keeps its existing signature `{ gamePath, file }[]`.
+  - `export interface ModpackPage { groups: (ModpackGroup | null)[]; sourcePageIndex?: number }`
+  - `ModpackData.pages?: ModpackPage[]` — **optional in this task**, alongside the retained `groups`.
+  - `export function allGroups(data: ModpackData): ModpackGroup[]` — flattens pages, dropping nulls; falls back to `data.groups` while `pages` is absent.
+  - `allFiles(data)` keeps its existing signature `{ gamePath, file }[]` and its current behaviour.
+
+**Why the scaffold.** `pages` is optional and `groups` stays populated only until Task 4. The pre-commit hook typechecks every commit, so the field cannot be swapped in one step across ~40 files; Tasks 1–3 migrate producers then consumers behind the scaffold, and Task 4 removes it. Nothing in `src/` reads `pages` in this task, which is what makes Task 1 byte-neutral by construction rather than by argument.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -124,30 +127,37 @@ export interface ModpackPage {
 }
 ```
 
-Change `ModpackData`: delete `groups: ModpackGroup[]`, add
+Change `ModpackData`: **keep** `groups: ModpackGroup[]` exactly as it is, and add beside it
 
 ```ts
   /** Mirrors WizardData.DataPages (WizardData.cs:1080). There is no flat group list in the C# and
-   *  none here: two views of the same groups drift. Use `allGroups` to iterate them. */
-  pages: ModpackPage[];
+   *  there will be none here either — `groups` above is a migration scaffold this field replaces
+   *  (see the plan's Task 4). Optional only while both exist; every reader already populates it.
+   *  Use `allGroups` to iterate. */
+  pages?: ModpackPage[];
 ```
 
-Delete `page: number` from `ModpackGroup` and replace its line with nothing — `WizardGroupEntry` carries no page; `readPmp` reads `PMPGroupJson.Page` transiently while assigning pages, exactly as `FromPmp:1155` does.
+**Keep** `page: number` on `ModpackGroup` for now — Task 4 deletes it, once `readPmp` is the only thing that needs a group's page number and reads it transiently from the parsed JSON, as `FromPmp:1155` does.
 
 Add below `emptyMeta`:
 
 ```ts
 /** Every non-null group across every page, in page order — the order WritePmp's own loops use
  *  (WizardData.cs:1506-1542, :1583-1600). Nulls are skipped rather than thrown on: ClearNulls has
- *  already removed them from any page this walks (see src/container/clear-nulls.ts). */
+ *  already removed them from any page this walks (see src/container/clear-nulls.ts).
+ *
+ *  MIGRATION SCAFFOLD: the `?? data.groups` fallback exists only while `pages` is optional, so a
+ *  ModpackData literal that predates the migration still resolves. Task 4 makes `pages` required,
+ *  deletes `groups`, and deletes this fallback with it. */
 export function allGroups(data: ModpackData): ModpackGroup[] {
+  if (!data.pages) return data.groups;
   return data.pages.flatMap((p) =>
     p.groups.filter((g): g is ModpackGroup => g !== null),
   );
 }
 ```
 
-Rewrite `allFiles` to walk `allGroups(data)` instead of `data.groups`.
+**Leave `allFiles` alone in this task.** It still walks `data.groups`; Task 2 switches it. Changing it here would move the flat iteration order (spec §3.1) in the same commit that introduces the model, making a byte movement impossible to attribute.
 
 - [ ] **Step 4: Build pages in `readTtmp2`**
 
@@ -261,6 +271,9 @@ git commit -m "feat(model): build WizardData.DataPages at load, per FromPmp/From
 **Interfaces:**
 - Consumes: `ModpackPage`, `allGroups`, `allFiles` from Task 1.
 - Produces: `option-prefix.ts` exports `optionPrefixes(data)` only — `buildPages` and `Page` are deleted; the prefix builders take `ModpackPage[]` and `ModpackPage`.
+- Produces: `ModpackData.groups` becomes **optional** (`groups?: ModpackGroup[]`) at the end of this task, and `allGroups`'s fallback becomes `data.groups ?? []`. Nothing in `src/` reads `groups` directly after this task; test fixtures still set it until Task 3.
+
+**Scaffold state entering this task:** `pages` is optional and populated by all three readers; `groups` is required and populated; nothing in `src/` reads `pages` yet. This task flips `src/` over. **This is where spec §3.1's flat-iteration-order hazard actually lands** — `allFiles` switching from `data.groups` to page order is the byte-visible change — so run the full corpus before committing and report any pack that moves.
 
 - [ ] **Step 1: Delete `buildPages` from `option-prefix.ts`**
 
@@ -369,8 +382,8 @@ Expected: ~30 paths. Work through them one file at a time.
 
 - [ ] **Step 2: Apply the three mechanical rules**
 
-1. A `ModpackData` literal's `groups: [g1, g2]` becomes `pages: [{ groups: [g1, g2] }]` — **one page**, unless the fixture's groups carried different `page:` values, in which case build one `ModpackPage` per distinct value in ascending order, each holding that value's groups in their original relative order.
-2. A `ModpackGroup` literal's `page: N` line is **deleted** (the field no longer exists).
+1. A `ModpackData` literal's `groups: [g1, g2]` becomes `pages: [{ groups: [g1, g2] }]` — **one page**, unless the fixture's groups carried different `page:` values, in which case build one `ModpackPage` per distinct value in ascending order, each holding that value's groups in their original relative order. Delete the `groups:` key in the same edit; it is optional as of Task 2 and Task 4 removes it from the model.
+2. Leave each `ModpackGroup` literal's `page: N` line alone — Task 4 deletes the field.
 3. A read of `data.groups` becomes `allGroups(data)`; a read of `data.groups[i]` becomes `allGroups(data)[i]`. Where a test is specifically about page structure, assert on `data.pages` directly instead.
 
 Do **not** change any assertion's expected values. If an assertion's meaning depends on group order, verify against rule 1 that the order is preserved.
@@ -392,13 +405,31 @@ git commit -m "test: migrate ModpackData fixtures from groups to pages"
 
 ---
 
-## Task 4: Phase 1 byte-neutrality gate
+## Task 4: Remove the scaffold, and gate Phase 1
 
-**Files:** none modified — this task is a verification gate.
+**Files:**
+- Modify: `src/model/modpack.ts`, plus any remaining `page:` occurrences in `test/` fixtures and in `src/container/pmp.ts`/`ttmp-legacy.ts` group literals.
 
-**Interfaces:** Consumes everything from Tasks 1–3.
+**Interfaces:**
+- Consumes everything from Tasks 1–3.
+- Produces the final Phase 1 model: `ModpackData.pages: ModpackPage[]` (**required**), no `groups`, and `ModpackGroup` with no `page`.
 
-- [ ] **Step 1: Full gate**
+- [ ] **Step 1: Delete the compatibility scaffold**
+
+In `src/model/modpack.ts`:
+- Delete `groups?: ModpackGroup[]` from `ModpackData`.
+- Make `pages` required: `pages: ModpackPage[]`, and delete the "MIGRATION SCAFFOLD" paragraph from its doc comment.
+- Delete `allGroups`' `if (!data.pages) return data.groups;` fallback line and the scaffold paragraph from its doc comment.
+- Delete `page: number` from `ModpackGroup`, with this note in the commit body rather than the code: `WizardGroupEntry` carries no page; `readPmp` reads `PMPGroupJson.Page` transiently while assigning pages, exactly as `FromPmp:1155` does.
+
+Then delete every now-dead `page:` line from group literals in `src/container/pmp.ts`, `src/container/ttmp-legacy.ts`, `src/container/ttmp2.ts` and the `test/` fixtures. `readPmp` keeps a **local** page number per parsed group for its page-assignment loop — that is not the model field and must survive.
+
+- [ ] **Step 2: Typecheck**
+
+Run: `npm run typecheck`
+Expected: PASS, zero errors. Every remaining reference to `data.groups` or `group.page` is now a compile error, so this step is what proves the migration is complete rather than merely working.
+
+- [ ] **Step 3: Full gate**
 
 Run, in order:
 
@@ -416,14 +447,17 @@ git status --porcelain test/corpus
 
 Expected: empty output (baselines are gitignored, so this is a belt-and-braces check that nothing else moved).
 
-- [ ] **Step 2: If a corpus pack now fails, STOP**
+Reference: the pre-migration baseline on this machine was **550 test files, 2024 passed, 1 skipped, ~3.4 min**. The counts should be unchanged except for the tests Task 1 added.
+
+- [ ] **Step 4: If a corpus pack now fails, STOP**
 
 A failing pack means the flat-iteration reorder of spec §3.1 moved bytes — the specific hazard this phase exists to detect. Do **not** re-bless. Diagnose which pack, and whether `allFiles` order or `resolveDuplicates`' `common/N` assignment changed, and report back before continuing.
 
-- [ ] **Step 3: Commit (only if green)**
+- [ ] **Step 5: Commit**
 
 ```bash
-git commit --allow-empty -m "test: Phase 1 corpus gate green — DataPages move is byte-neutral"
+git add src/ test/
+git commit -m "refactor(model): drop the flat group list; DataPages is the model"
 ```
 
 ---
