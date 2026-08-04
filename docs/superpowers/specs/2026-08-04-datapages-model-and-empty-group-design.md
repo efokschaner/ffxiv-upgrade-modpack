@@ -81,7 +81,7 @@ the item, since the survivor would still be emitted as `PageIndex: 1`.
 
 ### 1.4 The root cause is a blended model
 
-`WizardData` carries only `DataPages` (`:1080`) — `List<WizardPageEntry>`, each holding
+`WizardData` carries only `DataPages` (`:1079`) — `List<WizardPageEntry>`, each holding
 `List<WizardGroupEntry> Groups`. We carry a flat `groups: ModpackGroup[]` plus a `page: number`,
 and that number means two different things:
 
@@ -234,10 +234,26 @@ one rule cover every pack that trips this bug, today's synthetics and tomorrow's
 nothing blessed individually. Operator's requirement, 2026-08-03. A pack whose oracle error matches
 no rule stays a hard failure, exactly as now.
 
-`confirm` requires our output on the crashing pack to **byte-match the golden of its declared
-sibling** — the same pack minus the zero-option group's json. That proves the divergence yields
-precisely what TexTools would have produced had the crash-triggering group not been there, with
-byte coverage from the real oracle and no hand-authored expectations.
+`confirm` (`confirmOracleErrorDivergence`, `test/helpers/corpus-upgrade.ts`) checks TWO things
+against the declared sibling — the same pack minus the zero-option group's json — because either
+alone leaves a gap a regression can hide in (code review, 2026-08-05):
+
+1. **Content**, keyed by gamePath: our output must byte-match the sibling's own `/upgrade` golden.
+   This is real oracle coverage, but it is a payload MULTISET — it cannot see group/page/manifest
+   structure, so a regression that leaves a pruned zero-option group's `group_NNN.json` in the
+   written PMP, or strands an off-by-one page and shifts every member under a spurious `pN/`
+   prefix, moves zero gamePath bytes and would pass this check alone.
+2. **Structure**: our output's archive, diffed via `diffArchives` against the sibling's OWN
+   bytes run back through OUR pipeline (load → upgrade → write) — not the sibling's raw file, whose
+   zip layout has no reason to match ours. This catches exactly the two gaps above: an extra/missing
+   manifest member is a `structure` diff, and a shifted prefix is a payload MEMBER NAME diff. It is
+   anchored to the real oracle transitively: the sibling pack goes through the ordinary
+   `registerUpgradeCheck` elsewhere in the corpus, which diffs it (content and structure) against the
+   REAL ConsoleTools `/upgrade` golden directly.
+
+Together they prove the divergence yields precisely what TexTools would have produced had the
+crash-triggering group not been there — content from the real oracle, structure from our own
+writer's output on both sides, anchored to the oracle one hop over via the sibling's own check.
 
 The pairing is sound because removing the group's json and `ClearNulls` pruning its null converge on
 the same surviving page set: `ClearNulls` also drops group-less pages, so the extra page a higher

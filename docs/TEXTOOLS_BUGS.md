@@ -145,7 +145,8 @@ called by `writePmp` (`src/container/pmp.ts`) to regenerate every zip path from 
 ## 7. `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page
 
 **Status:** reproduced · **Where:** `WizardData.cs:1118-1158` construction + `:1234-1244`
-(`ClearNulls`' page-level pruning) — see `src/container/option-prefix.ts`, `buildPages`
+(`ClearNulls`' page-level pruning) — see `src/container/pmp.ts:325-333` (construction) and
+`src/container/clear-nulls.ts` (pruning)
 
 When `default_mod.json` is non-empty, `FromPmp` unshifts a synthesized "Default" page onto the
 FRONT of `DataPages` before appending one page per real page index `0..pageMax`. The group-assignment
@@ -804,8 +805,12 @@ is strictly better than none, and the risk that rule guards against — shipping
 does differently and better — cannot arise. Everything around the divergence stays faithful: the
 group-level prune at `:1249` is ported verbatim, and the `FromPmp` page off-by-one (entry 7) is
 reproduced untouched. Confirmed by an `ORACLE_ERROR_DIVERGENCE_RULES` entry keyed on the trace
-signature above, whose `confirm` requires our output to byte-match the golden of a sibling pack
-identical but for the zero-option group — not by a ratchet baseline.
+signature above, not by a ratchet baseline — its `confirm` (`confirmOracleErrorDivergence`,
+`test/helpers/corpus-upgrade.ts`) checks both that our output byte-matches the CONTENT of a sibling
+pack's `/upgrade` golden (identical but for the zero-option group) AND that our output's STRUCTURE
+(manifest members, payload member names) matches our own pipeline's write of that same sibling —
+the content check alone is a payload multiset keyed by gamePath and cannot see a stray
+`group_NNN.json` or a shifted `pN/` prefix, either of which moves zero gamePath bytes.
 
 **Upstream fix:** null-guard the page predicate the same way the group loop already is —
 `Groups.Any(x => x != null && x.HasData)` — or, better, have `FromPmp` skip the add when
