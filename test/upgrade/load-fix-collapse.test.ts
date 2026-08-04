@@ -149,7 +149,7 @@ describe("load-fix + collapse ordering (WizardData.FromWizardGroup, WizardData.c
     const bytes = buildDupWizardTtmp2("1.3w", path, first, second);
 
     const data = loadModpack("dup.ttmp2", bytes);
-    const files = data.groups[0]!.options[0]!.files;
+    const files = data.groups![0]!.options[0]!.files;
 
     expect(files.has(path)).toBe(true);
     // Kept copy is the FIRST (valid) one; bytes unchanged since this fixture's mip offsets are
@@ -168,7 +168,7 @@ describe("load-fix + collapse ordering (WizardData.FromWizardGroup, WizardData.c
     const bytes = buildDupWizardTtmp2("1.3w", path, first, second);
 
     const data = loadModpack("dup.ttmp2", bytes);
-    const files = data.groups[0]!.options[0]!.files;
+    const files = data.groups![0]!.options[0]!.files;
 
     expect(files.has(path)).toBe(true);
     // Kept copy is the FIRST (valid) one, normalized by FixOldModel to a v6 model.

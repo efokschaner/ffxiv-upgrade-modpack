@@ -51,10 +51,11 @@
 //  not a ported comparison -- neither our pipeline nor /upgrade's transform adds or removes options,
 //  so they exist to catch a violation of that assumption, not to mirror a C# code path.
 
-import type {
-  ModpackData,
-  ModpackFile,
-  ModpackOption,
+import {
+  allGroups,
+  type ModpackData,
+  type ModpackFile,
+  type ModpackOption,
 } from "../../src/model/modpack";
 import { bytesEqual } from "./compare";
 import type { FileDiff } from "./upgrade-diff";
@@ -135,10 +136,19 @@ export function transformChanges(
   after: ModpackData,
 ): FileDiff[] {
   const diffs: FileDiff[] = [];
-  const groupCount = Math.max(before.groups.length, after.groups.length);
+  // `allGroups` (not `.groups` directly): the pipeline mutates through `.pages`, and `.pages`'
+  // emptiness handling for a PMP's synthesized Default group correctly differs from the flat
+  // `.groups` list's unconditional-Default construction (src/container/pmp.ts's `readPmp`, its
+  // "byte-neutral migration scaffold" comment) — so `.groups` on `before` (straight from the reader)
+  // and `.groups` on `after` (derived from the transformed `.pages`, src/upgrade/upgrade.ts's
+  // `cloneModpack`) are not guaranteed to line up index-for-index. `allGroups` reads the same `.pages`
+  // view both sides of the transform actually operate on.
+  const beforeGroups = allGroups(before);
+  const afterGroups = allGroups(after);
+  const groupCount = Math.max(beforeGroups.length, afterGroups.length);
   for (let g = 0; g < groupCount; g++) {
-    const bg = before.groups[g];
-    const ag = after.groups[g];
+    const bg = beforeGroups[g];
+    const ag = afterGroups[g];
     if (bg === undefined || ag === undefined) {
       diffs.push({
         kind: "transform",

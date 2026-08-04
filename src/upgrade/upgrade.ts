@@ -2,6 +2,8 @@ import { deserializeMeta } from "../meta/deserialize";
 import { reconstructMeta } from "../meta/reconstruct";
 import { serializeMeta } from "../meta/serialize";
 import {
+  allGroups,
+  allPages,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -69,12 +71,25 @@ function cloneGroup(g: ModpackGroup): ModpackGroup {
   return { ...g, options: g.options.map(cloneOption) };
 }
 
-/** Deep-ish copy: fresh container arrays/objects, shared opaque file bytes. */
+/** Deep-ish copy: fresh container arrays/objects, shared opaque file bytes. `allPages` covers the
+ *  `data.pages` migration-scaffold fallback (ModpackData.pages's doc comment, src/model/modpack.ts)
+ *  for a `test/` fixture that predates it. */
 export function cloneModpack(data: ModpackData): ModpackData {
+  const pages = allPages(data).map((p) => ({
+    ...p,
+    groups: p.groups.map((g) => (g === null ? null : cloneGroup(g))),
+  }));
   return {
     ...data,
     meta: { ...data.meta, tags: [...data.meta.tags] },
-    groups: data.groups.map(cloneGroup),
+    // MIGRATION SCAFFOLD: `groups` is DERIVED from the freshly-cloned `pages` above (the same
+    // group/option object identities), not cloned a second time independently — so a `test/`
+    // fixture that still reads `.groups` (pre-Task-3) sees exactly the objects the pipeline mutates
+    // through `pages`, rather than a second, drifting copy. Deleted alongside `groups` in Task 4.
+    groups: pages.flatMap((p) =>
+      p.groups.filter((g): g is ModpackGroup => g !== null),
+    ),
+    pages,
     // Fresh Map: `...data` would otherwise share the SOURCE map by reference, so a caller mutating
     // the clone's extraFiles (or a future upgrade round adding/removing entries) would mutate
     // `data` too — silently contradicting this function's (and upgradeModpack's) "never mutates
@@ -285,12 +300,12 @@ function partials(
    *  no try/catch to report from) or `updateEyeMask` -- reach stays minimal per spec §4.4. */
   diagnostics: Diagnostic[],
 ): void {
-  for (const group of data.groups) {
+  for (const group of allGroups(data)) {
     for (const option of group.options) {
       updateSkinPaths(option); // ForAllOptions (ModpackUpgrader.cs:158)
     }
   }
-  for (const group of data.groups) {
+  for (const group of allGroups(data)) {
     for (const option of group.options) {
       // ModpackUpgrader.cs:171: `unusedTextures.Where(x => o.StandardData.Files.ContainsKey(x))`.
       // Snapshotted here (== the C# `.ToList()` at :172) for the hair/accessory calls.
@@ -405,7 +420,7 @@ export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
     // keys into `allTextures` (:108-109).
     const targets = new Map<string, UpgradeInfo>();
     const allTextures = new Set<string>();
-    for (const group of out.groups) {
+    for (const group of allGroups(out)) {
       for (const option of group.options) {
         try {
           metadataRound(option);
@@ -429,7 +444,7 @@ export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
       }
     }
     // Pass 2 (ModpackUpgrader.cs:124-144): apply the global targets to every option.
-    for (const group of out.groups) {
+    for (const group of allGroups(out)) {
       for (const option of group.options) {
         upgradeRemainingTextures(option, targets);
       }

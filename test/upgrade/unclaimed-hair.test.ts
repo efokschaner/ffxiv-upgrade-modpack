@@ -753,8 +753,8 @@ describe("reports a swallowed hair-transform failure (e2e through upgradeModpack
     expect(d?.provenance).toContain("EndwalkerUpgrade.cs");
     // The raw pre-transform copy written at unclaimed-hair.ts before the try is still in place,
     // untransformed -- reporting must not change the transform.
-    expect(r.data.groups[0]!.options[0]!.files.has(NORM_DEST)).toBe(true);
-    expect(r.data.groups[0]!.options[0]!.files.get(NORM_DEST)!.data).toEqual(
+    expect(r.data.groups![0]!.options[0]!.files.has(NORM_DEST)).toBe(true);
+    expect(r.data.groups![0]!.options[0]!.files.get(NORM_DEST)!.data).toEqual(
       normBytes,
     );
   });

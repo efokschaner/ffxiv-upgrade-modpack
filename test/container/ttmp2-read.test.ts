@@ -24,8 +24,8 @@ describe("readTtmp2", () => {
     const data = readTtmp2(makeTtmp2Wizard().bytes);
     expect(data.isSimple).toBe(false);
     expect(data.groups).toHaveLength(1);
-    expect(data.groups[0]!.options).toHaveLength(2);
-    expect(data.groups[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
+    expect(data.groups![0]!.options).toHaveLength(2);
+    expect(data.groups![0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
   });
 
   it("collapses a duplicate FullPath within one option last-write-wins (WizardData.cs:729-737)", () => {
@@ -88,7 +88,7 @@ describe("readTtmp2", () => {
     ]);
     const ttmp = writeZip(entries);
     const data = readTtmp2(ttmp);
-    const files = data.groups[0]!.options[0]!.files;
+    const files = data.groups![0]!.options[0]!.files;
     expect(files.size).toBe(1);
     expect(files.get("chara/dup.tex")!.data).toEqual(bytesB);
   });

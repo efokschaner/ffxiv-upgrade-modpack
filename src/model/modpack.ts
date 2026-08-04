@@ -145,7 +145,11 @@ export interface ModpackData {
   sourceFormat: ModpackFormat;
   isSimple: boolean; // TTMP simple (flat SimpleModsList) vs wizard/grouped
   meta: ModpackMeta;
-  groups: ModpackGroup[];
+  /** MIGRATION SCAFFOLD (deleted in Task 4). There is no flat group list in the C# — `pages` below
+   *  is the real model. Optional now that every consumer in `src/` reads `pages` via `allGroups` /
+   *  `allFiles` instead; every reader still populates this for `test/` fixtures that have not yet
+   *  migrated (Task 3). Do not read this field directly — use `allGroups`. */
+  groups?: ModpackGroup[];
   /** Mirrors WizardData.DataPages (WizardData.cs:1079). There is no flat group list in the C# and
    *  there will be none here either — `groups` above is a migration scaffold this field replaces
    *  (see the plan's Task 4). Optional only while both exist; every reader already populates it.
@@ -176,24 +180,35 @@ export function emptyMeta(): ModpackMeta {
   };
 }
 
+/** `data.pages`, or (MIGRATION SCAFFOLD, deleted alongside `groups` in Task 4) a single synthetic
+ *  page wrapping `data.groups` when `pages` is absent. Every reader already populates `pages`, so
+ *  this fallback exists only for a `test/` fixture that predates the migration and still constructs
+ *  a `ModpackData` literal with `groups:` but no `pages:` — it lets every pages-consuming function
+ *  (`allGroups` below; `cloneModpack`, `writePmp`, `writeTtmp2`, `optionPrefixes` elsewhere) tolerate
+ *  such a fixture without each re-deriving the same fallback independently. */
+export function allPages(data: ModpackData): ModpackPage[] {
+  return data.pages ?? [{ groups: data.groups ?? [] }];
+}
+
 /** Every non-null group across every page, in page order — the order WritePmp's own loops use
  *  (WizardData.cs:1506-1542, :1583-1600). Nulls are skipped rather than thrown on: ClearNulls has
- *  already removed them from any page this walks (see src/container/clear-nulls.ts).
- *
- *  MIGRATION SCAFFOLD: the `?? data.groups` fallback exists only while `pages` is optional, so a
- *  ModpackData literal that predates the migration still resolves. Task 4 makes `pages` required,
- *  deletes `groups`, and deletes this fallback with it. */
+ *  already removed them from any page this walks (see src/container/clear-nulls.ts). */
 export function allGroups(data: ModpackData): ModpackGroup[] {
-  if (!data.pages) return data.groups;
-  return data.pages.flatMap((p) =>
+  return allPages(data).flatMap((p) =>
     p.groups.filter((g): g is ModpackGroup => g !== null),
   );
 }
 
+/** Every file across every option, in `allGroups` order — i.e. page order, not group-declaration
+ *  order (see `allGroups`'s own doc comment). This ordering is byte-visible: it feeds `buildBlob`'s
+ *  .mpd offsets (ttmp2.ts) and `resolveDuplicates`' `common/N` numbering (resolve-duplicates.ts), so
+ *  switching it from the old flat `data.groups` walk to page order is Phase 1's one behaviour-risking
+ *  change (design spec §3.1) — argued byte-neutral because both write paths already use page order,
+ *  proven only by the corpus, not by this comment. */
 export function allFiles(
   data: ModpackData,
 ): { gamePath: string; file: ModpackFile }[] {
-  return data.groups.flatMap((g) =>
+  return allGroups(data).flatMap((g) =>
     g.options.flatMap((o) =>
       [...o.files].map(([gamePath, file]) => ({ gamePath, file })),
     ),

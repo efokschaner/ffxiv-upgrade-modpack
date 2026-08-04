@@ -3,7 +3,11 @@
 // includePartials — :83) that staples split Hair-shader normal/mask ("highlight/visibility")
 // textures across options, or falls through to RepathHairMashups (:379-482, ported in
 // repath-hair-mashups.ts) for the material-only mashup-hair case.
-import type { ModpackData, ModpackOption } from "../model/modpack";
+import {
+  allGroups,
+  type ModpackData,
+  type ModpackOption,
+} from "../model/modpack";
 import { dx11Path } from "../mtrl/dx11-path";
 import { parseMtrl } from "../mtrl/mtrl";
 import { ESamplerId, SHPK_HAIR } from "../mtrl/shader";
@@ -38,7 +42,7 @@ export function resolveHighlightOptionsAndMashupHair(data: ModpackData): void {
   // normal AND mask sampler, collect their (normalDx11, maskDx11) pair. mData is an ordered List
   // (C# List<(Normal,Mask)>, :272) — duplicates are kept; the count drives the throw below.
   const mData: HairPair[] = [];
-  for (const group of data.groups) {
+  for (const group of allGroups(data)) {
     for (const option of group.options) {
       for (const [path, f] of option.files) {
         if (!path.endsWith(".mtrl")) continue;
@@ -82,7 +86,7 @@ export function resolveHighlightOptionsAndMashupHair(data: ModpackData): void {
     }
     list.push(o);
   };
-  for (const group of data.groups) {
+  for (const group of allGroups(data)) {
     for (const option of group.options) {
       for (const pair of mData) {
         const hasMask = option.files.has(pair.mask);

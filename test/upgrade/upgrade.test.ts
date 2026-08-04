@@ -230,7 +230,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradedOk(input);
-    const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
+    const outFile = [...out.groups![0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
@@ -244,7 +244,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradedOk(input);
-    const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
+    const outFile = [...out.groups![0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual([1, 2, 3, 4, 5]);
   });
@@ -258,7 +258,7 @@ describe("upgradeModpack (material round passthrough)", () => {
     );
 
     const out = upgradedOk(input);
-    const outFile = [...out.groups[0]!.options[0]!.files.values()][0]!;
+    const outFile = [...out.groups![0]!.options[0]!.files.values()][0]!;
 
     expect(Array.from(outFile.data!)).toEqual(Array.from(uncompressed));
   });
@@ -275,7 +275,7 @@ describe("upgradeModpack (material round)", () => {
     );
 
     const out = upgradedOk(input);
-    const [outGamePath, outFile] = [...out.groups[0]!.options[0]!.files][0]!;
+    const [outGamePath, outFile] = [...out.groups![0]!.options[0]!.files][0]!;
 
     expect(outFile.storage).toBe(FileStorageType.SqPackCompressed);
     const decoded = decodeSqPackFile(outFile.data!).data;
@@ -398,7 +398,7 @@ describe("upgradeModpack (skeleton)", () => {
     const input = sampleData();
     const out = upgradedOk(input);
     expect(out.meta.name).toBe("M");
-    const outFile = out.groups[0]!.options[0]!.files.get("a/b.mtrl")!;
+    const outFile = out.groups![0]!.options[0]!.files.get("a/b.mtrl")!;
     expect(Array.from(outFile.data!)).toEqual([1, 2, 3]);
   });
 
@@ -407,14 +407,14 @@ describe("upgradeModpack (skeleton)", () => {
     const out = upgradedOk(input);
     expect(out).not.toBe(input);
     expect(out.groups).not.toBe(input.groups);
-    expect(out.groups[0]!.options[0]!.files).not.toBe(
-      input.groups[0]!.options[0]!.files,
+    expect(out.groups![0]!.options[0]!.files).not.toBe(
+      input.groups![0]!.options[0]!.files,
     );
-    out.groups[0]!.options[0]!.files.set("x.tex", {
+    out.groups![0]!.options[0]!.files.set("x.tex", {
       data: new Uint8Array(),
       storage: FileStorageType.RawUncompressed,
     });
-    expect(input.groups[0]!.options[0]!.files.size).toBe(1);
+    expect(input.groups![0]!.options[0]!.files.size).toBe(1);
   });
 });
 
@@ -521,7 +521,7 @@ describe("upgradeModpack texture round (e2e)", () => {
       encodeUncompressedTex(rgba, w, h, { mips: false }),
     );
     const out = upgradedOk(data);
-    const files = out.groups[0]!.options[0]!.files;
+    const files = out.groups![0]!.options[0]!.files;
     const idx = files.get("chara/x/tex/foo_id.tex");
     expect(idx).toBeDefined();
     expect(Array.from(decodeToRgba(parseTex(idx!.data!)))).toEqual(

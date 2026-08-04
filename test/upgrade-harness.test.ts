@@ -132,7 +132,7 @@ function addOption(
   gamePath: string,
   file: ModpackFile,
 ): void {
-  const group = data.groups[0]!;
+  const group = data.groups![0]!;
   group.options.push({
     name: `extra-${group.options.length}`,
     description: "",
@@ -191,7 +191,7 @@ describe("diffUpgrade", () => {
     const raw = new Uint8Array([7, 7, 7, 7]);
     const entry = encodeSqPackFile(raw, SqPackType.Standard);
     const ours = rawPack({}); // start empty, then inject a compressed file
-    ours.groups[0]!.options[0]!.files.set("c.mtrl", {
+    ours.groups![0]!.options[0]!.files.set("c.mtrl", {
       data: entry,
       storage: FileStorageType.SqPackCompressed,
     });

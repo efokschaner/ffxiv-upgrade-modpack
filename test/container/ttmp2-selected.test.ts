@@ -8,7 +8,7 @@ import {
 describe("readTtmp2 selected", () => {
   it("copies IsChecked verbatim", () => {
     const data = readTtmp2(makeTtmp2WizardWithChecked([false, true]).bytes);
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![0]!.options.map((o) => o.selected)).toEqual([
       false,
       true,
     ]);
@@ -18,7 +18,7 @@ describe("readTtmp2 selected", () => {
     const data = readTtmp2(
       makeTtmp2WizardWithChecked([undefined, undefined]).bytes,
     );
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![0]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
     ]);
@@ -29,7 +29,7 @@ describe("readTtmp2 selected", () => {
   // an exclusivity invariant the C# model does not have.
   it("does NOT clamp a Single group with multiple IsChecked", () => {
     const data = readTtmp2(makeTtmp2WizardWithChecked([true, true]).bytes);
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![0]!.options.map((o) => o.selected)).toEqual([
       true,
       true,
     ]);
@@ -45,12 +45,12 @@ describe("readTtmp2 selected", () => {
   // rewritten to assert the group is ABSENT.
   it("a zero-option Single group survives the read (our divergence) without tripping the backstop", () => {
     const data = readTtmp2(makeTtmp2WizardWithChecked([]).bytes);
-    expect(data.groups[0]!.options).toEqual([]);
+    expect(data.groups![0]!.options).toEqual([]);
   });
 
   // WizardData.cs:1218-1221 — FromSimpleTtmp synthesizes its fake option with IsChecked = true.
   it("marks the synthesized simple-pack option selected", () => {
     const data = readTtmp2(makeTtmp2Simple().bytes);
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([true]);
+    expect(data.groups![0]!.options.map((o) => o.selected)).toEqual([true]);
   });
 });

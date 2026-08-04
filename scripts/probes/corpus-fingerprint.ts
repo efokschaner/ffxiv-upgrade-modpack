@@ -45,6 +45,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   allFiles,
+  allGroups,
   decodeSqPackFile,
   FileStorageType,
   loadModpack,
@@ -88,7 +89,7 @@ function fingerprint(name: string, data: ModpackData): Set<string> {
   if (data.extraFiles?.size) f.add("pmp:extraFiles");
   if (data.meta.description) f.add("meta:description");
 
-  for (const g of data.groups) {
+  for (const g of allGroups(data)) {
     f.add(`group:${g.selectionType}`);
     if (g.image) f.add("group:image");
     if (g.page > 0) f.add("group:multipage");

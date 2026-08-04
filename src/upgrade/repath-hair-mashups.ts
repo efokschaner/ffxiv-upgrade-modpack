@@ -4,7 +4,7 @@
 // its Dawntrail name when the old texture is gone from the game and the renamed one exists
 // (rtx.FileExists -> the bundled fileExists oracle). Called from resolve-highlight.ts in
 // place of the deferred fail-loud throw.
-import type { ModpackData } from "../model/modpack";
+import { allGroups, type ModpackData } from "../model/modpack";
 import { dx11Path } from "../mtrl/dx11-path";
 import { parseMtrl, serializeMtrl } from "../mtrl/mtrl";
 import { ESamplerId, SHPK_CHARACTER, SHPK_HAIR } from "../mtrl/shader";
@@ -25,7 +25,7 @@ export function repathHairMashups(data: ModpackData): void {
 }
 
 function repathOne(data: ModpackData, regex: RegExp): void {
-  for (const group of data.groups) {
+  for (const group of allGroups(data)) {
     for (const option of group.options) {
       // Snapshot: C# copies o.Files then writes back into the live dict (:392, :479).
       for (const [m, ref] of [...option.files]) {

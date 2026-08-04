@@ -187,7 +187,7 @@ describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () =
     const diffuse = EYE_MATERIALS.get(
       `chara/human/c${rc[1]}/obj/face/f${rc[2]}/material/mt_c${rc[1]}f${rc[2]}_iri_a.mtrl`,
     )!.diffusePath!;
-    const wrote = out.groups.some((g) =>
+    const wrote = out.groups!.some((g) =>
       g.options.some((o) => o.files.has(diffuse)),
     );
     expect(wrote).toBe(true);

@@ -35,7 +35,7 @@ describe("writeTtmp2 round-trip", () => {
     const pack = makeTtmp2Wizard();
     const out = roundTrip(pack.bytes);
     expect(out.isSimple).toBe(false);
-    expect(out.groups[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
+    expect(out.groups![0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
     const byPath = new Map(
       allFiles(out).map(({ gamePath, file }) => [gamePath, file.data]),
     );
@@ -118,8 +118,8 @@ function mpl(bytes: Uint8Array): Record<string, unknown> {
 describe("writeTtmp2 .mpl fidelity", () => {
   it("writes IsChecked on every option", () => {
     const data = readTtmp2(makeTtmp2Wizard().bytes);
-    data.groups[0]!.options[0]!.selected = true;
-    data.groups[0]!.options[1]!.selected = false;
+    data.groups![0]!.options[0]!.selected = true;
+    data.groups![0]!.options[1]!.selected = false;
     // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
     const out = mpl(writeTtmp2(data)) as any;
     expect(

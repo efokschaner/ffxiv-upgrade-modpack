@@ -8,7 +8,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 1, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
       false,
       true,
       false,
@@ -20,7 +20,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 9, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
       false,
@@ -36,7 +36,7 @@ describe("readPmp selected", () => {
         optionCount: 3,
       }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
       true,
@@ -47,7 +47,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: 0, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
       false,
       false,
       false,
@@ -60,7 +60,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: -1, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(data.groups![1]!.options.map((o) => o.selected)).toEqual([
       true,
       true,
       true,
@@ -75,7 +75,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: 1, optionCount: 66 }),
     );
-    const selected = data.groups[1]!.options.map((o) => o.selected);
+    const selected = data.groups![1]!.options.map((o) => o.selected);
     expect(selected.filter(Boolean)).toHaveLength(2);
     expect(selected[0]).toBe(true);
     expect(selected[64]).toBe(true);
@@ -94,7 +94,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
     );
-    expect(data.groups[1]!.options).toEqual([]);
+    expect(data.groups![1]!.options).toEqual([]);
   });
 
   // WizardData.cs:1118-1138 — FromPmp's synthesized Default group is Type "Single" with one
@@ -103,6 +103,6 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 1 }),
     );
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([true]);
+    expect(data.groups![0]!.options.map((o) => o.selected)).toEqual([true]);
   });
 });

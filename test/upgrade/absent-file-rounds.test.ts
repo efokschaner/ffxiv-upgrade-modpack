@@ -81,7 +81,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       ]),
     );
     const out = upgradedOk(data);
-    const f = out.groups[0]!.options[0]!.files.get(
+    const f = out.groups![0]!.options[0]!.files.get(
       "chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl",
     )!;
     expect(f.data).toBeUndefined();
@@ -97,7 +97,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       optionOf([absent("chara/equipment/e0001/model/c0101e0001_top.mdl")]),
     );
     const out = upgradedOk(data);
-    const f = out.groups[0]!.options[0]!.files.get(
+    const f = out.groups![0]!.options[0]!.files.get(
       "chara/equipment/e0001/model/c0101e0001_top.mdl",
     )!;
     expect(f.data).toBeUndefined();

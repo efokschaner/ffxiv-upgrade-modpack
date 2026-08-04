@@ -89,7 +89,7 @@ function packWithFiles(entries: [string, Uint8Array][]): ModpackData {
   };
 }
 
-const outFiles = (d: ModpackData) => d.groups[0]!.options[0]!.files;
+const outFiles = (d: ModpackData) => d.groups![0]!.options[0]!.files;
 
 describe("makeTtmpLoadFix: manipulation-less .meta files are dropped at load", () => {
   it("drops a housing .meta with no segments instead of keeping it", () => {

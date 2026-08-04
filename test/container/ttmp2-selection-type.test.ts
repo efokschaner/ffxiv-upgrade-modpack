@@ -123,12 +123,12 @@ describe("readTtmp2 SelectionType (WizardData.cs:652)", () => {
     ["Multi Selection", "Multi"],
   ])("maps %j to %j", (raw, expected) => {
     const data = readTtmp2(wizardPack(groupJson(raw)));
-    expect(data.groups[0]!.selectionType).toBe(expected);
+    expect(data.groups![0]!.selectionType).toBe(expected);
   });
 
   it("maps an absent SelectionType to Multi", () => {
     const data = readTtmp2(wizardPack(groupJson(undefined)));
-    expect(data.groups[0]!.selectionType).toBe("Multi");
+    expect(data.groups![0]!.selectionType).toBe("Multi");
   });
 });
 

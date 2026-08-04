@@ -4,6 +4,7 @@
 // data blob those writers emit.
 import {
   allFiles,
+  allPages,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -17,6 +18,7 @@ import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { concatBytes, fnv1aKey } from "../util/binary";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
+import { clearNulls } from "./clear-nulls";
 import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
   ModPackJson,
@@ -319,41 +321,60 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   if (data.isSimple) {
     mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));
   } else {
+    // WizardData.cs · WriteWizardPack · 1334 — the first statement of the wizard write branch,
+    // before anything else reads DataPages. `allPages` covers the `data.pages` migration-scaffold
+    // fallback (ModpackData.pages's doc comment, src/model/modpack.ts) for a `test/` fixture that
+    // predates it -- such a fixture collapses onto a single synthetic page (`sourcePageIndex`
+    // undefined -> bucket key 0 below), which loses per-group `.page` bucketing; no current fixture
+    // relies on that, and the fallback is deleted along with `groups` in Task 4 regardless.
+    const dataPages = allPages(data);
+    clearNulls(dataPages);
     const byPage = new Map<number, TtmpModGroupJsonWrite[]>();
-    for (const g of data.groups) {
-      // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
-      // Groups.") as its first statement, before it builds the ModGroup or visits any option.
-      // `selectionType === "Imc"` stands in for GroupType == EGroupType.Imc (:609-618), as at
-      // option-prefix.ts:288 and pmp.ts:485. Only a PMP source carries an Imc group, and /upgrade
-      // never converts formats, so this is unreachable today.
-      if (g.selectionType === "Imc") {
-        throw new Error("ttmp2: TTMP Does not support IMC Groups.");
-      }
-      // WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()` over
-      // EOptionType { Single, Multi } (:25-29), the enum both readers collapse the raw string into at
-      // load (:652 TTMP, :769 PMP). So any non-"Single" value — "Combining" included — writes as
-      // "Multi". An option has no type of its own: it delegates to its group (:335-341), so the same
-      // value is written at both levels.
-      const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
-      const list = byPage.get(g.page) ?? [];
-      list.push({
-        GroupName: g.name,
-        SelectionType: selectionType,
-        // Key order is ModOptionJson's C# declaration order (ModPackJson.cs · ModOptionJson ·
-        // 159-198) — note ModsJsons sits FOURTH, before GroupName/SelectionType.
-        OptionList: g.options.map((o) => ({
-          Name: o.name,
-          Description: o.description,
-          ImagePath: o.image,
-          ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
+    for (const page of dataPages) {
+      for (const g of page.groups) {
+        // Narrow rather than assert: ClearNulls has already run (just above), so no page reaching
+        // here holds a null.
+        if (g === null) continue;
+        // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
+        // Groups.") as its first statement, before it builds the ModGroup or visits any option.
+        // `selectionType === "Imc"` stands in for GroupType == EGroupType.Imc (:609-618), as at
+        // option-prefix.ts:288 and pmp.ts:485. Only a PMP source carries an Imc group, and /upgrade
+        // never converts formats, so this is unreachable today.
+        if (g.selectionType === "Imc") {
+          throw new Error("ttmp2: TTMP Does not support IMC Groups.");
+        }
+        // WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()` over
+        // EOptionType { Single, Multi } (:25-29), the enum both readers collapse the raw string into
+        // at load (:652 TTMP, :769 PMP). So any non-"Single" value — "Combining" included — writes
+        // as "Multi". An option has no type of its own: it delegates to its group (:335-341), so the
+        // same value is written at both levels.
+        const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
+        // TRANSITIONAL (deleted along with `sourcePageIndex` in the dense-renumber task, §2/§6 of
+        // the design spec): keys `byPage` off the source PageIndex rather than array position, so
+        // this task's structural switch from `data.groups` to `data.pages` stays byte-neutral —
+        // Phase 2 replaces this with the dense per-page counter WriteWizardPack itself computes
+        // (:1348-1357).
+        const key = page.sourcePageIndex ?? 0;
+        const list = byPage.get(key) ?? [];
+        list.push({
           GroupName: g.name,
           SelectionType: selectionType,
-          // TTMPWriter.cs · AddOption · 148 — `IsChecked = modOption.IsChecked`, itself the
-          // verbatim counterpart of the read at WizardData.cs:668. No write-time derivation.
-          IsChecked: o.selected,
-        })),
-      });
-      byPage.set(g.page, list);
+          // Key order is ModOptionJson's C# declaration order (ModPackJson.cs · ModOptionJson ·
+          // 159-198) — note ModsJsons sits FOURTH, before GroupName/SelectionType.
+          OptionList: g.options.map((o) => ({
+            Name: o.name,
+            Description: o.description,
+            ImagePath: o.image,
+            ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
+            GroupName: g.name,
+            SelectionType: selectionType,
+            // TTMPWriter.cs · AddOption · 148 — `IsChecked = modOption.IsChecked`, itself the
+            // verbatim counterpart of the read at WizardData.cs:668. No write-time derivation.
+            IsChecked: o.selected,
+          })),
+        });
+        byPage.set(key, list);
+      }
     }
     const pages: TtmpModPackPageJsonWrite[] = [...byPage.keys()]
       .sort((a, b) => a - b)

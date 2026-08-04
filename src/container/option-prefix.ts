@@ -1,32 +1,17 @@
-// Port of WizardData's PMP-write prefix generators: the page construction inside
-// WizardData.FromPmp (WizardData.cs:1118-1158), the page-pruning WizardData.ClearNulls performs
-// immediately afterward (WizardData.cs:1234-1244 — invoked at :1159 inside FromPmp itself, and again
-// redundantly at :1462 inside WritePmp before any prefix is generated), and the three prefix
-// builders MakePagePrefix / MakeGroupPrefix / MakeOptionPrefix (WizardData.cs:1362-1458).
+// Port of WizardData's PMP-write prefix generators, the three prefix builders MakePagePrefix /
+// MakeGroupPrefix / MakeOptionPrefix (WizardData.cs:1362-1458). Page construction (FromPmp,
+// WizardData.cs:1118-1158) and pruning (ClearNulls, WizardData.cs:1234-1266) do NOT live here
+// anymore: construction happens at load, in `readPmp` (src/container/pmp.ts), and pruning is its
+// own module (src/container/clear-nulls.ts), called at both the load seam (FromPmp:1159) and the
+// write seams (WritePmp:1462, WriteWizardPack:1334) — so every `ModpackPage` reaching this module's
+// exported `optionPrefixes` has already had its nulls and empty groups/pages removed.
 //
-// `data.groups[0]` is our reader's synthesized "Default" group (readPmp, src/container/pmp.ts) — the
-// TS analogue of FromPmp's `fakeGroup` (WizardData.cs:1121-1129). `data.groups.slice(1)` are the
-// real PMP groups (`pmp.Groups` in the C#), each carrying its own `.page`.
-//
-// This module ports two TexTools bugs faithfully; see docs/TEXTOOLS_BUGS.md #7 and #6 for the
-// full writeups:
-//
-//   1. FromPmp's page-index off-by-one (WizardData.cs:1152-1157): when a Default page is
-//      synthesized, it is unshifted onto the FRONT of `DataPages` before the real per-page entries
-//      are appended, but the group-assignment loop right after still indexes `DataPages[g.Page]`
-//      with the group's *raw*, unadjusted page number. A group meant for page 0 therefore lands on
-//      the Default page instead of the (now-empty) page created for it. `ClearNulls` then drops any
-//      page with no groups carrying data — so the empty page never survives to influence
-//      `DataPages.Count` on its own; the *observable* effect is that the misrouted group's content
-//      merges onto the Default page's folder instead of getting a page of its own, and the overall
-//      `pN/` prefix only turns on if enough *other*, correctly-routed pages still survive pruning.
-//   2. MakeGroupPrefix's non-incrementing collision loop (WizardData.cs:1406-1409): ported as
-//      written, but throws rather than reproducing the hang if collision resolution would need more
-//      than one retry.
-//
-// `ClearNulls` (its analysis, including why `groupHasData` is `options.length > 0` and must never
-// become a content check, lives in src/container/clear-nulls.ts) also prunes at the GROUP level
-// within each surviving page (WizardData.cs:1246-1263).
+// This module ports one TexTools bug faithfully; see docs/TEXTOOLS_BUGS.md #6 for the full writeup:
+// MakeGroupPrefix's non-incrementing collision loop (WizardData.cs:1406-1409), ported as written,
+// but throwing rather than reproducing the hang if collision resolution would need more than one
+// retry. (The FromPmp page-index off-by-one, docs/TEXTOOLS_BUGS.md #7, is likewise ported
+// faithfully, but its citation now lives at the page-construction seam itself, `readPmp` in
+// src/container/pmp.ts, since that is where the off-by-one indexing actually happens.)
 //
 // Two contracts this module's callers depend on:
 //   - `optionPrefixes` returns NO ENTRY for an option whose group never made it into a surviving
@@ -42,98 +27,17 @@
 //     `EGroupType.Standard` options (`:1513-1516` continues past the others first), so a blank name
 //     on an Imc group never trips that throw.
 
-import type {
-  ModpackData,
-  ModpackGroup,
-  ModpackOption,
+import {
+  allPages,
+  type ModpackData,
+  type ModpackGroup,
+  type ModpackOption,
+  type ModpackPage,
 } from "../model/modpack";
-import { groupHasData } from "./clear-nulls";
-import type { PmpOptionJsonRaw } from "./manifest-types";
 import { folderSafeName } from "./pmp";
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null;
-
-// Port of PmpStandardOptionJson.IsEmptyOption (PMP.cs:1513-1517). Used ONLY to decide whether
-// FromPmp synthesizes a Default page at all (WizardData.cs:1118), which reads `pmp.DefaultMod` --
-// the RAW, deserialized default_mod.json document -- directly. CanImport filtering (PMP.cs:752-770)
-// only ever runs later, inside UnpackPmpOption (PMP.cs:1075-1078), which this check precedes. So a
-// default_mod.json whose Files are ALL canImport-rejected is non-empty to TexTools (raw Files.Count
-// > 0) even though our reader's `o.files` (already canImport-filtered, see optionFromJson, pmp.ts)
-// would look empty. When the option carries a raw PMP document (`o.raw`, the untouched
-// default_mod.json set by readPmp), consult ITS Files/FileSwaps/Manipulations counts instead of the
-// filtered model fields. A model-building (non-PMP) source has no such raw document and never went
-// through canImport filtering to begin with -- there `o.files`/`o.fileSwaps`/`o.manipulations`
-// already ARE the unfiltered set, so falling back to them is not a divergence, just the absence of a
-// filtering step to correct for.
-function isEmptyDefaultOption(o: ModpackOption): boolean {
-  const raw = isObj(o.raw) ? (o.raw as PmpOptionJsonRaw) : undefined;
-  if (raw !== undefined) {
-    return (
-      Object.keys(raw.Files ?? {}).length === 0 &&
-      Object.keys(raw.FileSwaps ?? {}).length === 0 &&
-      (raw.Manipulations ?? []).length === 0
-    );
-  }
-  return (
-    o.files.size === 0 &&
-    Object.keys(o.fileSwaps).length === 0 &&
-    o.manipulations.length === 0
-  );
-}
-
-export interface Page {
-  groups: ModpackGroup[];
-  folderPath?: string;
-}
-
-// Port of WizardData.FromPmp's page construction (WizardData.cs:1118-1158) followed by
-// WizardData.ClearNulls' page-level pruning (WizardData.cs:1234-1244). Exported so writePmp
-// (pmp.ts) can drive the SAME DataPages/ClearNulls-order, pruned group set for two things this
-// module doesn't itself need: (1) WritePmp's default-mod absorption search
-// (WizardData.cs:1553-1578), which iterates DataPages in this exact order and must see the
-// synthesized Default group (page 0, iff it survived) FIRST; (2) the group_NNN.json emission +
-// its recomputed `Page` counter (WizardData.cs:1583-1600), which only writes a group that
-// survived this same pruning and numbers pages by how many DataPages entries actually
-// contributed a written group.
-export function buildPages(data: ModpackData): Page[] {
-  const [defaultGroup, ...realGroups] = data.groups;
-  const pages: Page[] = [];
-
-  // WizardData.cs:1118-1138 — the synthesized Default page, iff its lone option is non-empty.
-  const defaultOption = defaultGroup?.options[0];
-  if (defaultGroup && defaultOption && !isEmptyDefaultOption(defaultOption)) {
-    pages.push({ groups: [defaultGroup] });
-  }
-
-  if (realGroups.length > 0) {
-    // WizardData.cs:1142-1150 — one page per index 0..pageMax, appended after the Default page.
-    const pageMax = Math.max(...realGroups.map((g) => g.page));
-    for (let i = 0; i <= pageMax; i++) {
-      pages.push({ groups: [] });
-    }
-    // WizardData.cs:1152-1157 — `data.DataPages[g.Page]`: a RAW index into `pages`, which already
-    // has the (optional) Default page unshifted onto the front. This is the off-by-one bug: when a
-    // Default page exists, index 0 is IT, not the page created above for g.page === 0. Ported
-    // verbatim — no correction applied.
-    for (const g of realGroups) {
-      pages[g.page]!.groups.push(g);
-    }
-  }
-
-  // WizardData.ClearNulls (WizardData.cs:1234-1244): drop any page with no groups. Then, within each
-  // surviving page (WizardData.cs:1246-1263), drop any group with zero options -- per the module
-  // header comment, HasData is unconditionally true on our load paths, so this reduces to a purely
-  // STRUCTURAL prune (empty groups list), not a content-based one: a group with at least one option,
-  // however contentless, survives and DOES occupy a MakeGroupPrefix collision slot, exactly as
-  // TexTools' real (Read-mode) HasData would.
-  return pages
-    .filter((p) => p.groups.some(groupHasData))
-    .map((p) => ({ groups: p.groups.filter(groupHasData) }));
-}
-
 // Port of MakePagePrefix (WizardData.cs:1362-1382).
-function makePagePrefix(pages: Page[], page: Page): string {
+function makePagePrefix(pages: ModpackPage[], page: ModpackPage): string {
   if (page.folderPath !== undefined) return page.folderPath;
 
   let pagePrefix = "";
@@ -152,8 +56,8 @@ function makePagePrefix(pages: Page[], page: Page): string {
 
 // Port of MakeGroupPrefix (WizardData.cs:1383-1413).
 function makeGroupPrefix(
-  pages: Page[],
-  page: Page,
+  pages: ModpackPage[],
+  page: ModpackPage,
   group: ModpackGroup,
   groupFolderPaths: Map<ModpackGroup, string>,
 ): string {
@@ -180,9 +84,20 @@ function makeGroupPrefix(
   // first retry would spin forever recomputing the same " (1)/" candidate. We port the loop
   // condition as written but throw instead of hanging if a second retry would be needed
   // (docs/TEXTOOLS_BUGS.md #6).
-  if (page.groups.some((g) => groupFolderPaths.get(g) === groupPrefix)) {
+  // `g !== null` narrows rather than asserts: ClearNulls has already run on every page reaching this
+  // module (see optionPrefixes' own top-of-function comment) -- but `page`'s declared type is the
+  // general `ModpackPage`, so the compiler cannot see that here.
+  if (
+    page.groups.some(
+      (g) => g !== null && groupFolderPaths.get(g) === groupPrefix,
+    )
+  ) {
     groupPrefix = `${pagePrefix}${gName} (${i})/`;
-    if (page.groups.some((g) => groupFolderPaths.get(g) === groupPrefix)) {
+    if (
+      page.groups.some(
+        (g) => g !== null && groupFolderPaths.get(g) === groupPrefix,
+      )
+    ) {
       throw new Error(
         `option-prefix: MakeGroupPrefix's collision loop would not terminate for group ` +
           `"${group.name}" (WizardData.cs:1406-1409 never increments its retry counter — see ` +
@@ -230,10 +145,18 @@ function makeOptionPrefix(
 /** Maps every option reachable through the (pruned) page/group structure to its zip folder prefix
  *  — e.g. `""`, `"default/"`, `"options/black veil/"`, `"p2/outfit/juliet/"`. Prefixes end with `/`
  *  unless empty. An option whose group never made it into a surviving page (the Default option when
- *  its lone option is empty, per `isEmptyDefaultOption`) has no entry — TexTools never assigns it
- *  one either, since WritePmp's iteration (WizardData.cs:1506-1542) only visits `DataPages`. */
+ *  its lone option is empty, per `readPmp`'s `IsEmptyOption` check, src/container/pmp.ts) has no
+ *  entry — TexTools never assigns it one either, since WritePmp's iteration
+ *  (WizardData.cs:1506-1542) only visits `DataPages`. */
 export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
-  const pages = buildPages(data);
+  // ClearNulls has already run (at load for PMP, FromPmp:1159; at write for both, WritePmp:1462 /
+  // WriteWizardPack:1334), so no page reaching here holds a null. Narrow rather than assert that.
+  // `allPages` covers the `data.pages` migration-scaffold fallback (ModpackData.pages's doc
+  // comment, src/model/modpack.ts) for a `test/` fixture that predates it.
+  const pages = allPages(data).map((p) => ({
+    ...p,
+    groups: p.groups.filter((g): g is ModpackGroup => g !== null),
+  }));
   const groupFolderPaths = new Map<ModpackGroup, string>();
   const optionFolderPaths = new Map<ModpackOption, string>();
 
