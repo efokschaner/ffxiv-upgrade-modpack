@@ -233,6 +233,8 @@ function isEmptyPmpOption(raw: PmpOptionJsonRaw): boolean {
 
 Do **not** call `clearNulls` here yet — Task 6 adds it. Keep `data.pages` un-pruned for now; no corpus pack has a zero-option group, so nothing is pruned in practice.
 
+**Byte-neutrality note for the reviewer.** Hardcoding the synthesized option's name to `"Default"` is a behaviour change on paper, so verify it is inert on output before accepting the task. Three consumers read that name, and none of them can move a byte: (a) `optionToJson(..., includeMeta=false, ...)` drops `Name` from the emitted `default_mod.json` entirely; (b) `makeOptionPrefix` (`option-prefix.ts`) only uses the option name when `group.options.length > 1`, and the synthesized group has exactly one; (c) `writePmp`'s absorption search compares it, and both the old value and `"Default"` select the same group — the old code reached it through an identity shortcut, which Task 2 deletes precisely because the hardcoded name makes the structural predicate match on its own.
+
 - [ ] **Step 6: One page in `readLegacyTtmp`**
 
 `src/container/ttmp-legacy.ts` returns `pages: [{ groups: [group] }]`, with the same `FromSimpleTtmp` citation as Step 4 (a legacy pack loads through `FromSimpleTtmp` via the synthesized `"0.1s"` mpl, `TTMP.cs:453-462`). Delete `page: 0` from its group literal.
@@ -262,7 +264,7 @@ git commit -m "feat(model): build WizardData.DataPages at load, per FromPmp/From
 
 - [ ] **Step 1: Delete `buildPages` from `option-prefix.ts`**
 
-Delete `buildPages`, `isEmptyDefaultOption`, the local `Page` interface, and the `import { ... } from "./pmp"` line for `folderSafeName` only if unused. Keep `groupHasData` but **move it to `clear-nulls.ts`** in Task 6 — for now export it from `option-prefix.ts` unchanged.
+Delete `buildPages`, `isEmptyDefaultOption`, the local `Page` interface, and the `import { ... } from "./pmp"` line for `folderSafeName` only if unused. Keep `groupHasData` where it is for now — **Task 5** moves it to `clear-nulls.ts`; leave it exported from `option-prefix.ts` unchanged in this task.
 
 Replace `Page` with `ModpackPage` throughout `makePagePrefix` / `makeGroupPrefix`. `makePagePrefix`'s memo currently lives on `page.folderPath`; keep that by giving `ModpackPage` an optional `folderPath?: string` field, citing `WizardPageEntry.FolderPath` (`WizardData.cs:967`) — the C# has exactly this field and `ClearNulls` nulls it at `:1239`.
 
@@ -682,7 +684,24 @@ Add to `test/container/ttmp2-write.test.ts`:
   });
 ```
 
-`buildWizardTtmp2Pages` and `readMplFrom` are new helpers in `test/helpers/ttmp2-fixture.ts`, built from `scripts/generate-synthetics/ttmp2-builder.ts`'s shapes; create them in this task.
+Three new helpers in `test/helpers/ttmp2-fixture.ts`, built from `scripts/generate-synthetics/ttmp2-builder.ts`'s shapes (its `.mpl` key order, its `encodeSqPackFile` dummy payload, its pinned mtime); create all three in this task:
+
+```ts
+/** One-page wizard .ttmp2. A group with `options: []` emits an empty `OptionList`. */
+export function buildWizardTtmp2(
+  groups: { name: string; options: string[] }[],
+): Uint8Array;
+
+/** Multi-page wizard .ttmp2. `pageIndex` is written verbatim as ModPackPageJson.PageIndex, and
+ *  pages are emitted in ARRAY order — so the caller can author sparse, duplicated, or
+ *  out-of-order indices, which is the whole point of the three renumbering tests. */
+export function buildWizardTtmp2Pages(
+  pages: { pageIndex: number; groups: { name: string; options: string[] }[] }[],
+): Uint8Array;
+
+/** Parse TTMPL.mpl back out of a written .ttmp2. */
+export function readMplFrom(archive: Uint8Array): ModPackJson;
+```
 
 - [ ] **Step 2: Run to verify they fail**
 
