@@ -49,14 +49,16 @@ function findCorpusPack(fileName: string): string | undefined {
  * unresolved sibling as "nothing to compare, so pass". Likewise a sibling whose OWN oracle run
  * itself errored is not a valid pairing (there would be nothing to confirm against) and fails loud.
  *
- * Mirrors `registerUpgradeCheck`'s own noop/pack golden split, for the same reason it exists there:
- * a no-op golden means ConsoleTools wrote NO archive, so the reference is the sibling's own
- * untouched input — a hand-authored Penumbra-shaped pack, not TexTools' writer output. Comparing zip
- * member NAMES or manifest JSON against that would assert our writer reproduces this sibling
- * builder's arbitrary layout choices rather than TexTools', so `diffArchives` (structural) only runs
- * when the sibling's own golden is a genuinely-written pack. Content is always checked via
- * `diffUpgrade`, which is layout-agnostic (keyed by gamePath, decompressed) and so gives a real
- * byte-match proof on either branch.
+ * Handles only a NO-OP sibling golden today (both current rule instances' siblings sit at a dummy
+ * gamePath /upgrade ignores, so ConsoleTools no-ops on them by construction — see
+ * scripts/generate-synthetics/pmp-builder.ts's DUMMY_PAYLOAD comment). A no-op golden means
+ * ConsoleTools wrote NO archive, so the reference is the sibling's own untouched input — a
+ * hand-authored Penumbra-shaped pack, not TexTools' writer output — and content is checked via
+ * `diffUpgrade`, which is layout-agnostic (keyed by gamePath, decompressed), never by comparing zip
+ * member NAMES or manifest JSON against that hand-authored layout.
+ *
+ * A sibling whose OWN /upgrade produces a genuinely-written golden is a real case this does not yet
+ * handle — see the `kind === "pack"` guard below for why that is a deliberate gap, not an oversight.
  */
 export function confirmOracleErrorDivergence(
   name: string,
@@ -89,31 +91,36 @@ export function confirmOracleErrorDivergence(
     );
     return;
   }
+  if (siblingGolden.kind === "pack") {
+    // UNIMPLEMENTED ON PURPOSE (code review, 2026-08-05) — not a forgotten case. No
+    // ORACLE_ERROR_DIVERGENCE_RULES instance has ever exercised this branch: both current rule
+    // instances' siblings are no-ops by construction (see this function's doc comment), so a
+    // structural `diffArchives` comparison here was speculative, UNTESTED generality — dead code by
+    // every measure this repo uses (no corpus pack, no unit test). Rather than keep it dark, this
+    // throws, so a future rule whose sibling genuinely changes under /upgrade fails LOUDLY here
+    // instead of silently re-running the untested path. Implementing it for real needs its own
+    // covering test (a fixture pair where the sibling's golden is a real written pack) AND must gate
+    // `layoutEquivalent` on the CRASHING pack's OWN FileSwaps, matching `registerUpgradeCheck`'s
+    // "gate on the INPUT pack" rule — NOT the sibling's, which is the bug this comment replaces.
+    throw new Error(
+      `${name}: its declared sibling ${siblingName}'s own /upgrade produced a real written pack ` +
+        `(not a no-op) — confirmOracleErrorDivergence does not yet handle that case (see the code ` +
+        `comment on this throw). No current rule needs it; add the comparison and a covering test ` +
+        `before relying on it.`,
+    );
+  }
 
   const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
   const oursArchive = writeModpack(ours, target, { store: true });
   const oursReRead = loadModpack(`ours.${target}`, oursArchive);
-  const noopReference = siblingGolden.kind === "noop";
-  const reference = noopReference
-    ? loadModpack(siblingName, siblingBytes)
-    : siblingGolden.data;
+  const reference = loadModpack(siblingName, siblingBytes);
 
   const payload = diffUpgrade(name, oursReRead, reference, confirmDivergence);
-  const archive = noopReference
-    ? []
-    : diffArchives(
-        oursArchive,
-        siblingGolden.bytes,
-        target === "pmp",
-        confirmDivergence,
-        target === "pmp" && packHasFileSwaps(readZip(siblingBytes)),
-      );
-  const diffs = [...payload.files, ...archive];
-  if (diffs.length > 0) {
+  if (payload.files.length > 0) {
     expect.fail(
       `${name}: confirmed-divergence check FAILED — our output does not byte-match the golden of ` +
         `its declared sibling ${siblingName} (${rule.reason}):\n` +
-        diffs
+        payload.files
           .map(
             (d) =>
               `  [${d.kind}] ${d.gamePath}#${d.index}:${d.status}` +
