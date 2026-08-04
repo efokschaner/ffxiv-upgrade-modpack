@@ -9,6 +9,7 @@ import {
   ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
+  type ModpackPage,
 } from "../model/modpack";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
@@ -159,6 +160,20 @@ function optionFromJson(
   };
 }
 
+// Port of PmpStandardOptionJson.IsEmptyOption (PMP.cs:1513-1517), read directly against the RAW
+// default_mod.json document — exactly what WizardData.FromPmp's `!pmp.DefaultMod.IsEmptyOption`
+// guard (:1118) consults. This is a byte-for-byte simpler cousin of option-prefix.ts's
+// `isEmptyDefaultOption`: that one runs at WRITE time against the already-canImport-filtered model
+// (and so has to fall back to `o.raw` to see the unfiltered counts), whereas this runs at LOAD time
+// where `raw` (the parsed default_mod.json) already IS the unfiltered document.
+function isEmptyPmpOption(raw: PmpOptionJsonRaw): boolean {
+  return (
+    Object.keys(raw.Files ?? {}).length === 0 &&
+    Object.keys(raw.FileSwaps ?? {}).length === 0 &&
+    (raw.Manipulations ?? []).length === 0
+  );
+}
+
 export function readPmp(bytes: Uint8Array): ModpackData {
   const entries = readZip(bytes);
   // windowsPathKey-keyed index of archive entries, so option Files values (which Penumbra lowercases
@@ -214,6 +229,10 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     options: [defaultOption],
   });
 
+  // Pairs each real (non-Default) built group with the raw Page index FromPmp assigns it by
+  // (WizardData.cs:1152-1157) — collected alongside `groups` above so the `pages` construction
+  // below can route the SAME group objects without re-parsing or re-building their options.
+  const realGroups: { page: number; group: ModpackGroup }[] = [];
   for (const name of groupNames) {
     const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
     const g = parsePmpGroup(gRaw);
@@ -265,7 +284,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     ) {
       options[0]!.selected = true;
     }
-    groups.push({
+    const built: ModpackGroup = {
       name: g.Name,
       description: g.Description,
       image: g.Image,
@@ -277,7 +296,9 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       // Carry the full original group JSON so group-level extras (Imc Identifier/
       // DefaultEntry/AllVariants/OnlyAttributes, etc.) round-trip verbatim.
       raw: gRaw,
-    });
+    };
+    groups.push(built);
+    realGroups.push({ page: g.Page, group: built });
   }
 
   const extraFiles = new Map<string, Uint8Array>();
@@ -285,6 +306,57 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     if (isPmpJsonFile(name)) continue;
     if (referencedKeys.has(looseCaseKey(name))) continue;
     extraFiles.set(windowsPathKey(name), data);
+  }
+
+  // WizardData.cs:1118-1159 (FromPmp) — builds DataPages the way the C# loader does, at LOAD time
+  // (see docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md §4), rather
+  // than write time. This is a NEW, additional view alongside the `groups` flat list above:
+  // `groups` keeps its current, unconditional-Default construction unchanged as a byte-neutral
+  // migration scaffold (see ModpackData.pages's doc comment, src/model/modpack.ts) — nothing in
+  // src/ reads `pages` yet, so its differing (correct) emptiness handling below is inert for now.
+  const pages: ModpackPage[] = [];
+
+  // WizardData.cs:1118-1138 — the synthesized Default page, iff default_mod.json is not an empty
+  // option. `IsEmptyOption` (PMP.cs:1513-1517) reads the RAW document, which is exactly what we
+  // hold here; the old write-time check had to reconstruct it from `o.raw` because it ran after
+  // canImport filtering (see option-prefix.ts's isEmptyDefaultOption).
+  if (!isEmptyPmpOption(defaultMod)) {
+    const defaultPageOption = optionFromJson(
+      defaultMod,
+      filesByKey,
+      referencedKeys,
+    );
+    // WizardData.cs:1122/1128 — fakeOption.Name and fakeGroup.Name are HARDCODED "Default",
+    // not read from default_mod.json (whose Name is virtually always absent —
+    // ShouldSerializeName is false, PMP.cs:1499).
+    defaultPageOption.name = "Default";
+    defaultPageOption.selected = true; // fakeGroup.DefaultSettings defaults to 0 -> Single index 0
+    pages.push({
+      groups: [
+        {
+          name: "Default",
+          description: "",
+          image: "",
+          // Vestigial: `pages` conveys page membership structurally (by nesting), not through this
+          // field. Kept only because ModpackGroup.page is still required until Task 4 deletes it.
+          page: 0,
+          priority: 0,
+          selectionType: "Single",
+          defaultSettings: 0,
+          options: [defaultPageOption],
+        },
+      ],
+    });
+  }
+
+  if (realGroups.length > 0) {
+    // WizardData.cs:1142-1150 — one page per index 0..pageMax, APPENDED after the Default page.
+    const pageMax = Math.max(...realGroups.map((r) => r.page));
+    for (let i = 0; i <= pageMax; i++) pages.push({ groups: [] });
+    // WizardData.cs:1152-1157 — `data.DataPages[g.Page]`, a RAW index into a list that already has
+    // the optional Default page on the front. Ported verbatim; this IS the page off-by-one
+    // (docs/TEXTOOLS_BUGS.md #7). The add is UNCONDITIONAL (:1156).
+    for (const r of realGroups) pages[r.page]!.groups.push(r.group);
   }
 
   return {
@@ -302,6 +374,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       raw: metaRaw, // carries FileVersion, DefaultPreferredItems, and any other meta fields
     },
     groups,
+    pages,
     extraFiles: extraFiles.size > 0 ? extraFiles : undefined,
   };
 }

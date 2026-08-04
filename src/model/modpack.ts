@@ -98,6 +98,20 @@ export interface ModpackGroup {
   raw?: unknown; // opaque carry-through: full original PMP group JSON. Re-emitted verbatim.
 }
 
+/** Mirrors WizardPageEntry (reference/.../Mods/WizardData.cs · WizardPageEntry · 963-990). A `null`
+ *  entry is deliberate and load-bearing: WizardData.FromPmp adds FromPMPGroup's result to
+ *  page.Groups UNCONDITIONALLY at both its call sites (:1136, :1156), and that result is `null` for
+ *  a zero-option group (FromPMPGroup:851-855). ClearNulls prunes them afterwards. The TTMP path
+ *  never admits one — FromWizardModpackPage discards it at the call site (:986). */
+export interface ModpackPage {
+  groups: (ModpackGroup | null)[];
+  /** TRANSITIONAL (deleted in the dense-renumber task). The source ModPackPageJson.PageIndex, kept
+   *  only so writeTtmp2 can keep emitting today's value while the model migration lands separately
+   *  from the behaviour change. WizardPageEntry has no such field — page identity is positional
+   *  (FromWizardTtmp:1180-1184) and the number is re-derived at write (WriteWizardPack:1348-1357). */
+  sourcePageIndex?: number;
+}
+
 export interface ModpackMeta {
   // Name/Author/Description/Url are `string | null`: WizardMetaEntry.FromTtmp assigns all four
   // verbatim from the `.mpl` (WizardData.cs · WizardMetaEntry.FromTtmp · 1052-1069) and
@@ -127,6 +141,11 @@ export interface ModpackData {
   isSimple: boolean; // TTMP simple (flat SimpleModsList) vs wizard/grouped
   meta: ModpackMeta;
   groups: ModpackGroup[];
+  /** Mirrors WizardData.DataPages (WizardData.cs:1079). There is no flat group list in the C# and
+   *  there will be none here either — `groups` above is a migration scaffold this field replaces
+   *  (see the plan's Task 4). Optional only while both exist; every reader already populates it.
+   *  Use `allGroups` to iterate. */
+  pages?: ModpackPage[];
   /** PMP-only: archive members that are neither a manifest json (meta.json / default_mod.json /
    *  group_*.json) nor referenced by any option's `Files` value — preview images, readmes, etc.
    *  Keyed by the archive path (forward slashes) after the same NTFS-equivalent normalization
@@ -150,6 +169,20 @@ export function emptyMeta(): ModpackMeta {
     tags: [],
     minimumFrameworkVersion: "1.0.0.0",
   };
+}
+
+/** Every non-null group across every page, in page order — the order WritePmp's own loops use
+ *  (WizardData.cs:1506-1542, :1583-1600). Nulls are skipped rather than thrown on: ClearNulls has
+ *  already removed them from any page this walks (see src/container/clear-nulls.ts).
+ *
+ *  MIGRATION SCAFFOLD: the `?? data.groups` fallback exists only while `pages` is optional, so a
+ *  ModpackData literal that predates the migration still resolves. Task 4 makes `pages` required,
+ *  deletes `groups`, and deletes this fallback with it. */
+export function allGroups(data: ModpackData): ModpackGroup[] {
+  if (!data.pages) return data.groups;
+  return data.pages.flatMap((p) =>
+    p.groups.filter((g): g is ModpackGroup => g !== null),
+  );
 }
 
 export function allFiles(

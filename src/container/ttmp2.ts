@@ -10,6 +10,7 @@ import {
   ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
+  type ModpackPage,
 } from "../model/modpack";
 import { ttmpNeedsMdlFix } from "../upgrade/model";
 import { ttmpNeedsTexFix } from "../upgrade/texfix";
@@ -142,11 +143,24 @@ export function readTtmp2(
       isSimple: true,
       meta,
       groups: [group],
+      // WizardData.cs · FromSimpleTtmp · 1204-1231 — one hand-built page holding one hand-built
+      // group, added UNCONDITIONALLY (:1230) with no ClearNulls call. FromWizardGroup's zero-option
+      // early return (:749-753) cannot fire on it: the group is constructed with exactly one option
+      // (:1218-1225), so the null this add would otherwise leak is unreachable.
+      pages: [{ groups: [group] }],
     };
   }
 
   const groups: ModpackGroup[] = [];
+  const pages: ModpackPage[] = [];
   for (const page of mpl.ModPackPages ?? []) {
+    // WizardData.cs · WizardPageEntry.FromWizardModpackPage · 977-990 — one page per ModPackPages
+    // element, in array order. `sourcePageIndex` is TRANSITIONAL only (see ModpackPage's doc
+    // comment) — WizardPageEntry itself carries no page-index field.
+    const builtPage: ModpackPage = {
+      groups: [],
+      sourcePageIndex: page.PageIndex,
+    };
     for (const g of page.ModGroups) {
       const built: ModpackGroup = {
         name: g.GroupName,
@@ -176,6 +190,7 @@ export function readTtmp2(
         })),
       };
       groups.push(built);
+      builtPage.groups.push(built);
       // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
       // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
       // selected option. The `length > 0` guard stands in for the zero-option early return at
@@ -190,8 +205,15 @@ export function readTtmp2(
         built.options[0]!.selected = true;
       }
     }
+    pages.push(builtPage);
   }
-  return { sourceFormat: ModpackFormat.Ttmp2, isSimple: false, meta, groups };
+  return {
+    sourceFormat: ModpackFormat.Ttmp2,
+    isSimple: false,
+    meta,
+    groups,
+    pages,
+  };
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
