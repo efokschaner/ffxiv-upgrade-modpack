@@ -70,7 +70,6 @@ function buildHairRescuePack(): ModpackData {
             name: "G",
             description: "",
             image: "",
-            page: 0,
             priority: 0,
             selectionType: "Single",
             defaultSettings: 0,

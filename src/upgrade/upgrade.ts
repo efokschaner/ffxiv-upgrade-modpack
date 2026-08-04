@@ -71,9 +71,7 @@ function cloneGroup(g: ModpackGroup): ModpackGroup {
   return { ...g, options: g.options.map(cloneOption) };
 }
 
-/** Deep-ish copy: fresh container arrays/objects, shared opaque file bytes. `allPages` covers the
- *  `data.pages` migration-scaffold fallback (ModpackData.pages's doc comment, src/model/modpack.ts)
- *  for a `test/` fixture that predates it. */
+/** Deep-ish copy: fresh container arrays/objects, shared opaque file bytes. */
 export function cloneModpack(data: ModpackData): ModpackData {
   const pages = allPages(data).map((p) => ({
     ...p,
@@ -82,13 +80,6 @@ export function cloneModpack(data: ModpackData): ModpackData {
   return {
     ...data,
     meta: { ...data.meta, tags: [...data.meta.tags] },
-    // MIGRATION SCAFFOLD: `groups` is DERIVED from the freshly-cloned `pages` above (the same
-    // group/option object identities), not cloned a second time independently — so a `test/`
-    // fixture that still reads `.groups` (pre-Task-3) sees exactly the objects the pipeline mutates
-    // through `pages`, rather than a second, drifting copy. Deleted alongside `groups` in Task 4.
-    groups: pages.flatMap((p) =>
-      p.groups.filter((g): g is ModpackGroup => g !== null),
-    ),
     pages,
     // Fresh Map: `...data` would otherwise share the SOURCE map by reference, so a caller mutating
     // the clone's extraFiles (or a future upgrade round adding/removing entries) would mutate

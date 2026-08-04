@@ -90,7 +90,6 @@ export interface ModpackGroup {
   name: string;
   description: string;
   image: string;
-  page: number;
   priority: number;
   selectionType: string; // "Single" | "Multi" | "Imc" | "Combining"
   defaultSettings: number; // PMP; 0 for TTMP
@@ -145,16 +144,9 @@ export interface ModpackData {
   sourceFormat: ModpackFormat;
   isSimple: boolean; // TTMP simple (flat SimpleModsList) vs wizard/grouped
   meta: ModpackMeta;
-  /** MIGRATION SCAFFOLD (deleted in Task 4). There is no flat group list in the C# — `pages` below
-   *  is the real model. Optional now that every consumer in `src/` reads `pages` via `allGroups` /
-   *  `allFiles` instead; every reader still populates this for `test/` fixtures that have not yet
-   *  migrated (Task 3). Do not read this field directly — use `allGroups`. */
-  groups?: ModpackGroup[];
-  /** Mirrors WizardData.DataPages (WizardData.cs:1079). There is no flat group list in the C# and
-   *  there will be none here either — `groups` above is a migration scaffold this field replaces
-   *  (see the plan's Task 4). Optional only while both exist; every reader already populates it.
-   *  Use `allGroups` to iterate. */
-  pages?: ModpackPage[];
+  /** Mirrors WizardData.DataPages (WizardData.cs:1079). There is no flat group list in the C# —
+   *  use `allGroups` to iterate every group in page order. */
+  pages: ModpackPage[];
   /** PMP-only: archive members that are neither a manifest json (meta.json / default_mod.json /
    *  group_*.json) nor referenced by any option's `Files` value — preview images, readmes, etc.
    *  Keyed by the archive path (forward slashes) after the same NTFS-equivalent normalization
@@ -180,14 +172,11 @@ export function emptyMeta(): ModpackMeta {
   };
 }
 
-/** `data.pages`, or (MIGRATION SCAFFOLD, deleted alongside `groups` in Task 4) a single synthetic
- *  page wrapping `data.groups` when `pages` is absent. Every reader already populates `pages`, so
- *  this fallback exists only for a `test/` fixture that predates the migration and still constructs
- *  a `ModpackData` literal with `groups:` but no `pages:` — it lets every pages-consuming function
- *  (`allGroups` below; `cloneModpack`, `writePmp`, `writeTtmp2`, `optionPrefixes` elsewhere) tolerate
- *  such a fixture without each re-deriving the same fallback independently. */
+/** `data.pages`. A thin accessor kept so every pages-consuming function (`allGroups` below;
+ *  `cloneModpack`, `writePmp`, `writeTtmp2`, `optionPrefixes` elsewhere) reads pages through one
+ *  named seam rather than each spelling `data.pages` independently. */
 export function allPages(data: ModpackData): ModpackPage[] {
-  return data.pages ?? [{ groups: data.groups ?? [] }];
+  return data.pages;
 }
 
 /** Every non-null group across every page, in page order — the order WritePmp's own loops use

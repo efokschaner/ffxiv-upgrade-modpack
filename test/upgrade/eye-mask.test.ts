@@ -153,7 +153,6 @@ function pack(files: Record<string, Uint8Array>) {
             name: "g",
             description: "",
             image: "",
-            page: 0,
             priority: 0,
             selectionType: "Single",
             defaultSettings: 0,

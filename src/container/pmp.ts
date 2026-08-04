@@ -165,10 +165,10 @@ function optionFromJson(
 
 // Port of PmpStandardOptionJson.IsEmptyOption (PMP.cs:1513-1517), read directly against the RAW
 // default_mod.json document — exactly what WizardData.FromPmp's `!pmp.DefaultMod.IsEmptyOption`
-// guard (:1118) consults. This is a byte-for-byte simpler cousin of option-prefix.ts's
-// `isEmptyDefaultOption`: that one runs at WRITE time against the already-canImport-filtered model
-// (and so has to fall back to `o.raw` to see the unfiltered counts), whereas this runs at LOAD time
-// where `raw` (the parsed default_mod.json) already IS the unfiltered document.
+// guard (:1118) consults. Runs at LOAD time, where `raw` (the parsed default_mod.json) already IS
+// the unfiltered document, so there is no canImport-filtered model to reconstruct counts from (the
+// write-time check that once needed that reconstruction, option-prefix.ts's `isEmptyDefaultOption`,
+// was deleted along with `ModpackData.groups` — this is now the only such check, run at load).
 function isEmptyPmpOption(raw: PmpOptionJsonRaw): boolean {
   return (
     Object.keys(raw.Files ?? {}).length === 0 &&
@@ -212,29 +212,10 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   // model's `files` array at all but must still count as referenced here.
   const referencedKeys = new Set<string>();
 
-  const groups: ModpackGroup[] = [];
-  // default_mod.json -> a leading single-option group named "Default".
-  const defaultOption = optionFromJson(defaultMod, filesByKey, referencedKeys);
-  // WizardData.cs:1118-1138 — FromPmp's synthesized fake group is Type "Single" with exactly one
-  // option, and its DefaultSettings is never assigned (only the [JsonIgnore] SelectedSettings is,
-  // :1130), so it stays at the PMPGroupJson field default of 0. FromPMPGroup's Single index match
-  // (:807) therefore selects option 0. Set explicitly rather than left to a derivation, since we
-  // synthesize this group directly instead of routing it back through the group loop below.
-  defaultOption.selected = true;
-  groups.push({
-    name: "Default",
-    description: "",
-    image: "",
-    page: 0,
-    priority: 0,
-    selectionType: "Single",
-    defaultSettings: 0,
-    options: [defaultOption],
-  });
-
   // Pairs each real (non-Default) built group with the raw Page index FromPmp assigns it by
-  // (WizardData.cs:1152-1157) — collected alongside `groups` above so the `pages` construction
-  // below can route the SAME group objects without re-parsing or re-building their options.
+  // (WizardData.cs:1152-1157) — `page` is read transiently from the parsed group JSON (`g.Page`
+  // below) purely to route the group into `pages` construction further down; it is not a model
+  // field (`WizardGroupEntry` carries no page of its own).
   const realGroups: { page: number; group: ModpackGroup }[] = [];
   for (const name of groupNames) {
     const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
@@ -291,7 +272,6 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       name: g.Name,
       description: g.Description,
       image: g.Image,
-      page: g.Page,
       priority: g.Priority,
       selectionType: g.Type,
       defaultSettings: g.DefaultSettings,
@@ -300,29 +280,20 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       // DefaultEntry/AllVariants/OnlyAttributes, etc.) round-trip verbatim.
       raw: gRaw,
     };
-    groups.push(built);
     realGroups.push({ page: g.Page, group: built });
   }
 
-  const extraFiles = new Map<string, Uint8Array>();
-  for (const [name, data] of entries) {
-    if (isPmpJsonFile(name)) continue;
-    if (referencedKeys.has(looseCaseKey(name))) continue;
-    extraFiles.set(windowsPathKey(name), data);
-  }
-
   // WizardData.cs:1118-1159 (FromPmp) — builds DataPages the way the C# loader does, at LOAD time
-  // (see docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md §4), rather
-  // than write time. This is a NEW, additional view alongside the `groups` flat list above:
-  // `groups` keeps its current, unconditional-Default construction unchanged as a byte-neutral
-  // migration scaffold (see ModpackData.pages's doc comment, src/model/modpack.ts) — nothing in
-  // src/ reads `pages` yet, so its differing (correct) emptiness handling below is inert for now.
+  // (see docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md §4). Built
+  // BEFORE the ExtraFiles scan below: the synthesized Default page's `optionFromJson` call (just
+  // like every real option's, in the groups loop above) is what feeds `referencedKeys`, and the
+  // scan must see every referenced key or it misclassifies a still-referenced member as an extra.
   const pages: ModpackPage[] = [];
 
   // WizardData.cs:1118-1138 — the synthesized Default page, iff default_mod.json is not an empty
-  // option. `IsEmptyOption` (PMP.cs:1513-1517) reads the RAW document, which is exactly what we
-  // hold here; the old write-time check had to reconstruct it from `o.raw` because it ran after
-  // canImport filtering (see option-prefix.ts's isEmptyDefaultOption).
+  // option. `isEmptyPmpOption` (above) reads the RAW document, which is exactly what we hold
+  // here — no canImport-filtered reconstruction needed, unlike the write-time check this
+  // superseded.
   if (!isEmptyPmpOption(defaultMod)) {
     const defaultPageOption = optionFromJson(
       defaultMod,
@@ -340,9 +311,6 @@ export function readPmp(bytes: Uint8Array): ModpackData {
           name: "Default",
           description: "",
           image: "",
-          // Vestigial: `pages` conveys page membership structurally (by nesting), not through this
-          // field. Kept only because ModpackGroup.page is still required until Task 4 deletes it.
-          page: 0,
           priority: 0,
           selectionType: "Single",
           defaultSettings: 0,
@@ -364,6 +332,13 @@ export function readPmp(bytes: Uint8Array): ModpackData {
 
   clearNulls(pages); // WizardData.cs · FromPmp · 1159 — FromPmp's own call, on the way out
 
+  const extraFiles = new Map<string, Uint8Array>();
+  for (const [name, data] of entries) {
+    if (isPmpJsonFile(name)) continue;
+    if (referencedKeys.has(looseCaseKey(name))) continue;
+    extraFiles.set(windowsPathKey(name), data);
+  }
+
   return {
     sourceFormat: ModpackFormat.Pmp,
     isSimple: false,
@@ -378,7 +353,6 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       minimumFrameworkVersion: "1.0.0.0",
       raw: metaRaw, // carries FileVersion, DefaultPreferredItems, and any other meta fields
     },
-    groups,
     pages,
     extraFiles: extraFiles.size > 0 ? extraFiles : undefined,
   };
@@ -607,6 +581,11 @@ function optionToJson(
  * whose only consumer immediately inflates it again (measured: 17.7s -> 2.6s on a 232 MB pack).
  * Everything the checks DO assert — member naming, content dedup, manifest regeneration — is
  * unaffected by the level.
+ *
+ * MUTATES `data`: `allPages(data)` returns `data.pages` by reference, and the `clearNulls` call
+ * just below splices dead pages/groups out of it in place. Faithful — `ClearNulls` mutates
+ * `this.DataPages` in the C# too (WizardData.cs:1462) — but currently inert for any caller that
+ * only ever writes once.
  */
 export function writePmp(
   data: ModpackData,
@@ -619,8 +598,7 @@ export function writePmp(
   // function (including the prefix computation just below) ever reads DataPages. The C# genuinely
   // calls ClearNulls twice — once at load (FromPmp:1159, already run by `readPmp`) and again here —
   // so this call is a no-op for any pack that came through `readPmp`, but matters for a hand-built
-  // ModpackData that never did. `allPages` covers the `data.pages` migration-scaffold fallback
-  // (ModpackData.pages's doc comment, src/model/modpack.ts) for a `test/` fixture that predates it.
+  // ModpackData that never did.
   const pages = allPages(data);
   clearNulls(pages);
 
@@ -811,11 +789,12 @@ export function writePmp(
 
   // Port of WizardData.WritePmp's group_NNN.json assembly (WizardData.cs:1583-1600), run over the
   // SAME pruned `pages` the absorption search used above — i.e. `ClearNulls`' group-level pruning
-  // (a group with `!HasData` never becomes a group_NNN.json — see `buildPages`) is now applied here
-  // too, not just at the option-prefix level. `page` is a LOCAL counter, incremented once per
-  // DataPages entry that contributed at least one non-absorbed group — NOT the source `g.page` —
-  // so a page that contributed nothing (all its groups absorbed or pruned) does not consume a page
-  // number, exactly mirroring the C#'s `numGroupsThisPage > 0` gate. group_NNN's numeric prefix is a
+  // (a group with `!HasData` never becomes a group_NNN.json — see src/container/clear-nulls.ts) is
+  // applied here too, not just at the option-prefix level. `pageCounter` is a LOCAL counter,
+  // incremented once per DataPages entry that contributed at least one non-absorbed group — NOT a
+  // group-carried page number (`ModpackGroup` carries none) — so a page that contributed nothing
+  // (all its groups absorbed or pruned) does not consume a page number, exactly mirroring the C#'s
+  // `numGroupsThisPage > 0` gate. group_NNN's numeric prefix is a
   // flat counter across the whole (pruned, absorption-excluded) sequence, matching `pmp.Groups`'
   // own list-index numbering in `PMP.WritePmp` (PMP.cs:856-862).
   let pageCounter = 0;

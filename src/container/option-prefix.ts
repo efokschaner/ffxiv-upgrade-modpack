@@ -151,8 +151,6 @@ function makeOptionPrefix(
 export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   // ClearNulls has already run (at load for PMP, FromPmp:1159; at write for both, WritePmp:1462 /
   // WriteWizardPack:1334), so no page reaching here holds a null. Narrow rather than assert that.
-  // `allPages` covers the `data.pages` migration-scaffold fallback (ModpackData.pages's doc
-  // comment, src/model/modpack.ts) for a `test/` fixture that predates it.
   const pages = allPages(data).map((p) => ({
     ...p,
     groups: p.groups.filter((g): g is ModpackGroup => g !== null),

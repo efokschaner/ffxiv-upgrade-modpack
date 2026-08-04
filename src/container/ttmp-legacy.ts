@@ -82,16 +82,10 @@ export function readLegacyTtmp(
     manipulations: [],
     files,
   };
-  // `page: 0` is retained here despite the brief's Step 6 saying to delete it: ModpackGroup.page
-  // stays a REQUIRED field until Task 4 (src/model/modpack.ts's ModpackPage doc comment), and
-  // writeTtmp2 still keys its page bucketing off `g.page` for every groups-array consumer — dropping
-  // the value (or leaving it undefined) would either fail to typecheck or silently change which
-  // PageIndex a legacy-sourced pack's group gets written under. See task-1-report.md's Concerns.
   const group: ModpackGroup = {
     name: "Default",
     description: "",
     image: "",
-    page: 0,
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
@@ -111,7 +105,6 @@ export function readLegacyTtmp(
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [group],
     // WizardData.cs · FromSimpleTtmp · 1204-1231 — a legacy pack loads through FromSimpleTtmp via
     // the synthesized "0.1s" mpl (TTMP.cs:453-462): one hand-built page holding one hand-built
     // group, added UNCONDITIONALLY (:1230) with no ClearNulls call.

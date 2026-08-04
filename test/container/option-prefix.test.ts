@@ -50,20 +50,11 @@ function emptyOption(name = ""): ModpackOption {
   return option(name, { files: [] });
 }
 
-// `page` is vestigial here: kept only because `ModpackGroup.page` is still a required field on the
-// type until a later task deletes it (src/container/ttmp-legacy.ts's comment on the same point).
-// `optionPrefixes` no longer reads it -- page membership comes from the `ModpackPage[]` structure
-// each test builds explicitly below.
-function group(
-  name: string,
-  page: number,
-  options: ModpackOption[],
-): ModpackGroup {
+function group(name: string, options: ModpackOption[]): ModpackGroup {
   return {
     name,
     description: "",
     image: "",
-    page,
     priority: 0,
     selectionType: options.length > 1 ? "Multi" : "Single",
     defaultSettings: 0,
@@ -98,8 +89,8 @@ describe("optionPrefixes", () => {
     // The empty default group never made it into `pages` at all -- readPmp's IsEmptyOption check
     // (src/container/pmp.ts) is exactly what decides that at load; here it is simply absent, mirroring
     // the surviving structure that check produces.
-    const defaultGroup = group("Default", 0, [emptyOption()]);
-    const g = group("Black Veil", 0, [option("Black Veil")]);
+    const defaultGroup = group("Default", [emptyOption()]);
+    const g = group("Black Veil", [option("Black Veil")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
@@ -108,7 +99,7 @@ describe("optionPrefixes", () => {
   });
 
   it("2. multi-option group -> '<group>/<option>/'", () => {
-    const g = group("Other Group", 0, [option("Option A"), option("Option B")]);
+    const g = group("Other Group", [option("Option A"), option("Option B")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
@@ -117,8 +108,8 @@ describe("optionPrefixes", () => {
   });
 
   it("3. two real groups on separate pages (no default): pN/ turns on, single-option groups get no option segment", () => {
-    const g0 = group("Alpha", 0, [option("Only")]);
-    const g1 = group("Beta", 1, [option("Only")]);
+    const g0 = group("Alpha", [option("Only")]);
+    const g1 = group("Beta", [option("Only")]);
     const d = data([page([g0]), page([g1])]);
     const prefixes = optionPrefixes(d);
 
@@ -127,7 +118,7 @@ describe("optionPrefixes", () => {
   });
 
   it("4. duplicate option names within one group -> the uniquifying suffix", () => {
-    const g = group("Colors", 0, [option("Red"), option("Red")]);
+    const g = group("Colors", [option("Red"), option("Red")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
@@ -136,7 +127,7 @@ describe("optionPrefixes", () => {
   });
 
   it("4b. a third identical option name increments past (1) -> (2) (MakeOptionPrefix's loop DOES increment)", () => {
-    const g = group("Colors", 0, [option("Red"), option("Red"), option("Red")]);
+    const g = group("Colors", [option("Red"), option("Red"), option("Red")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
@@ -146,7 +137,7 @@ describe("optionPrefixes", () => {
   });
 
   it("5. blank group/option names substitute the capitalized literal, NOT re-path-safed", () => {
-    const g = group("", 0, [option(""), option("Foo")]);
+    const g = group("", [option(""), option("Foo")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
@@ -163,8 +154,8 @@ describe("optionPrefixes", () => {
     // their own page. See docs/TEXTOOLS_BUGS.md #7 (the off-by-one construction itself is pinned at
     // its actual source, readPmp, by test/container/pages-construction.test.ts; this case only
     // pins that optionPrefixes computes the right prefixes GIVEN that already-merged page).
-    const defaultGroup = group("Default", 0, [option("Default")]);
-    const g = group("Everything", 0, [option("A"), option("B")]);
+    const defaultGroup = group("Default", [option("Default")]);
+    const g = group("Everything", [option("A"), option("B")]);
     const d = data([page([defaultGroup, g])]);
     const prefixes = optionPrefixes(d);
 
@@ -174,7 +165,7 @@ describe("optionPrefixes", () => {
   });
 
   it("7. names are lowercased and path-safed via folderSafeName (invalid Windows filename chars)", () => {
-    const g = group("A:B*C?", 0, [option("X<Y>Z")]);
+    const g = group("A:B*C?", [option("X<Y>Z")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
@@ -195,8 +186,8 @@ describe("optionPrefixes", () => {
     // survives ClearNulls intact, and — being FIRST in the page — claims the "same/" folder itself,
     // pushing `realGroup` (which collides on the same sanitized name) to "same (1)/". A "fix" that
     // prunes `emptyReal` for lacking content silently diverges from this real TexTools behaviour.
-    const emptyReal = group("Same", 0, [option("Only", { files: [] })]);
-    const realGroup = group("Same", 0, [option("Only")]);
+    const emptyReal = group("Same", [option("Only", { files: [] })]);
+    const realGroup = group("Same", [option("Only")]);
     const d = data([page([emptyReal, realGroup])]);
     const prefixes = optionPrefixes(d);
 
@@ -216,9 +207,9 @@ describe("optionPrefixes", () => {
     // out shaped exactly this way -- is pinned at readPmp by
     // test/container/pages-construction.test.ts; this case only pins optionPrefixes' prefixes given
     // that already-constructed layout.)
-    const defaultGroup = group("Default", 0, [option("Default")]);
-    const g0 = group("Everything", 0, [option("A")]);
-    const g1 = group("Beta", 1, [option("Only")]);
+    const defaultGroup = group("Default", [option("Default")]);
+    const g0 = group("Everything", [option("A")]);
+    const g1 = group("Beta", [option("Only")]);
     const d = data([page([defaultGroup, g0]), page([g1])]);
     const prefixes = optionPrefixes(d);
 
@@ -233,7 +224,7 @@ describe("optionPrefixes", () => {
     // `oName` to the path -- never runs there (the single-option branch discards `oName` and
     // returns `groupFolderPath` verbatim, WizardData.cs:1443-1446). Use a multi-option group so the
     // sanitized option-name segment is actually visible in the result.
-    const g = group("Group", 0, [option("X<Y>Z"), option("Normal")]);
+    const g = group("Group", [option("X<Y>Z"), option("Normal")]);
     const d = data([page([g])]);
     const prefixes = optionPrefixes(d);
 
@@ -253,10 +244,10 @@ describe("optionPrefixes", () => {
     // ("Same") is listed BEFORE the Standard group of the same name, yet the Standard group must
     // still win "same/" and the Imc group must be bumped to "same (1)/".
     const imcGroup: ModpackGroup = {
-      ...group("Same", 0, [option("Only")]),
+      ...group("Same", [option("Only")]),
       selectionType: "Imc",
     };
-    const standardGroup = group("Same", 0, [option("Only")]);
+    const standardGroup = group("Same", [option("Only")]);
     const d = data([page([imcGroup, standardGroup])]);
     const prefixes = optionPrefixes(d);
 
@@ -269,9 +260,9 @@ describe("optionPrefixes", () => {
     // claims "same (1)/" (one retry succeeds), and the third would ALSO need "same (1)/" since the
     // C#'s loop counter never increments past 1 -- an infinite loop in the original. We throw
     // instead (docs/TEXTOOLS_BUGS.md #6).
-    const g0 = group("Same", 0, [option("Only")]);
-    const g1 = group("Same", 0, [option("Only")]);
-    const g2 = group("Same", 0, [option("Only")]);
+    const g0 = group("Same", [option("Only")]);
+    const g1 = group("Same", [option("Only")]);
+    const g2 = group("Same", [option("Only")]);
     const d = data([page([g0, g1, g2])]);
 
     expect(() => optionPrefixes(d)).toThrow(/WizardData\.cs:1406-1409/);

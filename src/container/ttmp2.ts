@@ -139,7 +139,6 @@ export function readTtmp2(
       name: "Default",
       description: "",
       image: "",
-      page: 0,
       priority: 0,
       selectionType: "Single",
       defaultSettings: 0,
@@ -149,7 +148,6 @@ export function readTtmp2(
       sourceFormat: ModpackFormat.Ttmp2,
       isSimple: true,
       meta,
-      groups: [group],
       // WizardData.cs · FromSimpleTtmp · 1204-1231 — one hand-built page holding one hand-built
       // group, added UNCONDITIONALLY (:1230) with no ClearNulls call. FromWizardGroup's zero-option
       // early return (:749-753) cannot fire on it: the group is constructed with exactly one option
@@ -158,7 +156,6 @@ export function readTtmp2(
     };
   }
 
-  const groups: ModpackGroup[] = [];
   const pages: ModpackPage[] = [];
   for (const page of mpl.ModPackPages ?? []) {
     // WizardData.cs · WizardPageEntry.FromWizardModpackPage · 977-990 — one page per ModPackPages
@@ -173,7 +170,6 @@ export function readTtmp2(
         name: g.GroupName,
         description: "",
         image: "",
-        page: page.PageIndex,
         priority: 0,
         // WizardData.cs:652 — `tGroup.SelectionType == "Single" ? Single : Multi`. The comparison is
         // against "Single" only, so every other value — including an absent one — is Multi.
@@ -196,7 +192,6 @@ export function readTtmp2(
           files: filesFromMods(o.ModsJsons, mpd, loadFix),
         })),
       };
-      groups.push(built);
       builtPage.groups.push(built);
       // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
       // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
@@ -218,7 +213,6 @@ export function readTtmp2(
     sourceFormat: ModpackFormat.Ttmp2,
     isSimple: false,
     meta,
-    groups,
     pages,
   };
 }
@@ -264,6 +258,10 @@ function buildBlob(files: ModpackFile[]): {
   return { blob: concatBytes(parts), place };
 }
 
+/** MUTATES `data`: `allPages(data)` returns `data.pages` by reference, and the wizard branch's
+ *  `clearNulls(dataPages)` call below splices dead pages/groups out of it in place. Faithful —
+ *  `ClearNulls` mutates `this.DataPages` in the C# too (WizardData.cs:1334) — but currently inert
+ *  for any caller that only ever writes once. */
 export function writeTtmp2(data: ModpackData): Uint8Array {
   // A PMP source can carry ExtraFiles (previews, readmes — PMP.cs:213-215); TTMP has no analogous
   // container member (its payloads are byte offsets into a single .mpd, not zip members), and
@@ -322,11 +320,7 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
     mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));
   } else {
     // WizardData.cs · WriteWizardPack · 1334 — the first statement of the wizard write branch,
-    // before anything else reads DataPages. `allPages` covers the `data.pages` migration-scaffold
-    // fallback (ModpackData.pages's doc comment, src/model/modpack.ts) for a `test/` fixture that
-    // predates it -- such a fixture collapses onto a single synthetic page (`sourcePageIndex`
-    // undefined -> bucket key 0 below), which loses per-group `.page` bucketing; no current fixture
-    // relies on that, and the fallback is deleted along with `groups` in Task 4 regardless.
+    // before anything else reads DataPages.
     const dataPages = allPages(data);
     clearNulls(dataPages);
     const byPage = new Map<number, TtmpModGroupJsonWrite[]>();

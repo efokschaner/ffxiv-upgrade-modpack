@@ -705,7 +705,6 @@ describe("reports a swallowed hair-transform failure (e2e through upgradeModpack
               name: "G",
               description: "",
               image: "",
-              page: 0,
               priority: 0,
               selectionType: "Single",
               defaultSettings: 0,

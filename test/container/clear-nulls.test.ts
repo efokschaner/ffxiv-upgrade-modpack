@@ -6,10 +6,6 @@ const group = (name: string, optionCount: number): ModpackGroup => ({
   name,
   description: "",
   image: "",
-  // ModpackGroup.page is a scaffold field deleted by Task 4 (docs/superpowers/plans/
-  // 2026-08-04-datapages-model-and-empty-group.md), still required at this point in the
-  // execution order; unused by anything clearNulls reads.
-  page: 0,
   priority: 0,
   selectionType: "Single",
   defaultSettings: 0,

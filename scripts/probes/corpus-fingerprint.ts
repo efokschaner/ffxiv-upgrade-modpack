@@ -88,11 +88,11 @@ function fingerprint(name: string, data: ModpackData): Set<string> {
   f.add(`pack:${data.isSimple ? "simple" : "wizard"}`);
   if (data.extraFiles?.size) f.add("pmp:extraFiles");
   if (data.meta.description) f.add("meta:description");
+  if (data.pages.length > 1) f.add("group:multipage");
 
   for (const g of allGroups(data)) {
     f.add(`group:${g.selectionType}`);
     if (g.image) f.add("group:image");
-    if (g.page > 0) f.add("group:multipage");
     for (const o of g.options) {
       if (o.image) f.add("option:image"); // BACKLOG: WriteImage re-encode unported
       if (Object.keys(o.fileSwaps).length) f.add("pmp:fileSwaps"); // BACKLOG: FileSwap handling

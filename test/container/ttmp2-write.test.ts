@@ -78,7 +78,6 @@ describe("writeTtmp2 round-trip", () => {
               name: "Default",
               description: "",
               image: "",
-              page: 0,
               priority: 0,
               selectionType: "Single",
               defaultSettings: 0,

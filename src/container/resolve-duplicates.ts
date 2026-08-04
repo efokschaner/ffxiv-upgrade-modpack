@@ -40,8 +40,8 @@
 //    o.Options` walk, WizardData.cs:1506-1542). `optionPrefixes` (option-prefix.ts) already performs
 //    that exact page-bucketed walk to compute each option's prefix, and a `Map`'s iteration order IS
 //    its insertion order -- so `prefixes.keys()` reproduces the C#'s option visiting order without
-//    us re-deriving `DataPages` a second time here (which would blend option-prefix.ts's private
-//    `buildPages` into this module). Within an option, `option.files` is now literally a `Map`
+//    us re-deriving `DataPages` a second time here (which would blend `readPmp`'s page construction
+//    into this module). Within an option, `option.files` is now literally a `Map`
 //    (mirroring C#'s `Dictionary<string, FileStorageInformation>`, WizardData.cs:71), so its
 //    iteration order IS the `Files`-map insertion order the reader builds it in
 //    (src/container/pmp.ts). Get either order wrong and the `common/N` numbers come out different

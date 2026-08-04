@@ -84,23 +84,18 @@ describe("readPmp selected", () => {
   });
 
   // WizardData.cs:857-860's backstop is guarded by `options.length > 0`, standing in for the
-  // zero-option early return at :851-855. An option-less Single group must simply survive the
-  // read with no options rather than crashing on `options[0]!`.
-  //
-  // NOTE this pins OUR behaviour, not parity: TexTools DROPS the group entirely (that early return
-  // is `return null`), so "survives" here is a known divergence, not the golden's shape. See
-  // docs/backlog/2026-07-20-empty-group-not-dropped.md — when that item ships, this test must be
-  // rewritten to assert the group is ABSENT.
-  it("Single: a zero-option group survives the read (our divergence) without tripping the backstop", () => {
+  // zero-option early return at :851-855 (unported until Task 7 — see design spec §8) — so
+  // building the zero-option group in the first place doesn't crash on `options[0]!` before
+  // ClearNulls' own prune ever runs.
+  it("a zero-option group is pruned from the wizard model (ClearNulls, WizardData.cs:1249)", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
     );
-    // NOT allGroups(data): this test's own subject is readPmp's flat, still-unconditionally-built
-    // `groups` scaffold (pmp.ts's `groups` local, populated independently of `pages`/`clearNulls`) --
-    // see task-3-report.md's flagged finding. `allGroups(data)` already disagrees with this assertion
-    // today because clearNulls (landed ahead of schedule, Task 5) already prunes the zero-option group
-    // out of `pages`; converting this read is Task 7's job (design spec §8), not Task 3's.
-    expect(data.groups![1]!.options).toEqual([]);
+    // Only the synthesized Default group (one option) survives: `clearNulls`, wired in at the
+    // `readPmp` load seam (FromPmp:1159, src/container/clear-nulls.ts), prunes the zero-option
+    // real group's null out of its page before `allGroups` ever walks it.
+    expect(allGroups(data)).toHaveLength(1);
+    expect(allGroups(data)[0]!.name).toBe("Default");
   });
 
   // WizardData.cs:1118-1138 — FromPmp's synthesized Default group is Type "Single" with one

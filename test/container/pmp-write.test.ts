@@ -180,7 +180,6 @@ describe("writePmp model-building fallback (no raw)", () => {
               name: "Default",
               description: "",
               image: "",
-              page: 0,
               priority: 0,
               selectionType: "Single",
               defaultSettings: 0,
@@ -214,7 +213,6 @@ describe("writePmp model-building fallback (no raw)", () => {
               name: "Color Options",
               description: "pick one",
               image: "grp.png",
-              page: 0,
               priority: 5,
               selectionType: "Single",
               defaultSettings: 0,
@@ -425,7 +423,6 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
       name,
       description: "",
       image: "",
-      page: 0,
       priority: 0,
       selectionType: "Single",
       defaultSettings: 0,
@@ -464,7 +461,6 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
               name: "Default",
               description: "",
               image: "",
-              page: 0,
               priority: 0,
               selectionType: "Single",
               defaultSettings: 0,
@@ -537,7 +533,6 @@ describe("writePmp default-mod absorption searches DataPages order, not just the
       Name: "Default",
       Description: "",
       Image: "",
-      Page: 0,
       Priority: 0,
       Type: "Single",
       DefaultSettings: 0,
@@ -608,7 +603,6 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
       name,
       description: "",
       image: "",
-      page: 0,
       priority: 0,
       selectionType: "Single",
       defaultSettings: 0,
@@ -716,7 +710,6 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
       name: "Choice",
       description: "",
       image: "",
-      page: 0,
       priority: 0,
       selectionType,
       defaultSettings,
@@ -817,13 +810,11 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
   function buildData(): ModpackData {
     const group = (
       name: string,
-      page: number,
       files: { gamePath: string; data: Uint8Array }[],
     ) => ({
       name,
       description: "",
       image: "",
-      page,
       priority: 0,
       selectionType: "Single" as const,
       defaultSettings: 0,
@@ -845,20 +836,19 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
         },
       ],
     });
-    const alphaGroup = group("Alpha", 0, [
+    const alphaGroup = group("Alpha", [
       { gamePath: "chara/a.tex", data: new Uint8Array([1]) },
     ]);
     const emptyGroup = {
       name: "Empty",
       description: "",
       image: "",
-      page: 1,
       priority: 0,
       selectionType: "Single" as const,
       defaultSettings: 0,
       options: [], // zero options -> groupHasData false (clear-nulls.ts) -> pruned entirely
     };
-    const gammaGroup = group("Gamma", 2, [
+    const gammaGroup = group("Gamma", [
       { gamePath: "chara/g.tex", data: new Uint8Array([2]) },
     ]);
     return {
@@ -874,11 +864,11 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      // Mirrors what readPmp would build: no Default page (empty), then one page per real group's
-      // own `.page` (no off-by-one shift here, since there is no Default page to unshift onto the
-      // front). `writePmp`'s own `clearNulls(pages)` call (src/container/pmp.ts, WritePmp:1462) is
-      // what actually prunes `emptyGroup`'s page here -- this fixture supplies the PRE-prune layout,
-      // exactly as a real load would hand it to WritePmp.
+      // Mirrors what readPmp would build: no Default page (empty), then one page per real group,
+      // by array position (no off-by-one shift here, since there is no Default page to unshift
+      // onto the front). `writePmp`'s own `clearNulls(pages)` call (src/container/pmp.ts,
+      // WritePmp:1462) is what actually prunes `emptyGroup`'s page here -- this fixture supplies
+      // the PRE-prune layout, exactly as a real load would hand it to WritePmp.
       pages: [
         { groups: [alphaGroup] },
         { groups: [emptyGroup] },
@@ -898,7 +888,7 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
     expect(g1.Name).toBe("Alpha");
     expect(g1.Page).toBe(0);
     expect(g2.Name).toBe("Gamma");
-    expect(g2.Page).toBe(1); // NOT 2 (the source g.page) -- recomputed over surviving pages only
+    expect(g2.Page).toBe(1); // NOT 2 (Gamma's source page index) -- recomputed over surviving pages only
   });
 });
 
@@ -913,7 +903,6 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
       name: "Empty",
       description: "",
       image: "",
-      page: 0,
       priority: 0,
       selectionType: "Single",
       defaultSettings: 0,
@@ -1062,7 +1051,6 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
       Name: "Choice",
       Description: "group desc",
       Image: "grp.png",
-      Page: 0,
       Priority: 3,
       Type: "Single",
       DefaultSettings: 0,
@@ -1228,7 +1216,6 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
               name: "Default",
               description: "",
               image: "",
-              page: 0,
               priority: 0,
               selectionType: "Single",
               defaultSettings: 0,
@@ -1249,7 +1236,6 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
               name: groupName,
               description: "",
               image: "",
-              page: 0,
               priority: 0,
               selectionType: "Single",
               defaultSettings: 0,
@@ -1304,7 +1290,6 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
       name: "Choice",
       description: "",
       image: "",
-      page: 0,
       priority: 0,
       selectionType: "Single",
       defaultSettings: 0,
