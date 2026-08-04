@@ -12,6 +12,7 @@ import {
 } from "../../src/index";
 import { readZip } from "../../src/zip/zip";
 import { packHasFileSwaps } from "./archive-redirects";
+import { corpusPacks } from "./corpus-roots";
 import { oracleKey } from "./oracle";
 import { pmpSelfConsistency } from "./pmp-self-consistency";
 import { diffArchives } from "./upgrade-archive-diff";
@@ -20,10 +21,111 @@ import {
   loadBaseline,
   saveBaseline,
 } from "./upgrade-baseline";
-import { confirmDivergence } from "./upgrade-compare";
+import {
+  confirmDivergence,
+  ORACLE_ERROR_DIVERGENCE_RULES,
+  type OracleErrorDivergenceRule,
+} from "./upgrade-compare";
 import { diffUpgrade, type FileDiff } from "./upgrade-diff";
 import { upgradeGoldenCached } from "./upgrade-golden";
 import { transformChanges } from "./upgrade-noop";
+
+/** Locate a corpus pack by exact base name, across every corpus root. Used to resolve a
+ *  ORACLE_ERROR_DIVERGENCE_RULES entry's declared sibling. */
+function findCorpusPack(fileName: string): string | undefined {
+  return corpusPacks().find((p) => basename(p) === fileName);
+}
+
+/** Real confirmation for a matched `ORACLE_ERROR_DIVERGENCE_RULES` entry — the default 4th argument
+ * to `assertMatchedUpgradeFailure`, injectable for unit testing without touching the real corpus or
+ * oracle cache. Proves our successful upgrade of the CRASHING pack is exactly what ConsoleTools
+ * /upgrade would have produced had the crash-triggering zero-option group not been there, by diffing
+ * it against the rule's declared sibling's own /upgrade golden — not merely tolerating the
+ * divergence (AGENTS.md: "never merely tolerated").
+ *
+ * The sibling lookup is guarded: a rule naming a pack absent from the corpus fails LOUDLY. A
+ * silently-missing sibling would make this whole confirmation a no-op — exactly what AGENTS.md's
+ * "never merely tolerated" rule exists to prevent — so this throws/fails rather than treating an
+ * unresolved sibling as "nothing to compare, so pass". Likewise a sibling whose OWN oracle run
+ * itself errored is not a valid pairing (there would be nothing to confirm against) and fails loud.
+ *
+ * Mirrors `registerUpgradeCheck`'s own noop/pack golden split, for the same reason it exists there:
+ * a no-op golden means ConsoleTools wrote NO archive, so the reference is the sibling's own
+ * untouched input — a hand-authored Penumbra-shaped pack, not TexTools' writer output. Comparing zip
+ * member NAMES or manifest JSON against that would assert our writer reproduces this sibling
+ * builder's arbitrary layout choices rather than TexTools', so `diffArchives` (structural) only runs
+ * when the sibling's own golden is a genuinely-written pack. Content is always checked via
+ * `diffUpgrade`, which is layout-agnostic (keyed by gamePath, decompressed) and so gives a real
+ * byte-match proof on either branch.
+ */
+export function confirmOracleErrorDivergence(
+  name: string,
+  rule: OracleErrorDivergenceRule,
+  ours: ModpackData,
+): void {
+  const siblingName = rule.siblingOf(name);
+  const siblingPath = findCorpusPack(siblingName);
+  if (siblingPath === undefined) {
+    expect.fail(
+      `${name}: oracle error matched a confirmed-divergence rule (${rule.reason}) naming sibling ` +
+        `"${siblingName}" to supply the expected bytes, but no such pack exists in the corpus. A ` +
+        `silently-missing sibling would turn this confirmation into a no-op — AGENTS.md is explicit ` +
+        `that a divergence must be CONFIRMED, never merely tolerated.`,
+    );
+    return; // unreachable — expect.fail throws — but keeps TS's control-flow analysis happy below.
+  }
+  const siblingBytes = new Uint8Array(readFileSync(siblingPath));
+  const siblingGolden = upgradeGoldenCached(siblingName, siblingBytes);
+  if (siblingGolden === null) {
+    throw new Error(
+      `No /upgrade golden for ${siblingName}, the sibling ${name}'s confirmed-divergence rule ` +
+        `declares: uncached and no oracle (ConsoleTools) available.`,
+    );
+  }
+  if (siblingGolden.kind === "error") {
+    expect.fail(
+      `${name}: its declared sibling ${siblingName} ALSO errors under ConsoleTools /upgrade — not ` +
+        `a valid pairing to confirm this divergence against:\n${siblingGolden.message}`,
+    );
+    return;
+  }
+
+  const target = name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2";
+  const oursArchive = writeModpack(ours, target, { store: true });
+  const oursReRead = loadModpack(`ours.${target}`, oursArchive);
+  const noopReference = siblingGolden.kind === "noop";
+  const reference = noopReference
+    ? loadModpack(siblingName, siblingBytes)
+    : siblingGolden.data;
+
+  const payload = diffUpgrade(name, oursReRead, reference, confirmDivergence);
+  const archive = noopReference
+    ? []
+    : diffArchives(
+        oursArchive,
+        siblingGolden.bytes,
+        target === "pmp",
+        confirmDivergence,
+        target === "pmp" && packHasFileSwaps(readZip(siblingBytes)),
+      );
+  const diffs = [...payload.files, ...archive];
+  if (diffs.length > 0) {
+    expect.fail(
+      `${name}: confirmed-divergence check FAILED — our output does not byte-match the golden of ` +
+        `its declared sibling ${siblingName} (${rule.reason}):\n` +
+        diffs
+          .map(
+            (d) =>
+              `  [${d.kind}] ${d.gamePath}#${d.index}:${d.status}` +
+              (d.detail ? ` (${d.detail})` : ""),
+          )
+          .join("\n"),
+    );
+  }
+  console.log(
+    `[upgrade] ${name}: confirmed oracle-error divergence (matches sibling ${siblingName}'s golden).`,
+  );
+}
 
 // Set UPDATE_UPGRADE_BASELINE=1 to (re-)record each pack's baseline to its current actual diff.
 const BLESS = process.env.UPDATE_UPGRADE_BASELINE === "1";
@@ -36,6 +138,11 @@ export function assertMatchedUpgradeFailure(
   name: string,
   oracleMessage: string,
   runUpgrade: () => UpgradeResult<ModpackData>,
+  confirmOracleError: (
+    name: string,
+    rule: OracleErrorDivergenceRule,
+    ours: ModpackData,
+  ) => void = confirmOracleErrorDivergence,
 ): void {
   // TWO channels, because the two halves of the pipeline fail differently (spec §6.6):
   //   - `loadModpack` is out of scope for the diagnostics channel (spec §5) and still THROWS. It is
@@ -43,6 +150,7 @@ export function assertMatchedUpgradeFailure(
   //     oracle refuses at LOAD is refused just as legitimately by our loader.
   //   - `upgradeModpack` no longer throws; it returns ok:false.
   let ourMessage: string | undefined;
+  let ourData: ModpackData | undefined;
   try {
     const result = runUpgrade();
     if (!result.ok) {
@@ -53,11 +161,27 @@ export function assertMatchedUpgradeFailure(
       ourMessage =
         result.diagnostics[result.diagnostics.length - 1]?.message ??
         "<upgrade failed with no diagnostics>";
+    } else {
+      ourData = result.data; // captured for the confirmed-divergence path below
     }
   } catch (e) {
     ourMessage = e instanceof Error ? e.message : String(e);
   }
   if (ourMessage === undefined) {
+    // Our upgrade SUCCEEDED where the oracle errored. Ordinarily that is exactly the divergence the
+    // hard failure below exists to catch — UNLESS the oracle's own captured trace matches a
+    // registered ORACLE_ERROR_DIVERGENCE_RULES entry (test/helpers/upgrade-compare.ts;
+    // docs/TEXTOOLS_BUGS.md #22). Keyed on the trace SIGNATURE, never on `name`, so this generalizes
+    // to any pack tripping the same TexTools defect — today's two synthetics and tomorrow's user
+    // uploads alike — with nothing blessed per-pack. A trace matching no rule falls through to the
+    // exact same hard failure as before this branch existed.
+    const rule = ORACLE_ERROR_DIVERGENCE_RULES.find((r) =>
+      r.matches(oracleMessage),
+    );
+    if (rule !== undefined) {
+      confirmOracleError(name, rule, ourData!); // ourData is set whenever ourMessage is undefined
+      return;
+    }
     expect.fail(
       `${name}: ConsoleTools /upgrade errored but our upgrade SUCCEEDED — divergence.\n` +
         `Oracle error was:\n${oracleMessage}`,

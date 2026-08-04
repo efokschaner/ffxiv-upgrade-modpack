@@ -11,6 +11,7 @@ import {
   diagnosticsToFileDiffs,
   EXPECTED_PACK_DIAGNOSTICS,
 } from "./corpus-upgrade";
+import { ORACLE_ERROR_DIVERGENCE_RULES } from "./upgrade-compare";
 import type { FileDiff } from "./upgrade-diff";
 
 const okResult = (): UpgradeResult<ModpackData> => ({
@@ -74,6 +75,35 @@ describe("assertMatchedUpgradeFailure", () => {
         throw new Error("totally different failure reason");
       }),
     ).toThrow(/does not match the oracle/);
+  });
+});
+
+describe("ORACLE_ERROR_DIVERGENCE_RULES", () => {
+  const NRE_TRACE =
+    "System.NullReferenceException: Object reference not set to an instance of an object.\n" +
+    "   at xivModdingFramework.Mods.WizardPageEntry.<>c.<get_HasData>b__4_0(WizardGroupEntry x)";
+
+  it("matches the ClearNulls NRE signature", () => {
+    expect(
+      ORACLE_ERROR_DIVERGENCE_RULES.some((r) => r.matches(NRE_TRACE)),
+    ).toBe(true);
+  });
+
+  it("does not match an unrelated oracle error", () => {
+    const other =
+      "System.NotImplementedException: Unimplemented PMP group type: Bogus";
+    expect(ORACLE_ERROR_DIVERGENCE_RULES.some((r) => r.matches(other))).toBe(
+      false,
+    );
+  });
+
+  it("names a sibling pack for a crashing pack", () => {
+    const rule = ORACLE_ERROR_DIVERGENCE_RULES.find((r) =>
+      r.matches(NRE_TRACE),
+    )!;
+    expect(rule.siblingOf("empty-group-first.pmp")).toBe(
+      "empty-group-first-sibling.pmp",
+    );
   });
 });
 

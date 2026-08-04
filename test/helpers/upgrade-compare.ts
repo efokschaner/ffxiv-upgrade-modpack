@@ -252,6 +252,38 @@ export function confirmBcResizedAsA8(
   return true;
 }
 
+/** A rule confirming an intentional divergence where the ORACLE ITSELF FAILS and we deliberately
+ * succeed — see ORACLE_ERROR_DIVERGENCE_RULES below for why this is a distinct registry from
+ * DivergenceRule above (which confirms a byte difference between two PRODUCED packs; here the
+ * oracle produced nothing at all). */
+export interface OracleErrorDivergenceRule {
+  reason: string;
+  /** Matches the ORACLE's captured trace. Key on the failure signature, never on a pack name. */
+  matches: (oracleTrace: string) => boolean;
+  /** The corpus pack whose golden supplies the expected bytes, given the crashing pack's name. */
+  siblingOf: (packName: string) => string;
+}
+
+// Registry of INTENTIONAL divergences where the ORACLE ITSELF FAILS and we deliberately succeed —
+// distinct from DIVERGENCE_RULES above, which confirm a byte difference between two produced packs.
+// Keyed on the oracle's TRACE SIGNATURE, never on a pack name: one rule then covers every pack that
+// trips the underlying TexTools defect, today's synthetics and tomorrow's user uploads alike, with
+// nothing blessed individually. An oracle error matching no rule stays a hard failure.
+export const ORACLE_ERROR_DIVERGENCE_RULES: OracleErrorDivergenceRule[] = [
+  {
+    reason:
+      "WizardData.ClearNulls reads WizardPageEntry.HasData (`Groups.Any(x => x.HasData)`, " +
+      "WizardData.cs:969-975) over a list FromPmp fills with nulls (:1136/:1156) and that the very " +
+      "next loop prunes — so a zero-option PMP group that lands FIRST on its page NREs the load and " +
+      "ConsoleTools /upgrade emits no file at all. We treat a null as 'no data' and upgrade the " +
+      "pack. docs/TEXTOOLS_BUGS.md #22; spec 2026-08-04-datapages-model-and-empty-group-design §5.",
+    matches: (trace) =>
+      /NullReferenceException/.test(trace) &&
+      /WizardPageEntry\.<>c\.<get_HasData>/.test(trace),
+    siblingOf: (packName) => packName.replace(/\.pmp$/i, "-sibling.pmp"),
+  },
+];
+
 /** True iff some rule matches `gamePath` and confirms the ours/golden divergence is intended. */
 export function confirmDivergence(
   gamePath: string,

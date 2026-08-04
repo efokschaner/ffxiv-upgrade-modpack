@@ -26,9 +26,12 @@ export interface Unit {
  * scheduling granularity the forks pool needs to fill all cores.
  *
  * Packs in the `upgrade-error` corpus root (see corpus-roots.ts `isUpgradeErrorPack`) are scoped to
- * ONLY the `upgrade` check: they exist to prove our port throws exactly where ConsoleTools /upgrade
- * throws (a matched-failure test), not to exercise the writer/codec, so they skip
- * assets/golden/resave, which would otherwise surface unrelated writer/codec gaps on their content.
+ * ONLY the `upgrade` check: most exist to prove our port throws exactly where ConsoleTools /upgrade
+ * throws (a matched-failure test); a few instead prove our port deliberately SUCCEEDS where a
+ * registered TexTools defect crashes the oracle outright, confirmed via ORACLE_ERROR_DIVERGENCE_RULES
+ * (see corpus-roots.ts's doc comment and test/helpers/upgrade-compare.ts). Neither case exercises the
+ * writer/codec, so they skip assets/golden/resave, which would otherwise surface unrelated
+ * writer/codec gaps on their content.
  *
  * There used to be a ninth, PMP-only "pmp" check (`registerPmpManifestChecks`, formerly
  * corpus-pmp.ts) that compared `writePmp(readPmp(x))` structurally against the SOURCE `x`. Retired
