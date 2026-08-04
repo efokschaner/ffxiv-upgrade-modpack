@@ -24,24 +24,9 @@
 //      written, but throws rather than reproducing the hang if collision resolution would need more
 //      than one retry.
 //
-// `ClearNulls` also prunes at the GROUP level within each surviving page (WizardData.cs:1246-1263:
-// `if (g == null || !g.HasData) { p.Groups.Remove(g); continue; }`), and `WizardGroupEntry.HasData`
-// (WizardData.cs:621-627) is `Options.Any(x => x.HasData)`. BUT `WizardOptionEntry.HasData`
-// (WizardData.cs:257-278) short-circuits on its FIRST line: `if (_Group.ModOption != null) { return
-// true; } // "Read mode."`. `ModOption` is assigned in exactly two places in the whole file --
-// `FromWizardGroup` (:649) and `FromPMPGroup` (:767) -- and never reset, and those are the ONLY group
-// constructors `/upgrade` and `/resave` (i.e. every load of a pack this port cares about) ever reach.
-// So on every path we port, `WizardOptionEntry.HasData` is UNCONDITIONALLY true, `WizardGroupEntry.
-// HasData` reduces to `Options.Count > 0`, and `ClearNulls` NEVER prunes a group or option for
-// lacking file/manipulation/fileSwap CONTENT -- only a page left with zero groups (the `FromPmp`
-// off-by-one's stranded page, bug 1 above) is ever pruned. `groupHasData` below therefore checks
-// `group.options.length > 0`, not any per-option content predicate -- a content-free group (e.g.
-// every option's `Files` rejected by `canImport`, or an authored group with an empty `Files: {}`) is
-// KEPT, gets its own `group_NNN.json` with `"Files": {}`, and DOES occupy a `MakeGroupPrefix`
-// collision slot, exactly like TexTools does. `groupHasData` must therefore NOT be turned into a
-// content check: that silently diverges from the golden. `ClearNulls`' innermost step,
-// `if (o == null) g.Options.Remove(o)` (:1259-1262), is not ported: our `ModpackOption` model has no
-// null-option representation, so that step can never apply to data built from it.
+// `ClearNulls` (its analysis, including why `groupHasData` is `options.length > 0` and must never
+// become a content check, lives in src/container/clear-nulls.ts) also prunes at the GROUP level
+// within each surviving page (WizardData.cs:1246-1263).
 //
 // Two contracts this module's callers depend on:
 //   - `optionPrefixes` returns NO ENTRY for an option whose group never made it into a surviving
@@ -62,6 +47,7 @@ import type {
   ModpackGroup,
   ModpackOption,
 } from "../model/modpack";
+import { groupHasData } from "./clear-nulls";
 import type { PmpOptionJsonRaw } from "./manifest-types";
 import { folderSafeName } from "./pmp";
 
@@ -94,16 +80,6 @@ function isEmptyDefaultOption(o: ModpackOption): boolean {
     Object.keys(o.fileSwaps).length === 0 &&
     o.manipulations.length === 0
   );
-}
-
-// Port of WizardGroupEntry.HasData (WizardData.cs:621-627), reduced to `Options.Count > 0` per the
-// `WizardOptionEntry.HasData` Read-mode short-circuit documented in the module header comment above:
-// on every load path this port reaches, EVERY option HasData is unconditionally true, so a group's
-// HasData is exactly "does it have at least one option". Do not replace this with a per-option
-// content check (files/manipulations/fileSwaps non-empty) -- that ports a branch that is dead code on
-// our load paths and silently diverges from TexTools, which keeps a content-free group intact.
-function groupHasData(g: ModpackGroup): boolean {
-  return g.options.length > 0;
 }
 
 export interface Page {

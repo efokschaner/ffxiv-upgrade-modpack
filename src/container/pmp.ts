@@ -13,6 +13,7 @@ import {
 } from "../model/modpack";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
+import { clearNulls } from "./clear-nulls";
 import {
   type PmpGroupJsonRaw,
   type PmpMetaJsonRaw,
@@ -358,6 +359,8 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     // (docs/TEXTOOLS_BUGS.md #7). The add is UNCONDITIONAL (:1156).
     for (const r of realGroups) pages[r.page]!.groups.push(r.group);
   }
+
+  clearNulls(pages); // WizardData.cs · FromPmp · 1159 — FromPmp's own call, on the way out
 
   return {
     sourceFormat: ModpackFormat.Pmp,

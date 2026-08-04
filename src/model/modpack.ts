@@ -105,6 +105,11 @@ export interface ModpackGroup {
  *  never admits one — FromWizardModpackPage discards it at the call site (:986). */
 export interface ModpackPage {
   groups: (ModpackGroup | null)[];
+  /** Mirrors `WizardPageEntry.FolderPath` (WizardData.cs:967) — a memo `optionPrefixes`'
+   *  `makePagePrefix` (src/container/option-prefix.ts) fills in on first computation. `clearNulls`
+   *  (src/container/clear-nulls.ts) nulls it on every page it visits (WizardData.cs:1239), mirroring
+   *  `p.FolderPath = null`. */
+  folderPath?: string;
   /** TRANSITIONAL (deleted in the dense-renumber task). The source ModPackPageJson.PageIndex, kept
    *  only so writeTtmp2 can keep emitting today's value while the model migration lands separately
    *  from the behaviour change. WizardPageEntry has no such field — page identity is positional

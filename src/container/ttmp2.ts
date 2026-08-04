@@ -72,6 +72,11 @@ function filesFromMods(
 // the upgrade layer's fix logic: the reader computes the tex/mdl gates from the version it parsed
 // (via the pure gate predicates it does import, `ttmpNeedsTexFix` / `ttmpNeedsMdlFix`), builds the
 // fix, and applies it at the read seam. Omitted (a direct unit-test read) -> no load fix.
+// `FromWizardTtmp` (WizardData.cs:1163-1186) does NOT call `ClearNulls` — only `FromPmp` (:1159)
+// does. Reproduced by omission: readTtmp2 never calls clearNulls (src/container/clear-nulls.ts).
+// It doesn't need to anyway — `FromWizardModpackPage` discards a null group at the call site
+// itself (`if (g == null) continue;`, :986), so the wizard branch below never admits one, and the
+// simple branch's synthesized group always carries exactly one option (see its own comment).
 export function readTtmp2(
   bytes: Uint8Array,
   makeLoadFix?: LoadFixFactory,

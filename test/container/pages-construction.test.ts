@@ -32,20 +32,18 @@ describe("readPmp page construction (WizardData.FromPmp:1118-1159)", () => {
       }),
     );
     // WizardData.cs:1142-1150 unconditionally creates one NEW page per page-index 0..pageMax (here
-    // just "page 0"), APPENDED after the already-unshifted Default page — so DataPages holds 2
-    // entries even though the assignment loop below never reaches the second one. ClearNulls
-    // (WizardData.cs:1234-1244) is what normally drops that always-empty orphan page; it isn't
-    // wired up until Task 6 (src/container/clear-nulls.ts), so Phase 1's readPmp leaves it in
-    // data.pages, un-pruned — deviating from the brief's literal `toHaveLength(1)`, which assumed
-    // ClearNulls' pruning. See task-1-report.md's Concerns for the trace.
-    expect(data.pages).toHaveLength(2);
+    // just "page 0"), APPENDED after the already-unshifted Default page — so DataPages would hold 2
+    // entries were it not for ClearNulls (WizardData.cs:1234-1244, `WizardData.cs · FromPmp · 1159`),
+    // which readPmp now calls on its way out (src/container/clear-nulls.ts) and which drops the
+    // always-empty orphan page the assignment loop below never reaches. So only ONE page survives.
+    expect(data.pages).toHaveLength(1);
     // WizardData.cs:1152-1157 — `data.DataPages[g.Page]` indexes into a list that ALREADY has the
-    // Default page unshifted onto the front, so the group meant for "page 0" (index 1, created
-    // above) lands on data.pages[0] (the Default page) instead — the off-by-one itself.
+    // Default page unshifted onto the front, so the group meant for "page 0" (the now-pruned orphan)
+    // lands on data.pages[0] (the Default page) instead — the off-by-one itself, observable here as
+    // both groups sharing the one surviving page.
     expect(data.pages![0]!.groups.map((g) => g?.name)).toEqual([
       "Default",
       "G",
     ]);
-    expect(data.pages![1]!.groups).toEqual([]);
   });
 });
