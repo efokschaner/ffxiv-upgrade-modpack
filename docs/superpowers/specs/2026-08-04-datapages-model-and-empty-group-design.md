@@ -1,7 +1,9 @@
 # DataPages model, and the zero-option group both C# loaders drop
 
-Status: designed, unimplemented · Filed 2026-08-04 · Supersedes
-`docs/backlog/2026-07-20-empty-group-not-dropped.md`, which framed this as a two-line reader fix.
+Status: shipped 2026-08-04. Originally filed as a two-line reader fix for the zero-option group
+both C# loaders drop; tracing it surfaced a blended page/group model as the real root cause, and
+this spec restructures that instead (see the closing note at the end of this document for what the
+implementation learned that this design did not predict).
 
 Every behavioural claim below was **measured** against ConsoleTools on 2026-08-03/04, not read off
 the C#. The probe shapes are reproduced as corpus synthetics in §6 so the measurements stay live.
@@ -203,7 +205,8 @@ C# runs `ClearNulls` at load **and** again at write; reproduce both calls rather
   and emitted the transitional `sourcePageIndex` (§2) to stay byte-neutral — Phase 2 is where that
   field is read for the last time and then deleted.
 - **`writePmp`** — `clearNulls` at the `WritePmp:1462` seam; its `buildPages(data)` calls are
-  removed, which also closes `docs/backlog/2026-07-13-buildpages-called-twice.md`.
+  removed entirely — pages are now built once, at load, so there is nothing left for `writePmp` to
+  recompute (closing the standing "called twice" wasted-work item along the way).
 
 ## 7. Fixtures and confirmation
 
@@ -256,9 +259,9 @@ present-and-empty:
 - `test/container/ttmp2-selected.test.ts` — "a zero-option Single group does not trip the backstop"
 - `test/container/pmp-selected.test.ts` — "Single: a zero-option group does not trip the backstop"
 
-Backlog: delete `docs/backlog/2026-07-20-empty-group-not-dropped.md` and
-`docs/backlog/2026-07-13-buildpages-called-twice.md` with their index entries, after grepping `src/`,
-`test/`, `scripts/` and `docs/` for inbound references — both are cited from code comments today.
+Backlog: the two filed items this work closes — the zero-option-group reader item and the
+`buildPages`-called-twice item — are deleted along with their index entries, after grepping `src/`,
+`test/`, `scripts/` and `docs/` for inbound references (both had been cited from code comments).
 
 One pre-existing citation error to correct while rewriting these files: `option-prefix.ts`'s header
 says its two faithfully-ported bugs are `docs/TEXTOOLS_BUGS.md` **#1 and #6**. #6 (the
@@ -278,3 +281,35 @@ applies to Phase 1 as well, and is why Phase 1 is separated and required to be b
 - Whether `readTtmp2` should preserve the source `PageIndex` anywhere for a direct model consumer is
   deliberately answered "no": `WizardGroupEntry` and `WizardPageEntry` carry no such field, nothing
   reads it, and the writer re-derives it.
+
+## 10. Closing note (shipped 2026-08-04)
+
+Nine commits, `1ee0f05`..`231881e`. Phase 1 (structural: `ModpackData.pages` replaces `groups`, page
+construction moved to load, `ClearNulls` un-blended into `src/container/clear-nulls.ts`) was proven
+byte-neutral. Phase 2 added the zero-option-group drop at both readers, the dense `PageIndex`
+renumber, the ten synthetic fixtures, and `ORACLE_ERROR_DIVERGENCE_RULES`. Four things this design
+did not predict:
+
+1. **The task order above was wrong, and a corpus run caught it.** `option-prefix.ts`'s `buildPages`
+   did page *construction* and `ClearNulls` *pruning* in one function. Moving only the construction
+   left `optionPrefixes` walking pages the old code had pruned — including the stranded empty page
+   the `FromPmp` off-by-one creates (`docs/TEXTOOLS_BUGS.md` #7) — which emitted a spurious `pN/`
+   prefix on three real packs (`胖莫古力.pmp`, `[Nyameru]Cute Loop.pmp`, `[Shy] Tactical Hoodie
+   [DT].pmp`). `ClearNulls` had to land *before* the consumer migration, matching `WritePmp`'s own
+   `:1462` call ordering.
+2. **A genuine pre-existing bug surfaced when the migration scaffold came off:** `readPmp` populated
+   `referencedKeys` *after* the `ExtraFiles` scan that reads it, misclassifying referenced files as
+   extras. It was masked by the old unconditional Default-group construction. The fix reorders page
+   construction before the scan, matching `PMP.LoadPMP`'s own ordering (`PMP.cs:185-215` computes
+   `ExtraFiles` unconditionally and prior to `FromPmp`). Already caught by 5 corpus goldens + 2 unit
+   tests once unmasked.
+3. **The dense `PageIndex` renumber shrank real `.ttmp2` baseline diffs across many packs and
+   increased none** — a widespread pre-existing divergence closed as a side effect of this work.
+   Record the *measured* fact. We do **not** claim to explain why real packs carry non-dense indices:
+   the only two `PageIndex` assignment sites in `reference/` (`WizardData.cs:996`, `TTMPWriter.cs:92`)
+   are both dense and 0-based, so any "the GUI writes them 1-based" story is unverified. The cause is
+   unestablished.
+4. A step originally planned to wire `clearNulls` into both seams as its own unit of work was
+   retired: its load half folded into the `clear-nulls` module, its write half into the consumer
+   migration. Noted here only because the two ship separately in the commit range above, not because
+   this spec's own text says otherwise.

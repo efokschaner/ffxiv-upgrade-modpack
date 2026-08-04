@@ -129,6 +129,15 @@ it says today, and rank arithmetic about items that no longer exist ages into no
   the same pass (pack counts; the coverage percentages are now date-stamped as a 2026-07-20
   measurement rather than asserted as current; the spec count). The pass also swept
   rank-by-reference out of the rest of the repo — see the prose bullet under *How this works*.
+- **2026-08-04** — the empty-group item **shipped**, in full, as a page-model restructure rather than
+  the two-line reader fix originally filed (see
+  `docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md`). `ModpackData.pages`
+  replaces the flat `groups` list, page construction moved to load, both readers drop a zero-option
+  group, and `writeTtmp2`'s `PageIndex` is now a dense renumber — which turned out to shrink real
+  `.ttmp2` baseline diffs across many packs (cause unestablished) and closed the `buildPages`-called-
+  twice item as a side effect (`writePmp` no longer calls it at all). The one adjudicated divergence —
+  we upgrade a zero-option-group pack that crashes ConsoleTools outright — is `docs/TEXTOOLS_BUGS.md`
+  #22. **Round 7 (the site) now leads the list**, the only item that had been ranked above it.
 
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
@@ -154,21 +163,7 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. [Both C# loaders drop a zero-option group; our readers keep it](backlog/2026-07-20-empty-group-not-dropped.md)
-   — **the highest-severity item that no corpus pack reaches, and the only class-1 item that must
-   land before the site does.** Rubric class #1: a group TexTools drops from the wizard model
-   entirely survives our TTMP read and gets re-emitted, so the user's upgraded pack carries a group
-   the golden does not, with no diff to warn us (no baseline entry exists — it came from reading the
-   C#, not from an oracle). It leads on the **deploying-changes-the-probability-term** note above,
-   which is also what orders it against the site: a zero-option group is hand-authorable, corpus
-   silence is the only thing holding its probability down, and **launching the site is exactly what
-   removes that** — a public page accepting arbitrary uploads turns "no corpus pack reaches it" from
-   evidence of rarity into absence of evidence. Cheap to close and cheap to prove — a synthetic pack
-   with an authored empty group gets a real ConsoleTools golden. Note the PMP half is already masked
-   downstream by `groupHasData` (by the same predicate C# uses), so the genuinely open surface is the
-   TTMP path. **Moved to the Prioritized list from *Unprioritized → Other ported code*, 2026-07-20b.**
-
-2. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+1. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -178,12 +173,12 @@ unchanged by deployment; only probability moves.
    load); and surfacing the fail-loud guards and the `diagnostics` channel (shipped 2026-08-02) as
    user-facing "this modpack isn't supported because…" / "these files were skipped" messages. One
    hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI must **not**
-   offer an output-format picker. Ranked below the empty-group item on the rubric — it is class 3
-   (doesn't exist yet) where that one is class 1 — but nothing blocks *starting* it, and its
-   one real dependency (a diagnostics channel, so the page cannot report success on a partial
-   upgrade) cleared 2026-08-02.
+   offer an output-format picker. Leads the list now that the empty-group item — the only item
+   ranked above it — shipped 2026-08-04; nothing blocks *starting* it, and its one real dependency
+   (a diagnostics channel, so the page cannot report success on a partial upgrade) cleared
+   2026-08-02.
 
-3. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+2. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (111 total, incl. 21 synthetic and 5 expected-failure) on one machine, gitignored, with no
@@ -195,7 +190,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-4. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+3. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -209,7 +204,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-5. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+4. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -243,8 +238,6 @@ unchanged by deployment; only probability moves.
   `WizardData.WritePmp` into one module, against "split, don't blend". Pure reorganization; needs its
   own careful pass because a mechanical refactor here risks byte-parity regressions with no new test
   signal.
-- [`buildPages` is called twice per `writePmp`](backlog/2026-07-13-buildpages-called-twice.md) —
-  wasted recomputation, not a correctness bug. Bundle with the split above.
 - [PMP writer drops unreferenced source zip members TexTools retains](backlog/2026-07-17-pmp-writer-orphan-member-retention.md)
   — ConsoleTools leaves the original source members in the rewritten archive after re-pointing every
   `Files` entry; ours emits only referenced members, so each orphan is a `structure`/`added` diff.

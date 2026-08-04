@@ -24,4 +24,6 @@ Deferred out of the write-regeneration review (2026-07-13) as a pure reorganizat
 behavioral change — real risk is byte-for-byte parity regressions from a mechanical refactor with no
 new test signal, so it needs its own careful pass rather than riding along with a correctness fix.
 
-Bundle with `2026-07-13-buildpages-called-twice.md` — one signature change over the same code.
+Used to be bundled with the `buildPages`-called-twice item as one signature change over the same
+code; that item shipped independently (2026-08-04, the DataPages model work) — `writePmp` no longer
+calls `buildPages` at all, since pages are now built once at load. This item now stands alone.

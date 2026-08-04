@@ -83,10 +83,9 @@ describe("readPmp selected", () => {
     expect(selected[65]).toBe(false);
   });
 
-  // WizardData.cs:857-860's backstop is guarded by `options.length > 0`, standing in for the
-  // zero-option early return at :851-855 (unported until Task 7 — see design spec §8) — so
-  // building the zero-option group in the first place doesn't crash on `options[0]!` before
-  // ClearNulls' own prune ever runs.
+  // The zero-option group never reaches the WizardData.cs:857-860 backstop at all: it is pruned
+  // by ClearNulls (WizardData.cs:1249) before allGroups ever walks it, so there is no options[0]!
+  // to crash on.
   it("a zero-option group is pruned from the wizard model (ClearNulls, WizardData.cs:1249)", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
