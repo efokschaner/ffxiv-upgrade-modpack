@@ -280,6 +280,12 @@ git commit -m "feat(model): build WizardData.DataPages at load, per FromPmp/From
 
 **Scaffold state entering this task:** `pages` is optional and populated by all three readers; `groups` is required and populated; nothing in `src/` reads `pages` yet. This task flips `src/` over. **This is where spec §3.1's flat-iteration-order hazard actually lands** — `allFiles` switching from `data.groups` to page order is the byte-visible change — so run the full corpus before committing and report any pack that moves.
 
+> **EXECUTION ORDER — this task runs AFTER Task 5.** The original ordering was wrong and a corpus run caught it. `buildPages` did page construction **and** `ClearNulls` pruning in one function; Task 1 moved only the construction, so an `optionPrefixes` that walks `data.pages` sees pages the old code had pruned — notably the stranded empty page the `FromPmp` page off-by-one creates (`docs/TEXTOOLS_BUGS.md` #7). That inflates `pages.length` and emits a spurious `pN/` prefix. Measured 2026-08-04: 3 packs regressed (`胖莫古力.pmp`, `[Nyameru]Cute Loop.pmp`, `[Shy] Tactical Hoodie [DT].pmp`). The C# does not hit this because `WritePmp` calls `ClearNulls()` at `:1462` before any prefix is generated — so Task 5 must land first, and this task adds the write-seam calls below.
+
+**Write-seam `clearNulls` calls (moved here from the original Task 6).** Both writers call it; the C# genuinely calls it at load *and* write, so reproduce both rather than picking one.
+- `writePmp` — `clearNulls(data.pages)` immediately before the `const pages = data.pages` line this task introduces, citing `WizardData.cs · WritePmp · 1462`.
+- `writeTtmp2` — `clearNulls(data.pages)` as the first statement of the wizard branch, citing `WizardData.cs · WriteWizardPack · 1334`.
+
 - [ ] **Step 1: Delete `buildPages` from `option-prefix.ts`**
 
 Delete `buildPages`, `isEmptyDefaultOption`, the local `Page` interface, and the `import { ... } from "./pmp"` line for `folderSafeName` only if unused. Keep `groupHasData` where it is for now — **Task 5** moves it to `clear-nulls.ts`; leave it exported from `option-prefix.ts` unchanged in this task.
@@ -481,6 +487,18 @@ git commit -m "refactor(model): drop the flat group list; DataPages is the model
   - `export function pageHasData(p: ModpackPage): boolean`
   - `export function clearNulls(pages: ModpackPage[]): void` — mutates in place, mirroring the C# `void`.
 
+> **EXECUTION ORDER — this task runs SECOND, immediately after Task 1 and BEFORE Task 2.** See Task 2's execution-order note for why: `optionPrefixes` cannot walk `data.pages` until something prunes them the way `buildPages` used to. This task also takes the **load-seam wiring** that the original Task 6 held (Task 6 is now empty — its write-seam half moved into Task 2).
+
+**Load-seam wiring (moved here from the original Task 6).** After the module and its tests are green, add the `FromPmp` call: at the end of `readPmp`'s page construction, before `extraFiles` is built,
+
+```ts
+  clearNulls(pages); // WizardData.cs · FromPmp · 1159 — FromPmp's own call, on the way out
+```
+
+Add a comment on `readTtmp2` recording the asymmetry: `FromWizardTtmp` (`:1163-1186`) does **not** call `ClearNulls`; only `FromPmp` does. Reproduce that — do not add a call there.
+
+This stays byte-neutral: `src/` still reads `data.groups`, so pruning `data.pages` changes no output yet. It is what makes Task 2 byte-neutral in turn.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `test/container/clear-nulls.test.ts`:
@@ -627,7 +645,13 @@ git commit -m "feat(container): port WizardData.ClearNulls as its own module"
 
 ---
 
-## Task 6: Wire `clearNulls` into both seams
+## Task 6: (retired — folded into Tasks 5 and 2)
+
+This task no longer exists. A corpus run on 2026-08-04 showed the wiring cannot come after the consumer migration: the load-seam call moved into **Task 5** and the two write-seam calls into **Task 2**. See both tasks' execution-order notes. The original text is kept below, struck through, only so the C# citations stay findable; **do not execute it**.
+
+<details><summary>Original Task 6 (do not execute)</summary>
+
+### Retired: Wire `clearNulls` into both seams
 
 **Files:**
 - Modify: `src/container/pmp.ts` (`readPmp` tail, `writePmp` at the `:1462` seam), `src/container/ttmp2.ts` (`writeTtmp2` head)
@@ -660,6 +684,8 @@ Run: `npm run check && npm run typecheck && npm test` — all green, no baseline
 git add src/container/pmp.ts src/container/ttmp2.ts
 git commit -m "feat(container): call ClearNulls at both C# seams (load and write)"
 ```
+
+</details>
 
 ---
 
