@@ -45,6 +45,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   allFiles,
+  allGroups,
   decodeSqPackFile,
   FileStorageType,
   loadModpack,
@@ -87,11 +88,17 @@ function fingerprint(name: string, data: ModpackData): Set<string> {
   f.add(`pack:${data.isSimple ? "simple" : "wizard"}`);
   if (data.extraFiles?.size) f.add("pmp:extraFiles");
   if (data.meta.description) f.add("meta:description");
+  // Changed meaning 2026-08-04 (the DataPages model work): used to mean "some group declares
+  // `page > 0`" (a flat `.groups[].page` field, since deleted — src/model/modpack.ts). Now means
+  // "the PRUNED page list (post-clearNulls) has more than one entry" -- arguably the better
+  // definition (it reflects a page that actually survives into the write, not merely a raw source
+  // index that ClearNulls might collapse straight back out, docs/TEXTOOLS_BUGS.md #7), but probe-only
+  // so this is a recorded change, not a claim either definition is "correct".
+  if (data.pages.length > 1) f.add("group:multipage");
 
-  for (const g of data.groups) {
+  for (const g of allGroups(data)) {
     f.add(`group:${g.selectionType}`);
     if (g.image) f.add("group:image");
-    if (g.page > 0) f.add("group:multipage");
     for (const o of g.options) {
       if (o.image) f.add("option:image"); // BACKLOG: WriteImage re-encode unported
       if (Object.keys(o.fileSwaps).length) f.add("pmp:fileSwaps"); // BACKLOG: FileSwap handling

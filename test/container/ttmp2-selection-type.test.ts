@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ModPackJson } from "../../src/container/manifest-types";
 import { readTtmp2, writeTtmp2 } from "../../src/container/ttmp2";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   ModpackFormat,
@@ -79,27 +80,33 @@ function dataWith(selectionType: string): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType,
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "A",
+            name: "G",
             description: "",
             image: "",
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap([
-              [PATH, { data: BLOB, storage: FileStorageType.SqPackCompressed }],
-            ]),
+            selectionType,
+            defaultSettings: 0,
+            options: [
+              {
+                name: "A",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap([
+                  [
+                    PATH,
+                    { data: BLOB, storage: FileStorageType.SqPackCompressed },
+                  ],
+                ]),
+              },
+            ],
           },
         ],
       },
@@ -123,12 +130,12 @@ describe("readTtmp2 SelectionType (WizardData.cs:652)", () => {
     ["Multi Selection", "Multi"],
   ])("maps %j to %j", (raw, expected) => {
     const data = readTtmp2(wizardPack(groupJson(raw)));
-    expect(data.groups[0]!.selectionType).toBe(expected);
+    expect(allGroups(data)[0]!.selectionType).toBe(expected);
   });
 
   it("maps an absent SelectionType to Multi", () => {
     const data = readTtmp2(wizardPack(groupJson(undefined)));
-    expect(data.groups[0]!.selectionType).toBe("Multi");
+    expect(allGroups(data)[0]!.selectionType).toBe("Multi");
   });
 });
 

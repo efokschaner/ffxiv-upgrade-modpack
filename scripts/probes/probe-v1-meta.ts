@@ -23,6 +23,7 @@ import { deserializeMeta } from "../../src/meta/deserialize";
 import { serializeMeta } from "../../src/meta/serialize";
 import {
   allFiles,
+  allGroups,
   FileStorageType,
   type ModpackFile,
 } from "../../src/model/modpack";
@@ -103,7 +104,7 @@ const bytes = new Uint8Array(readFileSync(join(REAL, chosen.pack)));
 const model = loadModpack(chosen.pack, bytes);
 // downgrade the chosen meta to v1: version=1, strip EST + GMP (v1 predates them)
 let before = "";
-for (const g of model.groups)
+for (const g of allGroups(model))
   for (const o of g.options) {
     const next = new Map<string, ModpackFile>();
     for (const [path, f] of o.files) {

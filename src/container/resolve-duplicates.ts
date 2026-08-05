@@ -40,8 +40,8 @@
 //    o.Options` walk, WizardData.cs:1506-1542). `optionPrefixes` (option-prefix.ts) already performs
 //    that exact page-bucketed walk to compute each option's prefix, and a `Map`'s iteration order IS
 //    its insertion order -- so `prefixes.keys()` reproduces the C#'s option visiting order without
-//    us re-deriving `DataPages` a second time here (which would blend option-prefix.ts's private
-//    `buildPages` into this module). Within an option, `option.files` is now literally a `Map`
+//    us re-deriving `DataPages` a second time here (which would blend `readPmp`'s page construction
+//    into this module). Within an option, `option.files` is now literally a `Map`
 //    (mirroring C#'s `Dictionary<string, FileStorageInformation>`, WizardData.cs:71), so its
 //    iteration order IS the `Files`-map insertion order the reader builds it in
 //    (src/container/pmp.ts). Get either order wrong and the `common/N` numbers come out different
@@ -53,7 +53,12 @@
 // the time this guard runs). We fold that drop into this module's return value directly, since our
 // return type IS exactly "the paths PopulatePmpStandardOption would actually use".
 
-import type { ModpackData, ModpackFile, ModpackOption } from "../model/modpack";
+import {
+  allGroups,
+  type ModpackData,
+  type ModpackFile,
+  type ModpackOption,
+} from "../model/modpack";
 import { sha1Hex } from "../util/sha1";
 
 // C#'s default `TTMPWriter.SHA1HashKey` (TTMPWriter.cs:235-247) is a struct whose ulong/uint fields
@@ -76,18 +81,18 @@ function basename(path: string): string {
  * `prefixes` must come from `optionPrefixes(data)` for this SAME `data` -- its Map iteration order
  * is what drives the `common/N` numbering (see point 3 above). We do not call `optionPrefixes`
  * ourselves (the caller, `writePmp`, needs the prefixes separately for the manifest JSON too), but
- * we do cross-check `prefixes`' keys are reachable from `data.groups` and fail loud rather than
+ * we do cross-check `prefixes`' keys are reachable from `data.pages` and fail loud rather than
  * silently dedupe an unrelated file set if a caller passes a mismatched pair.
  */
 export function resolveDuplicates(
   data: ModpackData,
   prefixes: Map<ModpackOption, string>,
 ): Map<ModpackFile, string> {
-  const knownOptions = new Set(data.groups.flatMap((g) => g.options));
+  const knownOptions = new Set(allGroups(data).flatMap((g) => g.options));
   for (const option of prefixes.keys()) {
     if (!knownOptions.has(option)) {
       throw new Error(
-        "resolveDuplicates: prefixes contains an option absent from data.groups -- prefixes must " +
+        "resolveDuplicates: prefixes contains an option absent from data.pages -- prefixes must " +
           "come from optionPrefixes(data) for this same data",
       );
     }

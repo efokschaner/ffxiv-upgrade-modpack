@@ -17,11 +17,14 @@ function in one module, unlike the rest of the PMP write path (`option-prefix.ts
 - `pmp-write.ts` — the `PMP.WritePmp`-shaped zip/JSON assembly (meta.json, default_mod.json,
   group_NNN.json serialization, the payload/ExtraFiles zip write); and
 - `wizard-write-pmp.ts` — the `WizardData.WritePmp`-shaped orchestration (DataPages walk, absorption
-  search, Page renumbering — already largely factored out into `buildPages` / `optionPrefixes`, this
-  would just relocate the remaining orchestration currently still inline in `writePmp`).
+  search, Page renumbering — already largely factored out into `readPmp`'s page construction,
+  `clear-nulls.ts`'s pruning, and `option-prefix.ts`, this would just relocate the remaining
+  orchestration currently still inline in `writePmp`).
 
 Deferred out of the write-regeneration review (2026-07-13) as a pure reorganization with no
 behavioral change — real risk is byte-for-byte parity regressions from a mechanical refactor with no
 new test signal, so it needs its own careful pass rather than riding along with a correctness fix.
 
-Bundle with `2026-07-13-buildpages-called-twice.md` — one signature change over the same code.
+Used to be bundled with the `buildPages`-called-twice item as one signature change over the same
+code; that item shipped independently (2026-08-04, the DataPages model work) — `writePmp` no longer
+calls `buildPages` at all, since pages are now built once at load. This item now stands alone.

@@ -3,6 +3,7 @@
 // test/upgrade/resolve-highlight.test.ts.
 import { describe, expect, it, vi } from "vitest";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -56,7 +57,6 @@ function pack(options: ModpackOption[]): ModpackData {
     name: "G",
     description: "",
     image: "",
-    page: 0,
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
@@ -75,7 +75,7 @@ function pack(options: ModpackOption[]): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [group],
+    pages: [{ groups: [group] }],
   };
 }
 
@@ -109,7 +109,7 @@ describe("repathHairMashups", () => {
 
     repathHairMashups(data);
 
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerNormal)).toBe(dtNorm);
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toBe(dtMask);
   });
@@ -121,7 +121,7 @@ describe("repathHairMashups", () => {
 
     repathHairMashups(data);
 
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerNormal)).toBe(before);
   });
 
@@ -136,7 +136,7 @@ describe("repathHairMashups", () => {
     ]);
     repathHairMashups(data);
     // Unchanged entirely -- not even re-serialized (no write for a non-matching path).
-    const out = data.groups[0]!.options[0]!.files.get(
+    const out = allGroups(data)[0]!.options[0]!.files.get(
       "chara/human/c0801/obj/body/b0001/material/v0001/mt_c0801b0001_a.mtrl",
     )!;
     expect(out.data).toBe(SAMPLE_BYTES);
@@ -150,7 +150,7 @@ describe("repathHairMashups", () => {
     })();
     const data = pack([option("On", [[MTRL_PATH, raw(bytes)]])]);
     repathHairMashups(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!;
     expect(out.data).toBe(bytes); // untouched -- `continue`d before the write
   });
 
@@ -178,14 +178,14 @@ describe("repathHairMashups", () => {
     const bytes = serializeMtrl(m);
     const data = pack([option("On", [[MTRL_PATH, raw(bytes)]])]);
     repathHairMashups(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!;
     expect(out.data).toBe(bytes); // untouched -- `continue`d before the write
   });
 
   it("re-serializes and writes back even when no suffix changed (unconditional write, :466-479)", () => {
     const data = pack([option("On", [[MTRL_PATH, raw(SAMPLE_BYTES)]])]);
     repathHairMashups(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!;
     // A fresh serialize replaces the buffer identity even though no path changed.
     expect(out.data).not.toBe(SAMPLE_BYTES);
     expect(out.data).toEqual(serializeMtrl(parseMtrl(SAMPLE_BYTES, MTRL_PATH)));
@@ -254,7 +254,7 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     });
     const data = pack([option("On", [[MTRL_PATH, raw(bytes)]])]);
     fn(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mask\.tex$/);
 
     vi.doUnmock("../../src/upgrade/reference/file-exists");
@@ -278,7 +278,7 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     });
     const data = pack([option("On", [[MTRL_PATH, raw(bytes)]])]);
     fn(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mult\.tex$/);
 
     vi.doUnmock("../../src/upgrade/reference/file-exists");
@@ -302,7 +302,7 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     });
     const data = pack([option("On", [[MTRL_PATH, raw(bytes)]])]);
     fn(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mask\.tex$/);
 
     vi.doUnmock("../../src/upgrade/reference/file-exists");
@@ -326,7 +326,7 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     });
     const data = pack([option("On", [[MTRL_PATH, raw(bytes)]])]);
     fn(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerMask)).toMatch(/_mult\.tex$/);
 
     vi.doUnmock("../../src/upgrade/reference/file-exists");
@@ -356,7 +356,7 @@ describe("repathHairMashups — oracle-controlled branches", () => {
     });
     const data = pack([option("On", [[MTRL_PATH, raw(bytes)]])]);
     fn(data);
-    const out = data.groups[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
+    const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!.data!;
     expect(samplerPath(out, ESamplerId.g_SamplerDiffuse)).toMatch(
       /_base\.tex$/,
     );

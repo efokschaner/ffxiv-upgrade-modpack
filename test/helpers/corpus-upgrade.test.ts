@@ -11,7 +11,18 @@ import {
   diagnosticsToFileDiffs,
   EXPECTED_PACK_DIAGNOSTICS,
 } from "./corpus-upgrade";
+import {
+  ORACLE_ERROR_DIVERGENCE_RULES,
+  type OracleErrorDivergenceRule,
+} from "./upgrade-compare";
 import type { FileDiff } from "./upgrade-diff";
+
+// The real /upgrade oracle trace signature docs/TEXTOOLS_BUGS.md #22 registers — shared by the
+// dispatch-wiring tests below (which need a message that actually MATCHES a real rule) and the
+// ORACLE_ERROR_DIVERGENCE_RULES tests further down.
+const NRE_TRACE =
+  "System.NullReferenceException: Object reference not set to an instance of an object.\n" +
+  "   at xivModdingFramework.Mods.WizardPageEntry.<>c.<get_HasData>b__4_0(WizardGroupEntry x)";
 
 const okResult = (): UpgradeResult<ModpackData> => ({
   ok: true,
@@ -74,6 +85,89 @@ describe("assertMatchedUpgradeFailure", () => {
         throw new Error("totally different failure reason");
       }),
     ).toThrow(/does not match the oracle/);
+  });
+});
+
+// The dispatch wiring itself: a matched ORACLE_ERROR_DIVERGENCE_RULES entry must route to the 4th
+// (injectable) `confirmOracleError` argument and bypass the hard fail entirely — the load-bearing
+// behaviour this task adds. Coverage of the REAL confirmOracleErrorDivergence implementation lives
+// in the (gitignored, local-only) corpus run; these pin the dispatch itself, which must hold in
+// every environment regardless of whether a local corpus is populated.
+describe("assertMatchedUpgradeFailure dispatches a matched ORACLE_ERROR_DIVERGENCE_RULES entry", () => {
+  it("invokes the injected confirmOracleError with the matched rule and our data, instead of hard-failing", () => {
+    const data = { sourceFormat: "pmp" } as unknown as ModpackData;
+    let seen: [string, OracleErrorDivergenceRule, ModpackData] | undefined;
+    expect(() =>
+      assertMatchedUpgradeFailure(
+        "empty-group-first.pmp",
+        NRE_TRACE,
+        () => ({ ok: true, data, diagnostics: [] }),
+        (name, rule, ours) => {
+          seen = [name, rule, ours];
+        },
+      ),
+    ).not.toThrow();
+    expect(seen).toBeDefined();
+    const [name, rule, ours] = seen!;
+    expect(name).toBe("empty-group-first.pmp");
+    // Identity, not just presence: the SAME rule instance ORACLE_ERROR_DIVERGENCE_RULES holds must
+    // reach the callback — a dispatch that constructed its own ad hoc rule object would still make
+    // this assertion's `.reason`/`.matches` checks pass, but `toBe` catches that.
+    expect(ORACLE_ERROR_DIVERGENCE_RULES).toContain(rule);
+    expect(ours).toBe(data);
+  });
+
+  it("propagates a rejection the injected confirmOracleError raises (a real byte mismatch)", () => {
+    expect(() =>
+      assertMatchedUpgradeFailure(
+        "empty-group-first.pmp",
+        NRE_TRACE,
+        () => okResult(),
+        () => {
+          throw new Error("confirmed-divergence check FAILED: byte mismatch");
+        },
+      ),
+    ).toThrow(/confirmed-divergence check FAILED/);
+  });
+
+  it("still hard-fails on an unmatched oracle message, WITHOUT ever invoking confirmOracleError", () => {
+    let invoked = false;
+    expect(() =>
+      assertMatchedUpgradeFailure(
+        "m.pmp",
+        "oracle: unresolveable",
+        () => okResult(),
+        () => {
+          invoked = true;
+        },
+      ),
+    ).toThrow(/errored but our upgrade SUCCEEDED/);
+    expect(invoked).toBe(false);
+  });
+});
+
+describe("ORACLE_ERROR_DIVERGENCE_RULES", () => {
+  it("matches the ClearNulls NRE signature", () => {
+    expect(
+      ORACLE_ERROR_DIVERGENCE_RULES.some((r) => r.matches(NRE_TRACE)),
+    ).toBe(true);
+  });
+
+  it("does not match an unrelated oracle error", () => {
+    const other =
+      "System.NotImplementedException: Unimplemented PMP group type: Bogus";
+    expect(ORACLE_ERROR_DIVERGENCE_RULES.some((r) => r.matches(other))).toBe(
+      false,
+    );
+  });
+
+  it("names a sibling pack for a crashing pack", () => {
+    const rule = ORACLE_ERROR_DIVERGENCE_RULES.find((r) =>
+      r.matches(NRE_TRACE),
+    )!;
+    expect(rule.siblingOf("empty-group-first.pmp")).toBe(
+      "empty-group-first-sibling.pmp",
+    );
   });
 });
 

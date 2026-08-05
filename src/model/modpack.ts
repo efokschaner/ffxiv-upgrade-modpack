@@ -90,13 +90,29 @@ export interface ModpackGroup {
   name: string;
   description: string;
   image: string;
-  page: number;
   priority: number;
   selectionType: string; // "Single" | "Multi" | "Imc" | "Combining"
   defaultSettings: number; // PMP; 0 for TTMP
   options: ModpackOption[];
   raw?: unknown; // opaque carry-through: full original PMP group JSON. Re-emitted verbatim.
 }
+
+/** Mirrors WizardPageEntry (reference/.../Mods/WizardData.cs · WizardPageEntry · 963-990). A `null`
+ *  entry is deliberate and load-bearing: WizardData.FromPmp adds FromPMPGroup's result to
+ *  page.Groups UNCONDITIONALLY at both its call sites (:1136, :1156), and that result is `null` for
+ *  a zero-option group (FromPMPGroup:851-855). ClearNulls prunes them afterwards. The TTMP path
+ *  never admits one — FromWizardModpackPage discards it at the call site (:986). */
+export interface ModpackPage {
+  groups: (ModpackGroup | null)[];
+}
+// `WizardPageEntry.FolderPath` (WizardData.cs:967) has no field here. It is a per-COMPUTATION memo
+// (`WizardData.cs:1375` writes it, `:1239`/`:1462`/`:1334` null it before every recompute), not
+// model state a caller ever reads back — `optionPrefixes` (src/container/option-prefix.ts) owns the
+// only consumer, `makePagePrefix`, and keeps its own local memo across its own two passes instead
+// (code review, 2026-08-05: a `ModpackPage.folderPath` field existed here briefly, but
+// `optionPrefixes` computes over a SHALLOW COPY of `data.pages`, so every write to it landed on a
+// throwaway object and the field was permanently `undefined` on any real `ModpackData` — dead field,
+// not a bug in the copy).
 
 export interface ModpackMeta {
   // Name/Author/Description/Url are `string | null`: WizardMetaEntry.FromTtmp assigns all four
@@ -126,7 +142,9 @@ export interface ModpackData {
   sourceFormat: ModpackFormat;
   isSimple: boolean; // TTMP simple (flat SimpleModsList) vs wizard/grouped
   meta: ModpackMeta;
-  groups: ModpackGroup[];
+  /** Mirrors WizardData.DataPages (WizardData.cs:1079). There is no flat group list in the C# —
+   *  use `allGroups` to iterate every group in page order. */
+  pages: ModpackPage[];
   /** PMP-only: archive members that are neither a manifest json (meta.json / default_mod.json /
    *  group_*.json) nor referenced by any option's `Files` value — preview images, readmes, etc.
    *  Keyed by the archive path (forward slashes) after the same NTFS-equivalent normalization
@@ -152,10 +170,32 @@ export function emptyMeta(): ModpackMeta {
   };
 }
 
+/** `data.pages`. A thin accessor kept so every pages-consuming function (`allGroups` below;
+ *  `cloneModpack`, `writePmp`, `writeTtmp2`, `optionPrefixes` elsewhere) reads pages through one
+ *  named seam rather than each spelling `data.pages` independently. */
+export function allPages(data: ModpackData): ModpackPage[] {
+  return data.pages;
+}
+
+/** Every non-null group across every page, in page order — the order WritePmp's own loops use
+ *  (WizardData.cs:1506-1542, :1583-1600). Nulls are skipped rather than thrown on: ClearNulls has
+ *  already removed them from any page this walks (see src/container/clear-nulls.ts). */
+export function allGroups(data: ModpackData): ModpackGroup[] {
+  return allPages(data).flatMap((p) =>
+    p.groups.filter((g): g is ModpackGroup => g !== null),
+  );
+}
+
+/** Every file across every option, in `allGroups` order — i.e. page order, not group-declaration
+ *  order (see `allGroups`'s own doc comment). This ordering is byte-visible: it feeds `buildBlob`'s
+ *  .mpd offsets (ttmp2.ts) and `resolveDuplicates`' `common/N` numbering (resolve-duplicates.ts), so
+ *  switching it from the old flat `data.groups` walk to page order is Phase 1's one behaviour-risking
+ *  change (design spec §3.1) — argued byte-neutral because both write paths already use page order,
+ *  proven only by the corpus, not by this comment. */
 export function allFiles(
   data: ModpackData,
 ): { gamePath: string; file: ModpackFile }[] {
-  return data.groups.flatMap((g) =>
+  return allGroups(data).flatMap((g) =>
     g.options.flatMap((o) =>
       [...o.files].map(([gamePath, file]) => ({ gamePath, file })),
     ),

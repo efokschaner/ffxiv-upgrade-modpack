@@ -79,18 +79,22 @@ export const EMPTY_DEFAULT_MOD: PmpOptionJsonRaw = {
  *
  * `fileSwaps` (gamePath being overridden -> base-game path served instead, backslashed the same way
  * — PMP.cs:1107-1109 notes the value is the backslashed one) defaults to `{}`, which keeps both the
- * emitted key ORDER and the emitted bytes identical for every pack that does not pass it. */
+ * emitted key ORDER and the emitted bytes identical for every pack that does not pass it.
+ *
+ * `page` (PMPGroupJson.Page, PMP.cs:1393 — a genuine DataPages index, `WizardData.FromPmp:1155`)
+ * defaults to `0`, so every existing caller keeps emitting the same value it always did. */
 export function singleOptionGroup(
   name: string,
   files: Record<string, string>,
   fileSwaps: Record<string, string> = {},
+  page = 0,
 ): PmpGroupJsonRaw {
   return {
     Version: 0,
     Name: name,
     Description: "",
     Image: "",
-    Page: 0,
+    Page: page,
     Priority: 0,
     Type: "Single",
     DefaultSettings: 0,
@@ -104,6 +108,26 @@ export function singleOptionGroup(
         Manipulations: [],
       },
     ],
+  };
+}
+
+/** A Single-select group with NO options at all — the shape `WizardGroupEntry.FromPMPGroup`
+ * (WizardData.cs:851-855) bails out on and returns `null` for, which is exactly the input the
+ * `docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md` probes need: our
+ * port drops it (clear-nulls.ts), and ConsoleTools either drops it too or NREs, depending on
+ * whether a data-carrying group precedes it in load order (see that spec's §1.2 and
+ * `docs/TEXTOOLS_BUGS.md` #22). Same `page` default/meaning as `singleOptionGroup`. */
+export function zeroOptionGroup(name: string, page = 0): PmpGroupJsonRaw {
+  return {
+    Version: 0,
+    Name: name,
+    Description: "",
+    Image: "",
+    Page: page,
+    Priority: 0,
+    Type: "Single",
+    DefaultSettings: 0,
+    Options: [],
   };
 }
 

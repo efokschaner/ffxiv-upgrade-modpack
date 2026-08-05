@@ -38,7 +38,6 @@ function group(...options: ModpackOption[]): ModpackGroup {
     name: "g",
     description: "",
     image: "",
-    page: 0,
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
@@ -51,7 +50,7 @@ function pack(...groups: ModpackGroup[]): ModpackData {
     sourceFormat: ModpackFormat.Pmp,
     isSimple: false,
     meta: emptyMeta(),
-    groups,
+    pages: [{ groups }],
   };
 }
 

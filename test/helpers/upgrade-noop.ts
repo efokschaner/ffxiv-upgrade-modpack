@@ -51,10 +51,11 @@
 //  not a ported comparison -- neither our pipeline nor /upgrade's transform adds or removes options,
 //  so they exist to catch a violation of that assumption, not to mirror a C# code path.
 
-import type {
-  ModpackData,
-  ModpackFile,
-  ModpackOption,
+import {
+  allGroups,
+  type ModpackData,
+  type ModpackFile,
+  type ModpackOption,
 } from "../../src/model/modpack";
 import { bytesEqual } from "./compare";
 import type { FileDiff } from "./upgrade-diff";
@@ -135,10 +136,18 @@ export function transformChanges(
   after: ModpackData,
 ): FileDiff[] {
   const diffs: FileDiff[] = [];
-  const groupCount = Math.max(before.groups.length, after.groups.length);
+  // `allGroups`, not a direct walk: `ModpackData` carries no flat group list (see its doc comment,
+  // src/model/modpack.ts) — `.pages` is the only representation, and `allGroups` is its one blessed
+  // accessor, walking every page's (already null-pruned) groups in page order. `before` and `after`
+  // are both `ModpackData`, produced by the same read → upgrade pipeline (`before` pre-transform,
+  // `after` post-), so walking them the identical way here is what guarantees their group lists line
+  // up index-for-index below.
+  const beforeGroups = allGroups(before);
+  const afterGroups = allGroups(after);
+  const groupCount = Math.max(beforeGroups.length, afterGroups.length);
   for (let g = 0; g < groupCount; g++) {
-    const bg = before.groups[g];
-    const ag = after.groups[g];
+    const bg = beforeGroups[g];
+    const ag = afterGroups[g];
     if (bg === undefined || ag === undefined) {
       diffs.push({
         kind: "transform",

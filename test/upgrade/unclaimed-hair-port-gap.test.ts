@@ -63,40 +63,43 @@ function buildHairRescuePack(): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "O",
+            name: "G",
             description: "",
             image: "",
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap([
-              [
-                NORM_OLD,
-                {
-                  data: buildMinimalTex(),
-                  storage: FileStorageType.RawUncompressed,
-                },
-              ],
-              [
-                SPEC_OLD,
-                {
-                  data: buildMinimalTex(),
-                  storage: FileStorageType.RawUncompressed,
-                },
-              ],
-            ]),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "O",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap([
+                  [
+                    NORM_OLD,
+                    {
+                      data: buildMinimalTex(),
+                      storage: FileStorageType.RawUncompressed,
+                    },
+                  ],
+                  [
+                    SPEC_OLD,
+                    {
+                      data: buildMinimalTex(),
+                      storage: FileStorageType.RawUncompressed,
+                    },
+                  ],
+                ]),
+              },
+            ],
           },
         ],
       },

@@ -7,6 +7,7 @@ import {
   ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
+  type ModpackPage,
 } from "../model/modpack";
 import { ttmpNeedsMdlFix } from "../upgrade/model";
 import { ttmpNeedsTexFix } from "../upgrade/texfix";
@@ -85,12 +86,12 @@ export function readLegacyTtmp(
     name: "Default",
     description: "",
     image: "",
-    page: 0,
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
     options: [option],
   };
+  const page: ModpackPage = { groups: [group] };
   return {
     sourceFormat: ModpackFormat.TtmpLegacy,
     isSimple: true,
@@ -104,6 +105,9 @@ export function readLegacyTtmp(
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [group],
+    // WizardData.cs · FromSimpleTtmp · 1204-1231 — a legacy pack loads through FromSimpleTtmp via
+    // the synthesized "0.1s" mpl (TTMP.cs:453-462): one hand-built page holding one hand-built
+    // group, added UNCONDITIONALLY (:1230) with no ClearNulls call.
+    pages: [page],
   };
 }

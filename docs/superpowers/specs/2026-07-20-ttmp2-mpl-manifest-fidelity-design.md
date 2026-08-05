@@ -173,9 +173,10 @@ here, so the whole task is pinned by synthetic unit tests only.
 
 - **Zero-option groups.** Both loaders `return null` for an empty group (`:749-753`, `:851-855`);
   our readers keep it. A real divergence two lines from code this change touches. **File as a
-  backlog item.** **Implemented:** filed as `docs/backlog/2026-07-20-empty-group-not-dropped.md`. It
-  also explains the `options.length > 0` guard each backstop seam carries — the C# backstop is
-  unreachable with zero options, so the guard exists only because we do not port the early return.
+  backlog item.** **Implemented:** filed, then shipped as
+  `docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md` (2026-08-04), which
+  also removed the `options.length > 0` guard each backstop seam had carried — that guard existed
+  only because the early return was not yet ported.
 - **`SelectedSettings`.** Investigated and closed: `[JsonIgnore]` (`PMP.cs:1399-1400`), no
   `ShouldSerialize`, and the group writer passes only `Formatting.Indented` (`PMP.cs:856-862`). A
   ConsoleTools group json contains no such key, so our omitting it from `KNOWN_GROUP_KEYS` is

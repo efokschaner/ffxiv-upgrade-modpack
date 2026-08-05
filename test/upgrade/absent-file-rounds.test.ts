@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -58,16 +59,19 @@ function packOf(option: ModpackOption): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [option],
+        groups: [
+          {
+            name: "G",
+            description: "",
+            image: "",
+            priority: 0,
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [option],
+          },
+        ],
       },
     ],
   };
@@ -81,7 +85,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       ]),
     );
     const out = upgradedOk(data);
-    const f = out.groups[0]!.options[0]!.files.get(
+    const f = allGroups(out)[0]!.options[0]!.files.get(
       "chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl",
     )!;
     expect(f.data).toBeUndefined();
@@ -97,7 +101,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
       optionOf([absent("chara/equipment/e0001/model/c0101e0001_top.mdl")]),
     );
     const out = upgradedOk(data);
-    const f = out.groups[0]!.options[0]!.files.get(
+    const f = allGroups(out)[0]!.options[0]!.files.get(
       "chara/equipment/e0001/model/c0101e0001_top.mdl",
     )!;
     expect(f.data).toBeUndefined();

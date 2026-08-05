@@ -8,9 +8,14 @@ import { dirname, join } from "node:path";
 const REAL = join(__dirname, "..", "corpus", "real");
 const SYNTHETIC = join(__dirname, "..", "corpus", "synthetic");
 /** Packs ConsoleTools /upgrade is EXPECTED to error on (the expected-failure /upgrade test). Scoped
- *  to the `upgrade` check only (see enumerateUnits): they exist to prove our port throws exactly
- *  where the oracle throws, NOT to exercise the writer/codec, so they skip the resave/assets/golden
- *  families (which would only surface unrelated, pre-existing writer/codec gaps on their content). */
+ *  to the `upgrade` check only (see enumerateUnits) — NOT to exercise the writer/codec, so they skip
+ *  the resave/assets/golden families (which would only surface unrelated, pre-existing writer/codec
+ *  gaps on their content). Two outcomes land here, both asserted by `assertMatchedUpgradeFailure`
+ *  (test/helpers/corpus-upgrade.ts): most prove our port throws exactly where the oracle throws (a
+ *  MATCHED failure); a pack whose oracle error matches an `ORACLE_ERROR_DIVERGENCE_RULES` entry
+ *  (test/helpers/upgrade-compare.ts) instead proves our port deliberately SUCCEEDS where a
+ *  registered TexTools defect crashes the oracle outright (docs/TEXTOOLS_BUGS.md #22) — e.g.
+ *  `empty-group-first.pmp`/`empty-group-page1.pmp`, confirmed against a sibling pack in `synthetic`. */
 const UPGRADE_ERROR = join(__dirname, "..", "corpus", "upgrade-error");
 const CORPUS_ROOTS = [REAL, SYNTHETIC, UPGRADE_ERROR];
 

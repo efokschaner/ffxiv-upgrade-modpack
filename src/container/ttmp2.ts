@@ -4,18 +4,21 @@
 // data blob those writers emit.
 import {
   allFiles,
+  allPages,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
   ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
+  type ModpackPage,
 } from "../model/modpack";
 import { ttmpNeedsMdlFix } from "../upgrade/model";
 import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { concatBytes, fnv1aKey } from "../util/binary";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
+import { clearNulls, pageHasData } from "./clear-nulls";
 import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
   ModPackJson,
@@ -71,6 +74,11 @@ function filesFromMods(
 // the upgrade layer's fix logic: the reader computes the tex/mdl gates from the version it parsed
 // (via the pure gate predicates it does import, `ttmpNeedsTexFix` / `ttmpNeedsMdlFix`), builds the
 // fix, and applies it at the read seam. Omitted (a direct unit-test read) -> no load fix.
+// `FromWizardTtmp` (WizardData.cs:1163-1186) does NOT call `ClearNulls` — only `FromPmp` (:1159)
+// does. Reproduced by omission: readTtmp2 never calls clearNulls (src/container/clear-nulls.ts).
+// It doesn't need to anyway — `FromWizardModpackPage` discards a null group at the call site
+// itself (`if (g == null) continue;`, :986), so the wizard branch below never admits one, and the
+// simple branch's synthesized group always carries exactly one option (see its own comment).
 export function readTtmp2(
   bytes: Uint8Array,
   makeLoadFix?: LoadFixFactory,
@@ -131,7 +139,6 @@ export function readTtmp2(
       name: "Default",
       description: "",
       image: "",
-      page: 0,
       priority: 0,
       selectionType: "Single",
       defaultSettings: 0,
@@ -141,18 +148,28 @@ export function readTtmp2(
       sourceFormat: ModpackFormat.Ttmp2,
       isSimple: true,
       meta,
-      groups: [group],
+      // WizardData.cs · FromSimpleTtmp · 1204-1231 — one hand-built page holding one hand-built
+      // group, added UNCONDITIONALLY (:1230) with no ClearNulls call. FromWizardGroup's zero-option
+      // early return (:749-753) cannot fire on it: the group is constructed with exactly one option
+      // (:1218-1225), so the null this add would otherwise leak is unreachable.
+      pages: [{ groups: [group] }],
     };
   }
 
-  const groups: ModpackGroup[] = [];
+  const pages: ModpackPage[] = [];
   for (const page of mpl.ModPackPages ?? []) {
+    // WizardData.cs · WizardPageEntry.FromWizardModpackPage · 977-990 — one page per ModPackPages
+    // element, in array order. WizardPageEntry itself carries no page-index field; page identity is
+    // positional and the writer re-derives PageIndex with a dense counter at write time
+    // (WriteWizardPack:1348-1357).
+    const builtPage: ModpackPage = {
+      groups: [],
+    };
     for (const g of page.ModGroups) {
       const built: ModpackGroup = {
         name: g.GroupName,
         description: "",
         image: "",
-        page: page.PageIndex,
         priority: 0,
         // WizardData.cs:652 — `tGroup.SelectionType == "Single" ? Single : Multi`. The comparison is
         // against "Single" only, so every other value — including an absent one — is Multi.
@@ -175,23 +192,30 @@ export function readTtmp2(
           files: filesFromMods(o.ModsJsons, mpd, loadFix),
         })),
       };
-      groups.push(built);
+      // WizardData.cs · FromWizardGroup · 749-753 — `if (group.Options.Count == 0) return null;`,
+      // BEFORE the Single "none selected" backstop at :755-757. The caller,
+      // WizardPageEntry.FromWizardModpackPage (:983-988), discards the null at the call site
+      // (`if (g == null) continue;`, :986) — so a skip-the-push here is the honest transcription.
+      if (built.options.length === 0) continue;
       // WizardData.cs:755-757 — FromWizardGroup's tail, AFTER every option is in the list. This is
       // a "none selected" backstop ONLY: it never corrects a Single group carrying more than one
-      // selected option. The `length > 0` guard stands in for the zero-option early return at
-      // :749-753 (C# returns null for an empty group; we do not port that pruning yet — see
-      // docs/backlog/2026-07-20-empty-group-not-dropped.md), so an option-less group cannot crash
-      // here.
+      // selected option.
       if (
         built.selectionType === "Single" &&
-        built.options.length > 0 &&
         !built.options.some((o) => o.selected)
       ) {
         built.options[0]!.selected = true;
       }
+      builtPage.groups.push(built);
     }
+    pages.push(builtPage);
   }
-  return { sourceFormat: ModpackFormat.Ttmp2, isSimple: false, meta, groups };
+  return {
+    sourceFormat: ModpackFormat.Ttmp2,
+    isSimple: false,
+    meta,
+    pages,
+  };
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -235,6 +259,10 @@ function buildBlob(files: ModpackFile[]): {
   return { blob: concatBytes(parts), place };
 }
 
+/** MUTATES `data`: `allPages(data)` returns `data.pages` by reference, and the wizard branch's
+ *  `clearNulls(dataPages)` call below splices dead pages/groups out of it in place. Faithful —
+ *  `ClearNulls` mutates `this.DataPages` in the C# too (WizardData.cs:1334) — but currently inert
+ *  for any caller that only ever writes once. */
 export function writeTtmp2(data: ModpackData): Uint8Array {
   // A PMP source can carry ExtraFiles (previews, readmes — PMP.cs:213-215); TTMP has no analogous
   // container member (its payloads are byte offsets into a single .mpd, not zip members), and
@@ -245,6 +273,11 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
       `ttmp2: cannot write ExtraFiles (${data.extraFiles.size}) — TTMP has no equivalent container member`,
     );
   }
+  // Computed BEFORE `clearNulls` runs below (the wizard branch's, at :326), inverting
+  // `WriteWizardPack`'s order (`ClearNulls()` is its first statement, :1334). Verified inert: every
+  // page/group `clearNulls` can remove is, by construction, one with zero surviving options
+  // (`groupHasData`/`pageHasData`, src/container/clear-nulls.ts), so it contributes zero entries to
+  // `allFiles` either way — pruning it after the fact changes nothing this blob build reads.
   const files = allFiles(data);
   const { blob, place } = buildBlob(files.map((e) => e.file));
 
@@ -290,47 +323,68 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   };
 
   if (data.isSimple) {
+    // No `clearNulls` call on this branch, though `WriteWizardPack:1334` calls it unconditionally.
+    // Not a gap: C# never reaches WriteWizardPack for a simple pack at all (`isSimple` write is a
+    // wholly separate C# path, TTMP.CreateSimpleModPack/SimpleModPackData — a different class
+    // hierarchy this port merges into one module, see this file's own citations), so `ClearNulls`
+    // simply doesn't apply here. Inert either way: a simple pack's one hand-built page/group/option
+    // (readTtmp2's simple path, mirroring FromSimpleTtmp:1204-1231 — see
+    // docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md §4) can never be
+    // the zero-option/zero-group case `clearNulls` prunes.
     mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));
   } else {
-    const byPage = new Map<number, TtmpModGroupJsonWrite[]>();
-    for (const g of data.groups) {
-      // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
-      // Groups.") as its first statement, before it builds the ModGroup or visits any option.
-      // `selectionType === "Imc"` stands in for GroupType == EGroupType.Imc (:609-618), as at
-      // option-prefix.ts:288 and pmp.ts:485. Only a PMP source carries an Imc group, and /upgrade
-      // never converts formats, so this is unreachable today.
-      if (g.selectionType === "Imc") {
-        throw new Error("ttmp2: TTMP Does not support IMC Groups.");
-      }
-      // WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()` over
-      // EOptionType { Single, Multi } (:25-29), the enum both readers collapse the raw string into at
-      // load (:652 TTMP, :769 PMP). So any non-"Single" value — "Combining" included — writes as
-      // "Multi". An option has no type of its own: it delegates to its group (:335-341), so the same
-      // value is written at both levels.
-      const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
-      const list = byPage.get(g.page) ?? [];
-      list.push({
-        GroupName: g.name,
-        SelectionType: selectionType,
-        // Key order is ModOptionJson's C# declaration order (ModPackJson.cs · ModOptionJson ·
-        // 159-198) — note ModsJsons sits FOURTH, before GroupName/SelectionType.
-        OptionList: g.options.map((o) => ({
-          Name: o.name,
-          Description: o.description,
-          ImagePath: o.image,
-          ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
+    // WizardData.cs · WriteWizardPack · 1334 — the first statement of the WHOLE FUNCTION, not of a
+    // "wizard branch" within it: WriteWizardPack has no isSimple/wizard split of its own (that split
+    // is this port's; see the comment above). It runs before anything else in this function reads
+    // DataPages.
+    const dataPages = allPages(data);
+    clearNulls(dataPages);
+    // WizardData.cs · WriteWizardPack · 1348-1357 — pages are emitted in DataPages ORDER with a
+    // DENSE counter, not by the source PageIndex, and a page with no data is skipped entirely.
+    // Measured against ConsoleTools /resave 2026-08-04: a sparse source index (3) emits as 0; two
+    // pages sharing an index stay two pages; source array order is preserved rather than sorted.
+    const pages: TtmpModPackPageJsonWrite[] = [];
+    for (const page of dataPages) {
+      if (!pageHasData(page)) continue; // :1351
+      const modGroups: TtmpModGroupJsonWrite[] = [];
+      for (const g of page.groups) {
+        // Narrow rather than assert: ClearNulls has already run (just above), so no page reaching
+        // here holds a null.
+        if (g === null) continue;
+        // WizardData.cs:868-871 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
+        // Groups.") as its first statement, before it builds the ModGroup or visits any option.
+        // `selectionType === "Imc"` stands in for GroupType == EGroupType.Imc (:609-618), as at
+        // option-prefix.ts:197 and pmp.ts:625. Only a PMP source carries an Imc group, and /upgrade
+        // never converts formats, so this is unreachable today.
+        if (g.selectionType === "Imc") {
+          throw new Error("ttmp2: TTMP Does not support IMC Groups.");
+        }
+        // WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()` over
+        // EOptionType { Single, Multi } (:25-29), the enum both readers collapse the raw string into
+        // at load (:652 TTMP, :769 PMP). So any non-"Single" value — "Combining" included — writes
+        // as "Multi". An option has no type of its own: it delegates to its group (:335-341), so the
+        // same value is written at both levels.
+        const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
+        modGroups.push({
           GroupName: g.name,
           SelectionType: selectionType,
-          // TTMPWriter.cs · AddOption · 148 — `IsChecked = modOption.IsChecked`, itself the
-          // verbatim counterpart of the read at WizardData.cs:668. No write-time derivation.
-          IsChecked: o.selected,
-        })),
-      });
-      byPage.set(g.page, list);
+          // Key order is ModOptionJson's C# declaration order (ModPackJson.cs · ModOptionJson ·
+          // 159-198) — note ModsJsons sits FOURTH, before GroupName/SelectionType.
+          OptionList: g.options.map((o) => ({
+            Name: o.name,
+            Description: o.description,
+            ImagePath: o.image,
+            ModsJsons: [...o.files].map(([gamePath, f]) => modOf(gamePath, f)),
+            GroupName: g.name,
+            SelectionType: selectionType,
+            // TTMPWriter.cs · AddOption · 148 — `IsChecked = modOption.IsChecked`, itself the
+            // verbatim counterpart of the read at WizardData.cs:668. No write-time derivation.
+            IsChecked: o.selected,
+          })),
+        });
+      }
+      pages.push({ PageIndex: pages.length, ModGroups: modGroups }); // :1355-1356
     }
-    const pages: TtmpModPackPageJsonWrite[] = [...byPage.keys()]
-      .sort((a, b) => a - b)
-      .map((p) => ({ PageIndex: p, ModGroups: byPage.get(p)! }));
     mpl.ModPackPages = pages;
   }
 

@@ -82,7 +82,7 @@ function packWithVersion(
     sourceFormat: format,
     isSimple: false,
     meta: baseMeta(version),
-    groups: [],
+    pages: [{ groups: [] }],
   };
 }
 

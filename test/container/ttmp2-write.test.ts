@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readTtmp2, writeTtmp2 } from "../../src/container/ttmp2";
 import {
   allFiles,
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -13,6 +14,7 @@ import {
   makeTtmp2Simple,
   makeTtmp2Wizard,
 } from "../helpers/make-packs";
+import { buildWizardTtmp2Pages, readMplFrom } from "../helpers/ttmp2-fixture";
 
 function roundTrip(bytes: Uint8Array) {
   const data = readTtmp2(bytes);
@@ -35,7 +37,7 @@ describe("writeTtmp2 round-trip", () => {
     const pack = makeTtmp2Wizard();
     const out = roundTrip(pack.bytes);
     expect(out.isSimple).toBe(false);
-    expect(out.groups[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
+    expect(allGroups(out)[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
     const byPath = new Map(
       allFiles(out).map(({ gamePath, file }) => [gamePath, file.data]),
     );
@@ -70,39 +72,92 @@ describe("writeTtmp2 round-trip", () => {
         tags: [],
         minimumFrameworkVersion: "1.0.0.0",
       },
-      groups: [
+      pages: [
         {
-          name: "Default",
-          description: "",
-          image: "",
-          page: 0,
-          priority: 0,
-          selectionType: "Single",
-          defaultSettings: 0,
-          options: [
+          groups: [
             {
               name: "Default",
               description: "",
               image: "",
               priority: 0,
-              selected: false,
-              fileSwaps: {},
-              manipulations: [],
-              files: filesMap([
-                // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
-                // writeTtmp2's defensive runtime guard; structurally unreachable through any real
-                // reader (design spec §3.4), hence the cast.
-                [
-                  "chara/x.mtrl",
-                  { storage: FileStorageType.SqPackCompressed } as ModpackFile,
-                ],
-              ]),
+              selectionType: "Single",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: "Default",
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: false,
+                  fileSwaps: {},
+                  manipulations: [],
+                  files: filesMap([
+                    // Deliberately violates the SqPackCompressed-always-has-bytes invariant to drive
+                    // writeTtmp2's defensive runtime guard; structurally unreachable through any real
+                    // reader (design spec §3.4), hence the cast.
+                    [
+                      "chara/x.mtrl",
+                      {
+                        storage: FileStorageType.SqPackCompressed,
+                      } as ModpackFile,
+                    ],
+                  ]),
+                },
+              ],
             },
           ],
         },
       ],
     };
     expect(() => writeTtmp2(data)).toThrow(/cannot write a file with no bytes/);
+  });
+});
+
+describe("writeTtmp2 page renumbering", () => {
+  it("renumbers PageIndex densely over surviving pages (WriteWizardPack:1348-1357)", () => {
+    // Measured against ConsoleTools /resave 2026-08-04: a source page whose only group is
+    // option-less is dropped, and the survivor is emitted as PageIndex 0, not 1.
+    const data = readTtmp2(
+      buildWizardTtmp2Pages([
+        { pageIndex: 0, groups: [{ name: "Empty", options: [] }] },
+        { pageIndex: 1, groups: [{ name: "Real", options: ["On"] }] },
+      ]),
+    );
+    const mplDoc = readMplFrom(writeTtmp2(data));
+    expect(mplDoc.ModPackPages).toHaveLength(1);
+    expect(mplDoc.ModPackPages![0]!.PageIndex).toBe(0);
+  });
+
+  it("emits pages in source array order, not sorted by PageIndex (:1349)", () => {
+    const data = readTtmp2(
+      buildWizardTtmp2Pages([
+        { pageIndex: 1, groups: [{ name: "Second", options: ["On"] }] },
+        { pageIndex: 0, groups: [{ name: "First", options: ["On"] }] },
+      ]),
+    );
+    const mplDoc = readMplFrom(writeTtmp2(data));
+    expect(mplDoc.ModPackPages!.map((p) => p.ModGroups[0]!.GroupName)).toEqual([
+      "Second",
+      "First",
+    ]);
+    expect(mplDoc.ModPackPages!.map((p) => p.PageIndex)).toEqual([0, 1]);
+  });
+
+  it("keeps two source pages sharing a PageIndex separate (:1349)", () => {
+    const data = readTtmp2(
+      buildWizardTtmp2Pages([
+        { pageIndex: 0, groups: [{ name: "Alpha", options: ["On"] }] },
+        { pageIndex: 0, groups: [{ name: "Beta", options: ["On"] }] },
+      ]),
+    );
+    const mplDoc = readMplFrom(writeTtmp2(data));
+    expect(mplDoc.ModPackPages!.map((p) => p.ModGroups[0]!.GroupName)).toEqual([
+      "Alpha",
+      "Beta",
+    ]);
+    // Measured against ConsoleTools /resave 2026-08-04: two source pages sharing a PageIndex stay
+    // TWO pages, densely renumbered 0 -> Alpha, 1 -> Beta — not collapsed into one.
+    expect(mplDoc.ModPackPages!.map((p) => p.PageIndex)).toEqual([0, 1]);
   });
 });
 
@@ -118,8 +173,8 @@ function mpl(bytes: Uint8Array): Record<string, unknown> {
 describe("writeTtmp2 .mpl fidelity", () => {
   it("writes IsChecked on every option", () => {
     const data = readTtmp2(makeTtmp2Wizard().bytes);
-    data.groups[0]!.options[0]!.selected = true;
-    data.groups[0]!.options[1]!.selected = false;
+    allGroups(data)[0]!.options[0]!.selected = true;
+    allGroups(data)[0]!.options[1]!.selected = false;
     // biome-ignore lint/suspicious/noExplicitAny: raw manifest document
     const out = mpl(writeTtmp2(data)) as any;
     expect(

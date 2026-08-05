@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { upgradeModpack } from "../../src/index";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   type ModpackFile,
@@ -81,7 +82,6 @@ function pack(options: ModpackOption[]): ModpackData {
     name: "G",
     description: "",
     image: "",
-    page: 0,
     priority: 0,
     selectionType: "Single",
     defaultSettings: 0,
@@ -100,7 +100,7 @@ function pack(options: ModpackOption[]): ModpackData {
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [group],
+    pages: [{ groups: [group] }],
   };
 }
 
@@ -144,7 +144,7 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
   it("no-ops when there are no hair materials", () => {
     const data = pack([option("O", [["chara/x/y.tex", tex(1)]])]);
     resolveHighlightOptionsAndMashupHair(data);
-    expect([...data.groups[0]!.options[0]!.files.keys()]).toEqual([
+    expect([...allGroups(data)[0]!.options[0]!.files.keys()]).toEqual([
       "chara/x/y.tex",
     ]);
   });
@@ -158,7 +158,7 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
       ]),
     ]);
     resolveHighlightOptionsAndMashupHair(data);
-    expect(data.groups[0]!.options[0]!.files.size).toBe(3);
+    expect(allGroups(data)[0]!.options[0]!.files.size).toBe(3);
   });
 
   it("staples the missing texture from the sole container into each split option", () => {
@@ -211,7 +211,9 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
     const a = option("A", [[HAIR_MTRL_PATH, raw(HAIR_MTRL_BYTES)]]);
     const data = pack([a]);
     expect(() => resolveHighlightOptionsAndMashupHair(data)).not.toThrow();
-    expect(data.groups[0]!.options[0]!.files.has(HAIR_MTRL_PATH)).toBe(true);
+    expect(allGroups(data)[0]!.options[0]!.files.has(HAIR_MTRL_PATH)).toBe(
+      true,
+    );
   });
 
   it("skips a .mtrl that fails to parse", () => {
@@ -222,7 +224,7 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
       ]),
     ]);
     resolveHighlightOptionsAndMashupHair(data);
-    expect(data.groups[0]!.options[0]!.files.has(N)).toBe(true);
+    expect(allGroups(data)[0]!.options[0]!.files.has(N)).toBe(true);
   });
 
   it("stage 3 has no both/neither guard: a badOption is probed against an UNRELATED pair", () => {
@@ -267,8 +269,8 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
       ]),
     ]);
     resolveHighlightOptionsAndMashupHair(data);
-    expect(data.groups[0]!.options[0]!.files.has(N)).toBe(true);
-    expect(data.groups[0]!.options[0]!.files.has(M)).toBe(false);
+    expect(allGroups(data)[0]!.options[0]!.files.has(N)).toBe(true);
+    expect(allGroups(data)[0]!.options[0]!.files.has(M)).toBe(false);
   });
 
   it("skips a non-Hair-shaderpack .mtrl (no pair collected)", () => {
@@ -284,8 +286,8 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
       ]),
     ]);
     resolveHighlightOptionsAndMashupHair(data);
-    expect(data.groups[0]!.options[0]!.files.has(N)).toBe(true);
-    expect(data.groups[0]!.options[0]!.files.has(M)).toBe(false);
+    expect(allGroups(data)[0]!.options[0]!.files.has(N)).toBe(true);
+    expect(allGroups(data)[0]!.options[0]!.files.has(M)).toBe(false);
   });
 });
 
@@ -300,7 +302,7 @@ describe("upgradeModpack pre-round wiring", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) throw new Error("unreachable");
     const out = r.data;
-    expect(out.groups[0]!.options[0]!.files.has(M)).toBe(true);
-    expect(out.groups[0]!.options[1]!.files.has(N)).toBe(true);
+    expect(allGroups(out)[0]!.options[0]!.files.has(M)).toBe(true);
+    expect(allGroups(out)[0]!.options[1]!.files.has(N)).toBe(true);
   });
 });

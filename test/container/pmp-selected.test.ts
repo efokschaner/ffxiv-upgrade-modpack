@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readPmp } from "../../src/container/pmp";
+import { allGroups } from "../../src/model/modpack";
 import { makePmpWithGroup } from "../helpers/make-packs";
 
 describe("readPmp selected", () => {
@@ -8,7 +9,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 1, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       false,
       true,
       false,
@@ -20,7 +21,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 9, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
       false,
@@ -36,7 +37,7 @@ describe("readPmp selected", () => {
         optionCount: 3,
       }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
       true,
@@ -47,7 +48,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: 0, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       false,
       false,
       false,
@@ -60,7 +61,7 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: -1, optionCount: 3 }),
     );
-    expect(data.groups[1]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[1]!.options.map((o) => o.selected)).toEqual([
       true,
       true,
       true,
@@ -75,26 +76,25 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Multi", DefaultSettings: 1, optionCount: 66 }),
     );
-    const selected = data.groups[1]!.options.map((o) => o.selected);
+    const selected = allGroups(data)[1]!.options.map((o) => o.selected);
     expect(selected.filter(Boolean)).toHaveLength(2);
     expect(selected[0]).toBe(true);
     expect(selected[64]).toBe(true);
     expect(selected[65]).toBe(false);
   });
 
-  // WizardData.cs:857-860's backstop is guarded by `options.length > 0`, standing in for the
-  // zero-option early return at :851-855. An option-less Single group must simply survive the
-  // read with no options rather than crashing on `options[0]!`.
-  //
-  // NOTE this pins OUR behaviour, not parity: TexTools DROPS the group entirely (that early return
-  // is `return null`), so "survives" here is a known divergence, not the golden's shape. See
-  // docs/backlog/2026-07-20-empty-group-not-dropped.md — when that item ships, this test must be
-  // rewritten to assert the group is ABSENT.
-  it("Single: a zero-option group survives the read (our divergence) without tripping the backstop", () => {
+  // The zero-option group never reaches the WizardData.cs:857-860 backstop at all: it is pruned
+  // by ClearNulls (WizardData.cs:1249) before allGroups ever walks it, so there is no options[0]!
+  // to crash on.
+  it("a zero-option group is pruned from the wizard model (ClearNulls, WizardData.cs:1249)", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
     );
-    expect(data.groups[1]!.options).toEqual([]);
+    // Only the synthesized Default group (one option) survives: `clearNulls`, wired in at the
+    // `readPmp` load seam (FromPmp:1159, src/container/clear-nulls.ts), prunes the zero-option
+    // real group's null out of its page before `allGroups` ever walks it.
+    expect(allGroups(data)).toHaveLength(1);
+    expect(allGroups(data)[0]!.name).toBe("Default");
   });
 
   // WizardData.cs:1118-1138 — FromPmp's synthesized Default group is Type "Single" with one
@@ -103,6 +103,6 @@ describe("readPmp selected", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 1 }),
     );
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([true]);
+    expect(allGroups(data)[0]!.options.map((o) => o.selected)).toEqual([true]);
   });
 });

@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { readTtmp2 } from "../../src/container/ttmp2";
+import { allGroups } from "../../src/model/modpack";
 import {
   makeTtmp2Simple,
   makeTtmp2WizardWithChecked,
 } from "../helpers/make-packs";
+import { buildWizardTtmp2 } from "../helpers/ttmp2-fixture";
 
 describe("readTtmp2 selected", () => {
   it("copies IsChecked verbatim", () => {
     const data = readTtmp2(makeTtmp2WizardWithChecked([false, true]).bytes);
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[0]!.options.map((o) => o.selected)).toEqual([
       false,
       true,
     ]);
@@ -18,7 +20,7 @@ describe("readTtmp2 selected", () => {
     const data = readTtmp2(
       makeTtmp2WizardWithChecked([undefined, undefined]).bytes,
     );
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[0]!.options.map((o) => o.selected)).toEqual([
       true,
       false,
     ]);
@@ -29,28 +31,25 @@ describe("readTtmp2 selected", () => {
   // an exclusivity invariant the C# model does not have.
   it("does NOT clamp a Single group with multiple IsChecked", () => {
     const data = readTtmp2(makeTtmp2WizardWithChecked([true, true]).bytes);
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([
+    expect(allGroups(data)[0]!.options.map((o) => o.selected)).toEqual([
       true,
       true,
     ]);
   });
 
-  // WizardData.cs:755-757's backstop is guarded by `options.length > 0`, standing in for the
-  // zero-option early return at :749-753. An option-less Single group must survive the read with
-  // no options rather than crashing on `options[0]!`.
-  //
-  // NOTE this pins OUR behaviour, not parity: TexTools DROPS the group entirely (that early return
-  // is `return null`), so "survives" here is a known divergence, not the golden's shape. See
-  // docs/backlog/2026-07-20-empty-group-not-dropped.md — when that item ships, this test must be
-  // rewritten to assert the group is ABSENT.
-  it("a zero-option Single group survives the read (our divergence) without tripping the backstop", () => {
-    const data = readTtmp2(makeTtmp2WizardWithChecked([]).bytes);
-    expect(data.groups[0]!.options).toEqual([]);
+  it("drops a zero-option group entirely (FromWizardGroup:749-753 + FromWizardModpackPage:986)", () => {
+    const data = readTtmp2(
+      buildWizardTtmp2([
+        { name: "Empty", options: [] },
+        { name: "Real", options: ["On"] },
+      ]),
+    );
+    expect(allGroups(data).map((g) => g.name)).toEqual(["Real"]);
   });
 
   // WizardData.cs:1218-1221 — FromSimpleTtmp synthesizes its fake option with IsChecked = true.
   it("marks the synthesized simple-pack option selected", () => {
     const data = readTtmp2(makeTtmp2Simple().bytes);
-    expect(data.groups[0]!.options.map((o) => o.selected)).toEqual([true]);
+    expect(allGroups(data)[0]!.options.map((o) => o.selected)).toEqual([true]);
   });
 });

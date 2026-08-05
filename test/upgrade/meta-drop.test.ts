@@ -4,6 +4,7 @@ import { deserializeMeta } from "../../src/meta/deserialize";
 import { serializeMeta } from "../../src/meta/serialize";
 import type { ItemMeta } from "../../src/meta/types";
 import {
+  allGroups,
   FileStorageType,
   type ModpackData,
   ModpackFormat,
@@ -58,30 +59,33 @@ function packWithFiles(entries: [string, Uint8Array][]): ModpackData {
       tags: ["t"],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    groups: [
+    pages: [
       {
-        name: "G",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "O",
+            name: "G",
             description: "",
             image: "",
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap(
-              entries.map(([p, data]) => [
-                p,
-                { data, storage: FileStorageType.SqPackCompressed },
-              ]),
-            ),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "O",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap(
+                  entries.map(([p, data]) => [
+                    p,
+                    { data, storage: FileStorageType.SqPackCompressed },
+                  ]),
+                ),
+              },
+            ],
           },
         ],
       },
@@ -89,7 +93,7 @@ function packWithFiles(entries: [string, Uint8Array][]): ModpackData {
   };
 }
 
-const outFiles = (d: ModpackData) => d.groups[0]!.options[0]!.files;
+const outFiles = (d: ModpackData) => allGroups(d)[0]!.options[0]!.files;
 
 describe("makeTtmpLoadFix: manipulation-less .meta files are dropped at load", () => {
   it("drops a housing .meta with no segments instead of keeping it", () => {

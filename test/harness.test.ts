@@ -17,30 +17,33 @@ function oneFilePack(path: string, bytes: Uint8Array): ModpackData {
     sourceFormat: ModpackFormat.Ttmp2,
     isSimple: true,
     meta: emptyMeta(),
-    groups: [
+    pages: [
       {
-        name: "g",
-        description: "",
-        image: "",
-        page: 0,
-        priority: 0,
-        selectionType: "Single",
-        defaultSettings: 0,
-        options: [
+        groups: [
           {
-            name: "o",
+            name: "g",
             description: "",
             image: "",
             priority: 0,
-            selected: false,
-            fileSwaps: {},
-            manipulations: [],
-            files: filesMap([
-              [
-                path,
-                { data: bytes, storage: FileStorageType.SqPackCompressed },
-              ],
-            ]),
+            selectionType: "Single",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "o",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: false,
+                fileSwaps: {},
+                manipulations: [],
+                files: filesMap([
+                  [
+                    path,
+                    { data: bytes, storage: FileStorageType.SqPackCompressed },
+                  ],
+                ]),
+              },
+            ],
           },
         ],
       },
@@ -75,45 +78,54 @@ describe("compareInnerFilesByteIdentical", () => {
         sourceFormat: ModpackFormat.Ttmp2,
         isSimple: false,
         meta: emptyMeta(),
-        groups: [
+        pages: [
           {
-            name: "g",
-            description: "",
-            image: "",
-            page: 0,
-            priority: 0,
-            selectionType: "Single",
-            defaultSettings: 0,
-            options: [
+            groups: [
               {
-                name: "opt1",
+                name: "g",
                 description: "",
                 image: "",
                 priority: 0,
-                selected: false,
-                fileSwaps: {},
-                manipulations: [],
-                files: filesMap([
-                  [
-                    "shared.mtrl",
-                    { data: bytes1, storage: FileStorageType.SqPackCompressed },
-                  ],
-                ]),
-              },
-              {
-                name: "opt2",
-                description: "",
-                image: "",
-                priority: 0,
-                selected: false,
-                fileSwaps: {},
-                manipulations: [],
-                files: filesMap([
-                  [
-                    "shared.mtrl",
-                    { data: bytes2, storage: FileStorageType.SqPackCompressed },
-                  ],
-                ]),
+                selectionType: "Single",
+                defaultSettings: 0,
+                options: [
+                  {
+                    name: "opt1",
+                    description: "",
+                    image: "",
+                    priority: 0,
+                    selected: false,
+                    fileSwaps: {},
+                    manipulations: [],
+                    files: filesMap([
+                      [
+                        "shared.mtrl",
+                        {
+                          data: bytes1,
+                          storage: FileStorageType.SqPackCompressed,
+                        },
+                      ],
+                    ]),
+                  },
+                  {
+                    name: "opt2",
+                    description: "",
+                    image: "",
+                    priority: 0,
+                    selected: false,
+                    fileSwaps: {},
+                    manipulations: [],
+                    files: filesMap([
+                      [
+                        "shared.mtrl",
+                        {
+                          data: bytes2,
+                          storage: FileStorageType.SqPackCompressed,
+                        },
+                      ],
+                    ]),
+                  },
+                ],
               },
             ],
           },
