@@ -242,8 +242,12 @@ because `HandleUpgrade` reports failures via `Trace.WriteLine`, not Console (`Pr
 error text currently instructs the reader to edit an elevated Program Files path and must be updated
 for the new location.
 
-Keeping `v3.1.0.2` extracted alongside costs one directory and preserves the ability to re-run the
-old oracle on a single pack when a diff is hard to attribute.
+**Only the pinned latest is installed.** The layout above is versioned so a future re-pin can stage a
+new build beside the old one, but nothing reads a non-pinned version *after* a switch: the harness
+resolves exactly one path, and §7.1 rebuilds every cache from the new oracle. Keeping v3.1.0.2
+extracted would only serve the golden-vs-golden attribution the operator declined (§4.3), so it is
+not installed. Should a divergence during porting prove inexplicable, the v3.1.0.2 release is still
+published and can be re-provisioned on demand. Operator call, 2026-08-06.
 
 ## 6. Re-pinning `reference/`
 

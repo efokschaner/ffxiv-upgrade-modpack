@@ -8,6 +8,8 @@
 
 **Tech Stack:** TypeScript (ESM, `tsx` runner), vitest, Biome, PowerShell 7 on Windows.
 
+**Execution order: 1, 2, 5, 6, 3, 4, 7, 8, 9.** Tasks are numbered by dependency, but the oracle must be *installed* (5, 6) before the harness is *pointed at it* (3), or Task 3 lands with the suite red against a path that does not exist yet — which would contradict the Global Constraints' all-green ritual. In this order every task runs the full ritual; the only red is inside Task 8, where it is deliberate. Operator call, 2026-08-06.
+
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md`. Every task's requirements implicitly include it.
@@ -441,10 +443,10 @@ Expected: PASS, 4 tests.
 
 - [ ] **Step 6: Full gate and commit**
 
-Note: `npm test` will now report the oracle as unavailable until Task 6 installs it. Corpus-dependent tests FAIL loudly by policy (`oracle.ts:120`) — that is expected between here and Task 6, so run only `check` + `typecheck` here.
+The suite stays green across this switch: the three oracle caches are still fully populated, and a cache **hit** returns its stored golden without spawning ConsoleTools at all. The new oracle is therefore not yet exercised — Task 8's wipe is what forces that.
 
 ```bash
-npm run check && npm run typecheck
+npm run check && npm run typecheck && npm test
 git add test/helpers/oracle.ts test/scripts/oracle-resolve.test.ts
 git commit -m "refactor(harness): resolve ConsoleTools repo-relative with env override"
 ```
@@ -847,40 +849,23 @@ git commit -m "feat(scripts): provision the pinned ConsoleTools oracle into refe
 
 ---
 
-### Task 6: Install both oracles
+### Task 6: Install the v3.1.1.4 oracle
 
-Preserves the current v3.1.0.2 install (already trace-listener-configured) by copying it, then provisions v3.1.1.4. **No download is needed for v3.1.0.2** — the working install is on disk now, and copying it is both cheaper and higher-fidelity than re-downloading.
+Provisions the one oracle the harness will use. **Only the pinned latest is installed** — nothing reads v3.1.0.2 after the switch (the harness resolves a single path, and Task 8 rebuilds every cache from the new oracle), so keeping a second copy would be speculative. If a diff during porting ever turns out inexplicable, the v3.1.0.2 release is still published and can be re-provisioned.
 
 **Files:** none in the repo — this task writes only to `reference/oracle/` (gitignored).
 
-- [ ] **Step 1: Preserve the existing v3.1.0.2 install**
+- [ ] **Step 1: Install v3.1.1.4**
+
+No sibling install exists yet, so `discoverXivPath` has nothing to read — pass the game path explicitly. (The discovery path earns its keep on the *next* re-pin, when a sibling does exist.)
 
 ```powershell
-$src = "C:\Program Files\FFXIV TexTools\FFXIV_TexTools"
-$dst = "C:\dev\efokschaner\ffxiv-upgrade-modpack\reference\oracle\v3.1.0.2"
-New-Item -ItemType Directory -Force (Split-Path $dst) | Out-Null
-Copy-Item -Recurse -Force $src $dst
-(Get-Item "$dst\ConsoleTools.exe").VersionInfo.ProductVersion
+npm run setup-oracle -- --xiv-path "C:\Program Files (x86)\Steam\steamapps\common\FINAL FANTASY XIV Online\game\sqpack\ffxiv"
 ```
 
-Expected: `1.0.0+b83feb57b59a8f061ee458e9e8b416a99225110b`
-
-- [ ] **Step 2: Confirm the copy carried its config**
-
-```powershell
-$dst = "C:\dev\efokschaner\ffxiv-upgrade-modpack\reference\oracle\v3.1.0.2"
-Select-String -Path "$dst\ConsoleTools.exe.config" -Pattern "TextWriterTraceListener"
-Get-Content "$dst\console_config.json"
-```
-
-Expected: the listener line is present, and `XivPath` points at the game's sqpack dir.
-
-- [ ] **Step 3: Install v3.1.1.4**
-
-Run: `npm run setup-oracle`
 Expected: downloads, prints `Verified sha256 6add67cb…`, extracts, prints `Installed v3.1.1.4 to …`.
 
-- [ ] **Step 4: Verify the installed build is the intended commit**
+- [ ] **Step 2: Verify the installed build is the intended commit**
 
 ```powershell
 $d = "C:\dev\efokschaner\ffxiv-upgrade-modpack\reference\oracle\v3.1.1.4"
@@ -894,7 +879,7 @@ Expected exactly:
 
 If either differs, STOP — the release contents do not match the manifest and the pin is wrong.
 
-- [ ] **Step 5: Smoke-test the new oracle end to end**
+- [ ] **Step 3: Smoke-test the new oracle end to end**
 
 ```powershell
 $d = "C:\dev\efokschaner\ffxiv-upgrade-modpack\reference\oracle\v3.1.1.4"
@@ -903,7 +888,7 @@ $d = "C:\dev\efokschaner\ffxiv-upgrade-modpack\reference\oracle\v3.1.1.4"
 
 Expected: the usage banner listing `/upgrade` and `/resave`, exit code 0.
 
-- [ ] **Step 6: Report to the operator and STOP**
+- [ ] **Step 4: Report to the operator and STOP**
 
 Post the two ProductVersion strings and confirm the harness now resolves to the new install. **Do not proceed to Task 7 until the operator has run `C:\Program Files\FFXIV TexTools\Uninstall.exe`** (spec §4.2 — their manual step) and confirmed.
 
