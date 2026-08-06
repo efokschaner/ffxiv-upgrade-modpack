@@ -1005,6 +1005,10 @@ Remove-Item -Recurse -Force "$c\.upgrade-cache","$c\.resave-cache","$c\.oracle-c
 Run: `npm test`
 Expected: long. Many failures are expected — this is the drift the bless will record. What must NOT appear: setup errors (`ConsoleTools trace listener not configured`, oracle-unavailable). Those mean Tasks 5-7 are wrong; STOP and fix rather than blessing.
 
+**Run this from the top-level session, not from a subagent.** The corpus is ~114 packs and the wiped `.oracle-cache` alone holds ~1,090 `/unwrap` entries, each a separate ConsoleTools spawn serialized behind a cross-process lock — hours, far past any single tool-call timeout. It therefore has to run as a background task, and a background shell launched *inside a subagent* is terminated when that subagent's turn ends. That was learned the expensive way on 2026-08-06: the run died after ~60 seconds, at the exact moment the subagent returned.
+
+The run is **resumable**: the caches are content-addressed, so entries completed before an interruption are reused and only the remainder re-spawns. After any interruption, delete the stale lock (`%TEMP%\ffxiv-upgrade-modpack-consoletools.lock`) if its owning process is confirmed dead — otherwise the next run waits out `LOCK_STALE_MS` (10 min) before breaking it.
+
 - [ ] **Step 4: Bless all three baselines**
 
 ```powershell
