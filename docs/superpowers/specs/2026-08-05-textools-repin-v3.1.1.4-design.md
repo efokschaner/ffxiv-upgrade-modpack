@@ -152,14 +152,39 @@ Recorded with the operator call that settled each.
 
 ## 5. Oracle install layout
 
+The oracle lives **inside `reference/`**, beside the vendored source it is the compiled form of:
+
 ```
-C:\dev\textools-oracle\
-  v3.1.0.2\   ConsoleTools.exe  ConsoleTools.exe.config  console_config.json  lib\  …
-  v3.1.1.4\   ConsoleTools.exe  ConsoleTools.exe.config  console_config.json  lib\  …
+reference/
+  FFXIV_TexTools_UI/          vendored third-party SOURCE (read-only, see below)
+    lib/xivModdingFramework/
+  oracle/
+    v3.1.0.2/   ConsoleTools.exe  ConsoleTools.exe.config  console_config.json  lib/  …
+    v3.1.1.4/   ConsoleTools.exe  ConsoleTools.exe.config  console_config.json  lib/  …
 ```
 
-`DEFAULT_ORACLE_PATH` is `C:\dev\textools-oracle\v3.1.1.4\ConsoleTools.exe` — a user-writable
-location outside Program Files, so no step of an install or re-pin needs elevation.
+`DEFAULT_ORACLE_PATH` is therefore **repo-relative**: `reference/oracle/v3.1.1.4/ConsoleTools.exe`.
+No machine-specific absolute path is baked into the harness, and `FFXIV_CONSOLETOOLS` becomes a
+genuine override rather than a necessity. The location is user-writable, so no step of an install or
+re-pin needs elevation.
+
+Co-locating is the point: `reference/` holds the pinned upstream *source*, and the oracle is the
+pinned upstream *build of that same source*. Keeping them in one tree makes the invariant this spec
+exists to protect — read-source and oracle in lockstep — physically visible, and makes the whole
+pinned baseline a single directory to inspect or replace.
+
+Verified safe on every tooling axis: `.gitignore:5` ignores `/reference/` wholesale (so the binaries
+can never be committed), Biome skips it via `useIgnoreFile: true` (`biome.jsonc:3-7`), `tsconfig.json`
+includes only `src`/`test`/`scripts`, and the custom runner globs `test/`.
+
+**One clarification is owed to AGENTS.md.** Its "`reference/` is off-limits to edits" rule is about
+the vendored C# we port from. Adding a tool-managed subtree needs the distinction spelled out, or the
+rule blurs:
+
+- `reference/FFXIV_TexTools_UI/` — vendored third-party **source**. Read freely; never edit, lint or
+  format.
+- `reference/oracle/` — third-party **binaries**, written *only* by `scripts/setup-oracle.ts`. Never
+  hand-edited either; the script is the one writer.
 
 ConsoleTools is **fully portable** — everything it needs sits next to the exe:
 
@@ -179,8 +204,8 @@ const CONSOLE_TOOLS = process.env.FFXIV_CONSOLETOOLS ?? DEFAULT_ORACLE_PATH;
 than a silent skip.
 
 **`scripts/setup-oracle.ts <tag>`** performs an install: download the release zip, verify it against
-a **sha256 pinned in the repo**, extract to the versioned dir, write `console_config.json` with the
-operator's `XivPath`, and patch `ConsoleTools.exe.config` with the trace-listener block. Pinning the
+a **sha256 pinned in the repo**, extract to `reference/oracle/<tag>/`, write `console_config.json`
+with the operator's `XivPath`, and patch `ConsoleTools.exe.config` with the trace-listener block. Pinning the
 hash is better supply-chain hygiene than the manual download it replaces, consistent with the
 project's minimum-age / pinned-dependency policy.
 
@@ -379,14 +404,18 @@ additive PMP "Combining" group feature opaquely via `raw`, so that commit may la
 ## 11. Deliverables
 
 1. `scripts/setup-oracle.ts` + committed release hashes
-2. `test/helpers/oracle.ts` env resolution + corrected `assertUpgradeTraceListenerConfigured` text
-3. `scripts/baseline-report.ts` + `npm run baseline:report`, printing per-pack and total diff counts
+2. `test/helpers/oracle.ts` repo-relative default + env override, and corrected
+   `assertUpgradeTraceListenerConfigured` text
+3. AGENTS.md clarification distinguishing `reference/`'s vendored source from `reference/oracle/`'s
+   tool-managed binaries (§5)
+4. `scripts/baseline-report.ts` + `npm run baseline:report`, printing per-pack and total diff counts
    across the three baseline dirs
-4. README provenance table + rewritten incremental-upgrade procedure (incl. the shallow-clone fetch)
-5. This spec, carrying the commit ledger (§10) kept current through execution
-6. Ported changes + tests, one commit per upstream commit where it divides cleanly
-7. `docs/TEXTOOLS_BUGS.md` status updates per §9
-8. Closing note on `docs/backlog/2026-07-11-expected-failure-golden.md`
+5. README provenance table + rewritten incremental-upgrade procedure (incl. the shallow-clone fetch
+   and the new oracle location)
+6. This spec, carrying the commit ledger (§10) kept current through execution
+7. Ported changes + tests, one commit per upstream commit where it divides cleanly
+8. `docs/TEXTOOLS_BUGS.md` status updates per §9
+9. Closing note on `docs/backlog/2026-07-11-expected-failure-golden.md`
 
 ## 12. Testing
 
@@ -407,13 +436,18 @@ to make the ratchet-down measurable, not to fail builds.
 - **Citation drift** across the 10 changed files (§7.3).
 - **Single-machine reproducibility.** Corpus, caches and baselines are local-only; a fresh clone
   cannot reproduce this work. Pre-existing and accepted (§4.4).
+- **`git clean -xdf` now also destroys the oracle.** Putting the install under `reference/` (§5) means
+  a stray clean removes the binaries along with the vendored source, the corpus, and the caches. The
+  blast radius was already severe — corpus and caches are the expensive losses and both predate this
+  change — and `scripts/setup-oracle.ts` makes oracle recovery a one-liner, so this is accepted
+  rather than mitigated.
 - **The baseline may not reach zero within this project.** Its exit condition is that all 11 commits
   carry a verdict and the suite is green against the new oracle — not a zero baseline.
 
 ## 14. Exit criteria
 
-1. Harness runs against v3.1.1.4 via `FFXIV_CONSOLETOOLS`; Program Files install removed by the
-   operator.
+1. Harness runs against v3.1.1.4 at the repo-relative default (`reference/oracle/v3.1.1.4/`), with
+   `FFXIV_CONSOLETOOLS` working as an override; Program Files install removed by the operator.
 2. `reference/` at UI `b96139d3` / XMF `8e2a2603`; README provenance updated.
 3. All three caches rebuilt from the new oracle; baselines blessed and the opening total recorded.
 4. All 11 commits carry a verdict in §10, with `deferred` verdicts signed off by the operator.
