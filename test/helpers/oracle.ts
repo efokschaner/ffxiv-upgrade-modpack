@@ -16,10 +16,33 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { PINNED_ORACLE_TAG } from "../../scripts/lib/oracle-releases";
 import { corpusPacks } from "./corpus-roots";
 
-const CONSOLE_TOOLS =
-  "C:\\Program Files\\FFXIV TexTools\\FFXIV_TexTools\\ConsoleTools.exe";
+/** Env override wins when non-empty; an empty value is a mistake, not a deliberate choice. */
+export function resolveConsoleToolsPath(
+  envValue: string | undefined,
+  fallback: string,
+): string {
+  return envValue !== undefined && envValue.length > 0 ? envValue : fallback;
+}
+
+/** Repo-relative default: the oracle is the compiled form of the source vendored beside it in
+ *  reference/, so the two move together. Written only by scripts/setup-oracle.ts; see
+ *  docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md §5. */
+const DEFAULT_CONSOLE_TOOLS = join(
+  __dirname,
+  "..",
+  "..",
+  "reference",
+  "oracle",
+  PINNED_ORACLE_TAG,
+  "ConsoleTools.exe",
+);
+const CONSOLE_TOOLS = resolveConsoleToolsPath(
+  process.env.FFXIV_CONSOLETOOLS,
+  DEFAULT_CONSOLE_TOOLS,
+);
 const CONSOLE_TOOLS_DIR = dirname(CONSOLE_TOOLS);
 const GOLDEN_UPGRADE = join(__dirname, "..", "corpus", "golden-upgrade");
 
@@ -327,8 +350,10 @@ export function assertUpgradeTraceListenerConfigured(): void {
       `ConsoleTools trace listener not configured. The /upgrade oracle needs ConsoleTools to write ` +
         `its Trace output to ${UPGRADE_TRACE_LOG} — HandleUpgrade (Program.cs:185) reports /upgrade ` +
         `errors via Trace.WriteLine, not Console, so they are otherwise invisible. Add a ` +
-        `TextWriterTraceListener with initializeData="${UPGRADE_TRACE_LOG}" to ${cfgPath} (elevated), ` +
-        `then retry. See docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md.`,
+        `TextWriterTraceListener with initializeData="${UPGRADE_TRACE_LOG}" to ${cfgPath}. ` +
+        `Provisioning is automated: run \`npm run setup-oracle\` to (re)install the pinned ` +
+        `oracle with this listener configured. See ` +
+        `docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md.`,
     );
   }
   traceConfigChecked = true;
