@@ -16,6 +16,7 @@
     "test": "tsx scripts/run-tests.ts",
     "test:watch": "vitest",
     "test:coverage": "tsx scripts/run-tests.ts --coverage",
+    "baseline:report": "tsx scripts/baseline-report.ts",
     "typecheck": "tsc --noEmit",
     "format": "biome format --write .",
     "lint": "biome lint .",
