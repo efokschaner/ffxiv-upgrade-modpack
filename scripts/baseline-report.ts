@@ -29,7 +29,20 @@ function readEntries(dir: string): BaselineEntry[] {
   return readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
     .map((f) => {
-      const parsed: unknown = JSON.parse(readFileSync(join(dir, f), "utf8"));
+      const p = join(dir, f);
+      // Fail loud and name the file rather than downgrading to count: 0. A syntactically
+      // invalid ratchet file (truncated by a killed process, or hand-edited) is a real
+      // problem, not an absent one — silently excluding it would understate the burn-down
+      // total, which in this metric reads as progress that was never made.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(readFileSync(p, "utf8"));
+      } catch (err) {
+        throw new Error(
+          `baseline-report: ${p} is not valid JSON -- the ratchet file is corrupt.`,
+          { cause: err },
+        );
+      }
       return {
         key: f.replace(/\.json$/, ""),
         count: Array.isArray(parsed) ? parsed.length : 0,
