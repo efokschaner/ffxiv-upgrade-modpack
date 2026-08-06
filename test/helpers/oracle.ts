@@ -29,8 +29,9 @@ export function resolveConsoleToolsPath(
 
 /** Repo-relative default: the oracle is the compiled form of the source vendored beside it in
  *  reference/, so the two move together. Written only by scripts/setup-oracle.ts; see
- *  docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md §5. */
-const DEFAULT_CONSOLE_TOOLS = join(
+ *  docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md §5. Exported so tests can
+ *  pin the exact path this module resolves to, not just re-derive it independently. */
+export const DEFAULT_CONSOLE_TOOLS = join(
   __dirname,
   "..",
   "..",

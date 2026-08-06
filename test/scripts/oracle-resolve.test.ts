@@ -1,8 +1,10 @@
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PINNED_ORACLE_TAG } from "../../scripts/lib/oracle-releases";
-import { resolveConsoleToolsPath } from "../helpers/oracle";
+import {
+  DEFAULT_CONSOLE_TOOLS,
+  resolveConsoleToolsPath,
+} from "../helpers/oracle";
 
 describe("resolveConsoleToolsPath", () => {
   it("prefers the env override when set", () => {
@@ -22,8 +24,9 @@ describe("resolveConsoleToolsPath", () => {
 
 describe("default oracle location", () => {
   it("is the repo-relative install for the pinned tag", () => {
-    // Not asserting the file EXISTS (a fresh clone has none); asserting the repo agrees with
-    // itself about where it would be, so the manifest tag and the harness cannot drift apart.
+    // Independently reconstructs the expected path from PINNED_ORACLE_TAG and compares it
+    // against oracle.ts's own exported DEFAULT_CONSOLE_TOOLS, so a wrong `..` count or a
+    // swapped path segment in oracle.ts's join(...) actually fails this test.
     const expected = join(
       __dirname,
       "..",
@@ -33,7 +36,6 @@ describe("default oracle location", () => {
       PINNED_ORACLE_TAG,
       "ConsoleTools.exe",
     );
-    expect(existsSync(join(__dirname, "..", "..", "reference"))).toBe(true);
-    expect(expected).toContain(PINNED_ORACLE_TAG);
+    expect(DEFAULT_CONSOLE_TOOLS).toBe(expected);
   });
 });
