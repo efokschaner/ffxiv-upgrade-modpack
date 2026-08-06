@@ -888,10 +888,12 @@ If either differs, STOP — the release contents do not match the manifest and t
 
 ```powershell
 $d = "C:\dev\efokschaner\ffxiv-upgrade-modpack\reference\oracle\v3.1.1.4"
-& "$d\ConsoleTools.exe" /help
+& "$d\ConsoleTools.exe" /?
 ```
 
 Expected: the usage banner listing `/upgrade` and `/resave`, exit code 0.
+
+The flag is `/?`, not `/help` — this build rejects `/help` as "Unknown Command" (confirmed identical on the legacy v3.1.0.2 install, so it is long-standing ConsoleTools behaviour, not a property of the new release).
 
 - [ ] **Step 4: Report to the operator and STOP**
 
