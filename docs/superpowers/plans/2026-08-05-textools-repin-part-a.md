@@ -606,7 +606,8 @@ Create `scripts/baseline-report.ts`:
 // Reports per-baseline pack and diff counts. Reporting only — not part of the gate.
 // Usage: npm run baseline:report
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   type BaselineEntry,
   type BaselineSummary,
@@ -614,7 +615,11 @@ import {
   summarize,
 } from "./lib/baseline-totals";
 
-const CORPUS = join(__dirname, "..", "test", "corpus");
+// `__dirname` does not exist in these scripts: they run under plain tsx/ESM, where only Vite's
+// test SSR runner injects it. This is the established pattern in scripts/ (see
+// scripts/corpus-units-plugin.ts:13).
+const here = dirname(fileURLToPath(import.meta.url));
+const CORPUS = join(here, "..", "test", "corpus");
 
 /** The three ratchets. `roundtrip` records OUR codec contradicting itself with no oracle
  *  involved, so it must NOT move across an oracle re-pin — see the spec §7.2 guard. */
