@@ -374,6 +374,29 @@ normalization to the mip-fixup loop.
 against the PMP/WizardData commits: **#10** (FileSwaps destruction on write), **#7** (page-index
 off-by-one), **#22** (`ClearNulls` over a list it is mutating).
 
+**Inverse instance — bug #23**, the register's first entry going the *other* direction: a defect
+the v4 work *introduces* rather than fixes, and one we deliberately do **not** reproduce.
+`PMP.cs · LoadPMP · 191-208` builds its "extra files" set from the on-disk `groups` list, but the
+v4 pull-back at `:217-225` never assigns that local variable — it assigns `pmp.Groups` instead — so
+the referenced-file scan at `:234` sees nothing for a v4 pack's inline groups, misclassifies every
+such payload member as "extra," and `WizardData.WritePmp`'s `saveExtraFiles` path (the one live
+caller: `/resave`, `ConsoleTools/Program.cs:211`) writes each one twice. Registered as
+`docs/TEXTOOLS_BUGS.md` **#23**, status `diverged`: our reader (`src/container/pmp.ts`'s
+`readPmp`) feeds the referenced-file scan from the groups it actually loaded, so it emits each
+payload member once. Confirmed — not merely tolerated — by
+`test/helpers/pmp-v4-extrafile-divergence.ts`'s `makeV4ExtraFileDuplicateConfirmation`, exercised
+by the purpose-built `test/corpus/synthetic/pmp-v4-extrafiles.pmp`
+(`scripts/generate-synthetics/build-synthetic-pmp-v4.ts`). Upstream report:
+`docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md`, written to stand on its own
+for a TexTools maintainer with no knowledge of this repo.
+
+**OPEN — AGENTS.md evidence bar 3 for the #23 divergence.** In-game verification has NOT been
+performed. Operator action: install our `/resave` output and ConsoleTools' `/resave` output of
+`test/corpus/synthetic/pmp-v4-extrafiles.pmp` in Penumbra, confirm both load, confirm identical
+in-game result, confirm ours is roughly half the size. Record the outcome in
+`test/helpers/pmp-v4-extrafile-divergence.ts` and `docs/TEXTOOLS_BUGS.md` #23. Until then the
+divergence ships on the operator's 2026-08-06 ruling, not on satisfied evidence.
+
 ## 10. Commit ledger
 
 Verdicts are filled in during execution. `cited files` lists only files our port cites; every commit
@@ -382,24 +405,35 @@ below also touches unported files.
 | # | commit | date | subject | cited files touched | verdict |
 |---|--------|------|---------|---------------------|---------|
 | 1 | `1993bf6` | 2025-11-02 | Be less strict about texture mip data, and fix non-ascending lodmips | `Tex.cs` +9/−10 | _pending_ — expect `bug register` (#19; audit #20, #21) |
-| 2 | `76535f4` | 2026-05-24 | Add PMP Combining group import support | `PMP.cs` +93/−3, `WizardData.cs` +19/−1 | _pending_ |
+| 2 | `76535f4` | 2026-05-24 | Add PMP Combining group import support | `PMP.cs` +93/−3, `WizardData.cs` +19/−1 | _pending_ — deliberately **out of scope** for the PMP v4 plan (`docs/superpowers/plans/2026-08-06-pmp-v4-port.md`, "Explicitly out of scope"). Verified: zero cached goldens under `test/corpus/.upgrade-cache`/`.resave-cache`/`.oracle-cache` carry a `Combining` group anywhere in their bytes. Our reader still fails loud on one — `KNOWN_PMP_GROUP_TYPES` (`src/container/manifest-types.ts:305-312`) excludes `"Combining"` by name, so `parsePmpGroup` throws `Unimplemented PMP group type: Combining`, the same message TexTools itself threw *before* this commit and no longer throws after it — a real, tracked gap, not silently wrong output. |
 | 3 | `9c09415` | 2026-05-24 | Add Facewear item list support | `XivCache.cs` +10/−1, `Mtrl.cs` +7/−1, `Mdl.cs` +1/−0, `Imc.cs` +12/−1 | _pending_ |
 | 4 | `bbc7069` | 2026-05-25 | Fix material auto assign for pre `_bibo` EW mods | `Mdl.cs` +5/−1, `TTMP.cs` +14/−12 | _pending_ |
 | 5 | `8cc1f40` | 2026-05-27 | Fix double-execution of ModelModifiers in some model import paths | `Mdl.cs` +1/−5 | _pending_ |
-| 6 | `d09cd2b` | 2026-07-19 | Don't crash on v4 import | `PMP.cs` +25/−5 | _pending_ |
+| 6 | `d09cd2b` | 2026-07-19 | Don't crash on v4 import | `PMP.cs` +25/−5 | `ported` — `default_mod.json` becomes optional, gated on `File.Exists(defModPath)` (`PMP.cs:182`); ported at `src/container/pmp.ts:405`. |
 | 7 | `371f74b` | 2026-07-20 | Fix Racial Deforms and Replace GPL violating `DxtUtil.cs` | `ModelModifiers.cs` +28/−8 | _pending_ — also review `NOTICE` |
-| 8 | `f20b659` | 2026-07-24 | Adjust read/write for Penumbra v4 | `PMP.cs` +26/−11, `WizardData.cs` +0/−1 | _pending_ |
-| 9 | `33ae15c` | 2026-07-27 | Upgrade double-click handler/modpack upgrader to full-copy or refuse penumbra v4 modpacks depending on context | `PMP.cs` +38/−2, `ModpackUpgrader.cs` +34/−6, `WizardData.cs` +2/−2 | _pending_ |
-| 10 | `cdd64b6` | 2026-08-03 | Minor PMPv4 fixes | `PMP.cs` +4/−4 | _pending_ |
-| 11 | `7bc8a76` | 2026-08-03 | Add LastWrite field for PMP v4 | `PMP.cs` +4/−0, `WizardData.cs` +1/−0 | _pending_ |
+| 8 | `f20b659` | 2026-07-24 | Adjust read/write for Penumbra v4 | `PMP.cs` +26/−11, `WizardData.cs` +0/−1 | `ported` — the v4 pull-back (`PMP.cs:217-225`, `pmp.Groups = meta.Groups` when `meta.Groups`/`meta.DefaultData` is populated) and the write-side push-forward (`:928-939`, `pmp.Meta.Groups = pmp.Groups` / `pmp.Meta.DefaultData = pmp.DefaultMod`); ported at `src/container/pmp.ts:247` (read) and `:1053` (write). NOTE: the `ShouldSerialize` gates at `:1679-1681` are present but still block-commented immediately after this commit (verified via `git show f20b659:.../PMP.cs`) — they go live only in `cdd64b6` (row 10 below), not here; do not attribute that flip to this commit. |
+| 9 | `33ae15c` | 2026-07-27 | Upgrade double-click handler/modpack upgrader to full-copy or refuse penumbra v4 modpacks depending on context | `PMP.cs` +38/−2, `ModpackUpgrader.cs` +34/−6, `WizardData.cs` +2/−2 | `ported` — `readPmp`'s `enforceCompatibility` throw (`PMP.cs:176-179`, `meta.FileVersion > 3 && enforceCompatibility`) and the `/upgrade` entry-point refusal (`ModpackUpgrader.cs:218-241`: throws `"Cannot convert v4+ Penumbra modpack to ttmp/pmp."` for a `.ttmp2`/`.pmp` destination, raw-copies otherwise); ported at `src/container/pmp.ts:208` and `src/upgrade/upgrade.ts:405,419` (message is byte-identical to the C# one). |
+| 10 | `cdd64b6` | 2026-08-03 | Minor PMPv4 fixes | `PMP.cs` +4/−4 | `ported` — folded into row 8's verdict, three hunks verified against `git show cdd64b6`: (a) null-guards the pull-back, `pmp.Groups = meta.Groups ?? new List<PMPGroupJson>()` at `:220` (a v4 pack with `DefaultData` set but `Groups` absent no longer NREs) — our port's `readPmp` already defaults to `[]`, so this needed no code change, only citation coverage; (b) adds `Identifier = Guid.NewGuid()` field initializers to both `PMPJson` (`:1476`) and `PMPGroupJson` (`:1509`) — see the non-determinism confirmation, `test/helpers/pmp-v4-nondeterminism.ts`; (c) **uncomments** `ShouldSerializeFiles`/`ShouldSerializeFileSwaps`/`ShouldSerializeManipulations` (`:1679-1681`), making them live for the first time — ported at `src/container/pmp.ts:644,868` ("LIVE at this pin — they were block-commented at the old one"). |
+| 11 | `7bc8a76` | 2026-08-03 | Add LastWrite field for PMP v4 | `PMP.cs` +4/−0, `WizardData.cs` +1/−0 | `ported` — `LastWrite` field initializer (`PMP.cs:1477`, `.NET` `"O"` format) and the write-time re-stamp (`:941`, `pmp.Meta.LastWrite = DateTime.Now.ToString("O", InvariantCulture)`); ported at `src/util/dotnet-datetime.ts` and `src/container/pmp.ts:1049`. |
 
 Baseline totals, recorded via `npm run baseline:report`:
 
 | Point | upgrade | resave | roundtrip | total |
 |---|---|---|---|---|
 | after opening bless (§7.2) | _pending_ | _pending_ | _pending_ | _pending_ |
+| after PMP v4 (rows 6, 8, 9, 10, 11 above) | 3352 | 2457 | 0 | 5809 |
 
-One row is appended per ported commit as the total falls.
+One row is appended per ported commit as the total falls. The PMP-v4 row above is a **re-keying**
+of the same pre-existing diffs, not a reduction: two corpus packs (`Westlaketea's Constellation
+Crown (Dawntrail Edition).pmp`, `torn bassment glow.pmp`) had their divergences addressed under
+`group_NNN.json#/Options/…` / `default_mod.json#…` JSON pointers before this row and under
+`meta.json#/Groups/…/Options/…` / `meta.json#default|…` pointers after it, because the v4 writer
+(row 8) now emits a single `meta.json` in place of those documents. Pack-by-pack proof (entry
+counts, statuses and details unchanged; only the pointer prefix moved) is in the Task 12
+implementation report, `.superpowers/sdd/2026-08-06-pmp-v4-port/task-12-report.md`. The
+`upgrade`/`resave`/`total` counts are therefore identical before and after this row — 76/90/166
+packs, 3352/2457/5809 diffs — and `roundtrip` (which records our own codec self-consistency, with
+no oracle involved) stayed at zero throughout, verified byte-identical against a pre-bless snapshot.
 
 Prior context for #2: README already records that the earlier `master`-tracking era carried the
 additive PMP "Combining" group feature opaquely via `raw`, so that commit may land as
