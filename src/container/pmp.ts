@@ -177,7 +177,18 @@ function isEmptyPmpOption(raw: PmpOptionJsonRaw): boolean {
   );
 }
 
-export function readPmp(bytes: Uint8Array): ModpackData {
+/** `enforceCompatibility` ports LoadPMP's 4th parameter (PMP.cs · LoadPMP · 159), which
+ *  `WizardData.FromModpack(modpack, true)` (WizardData.cs:1717-1727, :1725) passes on the /upgrade
+ *  load path. Default `false`, matching every other caller (PMP.cs:336/:393/:1046, TTMP.cs:1016,
+ *  the wizard windows, and ModpackUpgrader.cs:225's deliberately-unenforced pre-check). */
+export interface ReadPmpOptions {
+  enforceCompatibility?: boolean;
+}
+
+export function readPmp(
+  bytes: Uint8Array,
+  opts: ReadPmpOptions = {},
+): ModpackData {
   const entries = readZip(bytes);
   // windowsPathKey-keyed index of archive entries, so option Files values (which Penumbra lowercases
   // and may keep trailing dots/spaces on) resolve the way TexTools' NTFS reads do. On NTFS two
@@ -189,15 +200,71 @@ export function readPmp(bytes: Uint8Array): ModpackData {
 
   const metaBytes = entries.get("meta.json");
   if (!metaBytes) throw new Error("pmp: missing meta.json");
-  const defaultBytes = entries.get("default_mod.json");
-  if (!defaultBytes) throw new Error("pmp: missing default_mod.json");
   const metaRaw = JSON.parse(dec.decode(metaBytes)) as PmpMetaJsonRaw;
   const meta = parsePmpMeta(metaRaw);
-  const defaultMod = JSON.parse(dec.decode(defaultBytes)) as PmpOptionJsonRaw;
 
+  // PMP.cs · LoadPMP · 176-179. Note `> 3`, not `!= 3`, and note it is gated on the CALLER's flag,
+  // not on the file: a v4 pack loads fine for every caller that does not enforce. The message is
+  // byte-identical to the C#, which assertMatchedUpgradeFailure substring-matches.
+  if (meta.FileVersion > 3 && opts.enforceCompatibility === true) {
+    throw new Error(
+      "Cannot ingest PMP File Version in enforced compatibility mode 4+.",
+    );
+  }
+
+  // PMP.cs · LoadPMP · 181-189 — since the v4 work upstream this read is guarded by
+  // `File.Exists(defModPath)`; an absent default_mod.json leaves `defaultOption` null rather than
+  // crashing. (It used to be unconditional, which is why the pre-repin oracle crashed on a v4 pack.)
+  const defaultBytes = entries.get("default_mod.json");
+  const diskDefaultMod =
+    defaultBytes === undefined
+      ? null
+      : (JSON.parse(dec.decode(defaultBytes)) as PmpOptionJsonRaw);
+
+  // PMP.cs · LoadPMP · 191-208 — the group_*.json scan. Parsed EAGERLY and UNCONDITIONALLY, even
+  // when the v4 pull-back below is about to discard the result: PMP.cs:252 touches `g.Options` on
+  // every deserialized group file, and on the base PMPGroupJson that throws
+  // `Unimplemented PMP group type: {Type}` (:1517). `parsePmpGroup` is our subtype-resolution seam,
+  // so parsing here reproduces that load failure for a malformed DISCARDED group too.
+  //
+  // ORDERING CAVEAT (exotic, deliberately not chased): the C# touches `pmp.Groups`' Options FIRST,
+  // via GetHeaderImage (:227 -> :1449-1462), and the stale disk list's only at :234 — but
+  // GetHeaderImage short-circuits on a non-blank Meta.Image/DefaultMod.Image (:1439-1447), so
+  // neither list is reliably first. We parse disk groups here and inline groups below, which agrees
+  // with the C# whenever at most one of the two lists is malformed. A HYBRID pack with a malformed
+  // group in BOTH lists and a blank header image would report the other group's `Type` in the
+  // message. The pack still fails to load either way, which is the behaviour that matters.
   const groupNames = [...entries.keys()]
     .filter((k) => /^group_\d+.*\.json$/i.test(k))
     .sort();
+  const diskGroups = groupNames.map((name) => {
+    const raw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
+    return { raw, parsed: parsePmpGroup(raw) };
+  });
+
+  // PMP.cs · LoadPMP · 217-225 — the v4 pull-back. The discriminator is CONTENT, not FileVersion:
+  // a v4-numbered file with `"Groups": []` and no `DefaultData` falls through to the v3 branch.
+  // Read off `metaRaw`, which carries the same two values the C# tests on its deserialized `meta`
+  // (both are `?? null` on the parsed view — manifest-types.ts · parsePmpMeta). `"Groups": null`
+  // and an absent key are the same thing here, matching the C#'s NullValueHandling.Ignore (:170-173)
+  // leaving the uninitialized field null either way. When the branch fires, BOTH assignments happen
+  // (:220 and :221), so a hybrid pack's on-disk group_*.json AND its on-disk default_mod.json are
+  // discarded wholesale — including when `meta.DefaultData` is null and only `meta.Groups` triggered
+  // the branch.
+  //
+  // NOT PORTED, deliberately: :223-224's `meta.Groups = new(); meta.DefaultData = null;`, which
+  // empties the pulled-back data out of the meta object itself. Nothing downstream of `readPmp`
+  // reads either — `data.meta.raw` (our analogue of `pmp.Meta`) is consulted only for scalar meta
+  // fields, and `writePmp` regenerates meta.json from the typed model rather than from `raw`, the
+  // way `WizardData.WritePmp` rebuilds Groups/DefaultData from `DataPages` (:1481-1487). Revisit
+  // when the writer starts emitting a v4-shaped meta.json (the v4 port plan's Task 11): if it ever
+  // reads `data.meta.raw.Groups`, it must see the CLEARED value, not the source pack's.
+  const pullBack =
+    (metaRaw.Groups?.length ?? 0) > 0 || (metaRaw.DefaultData ?? null) !== null;
+  const groups = pullBack
+    ? (metaRaw.Groups ?? []).map((raw) => ({ raw, parsed: parsePmpGroup(raw) }))
+    : diskGroups;
+  const defaultMod = pullBack ? (metaRaw.DefaultData ?? null) : diskDefaultMod;
 
   // Port of the ExtraFiles scan (PMP.cs:279-280): every archive member that is neither a manifest
   // json nor referenced by an option's `Files` value is preserved verbatim so writePmp can re-emit
@@ -209,7 +276,33 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   // faithfully-reproduced TexTools behaviour, not a bug. Populated by optionFromJson itself (from
   // every RAW Files value, canImport-rejected ones included — see its own comment) rather than
   // read back from the model afterward, since a canImport-rejected entry never becomes part of the
-  // model's `files` array at all but must still count as referenced here.
+  // model's `files` map at all but must still count as referenced here.
+  //
+  // ============================ INTENTIONAL DIVERGENCE — DO NOT "FIX" ============================
+  // docs/TEXTOOLS_BUGS.md #23. Operator ruling, 2026-08-06. This is NOT a port bug and NOT an
+  // oversight: making this set agree with TexTools would REINTRODUCE the defect below.
+  //
+  // WHAT TEXTOOLS DOES: the C# scan at PMP.cs:234 reads `foreach (var g in groups)` — the LOCAL
+  // list built from group_*.json at :191-208, which the pull-back at :220 never assigns (it assigns
+  // `pmp.Groups`, a different variable). For a v4 pack that local list is empty, so no inline
+  // group's `Files` ever reaches `allPmpFiles`; only `pmp.DefaultMod` does (:267-276). Every
+  // payload member referenced solely by an inline group therefore fails the `!allPmpFiles.Contains`
+  // test at :279 and is recorded as an ExtraFile — and on save it is then written TWICE, once
+  // verbatim as an extra (WizardData.cs:1495-1507) and once at its regenerated dedup path
+  // (:1602-1619 -> PopulatePmpStandardOption), roughly doubling the pack.
+  //
+  // WHAT WE DO: fill this set from `groups` — the list we ACTUALLY LOADED — which is exactly the
+  // one-variable swap that constitutes the upstream fix. Two arms, both intended: (a) an inline
+  // group's Files now count as referenced, so its member is emitted once; (b) a hybrid pack's
+  // DISCARDED group_*.json Files no longer count, since nothing in the loaded pack names them.
+  //
+  // EVIDENCE STATUS (AGENTS.md's three bars for a user-benefit divergence): bar 1 (registered
+  // defect) is met — docs/TEXTOOLS_BUGS.md #23. Bar 2 (corpus-wide confirmation rule) and bar 3
+  // (in-game verification that our output is better) are BOTH OUTSTANDING at this commit; the
+  // confirmation rule and the synthetic v4 pack that exercises it land in later commits of the v4
+  // port (docs/superpowers/plans/2026-08-06-pmp-v4-port.md, Tasks 4/5/10), and the in-game check is
+  // manual and has not been performed. Shape-pinned meanwhile by test/container/pmp-v4.test.ts.
+  // ===============================================================================================
   const referencedKeys = new Set<string>();
 
   // Pairs each real (non-Default) built group with the raw Page index FromPmp assigns it by
@@ -217,9 +310,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   // below) purely to route the group into `pages` construction further down; it is not a model
   // field (`WizardGroupEntry` carries no page of its own).
   const realGroups: { page: number; group: ModpackGroup | null }[] = [];
-  for (const name of groupNames) {
-    const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
-    const g = parsePmpGroup(gRaw);
+  for (const { raw: gRaw, parsed: g } of groups) {
     // WizardData.cs:811-819 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a
     // Single group, a BITMASK otherwise. `group.OptionType = pGroup.Type == "Single" ? Single :
     // Multi` (:775), so an Imc/Combining group takes the bitmask branch exactly like a real Multi.
@@ -292,11 +383,14 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   // scan must see every referenced key or it misclassifies a still-referenced member as an extra.
   const pages: ModpackPage[] = [];
 
-  // WizardData.cs:1137-1157 — the synthesized Default page, iff default_mod.json is not an empty
-  // option. `isEmptyPmpOption` (above) reads the RAW document, which is exactly what we hold
-  // here — no canImport-filtered reconstruction needed, unlike the write-time check this
-  // superseded.
-  if (!isEmptyPmpOption(defaultMod)) {
+  // WizardData.cs:1137-1157 — the synthesized Default page, iff the default option is non-null and
+  // is not an empty option (`pmp.DefaultMod != null && !pmp.DefaultMod.IsEmptyOption`, :1137).
+  // `isEmptyPmpOption` (above) reads the RAW document, which is exactly what we hold here — no
+  // canImport-filtered reconstruction needed, unlike the write-time check this superseded.
+  //
+  // The null arm is new at this pin: a v4 pack with `"DefaultData": null`, and a v3 pack with no
+  // default_mod.json at all (PMP.cs:182's File.Exists guard), genuinely have no default option.
+  if (defaultMod !== null && !isEmptyPmpOption(defaultMod)) {
     const defaultPageOption = optionFromJson(
       defaultMod,
       filesByKey,

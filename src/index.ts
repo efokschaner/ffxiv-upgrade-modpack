@@ -1,5 +1,5 @@
 import { detectFormat } from "./container/detect";
-import { readPmp, writePmp } from "./container/pmp";
+import { type ReadPmpOptions, readPmp, writePmp } from "./container/pmp";
 import { readLegacyTtmp } from "./container/ttmp-legacy";
 import { readTtmp2, writeTtmp2 } from "./container/ttmp2";
 import {
@@ -12,6 +12,7 @@ import { makeTtmpLoadFix } from "./upgrade/load-fixes";
 
 export const VERSION = "0.0.0";
 export { detectFormat } from "./container/detect";
+export type { ReadPmpOptions } from "./container/pmp";
 export { parseMdl, serializeMdl } from "./mdl/mdl";
 export type { MdlModelData, XivMdl } from "./mdl/types";
 export * from "./model/modpack";
@@ -55,7 +56,14 @@ export { UnportedGapError } from "./util/errors";
 // independent of it — the readers themselves only import the pure gate predicates, never the fix (see
 // container/load-fix.ts). PMP has no analogue on this path (needsTexFix/needsMdlFix are false for
 // PMP), so readPmp takes no fix.
-export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
+export function loadModpack(
+  name: string,
+  bytes: Uint8Array,
+  // Forwarded to readPmp only. LoadPMP's `enforceCompatibility` (PMP.cs:159) has no TTMP analogue —
+  // TTMP.cs's loaders take no such parameter — so it is inert for the TTMP formats, exactly as
+  // `WizardData.FromModpack` (WizardData.cs:1717-1727) only forwards it on the PMP branch.
+  opts: ReadPmpOptions = {},
+): ModpackData {
   const fmt = detectFormat(name);
   switch (fmt) {
     case ModpackFormat.Ttmp2:
@@ -63,7 +71,7 @@ export function loadModpack(name: string, bytes: Uint8Array): ModpackData {
     case ModpackFormat.TtmpLegacy:
       return readLegacyTtmp(bytes, makeTtmpLoadFix);
     case ModpackFormat.Pmp:
-      return readPmp(bytes);
+      return readPmp(bytes, opts);
     default:
       throw new Error(`Unsupported modpack: ${name}`);
   }

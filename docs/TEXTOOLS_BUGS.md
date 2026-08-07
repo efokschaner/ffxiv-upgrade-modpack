@@ -3,11 +3,17 @@
 Bugs and mistakes in **TexTools / xivModdingFramework / ConsoleTools** that this port meets and
 must decide what to do about.
 
-We do **not** fix them here. `AGENTS.md` is explicit: TexTools is the spec, byte-parity with its
-`/upgrade` output is the definition of correct, and a "fix" is a divergence from the golden. So the
-port reproduces the buggy behaviour faithfully and records the bug here — this file is the register
-of every place we knowingly did that, and the shortlist we could take upstream as patches or issues
-if we ever choose to.
+**Most entries here are defects we knowingly reproduce.** `AGENTS.md` is explicit: TexTools is the
+spec, byte-parity with its `/upgrade` output is the definition of correct, and a "fix" is a
+divergence from the golden. So the default is to reproduce the buggy behaviour faithfully and record
+the bug here — this file is the register of every place we knowingly did that, and the shortlist we
+could take upstream as patches or issues if we ever choose to.
+
+**A small number are defects we deliberately do _not_ reproduce**, under `AGENTS.md`'s
+user-benefit-divergence rule, because reproducing them would hand the user a worse modpack. Those
+carry the `diverged` status below, say so in their own text, and name the confirmation site that
+proves the divergence is exactly the one we meant (a suppressing ratchet baseline is *not* such a
+site). See #10, #22 and #23.
 
 **Add an entry when** you port (or deliberately decline to port) behaviour that is a defect rather
 than a design choice: a null dereference, an unreachable guard, a comparison that can never match, a
@@ -816,3 +822,55 @@ the content check alone is a payload multiset keyed by gamePath and cannot see a
 `Groups.Any(x => x != null && x.HasData)` — or, better, have `FromPmp` skip the add when
 `FromPMPGroup` returns null, as `FromWizardModpackPage:986` already does, so `ClearNulls` never has
 a null to survive in the first place.
+
+---
+
+## 23. `LoadPMP`'s ExtraFiles scan iterates the stale v3 `groups` list, duplicating a v4 pack's whole payload on save
+
+**Status:** diverged — we deliberately do **not** reproduce this. Operator ruling, 2026-08-06
+(*"it's a pretty gross bug"*). Reproducing it would hand the user a modpack roughly twice its
+necessary size. · **Where:** `PMP.cs · LoadPMP · 191-208` (builds the list) vs `· 217-225` (assigns
+a different one) vs `· 234` (iterates the stale one) vs `· 279-280` (misclassifies). See
+`src/container/pmp.ts` (`readPmp`'s `referencedKeys` block).
+
+**What happens:** `:217-225` pulls Penumbra v4's inline data back into the v3 in-memory shape —
+`pmp.Groups = meta.Groups`, `pmp.DefaultMod = meta.DefaultData` — but never touches the local
+`groups` variable built from `group_*.json` at `:191-208`. The `allPmpFiles` scan at `:234` iterates
+**`groups`**, not `pmp.Groups`. For a v4 pack that list is empty, so no inline group contributes a
+single `Files` value; only `pmp.DefaultMod` does, via the separate (and correct) block at
+`:267-276`.
+
+**Consequence:** every payload member referenced solely by an inline group fails the
+`!allPmpFiles.Contains(x)` test at `:279` and is recorded as an ExtraFile. `WizardData.WritePmp`
+(`WizardData.cs:1495-1507`) copies every ExtraFile into the output verbatim, *and* the group loop
+(`:1602-1619` → `PopulatePmpStandardOption`) writes the same bytes again at their regenerated dedup
+path — so a v4 → v4 `/resave` emits the entire payload **twice**. The same stale read has a second,
+opposite arm: for a *hybrid* pack (inline `meta.Groups` **and** on-disk `group_*.json`), the
+discarded disk groups' `Files` values still count as referenced, so a member only they name is
+wrongly kept out of ExtraFiles and is then dropped entirely on save.
+
+**Reachability:** not from `/upgrade` — `ModpackUpgrader.cs · UpgradeModpack · 218-241` either
+refuses a v4 input (`.pmp`/`.ttmp2` destination, `:232`) or raw-copies it (folder destination,
+`:237`) before `LoadPMP` ever ingests a v4 file for upgrade. Reachable from `/resave`, the GUI
+double-click handler, and the import wizard.
+
+**Us:** `readPmp` fills `referencedKeys` from the groups it **actually loaded** — the one-variable
+swap that constitutes the upstream fix. Two arms, both intended: an inline group's `Files` now count
+as referenced (so its member is emitted once, not twice), and a hybrid pack's *discarded*
+`group_*.json` values no longer do. The divergence is called out in full at the site
+(`src/container/pmp.ts`, the boxed `INTENTIONAL DIVERGENCE` comment in `readPmp`).
+
+**Evidence status (`AGENTS.md`'s three bars for a user-benefit divergence):**
+
+| bar | state |
+| --- | --- |
+| 1. registered defect, adjudicated a genuine bug | **met** — this entry, operator ruling 2026-08-06 |
+| 2. exercised over the corpus, every moved byte confirmed by a rule | **outstanding** — the confirmation rule and the synthetic v4 pack that reaches it are later tasks of the v4 port (`docs/superpowers/plans/2026-08-06-pmp-v4-port.md`, Tasks 4 and 10) |
+| 3. verified in the real game that our output is better | **outstanding** — manual, not yet performed, and not implied by anything above |
+
+Shape-pinned meanwhile by `test/container/pmp-v4.test.ts` (both arms). An upstream bug report is a
+later task of the same plan (Task 5).
+
+**Upstream fix:** iterate `pmp.Groups` at `:234` instead of the local `groups` — i.e. move the scan
+below the pull-back and read the field the pull-back actually assigns. Equivalently, have `:220`
+assign the local `groups` list as well, so the two can no longer disagree.
