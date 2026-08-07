@@ -430,7 +430,23 @@ export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
     // (PMP.cs:1469) after a NullValueHandling.Ignore deserialize (:170-173).
     const fileVersion =
       typeof rawMeta?.FileVersion === "number" ? rawMeta.FileVersion : 0;
-    if (data.sourceFormat === ModpackFormat.Pmp && fileVersion > 3) {
+    // `data.sourceFormat === Pmp` stands in for `modpackType == TTMP.EModpackType.Pmp` (line 220's
+    // guard on this method's own `GetModpackType(path)` result, cited above). Widened to include
+    // `PmpFolder`: TTMP.cs's `GetModpackType` · 122-127 classifies a `.pmp`, a `meta.json` path, AND
+    // a bare directory all as the SAME `EModpackType.Pmp` —
+    //     if (path.EndsWith(".pmp") || path.EndsWith(".json") || Directory.Exists(path))
+    //         return EModpackType.Pmp;
+    // — so a folder-sourced pack hits this exact guard in TexTools too. Nothing in this port assigns
+    // `sourceFormat: PmpFolder` today (only `readPmp`, src/container/pmp.ts, ever sets `sourceFormat`,
+    // and it always writes `Pmp`), so this arm is currently unreachable — but `needsMdlFix`
+    // (src/upgrade/model.ts:31-32) and `texfix.ts:40-41` already treat `Pmp`/`PmpFolder` as the same
+    // source classification for the same reason; matching that convention here keeps this guard from
+    // going quiet if a folder-sourced reader is ever added.
+    if (
+      (data.sourceFormat === ModpackFormat.Pmp ||
+        data.sourceFormat === ModpackFormat.PmpFolder) &&
+      fileVersion > 3
+    ) {
       throw new Error("Cannot convert v4+ Penumbra modpack to ttmp/pmp.");
     }
     const out = cloneModpack(data);
