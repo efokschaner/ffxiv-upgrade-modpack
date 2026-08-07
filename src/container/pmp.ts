@@ -893,7 +893,10 @@ export function writePmp(
       // Narrow rather than assert: ClearNulls has already run (top of this function), so no page
       // reaching here holds a null.
       if (g === null) continue;
-      if (g === defaultModGroup) continue; // absorbed into default_mod.json above
+      // Absorbed by the default-option search above. Under v3 that produced a `default_mod.json`
+      // member; the v4 push-forward (PMP.cs:935-939) carries it into `meta.DefaultData` instead, and
+      // the `default_mod.json` write is commented out (:946-947) — either way it is not a group.
+      if (g === defaultModGroup) continue;
 
       // PmpImcOptionJson has no Files/FileSwaps/Manipulations (PMP.cs:1709-1716) — see optionToJson.
       const hasStandardFields = g.selectionType !== "Imc";
@@ -999,9 +1002,19 @@ export function writePmp(
         // next line, :961, is deliberately not modelled: the field is `[JsonIgnore]`
         // (PMP.cs:1508) with no ShouldSerialize, so it never reaches a group json.)
         DefaultSettings: groupSelection(g),
-        // Positioned between the base fields and `Options` because that is where the golden puts it:
-        // `Identifier` is an ordinary member of the base class (PMP.cs:1514) while `Options` carries
+        // Spread here so that a group with NO source position for `Identifier` — one built from a
+        // model, or read from a v3 pack, where `filteredRaw` carries no such key — lands it between
+        // the base fields and `Options`, which is where the golden puts it: `Identifier` is an
+        // ordinary member of the base class (PMP.cs:1514) while `Options` carries
         // `[JsonProperty(Order = 99)]` on every subtype (:1522/:1530/:1543), which sorts it last.
+        //
+        // On a v4 SOURCE it does NOT decide position: `KNOWN_GROUP_KEYS` includes "Identifier", so
+        // `filteredRaw` already holds the source's key at the source's position and this spread
+        // replaces only its VALUE (the regeneration this override exists for — a source pack's own
+        // GUID must not survive). That is harmless because a v4 source was itself written by
+        // TexTools, so the position it carries already IS the golden's. Key order in a manifest is
+        // not a divergence in any case (AGENTS.md's JSON carve-out: manifests are compared
+        // semantically, and `jsonPointerDiff` never reads key order).
         ...identifierOverride,
         Options: g.options.map((o) =>
           optionToJson(o, true, hasStandardFields, isMultiOption, zipPaths),
@@ -1031,6 +1044,41 @@ export function writePmp(
   // (WizardData.cs:1509-1512) — no `?? ""`, unlike the option/group seams — and meta.json is
   // serialized with Newtonsoft defaults (PMP.cs:943), so a null from a TTMP-sourced model is written
   // as an explicit `null`. See the type's doc comment in manifest-types.ts.
+  // WritePmp reformats the version through .NET Version semantics before assigning it — see the
+  // `Version` key below. Hoisted so the identifier seed and the written field are the SAME string.
+  const writtenVersion = reformatDotnetVersion(data.meta.version);
+  // The seed for our derived `Identifier` (src/container/pmp-identifier.ts explains why it is
+  // derived at all, and puts the uniqueness burden squarely on this seed).
+  //
+  // It is the pack's whole WRITABLE MANIFEST CONTENT — every meta field that identifies the pack,
+  // plus the fully assembled `Groups` and `DefaultData` — rather than the display name alone.
+  // `meta:${name}` was not pack-distinguishing in any useful sense: "Hair", "Test" and a re-uploaded
+  // "Bibo+ Patch" are ordinary mod names, and every mod sharing one minted the SAME `Identifier`,
+  // which Penumbra reads as a mod's `StableIdentifier` — the exact identity collision that rules out
+  // `Guid.Empty`. Name+author+version was considered and rejected as the fix: an anonymous
+  // `("Hair", "", "1.0")` is a common triple, so it narrows the collision without closing it.
+  //
+  // What this covers, and what it doesn't. Every group and option (names, priorities, page numbers,
+  // `Files`/`FileSwaps` maps, manipulations) is in the seed, so two genuinely different packs
+  // effectively always differ here. Payload BYTES are not — two packs identical in structure but
+  // differing in a texture's contents do collide. That is deliberate and harmless: such packs are
+  // revisions of one mod, which sharing an identity is the correct answer for, and hashing every
+  // payload would make the identifier churn on any content edit.
+  //
+  // No circularity: `groupJsons` carries each group's own derived `Identifier`, but those are seeded
+  // on `group:<index>:<name>` only (see pmp-identifier.ts), never on this value. Determinism holds
+  // because both operands are plain objects assembled here in fixed key order.
+  const metaIdentifierSeed = JSON.stringify([
+    data.meta.name,
+    data.meta.author,
+    writtenVersion,
+    data.meta.description,
+    data.meta.url,
+    data.meta.image,
+    data.meta.tags,
+    groupJsons,
+    defaultMod,
+  ]);
   const meta: PmpMetaJsonWrite = {
     FileVersion: 4, // PMP._WriteFileVersion (PMP.cs:47), forced at WizardData.cs:1515
     Name: data.meta.name,
@@ -1040,12 +1088,13 @@ export function writePmp(
     // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
     // WizardData.cs · WritePmp · 1493-1494; `pmp.Meta.Version = ver.ToString()`, :1513), so a source
     // spelling "1" is written "1.0". See src/util/dotnet-version.ts for the .NET contract.
-    Version: reformatDotnetVersion(data.meta.version),
+    Version: writtenVersion,
     Website: data.meta.url,
     Image: data.meta.image,
     // PMPMetaJson.Identifier (PMP.cs:1476) — a `Guid.NewGuid()` initializer nothing ever assigns.
-    // See src/container/pmp-identifier.ts for why ours is derived rather than random or empty.
-    Identifier: pmpIdentifier(`meta:${data.meta.name}`),
+    // See src/container/pmp-identifier.ts for why ours is derived rather than random or empty, and
+    // `metaIdentifierSeed` above for what the seed covers.
+    Identifier: pmpIdentifier(`meta:${metaIdentifierSeed}`),
     // Re-stamped on every write at PMP.cs:941, `DateTime.Now.ToString("O", InvariantCulture)`.
     LastWrite: dotnetRoundTripLocal(new Date()),
     // PMP.cs:923-926 coalesces a null ModTags to an empty list before serializing.

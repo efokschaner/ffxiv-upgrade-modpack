@@ -96,6 +96,75 @@ describe("writePmp round-trip", () => {
     );
   });
 
+  // The seed for meta.Identifier is the pack's whole writable manifest content, NOT `meta.Name`
+  // (src/container/pmp.ts, `metaIdentifierSeed`). Penumbra reads this field as a mod's
+  // StableIdentifier, so two different mods that happen to share a name — "Hair", "Test", a
+  // re-uploaded "Bibo+ Patch" — must not claim one identity. These two cases pin both halves of that:
+  // same content => same identifier (our determinism divergence), different content under an
+  // IDENTICAL name/author/version => different identifier (the collision the widened seed closes,
+  // and the one a name+author+version seed would NOT have closed).
+  describe("meta.Identifier seed", () => {
+    /** A minimal v3 PMP whose meta identity fields are fixed and whose only variable is the single
+     *  group option's name — i.e. content, not identity. */
+    const packNamed = (optionName: string): Uint8Array => {
+      const enc = new TextEncoder();
+      const path = "chara/dummy/seed_probe.tex";
+      const j = (v: unknown) => enc.encode(JSON.stringify(v, null, 2));
+      return writeZip(
+        new Map<string, Uint8Array>([
+          [
+            "meta.json",
+            j({
+              FileVersion: 3,
+              Name: "Hair",
+              Author: "",
+              Description: "",
+              Version: "1.0",
+              Website: "",
+              Image: "",
+              ModTags: [],
+            }),
+          ],
+          ["default_mod.json", j({ Version: 0 })],
+          [
+            "group_001_G.json",
+            j({
+              Version: 0,
+              Name: "G",
+              Description: "",
+              Type: "Single",
+              Priority: 0,
+              DefaultSettings: 0,
+              Options: [
+                {
+                  Name: optionName,
+                  Description: "",
+                  Image: "",
+                  Files: { [path]: path.replace(/\//g, "\\") },
+                  FileSwaps: {},
+                  Manipulations: [],
+                },
+              ],
+            }),
+          ],
+          [path, new Uint8Array([1, 2, 3])],
+        ]),
+      );
+    };
+    const identifierOf = (pack: Uint8Array): string =>
+      writtenMeta(readZip(writePmp(readPmp(pack)))).Identifier;
+
+    it("is stable for the same pack written twice", () => {
+      expect(identifierOf(packNamed("A"))).toBe(identifierOf(packNamed("A")));
+    });
+
+    it("differs for two packs sharing a name/author/version but not their content", () => {
+      expect(identifierOf(packNamed("A"))).not.toBe(
+        identifierOf(packNamed("B")),
+      );
+    });
+  });
+
   it("round-trips a v4 pack we wrote: read it back and write it again", () => {
     const first = writePmp(readPmp(makePmpZip().bytes));
     const second = writePmp(readPmp(first));

@@ -264,7 +264,10 @@ export interface PmpOptionJson {
   FileSwaps: Record<string, string>;
   Manipulations: unknown[];
   Priority?: number; // multi-option only
-  Version?: number; // default_mod.json only
+  // The DEFAULT option only (`PmpDefaultMod.Version`, PMP.cs:1687) — its own `default_mod.json`
+  // member under v3, `meta.DefaultData` under v4 (the push-forward at PMP.cs:935-939, with the
+  // `default_mod.json` write commented out at :946-947). Never present on a group's option.
+  Version?: number;
   // PmpImcOptionJson-only (PMP.cs · PmpImcOptionJson · 1709-1716), ShouldSerialize-gated on write —
   // see optionToJson (src/container/pmp.ts): IsDisableSubMod only when true; AttributeMask only when
   // !IsDisableSubMod.
@@ -349,12 +352,4 @@ export function parsePmpGroup(raw: PmpGroupJsonRaw): PmpGroupJson {
     DefaultSettings: raw.DefaultSettings ?? 0,
     Options: raw.Options ?? [],
   };
-}
-/** In-memory PMP bundle: parsed JSON + raw file bytes keyed by zip path (forward slashes). */
-export interface PmpJson {
-  meta: PmpMetaJson;
-  defaultMod: PmpOptionJson;
-  groups: PmpGroupJson[];
-  groupFileNames: string[]; // e.g. "group_001_Foo.json", index-aligned with groups
-  files: Map<string, Uint8Array>; // zip path -> raw bytes
 }
