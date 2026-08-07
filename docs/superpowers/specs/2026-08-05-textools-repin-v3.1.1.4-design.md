@@ -428,12 +428,30 @@ of the same pre-existing diffs, not a reduction: two corpus packs (`Westlaketea'
 Crown (Dawntrail Edition).pmp`, `torn bassment glow.pmp`) had their divergences addressed under
 `group_NNN.json#/Options/…` / `default_mod.json#…` JSON pointers before this row and under
 `meta.json#/Groups/…/Options/…` / `meta.json#default|…` pointers after it, because the v4 writer
-(row 8) now emits a single `meta.json` in place of those documents. Pack-by-pack proof (entry
-counts, statuses and details unchanged; only the pointer prefix moved) is in the Task 12
-implementation report, `.superpowers/sdd/2026-08-06-pmp-v4-port/task-12-report.md`. The
-`upgrade`/`resave`/`total` counts are therefore identical before and after this row — 76/90/166
-packs, 3352/2457/5809 diffs — and `roundtrip` (which records our own codec self-consistency, with
-no oracle involved) stayed at zero throughout, verified byte-identical against a pre-bless snapshot.
+(row 8) now emits a single `meta.json` in place of those documents.
+
+The pack-by-pack proof, recorded here rather than cited out to a transient report. Exactly **three**
+baseline files changed under the bless — one `upgrade`, two `resave` — matching the three pre-bless
+failing test files 1:1; every other file in both directories stayed byte-identical to a pre-bless
+snapshot, and `.roundtrip-baseline` neither gained nor lost a file:
+
+| pack (input sha256) | baseline | entries before → after | keys that moved |
+|---|---|---|---|
+| `Westlaketea's Constellation Crown (Dawntrail Edition).pmp` (`bd7130dc…f12166`) | `upgrade` | 89 → 89 | 2, `group_001_options.json#/Options/{0,1}/Files/…met_d_n.tex` → `meta.json#/Groups/0/Options/{0,1}/Files/…met_d_n.tex` |
+| same pack | `resave` | 94 → 94 | 3, `group_001_options.json#/Options/{0,0,1}/Files/…met_d_{m,n,n}.tex` → `meta.json#/Groups/0/Options/…` |
+| `torn bassment glow.pmp` (`a552bbd3…50878f`) | `resave` | 4 → 4 | 2, `default_mod.json#0\|chara/equipment/e0246/texture/v01_c0201e0246_top_{n_a678270a,s_5e70012b}.tex` → `meta.json#default\|…` (same `detail`: `5592496 vs 5592496` and `1398184 vs 1398180` bytes) |
+
+Only the manifest **filename** prefix and the pointer path moved; `index`, `status` and `detail` are
+unchanged on every entry, and every entry not listed above is byte-identical before and after. The
+shape of the move follows directly from the writer flip: v3 put a group's `Options` array at the top
+level of its own `group_NNN_<name>.json` and made `default_mod.json` *be* the default option (hence
+the `#0|` key), while v4 holds the same data at `meta.json`'s `Groups[i].Options[j]` and
+`DefaultData` (hence `#default|`).
+
+The `upgrade`/`resave`/`total` counts are therefore identical before and after this row — 76/90/166
+packs, 3352/2457/5809 diffs, `npm run baseline:report` printing the same table both times — and
+`roundtrip` (which records our own codec self-consistency, with no oracle involved) stayed at zero
+throughout, verified byte-identical against a pre-bless snapshot.
 
 Prior context for #2: README already records that the earlier `master`-tracking era carried the
 additive PMP "Combining" group feature opaquely via `raw`, so that commit may land as
