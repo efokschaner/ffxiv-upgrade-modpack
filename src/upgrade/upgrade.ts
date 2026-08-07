@@ -7,6 +7,7 @@ import {
   FileStorageType,
   type ModpackData,
   type ModpackFile,
+  ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
   type RawUncompressedFile,
@@ -401,6 +402,37 @@ function toDiagnostic(err: unknown): Diagnostic {
 export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
   const diagnostics: Diagnostic[] = [];
   try {
+    // ModpackUpgrader.cs · UpgradeModpack(path, newPath, …) · 218-241 — the CLI's 4-arg overload,
+    // which is what ConsoleTools /upgrade calls (Program.cs · HandleUpgrade · 179). It pre-checks
+    // the PMP manifest version BEFORE loading for upgrade and refuses v4+ outright:
+    //
+    //     if (pmp.pmp.Meta.FileVersion > 3) {
+    //         if (newPath.EndsWith(".ttmp2") || newPath.EndsWith(".pmp"))
+    //             throw new NotImplementedException("Cannot convert v4+ Penumbra modpack to ttmp/pmp.");
+    //         await PMP.CopyPmpFiles(path, newPath); return false;   // :237
+    //     }
+    //
+    // The `CopyPmpFiles` folder-destination arm is NOT ported and needs no guard: `writeModpack`'s
+    // target type is `"ttmp2" | "pmp"` (src/index.ts), so this port has no folder destination for
+    // that branch to describe — we are unconditionally on the throwing arm.
+    //
+    // NOTE the asymmetry with readPmp's own `enforceCompatibility` throw (PMP.cs:176-179): that one
+    // is GUI-only (ModpackUpgraderWrapper.cs -> the 2-arg overload) and is unreachable from
+    // ConsoleTools, because this pre-check fires first. The message a v4-input /upgrade actually
+    // emits is THIS one — which is what assertMatchedUpgradeFailure substring-matches against the
+    // oracle's captured trace (exercised end to end by test/corpus/synthetic/pmp-v4-extrafiles.pmp).
+    //
+    // Thrown, not returned: upgradeModpack's own catch (below) is the single conversion point that
+    // turns a C#-reproducible throw into `{ ok: false }` with DiagnosticCode.UpgradeFailed and the
+    // message verbatim (diagnostics-channel spec §4.1).
+    const rawMeta = data.meta.raw as { FileVersion?: unknown } | undefined;
+    // An absent or non-numeric FileVersion reads as 0, matching the C# field's own `int` default
+    // (PMP.cs:1469) after a NullValueHandling.Ignore deserialize (:170-173).
+    const fileVersion =
+      typeof rawMeta?.FileVersion === "number" ? rawMeta.FileVersion : 0;
+    if (data.sourceFormat === ModpackFormat.Pmp && fileVersion > 3) {
+      throw new Error("Cannot convert v4+ Penumbra modpack to ttmp/pmp.");
+    }
     const out = cloneModpack(data);
     // Pre-round (ModpackUpgrader.cs:83): resolve split Hair-shader highlight/visibility options
     // BEFORE round 1, ungated by includePartials. Its throws propagate out of upgradeModpack — the
