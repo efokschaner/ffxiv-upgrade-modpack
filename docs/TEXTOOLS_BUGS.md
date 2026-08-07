@@ -9,11 +9,12 @@ divergence from the golden. So the default is to reproduce the buggy behaviour f
 the bug here — this file is the register of every place we knowingly did that, and the shortlist we
 could take upstream as patches or issues if we ever choose to.
 
-**A small number are defects we deliberately do _not_ reproduce**, under `AGENTS.md`'s
-user-benefit-divergence rule, because reproducing them would hand the user a worse modpack. Those
-carry the `diverged` status below, say so in their own text, and name the confirmation site that
-proves the divergence is exactly the one we meant (a suppressing ratchet baseline is *not* such a
-site). See #10, #22 and #23.
+**A small number are defects we deliberately do _not_ reproduce**, because reproducing them would
+hand the user a worse modpack (`AGENTS.md`'s user-benefit-divergence rule) or because TexTools emits
+nothing at all to be byte-parity with. Those carry the `diverged` status below, say so in their own
+text, and name the confirmation site that proves the divergence is exactly the one we meant (a
+suppressing ratchet baseline is *not* such a site). **The complete list is #10, #18, #22 and #23** —
+keep it accurate; this is the inventory `AGENTS.md`'s divergence rule leans on.
 
 **Add an entry when** you port (or deliberately decline to port) behaviour that is a defect rather
 than a design choice: a null dereference, an unreachable guard, a comparison that can never match, a
@@ -238,8 +239,16 @@ no-op distinctly.
 
 ## 10. `PopulatePmpStandardOption` silently destroys a pack's FileSwaps on write
 
-**Status:** **worked around** · **Where:** `PMP.cs:873-875` (see
+**Status:** diverged · **Where:** `PMP.cs:873-875` (see
 `src/container/resolve-duplicates.ts`, `src/container/pmp.ts`)
+
+> Status corrected 2026-08-07 (was `worked around`). The legend's `worked around` is for a symptom
+> the harness *hides* while our output still matches the golden — entry #9's `.noop` marker is the
+> real example. Here our output genuinely **differs** from the golden (our `FileSwaps` populated
+> where the golden's is always `{}`), and the harness carve-out **confirms** that specific difference
+> rather than hiding it, which is precisely the `diverged` definition. The body below already called
+> it "the first divergence justified under `AGENTS.md`'s user-benefit principle"; only the tag was
+> out of step.
 
 `PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:874`) alongside `opt.Files` and
 `opt.Manipulations`, but unlike those two, nothing ever adds to it afterward — the function's body
@@ -829,7 +838,7 @@ a null to survive in the first place.
 
 **Status:** diverged — we deliberately do **not** reproduce this. Operator ruling, 2026-08-06
 (*"it's a pretty gross bug"*). Reproducing it would hand the user a modpack roughly twice its
-necessary size. · **Where:** `PMP.cs · LoadPMP · 191-208` (builds the list) vs `· 217-225` (assigns
+necessary size on the one path that reaches it (`/resave` — see *Reachability*). · **Where:** `PMP.cs · LoadPMP · 191-208` (builds the list) vs `· 217-225` (assigns
 a different one) vs `· 234` (iterates the stale one) vs `· 279-280` (misclassifies). See
 `src/container/pmp.ts` (`readPmp`'s `referencedKeys` block).
 
@@ -842,17 +851,42 @@ single `Files` value; only `pmp.DefaultMod` does, via the separate (and correct)
 
 **Consequence:** every payload member referenced solely by an inline group fails the
 `!allPmpFiles.Contains(x)` test at `:279` and is recorded as an ExtraFile. `WizardData.WritePmp`
-(`WizardData.cs:1495-1507`) copies every ExtraFile into the output verbatim, *and* the group loop
-(`:1602-1619` → `PopulatePmpStandardOption`) writes the same bytes again at their regenerated dedup
-path — so a v4 → v4 `/resave` emits the entire payload **twice**. The same stale read has a second,
-opposite arm: for a *hybrid* pack (inline `meta.Groups` **and** on-disk `group_*.json`), the
-discarded disk groups' `Files` values still count as referenced, so a member only they name is
-wrongly kept out of ExtraFiles and is then dropped entirely on save.
+copies every ExtraFile into the output verbatim, at its **original** relative name
+(`WizardData.cs:1496-1507`, `Path.Combine(tempFolder, file.Key)` — `file.Key` being the load-time
+relative path stashed at `:1124-1126`), *and* the group loop (`:1602-1619` →
+`PopulatePmpStandardOption`, `PMP.cs:1001-1003`) writes the same bytes again at their **regenerated
+dedup** name. Two different names, so neither overwrites the other: a v4 → v4 `/resave` emits the
+entire payload **twice**.
 
-**Reachability:** not from `/upgrade` — `ModpackUpgrader.cs · UpgradeModpack · 218-241` either
-refuses a v4 input (`.pmp`/`.ttmp2` destination, `:232`) or raw-copies it (folder destination,
-`:237`) before `LoadPMP` ever ingests a v4 file for upgrade. Reachable from `/resave`, the GUI
-double-click handler, and the import wizard.
+The same stale read has a second, opposite arm: for a *hybrid* pack (inline `meta.Groups` **and**
+on-disk `group_*.json`), the discarded disk groups' `Files` values still count as referenced, so a
+member only they name is wrongly kept *out* of ExtraFiles — and, its group having been discarded, is
+then written by nothing at all and is lost.
+
+**Reachability — and it is gated, so the symptom is not uniform.** Two independent gates:
+
+1. **`/upgrade` cannot reach it at all.** `ModpackUpgrader.cs · UpgradeModpack · 218-241` either
+   refuses a v4 input (`.pmp`/`.ttmp2` destination, `:232`) or raw-copies it (folder destination,
+   `:237`) before `LoadPMP` ever ingests a v4 file for upgrade.
+2. **`WizardData.ExtraFiles` is *only ever read* by the copy at `WizardData.cs:1496`, and that copy
+   is gated on `saveExtraFiles`, which defaults `false`** (`WritePmp`, `:1479`; `WriteModpack`,
+   `:1331`). Grepping the field confirms it has no other reader (`:1094` declares, `:1124-1126`
+   populates, `:1496`/`:1498` consume). So:
+   - **`saveExtraFiles == true` → the bug bites.** Only three call sites pass it:
+     `ConsoleTools/Program.cs:211` (`/resave` — and note `:204`'s `WizardData.FromModpack(src)` takes
+     the **default** `enforceCompatibility = false`, which is exactly why `/resave` ingests a v4 pack
+     at all), `ModpackUpgrader.cs:246` and `FFXIV_TexTools/Helpers/ModpackUpgraderWrapper.cs:99` (both
+     on the upgrade path, which gate 1 already keeps a v4 pack away from). **`/resave` is therefore
+     the one live path**, and there the payload doubles.
+   - **`saveExtraFiles == false` → the misclassification is inert.** The GUI exporters
+     (`FileListExporter.xaml.cs:279`, `StandardModpackCreator.xaml.cs:424`,
+     `ExportWizardWindow.xaml.cs:471`, all bare `WritePmp(path)`) and the import wizard's save
+     (`ImportOnlyWindow.xaml.cs:251`, bare `WriteModpack(path)`) never read `ExtraFiles`, so a
+     misclassified member is neither duplicated **nor dropped** — the group loop still writes it once,
+     correctly, from `pmp.Groups`. Nothing observable happens on those paths.
+
+   The hybrid arm follows the same gate: the member it loses would only ever have been preserved by
+   the `saveExtraFiles == true` copy, so it too is a `/resave`-only loss.
 
 **Us:** `readPmp` fills `referencedKeys` from the groups it **actually loaded** — the one-variable
 swap that constitutes the upstream fix. Two arms, both intended: an inline group's `Files` now count

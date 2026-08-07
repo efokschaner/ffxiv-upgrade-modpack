@@ -288,8 +288,17 @@ export function readPmp(
   // group's `Files` ever reaches `allPmpFiles`; only `pmp.DefaultMod` does (:267-276). Every
   // payload member referenced solely by an inline group therefore fails the `!allPmpFiles.Contains`
   // test at :279 and is recorded as an ExtraFile — and on save it is then written TWICE, once
-  // verbatim as an extra (WizardData.cs:1495-1507) and once at its regenerated dedup path
-  // (:1602-1619 -> PopulatePmpStandardOption), roughly doubling the pack.
+  // verbatim as an extra under its ORIGINAL name (WizardData.cs:1496-1507) and once at its
+  // REGENERATED dedup name (:1602-1619 -> PopulatePmpStandardOption), roughly doubling the pack.
+  //
+  // WHEN IT BITES: the extras copy is gated on `saveExtraFiles`, which defaults FALSE
+  // (WizardData.WritePmp, :1479; WriteModpack, :1331), and that copy is the ONLY reader of
+  // `WizardData.ExtraFiles` at all (declared :1094, filled :1124-1126, read :1496/:1498). Only
+  // ConsoleTools/Program.cs:211 (/resave), ModpackUpgrader.cs:246 and ModpackUpgraderWrapper.cs:99
+  // pass true — and the latter two sit on the upgrade path, which refuses a v4 pack outright
+  // (ModpackUpgrader.cs:218-241). So `/resave` is the one live path, and on every OTHER path the
+  // misclassification is inert: the member is neither duplicated nor dropped, because the group loop
+  // still writes it once from `pmp.Groups`. Our fix costs nothing there and fixes /resave.
   //
   // WHAT WE DO: fill this set from `groups` — the list we ACTUALLY LOADED — which is exactly the
   // one-variable swap that constitutes the upstream fix. Two arms, both intended: (a) an inline
