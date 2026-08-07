@@ -899,7 +899,7 @@ as referenced (so its member is emitted once, not twice), and a hybrid pack's *d
 | bar | state |
 | --- | --- |
 | 1. registered defect, adjudicated a genuine bug | **met** — this entry, operator ruling 2026-08-06 |
-| 2. exercised over the corpus, every moved byte confirmed by a rule | **outstanding** — the confirmation rule and the synthetic v4 pack that reaches it are later tasks of the v4 port (`docs/superpowers/plans/2026-08-06-pmp-v4-port.md`, Tasks 4 and 10) |
+| 2. exercised over the corpus, every moved byte confirmed by a rule | **met** — `test/corpus/synthetic/pmp-v4-extrafiles.pmp` (Task 4) exercises the bug over the real oracle, and `test/helpers/pmp-v4-extrafile-divergence.ts` (Task 10) confirms the resulting golden-only payload member narrowly |
 | 3. verified in the real game that our output is better | **outstanding** — manual, not yet performed, and not implied by anything above |
 
 Shape-pinned meanwhile by `test/container/pmp-v4.test.ts` (both arms). An upstream bug report is a

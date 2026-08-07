@@ -174,6 +174,58 @@ describe("diffArchives payload-member comparison (replaces the orphan-payload-me
   });
 });
 
+// Wiring proof for `diffArchives`' sixth parameter (`confirmGoldenOnlyMember`), threaded through to
+// `diffPayloadMembers`' golden-only-member guard. Nothing before this pinned that the guard is
+// actually CONSULTED: the v4 corpus pack that exercises it in production is red for unrelated
+// reasons (our writer is still v3-shaped) until a later task, so it cannot ratchet a regression here
+// — see the 2026-08-07 review. `pmp-v4-extrafile-divergence.test.ts` covers the CONFIRMATION
+// FUNCTION itself in isolation; these two prove `diffArchives` actually calls whatever it is given.
+describe("diffArchives confirmGoldenOnlyMember (sixth parameter) wiring", () => {
+  it("suppresses a golden-only payload member when the confirmation returns true", () => {
+    const ours = pmp({ "meta.json": META, "default_mod.json": DEF });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "extra.bin": new Uint8Array([9]),
+    });
+    const diffs = diffArchives(
+      ours,
+      golden,
+      /* checkPayloadMembers */ true,
+      /* confirmDivergence */ undefined,
+      /* layoutEquivalent */ false,
+      /* confirmGoldenOnlyMember */ () => true,
+    );
+    expect(diffs).toEqual([]);
+  });
+
+  it("still reports a golden-only payload member when the confirmation returns false", () => {
+    const ours = pmp({ "meta.json": META, "default_mod.json": DEF });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "extra.bin": new Uint8Array([9]),
+    });
+    const diffs = diffArchives(
+      ours,
+      golden,
+      /* checkPayloadMembers */ true,
+      /* confirmDivergence */ undefined,
+      /* layoutEquivalent */ false,
+      /* confirmGoldenOnlyMember */ () => false,
+    );
+    expect(diffs).toEqual([
+      {
+        kind: "structure",
+        gamePath: "extra.bin",
+        index: 0,
+        status: "added",
+        detail: undefined,
+      },
+    ]);
+  });
+});
+
 describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
   const enc = new TextEncoder();
   const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";
@@ -547,6 +599,39 @@ describe("diffPayloadSemantic (layout-equivalent payload comparison)", () => {
     // reported — same positional-pairing behaviour as `diffPayloadMembers`'s sibling regression
     // test above, not an attempt to guess which literal member is "the extra" one.
     expect(d[0]!.gamePath).toBe("extra.tex");
+  });
+});
+
+// Wiring proof for `diffPayloadSemantic`'s fourth parameter (`confirmGoldenOnlyMember`), threaded
+// through part 2's (non-common member NAME) golden-only-member guard — see the sibling wiring
+// describe block above (`diffArchives confirmGoldenOnlyMember (sixth parameter) wiring`) for why
+// this needs its own direct proof rather than relying on the v4 corpus pack to ratchet it.
+describe("diffPayloadSemantic confirmGoldenOnlyMember (fourth parameter) wiring", () => {
+  it("suppresses a golden-only NON-common member when the confirmation returns true", () => {
+    const ours = new Map<string, Uint8Array>();
+    const golden = new Map<string, Uint8Array>([
+      ["extra.bin", new Uint8Array([9])],
+    ]);
+    expect(diffPayloadSemantic(ours, golden, undefined, () => true)).toEqual(
+      [],
+    );
+  });
+
+  it("still reports a golden-only NON-common member when the confirmation returns false", () => {
+    const ours = new Map<string, Uint8Array>();
+    const golden = new Map<string, Uint8Array>([
+      ["extra.bin", new Uint8Array([9])],
+    ]);
+    const d = diffPayloadSemantic(ours, golden, undefined, () => false);
+    expect(d).toEqual([
+      {
+        kind: "structure",
+        gamePath: "extra.bin",
+        index: 0,
+        status: "added",
+        detail: undefined,
+      },
+    ]);
   });
 });
 

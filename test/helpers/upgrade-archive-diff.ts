@@ -395,8 +395,11 @@ function diffPayloadMembers(
     // past the shared count are ones ours has that the golden doesn't. Orientation matches the
     // manifest-name diff above: golden-only => "added", ours-only => "removed".
     for (let i = n; i < gs.length; i++) {
-      if (confirmGoldenOnlyMember?.(gs[i]!, golden.get(gs[i]!)!, ours))
-        continue;
+      // Pass the FULL `golden` map, not just `golden.get(gs[i]!)`: `confirmGoldenOnlyMember`'s only
+      // current consumer (the v4 ExtraFile-duplication rule) needs more than the one member's bytes
+      // to confirm safely — see GoldenOnlyMemberConfirmation's doc comment,
+      // pmp-v4-extrafile-divergence.ts.
+      if (confirmGoldenOnlyMember?.(gs[i]!, golden, ours)) continue;
       diffs.push({
         kind: "structure",
         gamePath: gs[i]!,
@@ -673,8 +676,8 @@ export function diffPayloadSemantic(
     const gs = (gb.get(bucketKey) ?? []).slice().sort();
     const n = Math.min(os.length, gs.length);
     for (let i = n; i < gs.length; i++) {
-      if (confirmGoldenOnlyMember?.(gs[i]!, golden.get(gs[i]!)!, ours))
-        continue;
+      // Full `golden` map, same reason as diffPayloadMembers' identical guard above.
+      if (confirmGoldenOnlyMember?.(gs[i]!, golden, ours)) continue;
       diffs.push({
         kind: "structure",
         gamePath: gs[i]!,
