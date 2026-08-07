@@ -179,12 +179,17 @@ export function dropConfirmedAbsentKeys(
   };
 
   const option = (oursOpt: unknown, goldenOpt: unknown): unknown => {
-    if (!isObj(goldenOpt) || !isObj(oursOpt) || !isObj(goldenOpt.Files))
-      return goldenOpt;
-    const out: Record<string, unknown> = {
-      ...goldenOpt,
-      Files: confirmedFiles(oursOpt.Files, goldenOpt.Files),
-    };
+    if (!isObj(goldenOpt) || !isObj(oursOpt)) return goldenOpt;
+    const out: Record<string, unknown> = { ...goldenOpt };
+    // `ShouldSerializeFiles` (PMP.cs:1679) is LIVE at this pin — it was block-commented at the old
+    // one — so an EMPTY Files map is an ABSENT key, not `{}`. Two consequences:
+    //  - only prune when the golden actually carries a Files object (nothing to prune otherwise);
+    //  - this must NOT early-return on an absent Files, the way it used to. That early return is
+    //    what disarmed the FileSwaps carve-out the moment the golden stopped writing `{}`.
+    if (isObj(goldenOpt.Files)) {
+      out.Files = confirmedFiles(oursOpt.Files, goldenOpt.Files);
+    }
+
     // INTENTIONAL DIVERGENCE (spec §5.1). PopulatePmpStandardOption sets `opt.FileSwaps = new()`
     // and never repopulates it (PMP.cs:873-875), silently destroying every swap the pack carried --
     // docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. We preserve them instead, because a
@@ -237,7 +242,17 @@ export function dropConfirmedAbsentKeys(
     // `/upgrade` performs. What this does NOT establish is how often a real user reaches that path
     // via `/upgrade`; that is a reachability question answered by the call path, not by this
     // evidence. See the spec §7 -- do not cite this as more than it is.
-    const gSwaps = isObj(goldenOpt.FileSwaps) ? goldenOpt.FileSwaps : undefined;
+    //
+    // Absent == empty, for the same ShouldSerialize reason (ShouldSerializeFileSwaps, PMP.cs:1680):
+    // the golden now OMITS FileSwaps rather than writing `{}`, so requiring the key to be present
+    // would make this confirmation never fire and turn every swap-carrying pack into a hard
+    // manifest diff. A key that IS present but is not an object is malformed, not empty, and stays
+    // unconfirmed.
+    const gSwaps = Object.hasOwn(goldenOpt, "FileSwaps")
+      ? isObj(goldenOpt.FileSwaps)
+        ? goldenOpt.FileSwaps
+        : undefined
+      : {};
     const oSwaps = isObj(oursOpt.FileSwaps) ? oursOpt.FileSwaps : undefined;
     if (
       gSwaps !== undefined &&
@@ -250,16 +265,46 @@ export function dropConfirmedAbsentKeys(
     return out;
   };
 
-  if (!isObj(golden) || !isObj(ours)) return golden;
-  // group_NNN.json: prune inside each option, pairing by index (order is part of the compare).
-  if (Array.isArray(golden.Options) && Array.isArray(ours.Options)) {
-    const oursOptions = ours.Options as unknown[];
+  /** A group document — a v3 `group_NNN*.json`, or one element of a v4 `meta.Groups`: prune inside
+   *  each option, pairing by index (order is part of the compare). */
+  const group = (oursGroup: unknown, goldenGroup: unknown): unknown => {
+    if (!isObj(goldenGroup)) return goldenGroup;
+    if (
+      !isObj(oursGroup) ||
+      !Array.isArray(goldenGroup.Options) ||
+      !Array.isArray(oursGroup.Options)
+    ) {
+      return goldenGroup;
+    }
+    const oursOptions = oursGroup.Options as unknown[];
     return {
-      ...golden,
-      Options: golden.Options.map((g, i) => option(oursOptions[i], g)),
+      ...goldenGroup,
+      Options: goldenGroup.Options.map((g, i) => option(oursOptions[i], g)),
     };
+  };
+
+  if (!isObj(golden) || !isObj(ours)) return golden;
+
+  // v4 meta.json (PMP.cs · PMPMetaJson · 1484/1487 -> PMP.WritePmp:928-939): every group and the
+  // default option live INLINE here. Detected by shape, not by FileVersion, mirroring LoadPMP's own
+  // content discriminator (PMP.cs:217). Without this arm a v4 meta.json has neither `Options` nor
+  // `Files`, so the whole confirmation went inert and every absent-file drop reported as a diff.
+  if (Array.isArray(golden.Groups) || isObj(golden.DefaultData)) {
+    const out: Record<string, unknown> = { ...golden };
+    if (Array.isArray(golden.Groups) && Array.isArray(ours.Groups)) {
+      const oursGroups = ours.Groups as unknown[];
+      out.Groups = golden.Groups.map((g, i) => group(oursGroups[i], g));
+    }
+    if (isObj(golden.DefaultData)) {
+      out.DefaultData = option(ours.DefaultData, golden.DefaultData);
+    }
+    return out;
   }
-  // default_mod.json: the document IS the option.
+  // v3 group_NNN.json.
+  if (Array.isArray(golden.Options) && Array.isArray(ours.Options)) {
+    return group(ours, golden);
+  }
+  // v3 default_mod.json: the document IS the option.
   return option(ours, golden);
 }
 

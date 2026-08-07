@@ -922,3 +922,121 @@ describe("FileSwaps confirmation (TEXTOOLS_BUGS #10)", () => {
     expect(jsonPointerDiff(oursEmpty, pruned).length).toBeGreaterThan(0);
   });
 });
+
+describe("dropConfirmedAbsentKeys — v4 meta.json (PMP.cs:1484/1487)", () => {
+  const v4 = (
+    groups: unknown[],
+    defaultData: unknown,
+  ): Record<string, unknown> => ({
+    FileVersion: 4,
+    Name: "A",
+    Identifier: "5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3",
+    LastWrite: "2026-08-06T04:41:11.0160172-07:00",
+    ModTags: [],
+    Groups: groups,
+    DefaultData: defaultData,
+  });
+
+  it("prunes a confirmed-absent Files key inside meta.Groups[i].Options[j]", () => {
+    const golden = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [
+            {
+              Name: "A",
+              Files: {
+                "chara/a.tex": "g\\chara\\a.tex",
+                "chara/gone.tex": "g\\chara\\gone.tex",
+              },
+            },
+          ],
+        },
+      ],
+      { Version: 0 },
+    );
+    const ours = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [{ Name: "A", Files: { "chara/a.tex": "g\\chara\\a.tex" } }],
+        },
+      ],
+      { Version: 0 },
+    );
+    const goldenMembers = new Map<string, Uint8Array>([
+      ["g/chara/a.tex", new Uint8Array([1])],
+    ]);
+    const pruned = dropConfirmedAbsentKeys(ours, golden, goldenMembers) as {
+      Groups: Array<{ Options: Array<{ Files: Record<string, string> }> }>;
+    };
+    expect(Object.keys(pruned.Groups[0]!.Options[0]!.Files)).toEqual([
+      "chara/a.tex",
+    ]);
+  });
+
+  it("prunes inside meta.DefaultData too", () => {
+    const golden = v4([], {
+      Version: 0,
+      Files: { "chara/gone.tex": "d\\chara\\gone.tex" },
+    });
+    const pruned = dropConfirmedAbsentKeys(
+      v4([], { Version: 0 }),
+      golden,
+      new Map<string, Uint8Array>(),
+    ) as { DefaultData: { Files: Record<string, string> } };
+    expect(pruned.DefaultData.Files).toEqual({});
+  });
+
+  it("confirms the FileSwaps divergence when the golden OMITS the key entirely (ShouldSerializeFileSwaps, PMP.cs:1680)", () => {
+    // The old pin wrote `"FileSwaps": {}`; the new pin omits it. Without absent-as-empty the
+    // carve-out is disarmed and every swap-carrying pack turns into a hard manifest diff.
+    const golden = v4(
+      [{ Name: "G", Type: "Single", Options: [{ Name: "A" }] }],
+      { Version: 0 },
+    );
+    const ours = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [{ Name: "A", FileSwaps: { "chara/x.tex": "chara/y.tex" } }],
+        },
+      ],
+      { Version: 0 },
+    );
+    const pruned = dropConfirmedAbsentKeys(
+      ours,
+      golden,
+      new Map<string, Uint8Array>(),
+    ) as { Groups: Array<{ Options: Array<{ FileSwaps: unknown }> }> };
+    expect(pruned.Groups[0]!.Options[0]!.FileSwaps).toEqual({
+      "chara/x.tex": "chara/y.tex",
+    });
+  });
+
+  it("still reports when OURS lost swaps the golden kept — the carve-out is not symmetric", () => {
+    const golden = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [{ Name: "A", FileSwaps: { "chara/x.tex": "chara/y.tex" } }],
+        },
+      ],
+      { Version: 0 },
+    );
+    const pruned = dropConfirmedAbsentKeys(
+      v4([{ Name: "G", Type: "Single", Options: [{ Name: "A" }] }], {
+        Version: 0,
+      }),
+      golden,
+      new Map<string, Uint8Array>(),
+    ) as { Groups: Array<{ Options: Array<{ FileSwaps: unknown }> }> };
+    expect(pruned.Groups[0]!.Options[0]!.FileSwaps).toEqual({
+      "chara/x.tex": "chara/y.tex",
+    });
+  });
+});
