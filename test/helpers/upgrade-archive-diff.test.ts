@@ -176,10 +176,11 @@ describe("diffArchives payload-member comparison (replaces the orphan-payload-me
 
 // Wiring proof for `diffArchives`' sixth parameter (`confirmGoldenOnlyMember`), threaded through to
 // `diffPayloadMembers`' golden-only-member guard. Nothing before this pinned that the guard is
-// actually CONSULTED: the v4 corpus pack that exercises it in production is red for unrelated
-// reasons (our writer is still v3-shaped) until a later task, so it cannot ratchet a regression here
-// — see the 2026-08-07 review. `pmp-v4-extrafile-divergence.test.ts` covers the CONFIRMATION
-// FUNCTION itself in isolation; these two prove `diffArchives` actually calls whatever it is given.
+// actually CONSULTED — see the 2026-08-07 review. The v4 corpus pack that exercises it in
+// production (`pmp-v4-extrafiles.pmp`) is green as of the v4 writer landing, so it now ratchets the
+// guard too; these cases stay because they pin the WIRING directly rather than through a whole-pack
+// diff. `pmp-v4-extrafile-divergence.test.ts` covers the CONFIRMATION FUNCTION itself in isolation;
+// these two prove `diffArchives` actually calls whatever it is given.
 describe("diffArchives confirmGoldenOnlyMember (sixth parameter) wiring", () => {
   it("suppresses a golden-only payload member when the confirmation returns true", () => {
     const ours = pmp({ "meta.json": META, "default_mod.json": DEF });

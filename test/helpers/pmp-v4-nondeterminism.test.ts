@@ -2,11 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   confirmNondeterministicMetaFields,
   DOTNET_ROUND_TRIP_RE,
-  GUID_RE,
+  GOLDEN_GUID_RE,
+  OURS_GUID_RE,
 } from "./pmp-v4-nondeterminism";
 
-const OURS_GUID = "11111111-2222-4333-8444-555555555555";
-const OURS_GUID_2 = "22222222-3333-4444-9555-666666666666";
+// OURS_* are RFC-4122 v5 (version nibble `5`) — the shape `pmpIdentifier` derives. GOLD_* are v4
+// (nibble `4`) — the shape `Guid.NewGuid()` mints. The rule pins each side to its own producer's
+// shape, so a fixture using the wrong nibble on the wrong side is NOT interchangeable here.
+const OURS_GUID = "11111111-2222-5333-8444-555555555555";
+const OURS_GUID_2 = "22222222-3333-5444-9555-666666666666";
+// Contains a-f digits, unlike OURS_GUID's all-numeric ones, so `.toUpperCase()` on it is not a
+// silent no-op — the case-sensitivity test below depends on that.
+const OURS_GUID_LETTERS = "5ffd6e85-ae4c-5446-8ed3-ca556ad6bcf3";
 const GOLD_GUID = "5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3";
 const GOLD_GUID_2 = "6ffd6e85-ae4c-4446-8ed3-ca556ad6bcf4";
 const OURS_TIME = "2026-08-06T09:00:00.0000000+01:00";
@@ -119,9 +126,9 @@ describe("confirmNondeterministicMetaFields", () => {
     ).toBe(GOLD_GUID);
   });
 
-  it("does NOT adopt a GUID with a non-v4 version/variant nibble", () => {
-    // version nibble '1' (not '4'), variant nibble 'c' (not in [89ab]) — 32 lowercase hex digits
-    // in the right places, but not a shape Guid.NewGuid() can produce.
+  it("does NOT adopt a GUID with an out-of-range version/variant nibble", () => {
+    // version nibble '1' (neither '4' nor '5'), variant nibble 'c' (not in [89ab]) — 32 lowercase
+    // hex digits in the right places, but a shape NEITHER producer can emit.
     expect(
       confirmNondeterministicMetaFields(
         meta({ Identifier: "11111111-2222-1333-c444-555555555555" }),
@@ -130,13 +137,35 @@ describe("confirmNondeterministicMetaFields", () => {
     ).toBe(GOLD_GUID);
   });
 
-  it("does NOT adopt an uppercase GUID", () => {
-    // GOLD_GUID (not OURS_GUID) deliberately — OURS_GUID's hex digits happen to be all-numeric,
-    // so `.toUpperCase()` on it would be a silent no-op and this test would pass for the wrong
-    // reason. GOLD_GUID contains letters (a-f) that case-folding actually changes.
+  it("does NOT adopt a v4 GUID on OUR side — pmpIdentifier only ever derives v5", () => {
+    // A well-formed GUID of the shape the GOLDEN's producer mints, arriving on our side. Something
+    // other than `pmpIdentifier` produced it (a random GUID leaking in, or the golden's own value
+    // echoed back), which is a writer bug this rule must report rather than confirm.
     expect(
       confirmNondeterministicMetaFields(
-        meta({ Identifier: GOLD_GUID.toUpperCase() }),
+        meta({ Identifier: GOLD_GUID_2 }),
+        meta({}),
+      ).Identifier,
+    ).toBe(GOLD_GUID);
+  });
+
+  it("does NOT adopt when the GOLDEN's value is v5 — Guid.NewGuid() only ever mints v4", () => {
+    // Both sides well-formed for the OTHER side's producer. A v5 golden means the cached golden did
+    // not come from `Guid.NewGuid()` at all, so nothing about it may be adopted away.
+    expect(
+      confirmNondeterministicMetaFields(
+        meta({ Identifier: OURS_GUID }),
+        meta({ Identifier: OURS_GUID_2 }),
+      ).Identifier,
+    ).toBe(OURS_GUID_2);
+  });
+
+  it("does NOT adopt an uppercase GUID", () => {
+    // OURS_GUID_LETTERS (not OURS_GUID) deliberately — OURS_GUID's hex digits are all-numeric, so
+    // `.toUpperCase()` on it would be a silent no-op and this test would pass for the wrong reason.
+    expect(
+      confirmNondeterministicMetaFields(
+        meta({ Identifier: OURS_GUID_LETTERS.toUpperCase() }),
         meta({}),
       ).Identifier,
     ).toBe(GOLD_GUID);
@@ -186,7 +215,7 @@ describe("confirmNondeterministicMetaFields", () => {
         Identifier: OURS_GUID,
         Groups: [
           { Name: "A", Identifier: OURS_GUID_2 },
-          { Name: "B", Identifier: "33333333-4444-4555-a666-777777777777" },
+          { Name: "B", Identifier: "33333333-4444-5555-a666-777777777777" },
         ],
       }),
       meta({
@@ -199,7 +228,7 @@ describe("confirmNondeterministicMetaFields", () => {
     expect(out.Identifier).toBe(OURS_GUID);
     const groups = out.Groups as Array<{ Identifier: string }>;
     expect(groups[0]!.Identifier).toBe(OURS_GUID_2);
-    expect(groups[1]!.Identifier).toBe("33333333-4444-4555-a666-777777777777");
+    expect(groups[1]!.Identifier).toBe("33333333-4444-5555-a666-777777777777");
   });
 
   it("refuses adoption for every slot sharing a GUID ours reused across two groups", () => {
@@ -240,24 +269,31 @@ describe("confirmNondeterministicMetaFields", () => {
   });
 });
 
-describe("GUID_RE", () => {
-  it("matches a well-formed v4 GUID", () => {
-    expect(GUID_RE.test(OURS_GUID)).toBe(true);
-    expect(GUID_RE.test(GOLD_GUID)).toBe(true);
+describe("GOLDEN_GUID_RE / OURS_GUID_RE", () => {
+  it("each matches its OWN producer's shape and rejects the other's", () => {
+    expect(GOLDEN_GUID_RE.test(GOLD_GUID)).toBe(true);
+    expect(OURS_GUID_RE.test(OURS_GUID)).toBe(true);
+    // The split is the whole point: neither regex is the union of the two.
+    expect(GOLDEN_GUID_RE.test(OURS_GUID)).toBe(false);
+    expect(OURS_GUID_RE.test(GOLD_GUID)).toBe(false);
   });
 
-  it("rejects the nil GUID", () => {
-    expect(GUID_RE.test("00000000-0000-0000-0000-000000000000")).toBe(false);
+  it("both reject the nil GUID", () => {
+    const nil = "00000000-0000-0000-0000-000000000000";
+    expect(GOLDEN_GUID_RE.test(nil)).toBe(false);
+    expect(OURS_GUID_RE.test(nil)).toBe(false);
   });
 
-  it("rejects a non-v4 version/variant nibble", () => {
-    expect(GUID_RE.test("11111111-2222-1333-c444-555555555555")).toBe(false);
+  it("both reject an out-of-range version/variant nibble", () => {
+    const bad = "11111111-2222-1333-c444-555555555555";
+    expect(GOLDEN_GUID_RE.test(bad)).toBe(false);
+    expect(OURS_GUID_RE.test(bad)).toBe(false);
   });
 
-  it("rejects uppercase", () => {
-    // GOLD_GUID, not OURS_GUID: OURS_GUID's hex digits are all-numeric, so `.toUpperCase()` would
-    // be a no-op and this assertion would pass without exercising case-sensitivity at all.
-    expect(GUID_RE.test(GOLD_GUID.toUpperCase())).toBe(false);
+  it("both reject uppercase", () => {
+    // Values with a-f digits, so `.toUpperCase()` is not a silent no-op.
+    expect(GOLDEN_GUID_RE.test(GOLD_GUID.toUpperCase())).toBe(false);
+    expect(OURS_GUID_RE.test(OURS_GUID_LETTERS.toUpperCase())).toBe(false);
   });
 });
 

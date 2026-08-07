@@ -48,15 +48,28 @@
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** Newtonsoft serializes a `Guid` with `ToString("D")`: 32 lowercase hex digits, 8-4-4-4-12.
- *  Constrained to RFC-4122 v4 (version nibble `4`, variant nibble in `[89ab]`) because
- *  `Guid.NewGuid()` (the only producer of either field this rule confirms) always mints a random
- *  v4 GUID — never nil, never v1/v3/v5. A plain "32 lowercase hex digits" shape would also confirm
- *  values `Guid.NewGuid()` can never emit (e.g. the nil GUID, or a version/variant nibble outside
- *  v4's range) — caught in review 2026-08-07 against 8 cached goldens, all of which satisfy this
- *  tighter shape. */
-export const GUID_RE =
+/** THE TWO SIDES HAVE DIFFERENT PRODUCERS, SO THEY GET DIFFERENT SHAPES. Both are the same
+ *  Newtonsoft `Guid.ToString("D")` spelling — 32 lowercase hex digits, 8-4-4-4-12 — and each is
+ *  pinned to exactly what ITS producer can emit and nothing else. A single shared regex would have
+ *  to be the UNION of the two, which is strictly looser than either; splitting is a tightening.
+ *
+ *  GOLDEN: `Guid.NewGuid()` (PMP.cs:1476/:1514, the only producer on that side) always mints a
+ *  RANDOM RFC-4122 v4 GUID — version nibble `4`, variant nibble in `[89ab]`, never nil, never
+ *  v1/v3/v5. Verified against 8 cached goldens (review, 2026-08-07).
+ *
+ *  OURS: `pmpIdentifier` (src/container/pmp-identifier.ts) always mints a DERIVED RFC-4122 v5
+ *  (name-based, SHA-1) GUID — version nibble `5`, same variant range, never nil. Requiring `5`
+ *  here is not a concession to our writer; it is an assertion ABOUT it. A `4` arriving on our side
+ *  would mean something other than `pmpIdentifier` produced that value — a random GUID leaking in,
+ *  or a golden value being echoed back — which is precisely a writer bug this rule must report
+ *  rather than confirm.
+ *
+ *  A plain "32 lowercase hex digits" shape on either side would confirm values neither producer can
+ *  emit (the nil GUID, an out-of-range version/variant nibble). */
+export const GOLDEN_GUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+export const OURS_GUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** .NET's round-trip ("O") format: `yyyy-MM-ddTHH:mm:ss.fffffffK`. `DateTime.Now` yields a LOCAL
  *  time with a `±HH:mm` offset (observed: `2026-08-06T04:41:11.0160172-07:00`); `Z` is accepted too
@@ -72,13 +85,18 @@ export const GUID_RE =
 export const DOTNET_ROUND_TRIP_RE =
   /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{7}(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
 
+/** Adopts ours' value only when BOTH sides are well-formed for their OWN producer. `goldenShape`
+ *  defaults to `oursShape` for a field whose two sides really do share one shape (`LastWrite`:
+ *  `DateTime.Now.ToString("O")` on the golden side, `dotnetRoundTripLocal` on ours, and the whole
+ *  point of that function is to be indistinguishable in shape). */
 function confirmedString(
   oursValue: unknown,
   goldenValue: unknown,
-  shape: RegExp,
+  oursShape: RegExp,
+  goldenShape: RegExp = oursShape,
 ): string | undefined {
   if (typeof oursValue !== "string" || typeof goldenValue !== "string") return;
-  if (!shape.test(oursValue) || !shape.test(goldenValue)) return;
+  if (!oursShape.test(oursValue) || !goldenShape.test(goldenValue)) return;
   return oursValue;
 }
 
@@ -92,7 +110,8 @@ export function confirmNondeterministicMetaFields(
   const idCandidate = confirmedString(
     ours.Identifier,
     goldenMeta.Identifier,
-    GUID_RE,
+    OURS_GUID_RE,
+    GOLDEN_GUID_RE,
   );
 
   const lastWrite = confirmedString(
@@ -115,7 +134,12 @@ export function confirmNondeterministicMetaFields(
     ? (goldenGroups as unknown[]).map((g, i) => {
         const o = (oursGroups as unknown[])[i];
         if (!isObj(g) || !isObj(o)) return undefined;
-        return confirmedString(o.Identifier, g.Identifier, GUID_RE);
+        return confirmedString(
+          o.Identifier,
+          g.Identifier,
+          OURS_GUID_RE,
+          GOLDEN_GUID_RE,
+        );
       })
     : [];
 
