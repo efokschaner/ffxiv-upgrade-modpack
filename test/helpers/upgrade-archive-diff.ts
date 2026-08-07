@@ -500,7 +500,7 @@ export function diffArchives(
  *  `ExtraFiles` entry) never gets its bytes compared at all, even as a matched pair.
  *
  *  `FileDiff.gamePath` here is `resolveRedirects`' composite key
- *  (`redirectKey`: `${manifestName}#${optionIndex}|${gamePath}`), not a bare gamePath — that key IS
+ *  (`redirectKey`: `${manifestName}#${optionId}|${gamePath}`), not a bare gamePath — that key IS
  *  the identity a divergence in this comparison is keyed by (see `resolveRedirects`' doc comment
  *  for why an archive-wide merge would silently hide a cross-option divergence), and it stays
  *  human-legible (names both the option and the gamePath) for a failing assertion. Because the

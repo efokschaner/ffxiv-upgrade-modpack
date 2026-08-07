@@ -18,22 +18,30 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null;
 
 /** One option document in the archive, plus the identity that pairs it with the SAME option on
- *  the other side of a comparison: the manifest member it came from, and (for a `group_NNN*.json`'s
- *  `Options` array) its index within that array. `default_mod.json` IS a single option document
- *  (PMP.cs:1504-1517), so it is always index 0. Manifest member names are regenerated identically by
- *  both our writer and TexTools' (see `resolveRedirects` below for why that licenses using the name
- *  as part of the pairing key), and `dropConfirmedAbsentKeys` (upgrade-archive-diff.ts) already pairs
- *  a `group_NNN.json`'s `Options` the same way, by index — this mirrors that. */
+ *  the other side of a comparison: the manifest member it came from, and a stable id WITHIN that
+ *  member.
+ *
+ *  `optionId` is a STRING, not an index, because v4 moved every option into one member. Under v3 it
+ *  is the index in a `group_NNN*.json`'s `Options` array (and `"0"` for `default_mod.json`, which
+ *  IS a single option document, PMP.cs:1664-1682), so `manifestName` alone discriminated groups.
+ *  Under v4 (`PMP.cs · PMPMetaJson · 1484/1487`) every option lives in `meta.json`, so a bare option
+ *  index would MERGE two different groups' first options onto one redirect key and hide a real
+ *  divergence in one of them — the exact failure `resolveRedirects`' per-option keying exists to
+ *  prevent. So v4 ids are `"<groupIndex>/<optionIndex>"`, and `meta.DefaultData` is `"default"`. */
 interface OptionEntry {
   manifestName: string;
-  optionIndex: number;
+  optionId: string;
   doc: Record<string, unknown>;
 }
 
 function optionEntries(members: Map<string, Uint8Array>): OptionEntry[] {
   const out: OptionEntry[] = [];
+  let sawMeta = false;
+  let sawOptionContainer = false;
   for (const [name, raw] of members) {
-    if (!/(^|\/)(group_\d+.*|default_mod)\.json$/i.test(name)) continue;
+    const isMeta = /(^|\/)meta\.json$/i.test(name);
+    const isV3Manifest = /(^|\/)(group_\d+.*|default_mod)\.json$/i.test(name);
+    if (!isMeta && !isV3Manifest) continue;
     let doc: unknown;
     try {
       doc = JSON.parse(new TextDecoder().decode(raw));
@@ -41,13 +49,57 @@ function optionEntries(members: Map<string, Uint8Array>): OptionEntry[] {
       continue; // a malformed manifest is the JSON diff's problem to report, not ours
     }
     if (!isObj(doc)) continue;
+
+    if (isMeta) {
+      sawMeta = true;
+      // A v4 meta.json ALWAYS carries both keys: WizardData.WritePmp builds pmp.Groups /
+      // pmp.DefaultMod non-null (WizardData.cs:1481-1487), PMP.WritePmp moves them into the meta
+      // (PMP.cs:928-939), and Newtonsoft's default NullValueHandling.Include writes even a null. So
+      // key PRESENCE is the reliable "this is a v4 manifest" signal, independent of content.
+      if (Object.hasOwn(doc, "Groups") || Object.hasOwn(doc, "DefaultData")) {
+        sawOptionContainer = true;
+      }
+      if (Array.isArray(doc.Groups)) {
+        doc.Groups.forEach((g, gi) => {
+          if (!isObj(g) || !Array.isArray(g.Options)) return;
+          g.Options.forEach((o, oi) => {
+            if (isObj(o))
+              out.push({ manifestName: name, optionId: `${gi}/${oi}`, doc: o });
+          });
+        });
+      }
+      if (isObj(doc.DefaultData)) {
+        out.push({
+          manifestName: name,
+          optionId: "default",
+          doc: doc.DefaultData,
+        });
+      }
+      continue;
+    }
+
+    sawOptionContainer = true;
     if (Array.isArray(doc.Options)) {
       doc.Options.forEach((o, i) => {
-        if (isObj(o)) out.push({ manifestName: name, optionIndex: i, doc: o });
+        if (isObj(o))
+          out.push({ manifestName: name, optionId: String(i), doc: o });
       });
     } else {
-      out.push({ manifestName: name, optionIndex: 0, doc });
+      out.push({ manifestName: name, optionId: "0", doc });
     }
+  }
+
+  // FAIL LOUD (AGENTS.md), do not return []. This helper feeds `resolveRedirects`, whose output
+  // `diffPayloadSemantic` compares: two empty maps compare EQUAL, so an unrecognized manifest shape
+  // would make the whole redirect-table check pass vacuously — exactly the fail-open a v4 archive
+  // produced before this function learned the v4 shape.
+  if (sawMeta && !sawOptionContainer) {
+    throw new Error(
+      "archive-redirects: PMP archive has a meta.json but no recognizable option container — " +
+        "no v4 meta.Groups/meta.DefaultData key (PMP.cs:1484/1487) and no v3 default_mod.json or " +
+        "group_NNN.json member. resolveRedirects would return an empty map and diffPayloadSemantic " +
+        "would pass vacuously, so this fails loud instead.",
+    );
   }
   return out;
 }
@@ -79,16 +131,16 @@ export function payloadMemberNames(members: Map<string, Uint8Array>): string[] {
 /** Composite key pairing a `gamePath` with the option that redirects it, so two DIFFERENT options
  *  defining the SAME `gamePath` (the ordinary shape of a Single-select/radio group, where each
  *  option is a mutually exclusive alternative content for the same file) get distinct entries
- *  instead of colliding. `manifestName` + `optionIndex` identify the option exactly as
- *  `dropConfirmedAbsentKeys` (upgrade-archive-diff.ts) already pairs options across two archives —
- *  by manifest member name, then by index within that member's `Options` array — which is safe
- *  because both our writer and TexTools' regenerate group manifest member names identically. */
+ *  instead of colliding. `manifestName` + `optionId` identify the option — see `OptionEntry`'s doc
+ *  comment for what `optionId` is under v3 vs v4. `diffPayloadSemantic` (upgrade-archive-diff.ts)
+ *  reports this composite key as `FileDiff.gamePath`, so a `confirmDivergence` predicate must match
+ *  a gamePath SUFFIX, not the whole key. */
 export function redirectKey(
   manifestName: string,
-  optionIndex: number,
+  optionId: string,
   gamePath: string,
 ): string {
-  return `${manifestName}#${optionIndex}|${gamePath}`;
+  return `${manifestName}#${optionId}|${gamePath}`;
 }
 
 /** The archive's effective `gamePath -> content` mapping, resolved through each option's `Files`,
@@ -116,13 +168,13 @@ export function resolveRedirects(
   for (const [name, bytes] of members) byLooseName.set(looseKey(name), bytes);
 
   const out = new Map<string, Uint8Array>();
-  for (const { manifestName, optionIndex, doc } of optionEntries(members)) {
+  for (const { manifestName, optionId, doc } of optionEntries(members)) {
     if (!isObj(doc.Files)) continue;
     for (const [gamePath, zipPath] of Object.entries(doc.Files)) {
       if (typeof zipPath !== "string") continue;
       const bytes = byLooseName.get(looseKey(zipPath.replace(/\\/g, "/")));
       if (bytes === undefined) continue;
-      out.set(redirectKey(manifestName, optionIndex, gamePath), bytes);
+      out.set(redirectKey(manifestName, optionId, gamePath), bytes);
     }
   }
   return out;
