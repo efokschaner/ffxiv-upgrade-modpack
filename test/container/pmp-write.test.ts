@@ -21,6 +21,22 @@ function parseEntry<T>(entries: Map<string, Uint8Array>, name: string): T {
   return JSON.parse(dec.decode(entries.get(name)!)) as T;
 }
 
+/** A written PMP's manifest is ONE member now (PMP.cs:908-962, with :946-955 commented out), so the
+ *  default option and every group live inside meta.json (the push-forward at :928-939). */
+function writtenMeta(entries: Map<string, Uint8Array>): {
+  FileVersion: number;
+  Identifier: string;
+  LastWrite: string;
+  ModTags: string[];
+  Groups: PmpGroupJson[];
+  DefaultData: PmpOptionJson;
+} {
+  return parseEntry(entries, "meta.json");
+}
+
+const GUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 // A COMPLETE Imc manipulation: every field PMPImcManipulationJson/PMPImcEntry declare (minus the
 // [JsonIgnore] AttributeAndSound — see pmp-manipulation.ts) present. normalizeManipulations THROWS
 // on a manipulation missing a required field (pmp-manipulation.test.ts pins that); these fixtures
@@ -58,12 +74,35 @@ describe("writePmp round-trip", () => {
     }
   });
 
-  it("emits meta.json, default_mod.json and a numbered group file", () => {
+  it("emits meta.json as the ONLY manifest member (PMP.cs:946-955 is commented out)", () => {
     const out = writePmp(readPmp(makePmpZip().bytes));
     const names = [...readZip(out).keys()];
     expect(names).toContain("meta.json");
-    expect(names).toContain("default_mod.json");
-    expect(names.some((n) => /^group_001_.*\.json$/.test(n))).toBe(true);
+    expect(names).not.toContain("default_mod.json");
+    expect(names.some((n) => /^group_\d+.*\.json$/.test(n))).toBe(false);
+  });
+
+  it("writes FileVersion 4 with a well-formed Identifier and LastWrite (PMP.cs:47/:1476/:941)", () => {
+    const meta = parseEntry<{
+      FileVersion: number;
+      Identifier: string;
+      LastWrite: string;
+    }>(readZip(writePmp(readPmp(makePmpZip().bytes))), "meta.json");
+    expect(meta.FileVersion).toBe(4);
+    expect(meta.Identifier).toMatch(GUID_RE);
+    // Format, never value: TexTools re-stamps LastWrite on every write, so no value can be pinned.
+    expect(meta.LastWrite).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}[+-]\d{2}:\d{2}$/,
+    );
+  });
+
+  it("round-trips a v4 pack we wrote: read it back and write it again", () => {
+    const first = writePmp(readPmp(makePmpZip().bytes));
+    const second = writePmp(readPmp(first));
+    const a = writtenMeta(readZip(first));
+    const b = writtenMeta(readZip(second));
+    expect(b.Groups.map((g) => g.Name)).toEqual(a.Groups.map((g) => g.Name));
+    expect(b.DefaultData).toEqual(a.DefaultData);
   });
 
   // A non-empty FileSwaps map is preserved verbatim through a read -> write round trip: this is
@@ -132,14 +171,13 @@ describe("writePmp round-trip", () => {
       [groupFile.replace(/\//g, "\\"), new Uint8Array([4, 5, 6])],
     ]);
     const out = writePmp(readPmp(writeZip(entries)));
-    const written = readZip(out);
-    const writtenDefault = parseEntry<{ FileSwaps: Record<string, string> }>(
-      written,
-      "default_mod.json",
-    );
-    const writtenGroup = parseEntry<{
+    const written = writtenMeta(readZip(out));
+    const writtenDefault = written.DefaultData as unknown as {
+      FileSwaps: Record<string, string>;
+    };
+    const writtenGroup = written.Groups[0] as unknown as {
       Options: Array<{ FileSwaps: Record<string, string> }>;
-    }>(written, "group_001_choice.json");
+    };
     expect(writtenDefault.FileSwaps).toEqual(defaultSwaps);
     expect(writtenGroup.Options[0]!.FileSwaps).toEqual(groupSwaps);
   });
@@ -255,7 +293,7 @@ describe("writePmp model-building fallback (no raw)", () => {
   it("synthesizes meta.json from the modeled meta fields", () => {
     const entries = readZip(writePmp(modeledData()));
     const meta = parseEntry<PmpMetaJson>(entries, "meta.json");
-    expect(meta.FileVersion).toBe(3);
+    expect(meta.FileVersion).toBe(4);
     expect(meta.Name).toBe("Modeled Mod");
     expect(meta.Author).toBe("Tester");
     expect(meta.Version).toBe("1.2.3");
@@ -265,9 +303,8 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(meta.ModTags).toEqual(["tagA", "tagB"]);
   });
 
-  it("builds default_mod.json from the default option without option-meta fields", () => {
-    const entries = readZip(writePmp(modeledData()));
-    const def = parseEntry<PmpOptionJson>(entries, "default_mod.json");
+  it("builds meta.DefaultData from the default option without option-meta fields", () => {
+    const def = writtenMeta(readZip(writePmp(modeledData()))).DefaultData;
     // includeMeta=false for the default option -> no Name/Description/Image.
     expect(def.Name).toBeUndefined();
     expect(def.Description).toBeUndefined();
@@ -277,17 +314,14 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(def.Files).toEqual({
       "chara/equipment/foo.tex": "default\\chara\\equipment\\foo.tex",
     });
-    expect(def.FileSwaps).toEqual({});
-    expect(def.Manipulations).toEqual([]);
+    // The ShouldSerialize gates (PMP.cs:1679-1681) are live at this pin: an EMPTY container is an
+    // absent key, not `{}` / `[]`.
+    expect(def.FileSwaps).toBeUndefined();
+    expect(def.Manipulations).toBeUndefined();
   });
 
-  it("builds a numbered group file from the modeled group and its options", () => {
-    const entries = readZip(writePmp(modeledData()));
-    const groupName = [...entries.keys()].find((n) =>
-      /^group_001_.*\.json$/.test(n),
-    );
-    expect(groupName).toBeDefined();
-    const grp = parseEntry<PmpGroupJson>(entries, groupName as string);
+  it("builds a meta.Groups entry from the modeled group and its options", () => {
+    const grp = writtenMeta(readZip(writePmp(modeledData()))).Groups[0]!;
     expect(grp.Name).toBe("Color Options");
     expect(grp.Type).toBe("Single");
     expect(grp.Description).toBe("pick one");
@@ -306,7 +340,7 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(opt.Files).toEqual({
       "chara/equipment/red.tex": "color options\\chara\\equipment\\red.tex",
     });
-    expect(opt.FileSwaps).toEqual({});
+    expect(opt.FileSwaps).toBeUndefined(); // empty -> absent key (ShouldSerializeFileSwaps, :1680)
     // Manipulations regenerated per pmp-manipulation.ts: a fully-spelled Imc manipulation
     // round-trips unchanged (no [JsonIgnore] field present to drop, no numeric-string field to
     // coerce) -- see pmp-manipulation.test.ts for those behaviours in isolation.
@@ -334,17 +368,70 @@ describe("writePmp model-building fallback (no raw)", () => {
       // no `data` -> absent (PMP.cs:883-888)
     });
 
-    const entries = readZip(writePmp(data));
-    const groupName = [...entries.keys()].find((n) =>
-      /^group_001_.*\.json$/.test(n),
-    );
-    expect(groupName).toBeDefined();
-    const grp = parseEntry<PmpGroupJson>(entries, groupName as string);
+    const grp = writtenMeta(readZip(writePmp(data))).Groups[0]!;
     const opt = grp.Options?.[0] as PmpOptionJson;
     expect(opt.Files).toEqual({
       "chara/equipment/red.tex": "color options\\chara\\equipment\\red.tex",
     });
     expect(Object.keys(opt.Files)).not.toContain("chara/equipment/missing.tex");
+  });
+
+  /** `modeledData()` plus a SECOND non-absorbed group. Two is the minimum that can distinguish a
+   *  per-group identifier from one shared value stamped everywhere — with a single group, any
+   *  uniqueness assertion passes vacuously. */
+  function twoGroupData(): ModpackData {
+    const data = modeledData();
+    data.pages[0]!.groups.push({
+      name: "Size Options",
+      description: "",
+      image: "",
+      priority: 0,
+      selectionType: "Single",
+      defaultSettings: 0,
+      options: [
+        {
+          name: "Big",
+          description: "",
+          image: "",
+          priority: 0,
+          selected: false,
+          files: filesMap([
+            [
+              "chara/equipment/big.tex",
+              {
+                data: new Uint8Array([7, 7, 7]),
+                storage: FileStorageType.RawUncompressed,
+              },
+            ],
+          ]),
+          fileSwaps: {},
+          manipulations: [],
+        },
+      ],
+    });
+    return data;
+  }
+
+  it("gives every non-Imc group its own regenerated Identifier, distinct per group (PMP.cs:1514)", () => {
+    const out = writtenMeta(readZip(writePmp(twoGroupData())));
+    const ids = out.Groups.map(
+      (g) => (g as unknown as { Identifier: string }).Identifier,
+    );
+    expect(ids).toHaveLength(2); // the Default group is absorbed; these are the two real ones
+    expect(new Set(ids).size).toBe(2); // NOT one shared GUID stamped twice
+    for (const id of ids) expect(id).toMatch(GUID_RE);
+    // The pack's own Identifier is a third distinct value, never reused as a group's.
+    expect(ids).not.toContain(out.Identifier);
+  });
+
+  it("varies meta.Identifier per document (a different pack is a different identity)", () => {
+    const a = writtenMeta(readZip(writePmp(modeledData()))).Identifier;
+    const other = modeledData();
+    other.meta.name = "A Different Mod";
+    const b = writtenMeta(readZip(writePmp(other))).Identifier;
+    expect(a).not.toBe(b);
+    // ...and is stable for the SAME document: our identifiers are derived, not random per write.
+    expect(writtenMeta(readZip(writePmp(modeledData()))).Identifier).toBe(a);
   });
 });
 
@@ -559,24 +646,21 @@ describe("writePmp default-mod absorption searches DataPages order, not just the
     return writeZip(entries);
   }
 
-  it("absorbs the SYNTHESIZED default group's own data, leaves the real 'Default' group its own group_NNN.json, and produces no orphan/dangling member", () => {
+  it("absorbs the SYNTHESIZED default group's own data, leaves the real 'Default' group its own meta.Groups entry, and produces no orphan/dangling member", () => {
     const out = writePmp(readPmp(buildFixture()));
-    const members = readZip(out);
+    const meta = writtenMeta(readZip(out));
 
-    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
-    // Regression pin: default_mod.json must carry the SOURCE default_mod's own file, not the real
+    const dm = meta.DefaultData;
+    // Regression pin: DefaultData must carry the SOURCE default_mod's own file, not the real
     // "Default" group's.
     expect(Object.keys(dm.Files)).toEqual([defaultGamePath]);
     expect(dm.Files[defaultGamePath]).toBe(
       `default\\${defaultGamePath.replace(/\//g, "\\")}`,
     );
 
-    // The real "Default" group must still be written as its own group_NNN.json (NOT absorbed).
-    const groupNames = [...members.keys()].filter((n) =>
-      /^group_\d+.*\.json$/i.test(n),
-    );
-    expect(groupNames).toHaveLength(1);
-    const grp = parseEntry<PmpGroupJson>(members, groupNames[0]!);
+    // The real "Default" group must still be written as its own meta.Groups entry (NOT absorbed).
+    expect(meta.Groups).toHaveLength(1);
+    const grp = meta.Groups[0]!;
     const opt = grp.Options![0] as PmpOptionJson;
     expect(Object.keys(opt.Files)).toEqual([realGamePath]);
 
@@ -648,28 +732,25 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
     };
   }
 
-  it("absorbs a group literally named 'Default ' (trailing space) into default_mod.json -- the trimmed name matches the absorption predicate", () => {
-    const out = readZip(writePmp(modeledGroup("Default ", "Default")));
-
-    const groupNames = [...out.keys()].filter((n) =>
-      /^group_\d+.*\.json$/i.test(n),
+  it("absorbs a group literally named 'Default ' (trailing space) into DefaultData -- the trimmed name matches the absorption predicate", () => {
+    const meta = writtenMeta(
+      readZip(writePmp(modeledGroup("Default ", "Default"))),
     );
-    expect(groupNames).toHaveLength(0); // absorbed -- no group_NNN.json at all
 
-    const dm = parseEntry<PmpOptionJson>(out, "default_mod.json");
-    expect(dm.Files).toEqual({ "chara/x.tex": "default\\chara\\x.tex" });
+    expect(meta.Groups).toHaveLength(0); // absorbed -- no meta.Groups entry at all
+    expect(meta.DefaultData.Files).toEqual({
+      "chara/x.tex": "default\\chara\\x.tex",
+    });
   });
 
   it("trims leading/trailing whitespace off the emitted group Name and option Name (WizardData.cs:946/928)", () => {
     // "  Hair  " does not match "Default"/"Default Group" even trimmed, so it is written as its own
-    // group_NNN.json rather than absorbed -- exercising the emitted-Name trim in isolation.
-    const out = readZip(writePmp(modeledGroup("  Hair  ", "  Red  ")));
-
-    const groupName = [...out.keys()].find((n) =>
-      /^group_\d+.*\.json$/i.test(n),
+    // meta.Groups entry rather than absorbed -- exercising the emitted-Name trim in isolation.
+    const meta = writtenMeta(
+      readZip(writePmp(modeledGroup("  Hair  ", "  Red  "))),
     );
-    expect(groupName).toBeDefined();
-    const grp = parseEntry<PmpGroupJson>(out, groupName as string);
+
+    const grp = meta.Groups[0]!;
     expect(grp.Name).toBe("Hair");
     const opt = grp.Options?.[0] as PmpOptionJson;
     expect(opt.Name).toBe("Red");
@@ -736,12 +817,9 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
   }
 
   function readGroupDefaultSettings(out: Uint8Array): number {
-    const entries = readZip(out);
-    const groupName = [...entries.keys()].find((n) =>
-      /^group_\d+.*\.json$/i.test(n),
-    );
-    if (!groupName) throw new Error("no group_NNN.json in output");
-    return parseEntry<PmpGroupJson>(entries, groupName).DefaultSettings;
+    const grp = writtenMeta(readZip(out)).Groups[0];
+    if (!grp) throw new Error("no group in the written meta.json");
+    return grp.DefaultSettings;
   }
 
   it("Single -> the index of the selected option (:589 `Options.IndexOf(op)`)", () => {
@@ -877,14 +955,10 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
     };
   }
 
-  it("omits 'Empty's group_NNN.json and renumbers 'Gamma's Page across only the 2 surviving pages", () => {
-    const out = readZip(writePmp(buildData()));
-    const groupNames = [...out.keys()]
-      .filter((n) => /^group_\d+.*\.json$/i.test(n))
-      .sort();
-    expect(groupNames).toHaveLength(2); // NOT 3 -- "Empty" never becomes a group_NNN.json
-    const g1 = parseEntry<PmpGroupJson>(out, groupNames[0]!);
-    const g2 = parseEntry<PmpGroupJson>(out, groupNames[1]!);
+  it("omits 'Empty's meta.Groups entry and renumbers 'Gamma's Page across only the 2 surviving pages", () => {
+    const groups = writtenMeta(readZip(writePmp(buildData()))).Groups;
+    expect(groups).toHaveLength(2); // NOT 3 -- "Empty" never becomes a meta.Groups entry
+    const [g1, g2] = groups as [PmpGroupJson, PmpGroupJson];
     expect(g1.Name).toBe("Alpha");
     expect(g1.Page).toBe(0);
     expect(g2.Name).toBe("Gamma");
@@ -939,16 +1013,13 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
     };
   }
 
-  it("writes a group_NNN.json with empty Files for a content-free group", () => {
-    const out = readZip(writePmp(buildData()));
-    const groupName = [...out.keys()].find((n) =>
-      /^group_\d+.*\.json$/i.test(n),
-    );
-    expect(groupName).toBeDefined();
-    const grp = parseEntry<PmpGroupJson>(out, groupName as string);
+  it("writes a meta.Groups entry with NO Files key at all for a content-free group", () => {
+    const grp = writtenMeta(readZip(writePmp(buildData()))).Groups[0]!;
     expect(grp.Name).toBe("Empty");
     expect(grp.Options).toHaveLength(1);
-    expect((grp.Options![0] as PmpOptionJson).Files).toEqual({});
+    // The group survives, but its option's EMPTY Files map is now an absent key, not `{}` --
+    // ShouldSerializeFiles (PMP.cs:1679) is live at this pin.
+    expect((grp.Options![0] as PmpOptionJson).Files).toBeUndefined();
   });
 });
 
@@ -1004,17 +1075,17 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
     expect([...members.keys()]).toContain(presentZipPath);
     expect([...members.keys()]).not.toContain(`default/${second}`);
 
-    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    const dm = writtenMeta(members).DefaultData;
     expect(Object.keys(dm.Files)).toEqual([present]);
     expect(dm.Files[present]).toBe(`default\\${present.replace(/\//g, "\\")}`);
   });
 
-  it("regenerates an all-present default_mod.json with both Files keys, byte-for-byte-equal payload", () => {
+  it("regenerates an all-present DefaultData with both Files keys, byte-for-byte-equal payload", () => {
     const src = buildPmpFixture(true);
     const out = writePmp(readPmp(src));
     const members = readZip(out);
 
-    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    const dm = writtenMeta(members).DefaultData;
     // Key SET, not order: `Files` is a JSON object no consumer reads order-sensitively (it ports a
     // C# Dictionary). See AGENTS.md, "JSON manifests are compared semantically, not by byte".
     expect(Object.keys(dm.Files).sort()).toEqual([present, second].sort());
@@ -1095,11 +1166,7 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
 
     const out = writePmp(readPmp(src));
     const members = readZip(out);
-    const groupName = [...members.keys()].find((n) =>
-      /^group_001_.*\.json$/.test(n),
-    );
-    expect(groupName).toBeDefined();
-    const grp = parseEntry<PmpGroupJson>(members, groupName as string);
+    const grp = writtenMeta(members).Groups[0]!;
 
     expect(grp.Options).toHaveLength(2);
     const [optA, optB] = grp.Options as PmpOptionJson[];
@@ -1116,7 +1183,7 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
     expect(optB!.Name).toBe("OptB");
     expect(optB!.Description).toBe("b desc");
     expect(optB!.Image).toBe("b.png");
-    expect(optB!.FileSwaps).toEqual({});
+    expect(optB!.FileSwaps).toBeUndefined(); // empty -> absent key (PMP.cs:1680)
     expect(optB!.Manipulations).toEqual([IMC_MANIPULATION]);
     // Group-level keys survive too.
     expect(grp.Name).toBe("Choice");
@@ -1184,7 +1251,7 @@ describe("writePmp IsMetaInternalFile drop (PMP.cs:994-998 -> IOUtil.cs:577-592)
       ),
     ).toBe(false);
 
-    const dm = parseEntry<PmpOptionJson>(members, "default_mod.json");
+    const dm = writtenMeta(members).DefaultData;
     expect(Object.keys(dm.Files)).toEqual([normal]);
     expect(dm.Files[normal]).toBe(`default\\${normal.replace(/\//g, "\\")}`);
   });

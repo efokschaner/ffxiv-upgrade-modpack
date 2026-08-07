@@ -1,9 +1,30 @@
 import { describe, expect, it } from "vitest";
+import type {
+  PmpGroupJson,
+  PmpOptionJson,
+} from "../../src/container/manifest-types";
 import { readPmp, writePmp } from "../../src/container/pmp";
 import { readZip, writeZip } from "../../src/zip/zip";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+
+function parseEntry<T>(entries: Map<string, Uint8Array>, name: string): T {
+  return JSON.parse(dec.decode(entries.get(name)!)) as T;
+}
+
+/** A written PMP's manifest is ONE member now (PMP.cs:908-962, with :946-955 commented out), so the
+ *  default option and every group live inside meta.json (the push-forward at :928-939). */
+function writtenMeta(entries: Map<string, Uint8Array>): {
+  FileVersion: number;
+  Identifier: string;
+  LastWrite: string;
+  ModTags: string[];
+  Groups: PmpGroupJson[];
+  DefaultData: PmpOptionJson;
+} {
+  return parseEntry(entries, "meta.json");
+}
 
 /** Build a synthetic PMP with a Multi group (option Priority), an Imc group
  * (option AttributeMask, no Files/Image), and meta with DefaultPreferredItems. */
@@ -116,9 +137,11 @@ function makeImcPmp(): Uint8Array {
 describe("pmp manifest fidelity (Imc/Combining extras)", () => {
   it("preserves Imc AttributeMask and option Priority; regenerates Name/Description/Image for every option; drops meta extras the typed model does not own", () => {
     const out = readZip(writePmp(readPmp(makeImcPmp())));
-    // Group filenames are lowercased by safeName (PMP.MakePMPPathSafe port, PMP.cs:1316-1326;
-    // see src/container/pmp.ts), so "Models"/"Ears" become "models"/"ears" on disk.
-    const imcGroup = JSON.parse(dec.decode(out.get("group_002_ears.json")!));
+    // Groups live INLINE in meta.json now (PMP.cs:928-933's push-forward), in the order
+    // WizardData.cs:1602-1619 pushed them: the Multi group first, the Imc group second. Parsed
+    // untyped here deliberately -- these assertions are about keys the typed model does NOT own.
+    const writtenMetaJson = JSON.parse(dec.decode(out.get("meta.json")!));
+    const imcGroup = writtenMetaJson.Groups[1];
     const imcOpt = imcGroup.Options[0];
     expect(imcOpt.AttributeMask).toBe(5);
     expect("IsDisableSubMod" in imcOpt).toBe(false); // ShouldSerializeIsDisableSubMod: false -> omitted
@@ -150,16 +173,14 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     // confirmed empirically against the /resave golden (`[DVNO] Desert Years.pmp`'s Imc group and
     // `[DVNO] DMBX Shoes 1.pmp`'s group options both gain "Image": "").
     expect(imcOpt.Image).toBe("");
-    const multiGroup = JSON.parse(
-      dec.decode(out.get("group_001_models.json")!),
-    );
+    const multiGroup = writtenMetaJson.Groups[0];
     const multiOpt = multiGroup.Options[0];
     expect(multiOpt.Priority).toBe(7);
     expect("FavoriteColor" in multiOpt).toBe(false); // foreign key, not owned by PmpStandardOptionJson
     // "opt2" omitted Priority entirely; PmpMultiOptionJson.Priority is always serialized.
     expect(multiGroup.Options[1].Priority).toBe(0);
 
-    const meta = JSON.parse(dec.decode(out.get("meta.json")!));
+    const meta = writtenMetaJson;
     // meta.json is always regenerated from PMPMetaJson's flat, fully-typed field set (PMP.cs:1369-1381,
     // no extension-data capture), so a foreign key like Penumbra's own `DefaultPreferredItems` is
     // silently dropped by a real typed round-trip -- confirmed empirically (`[DVNO] DMBX Shoes
@@ -168,6 +189,19 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     // Version.TryParse("3") fails (needs at least major.minor) -> falls back to "1.0"
     // (WizardData.cs:1474-1475/:1494).
     expect(meta.Version).toBe("1.0");
+  });
+
+  it("leaves an Imc group's Identifier as the PmpIdentifierJson OBJECT — no GUID (PMP.cs:1538 hides the base Guid)", () => {
+    const out = readZip(writePmp(readPmp(makeImcPmp())));
+    const groups = writtenMeta(out).Groups;
+    const imcGroup = groups.find((g) => g.Type === "Imc")!;
+    const single = groups.find((g) => g.Type !== "Imc")!;
+    expect(
+      typeof (imcGroup as unknown as { Identifier: unknown }).Identifier,
+    ).toBe("object");
+    expect(
+      typeof (single as unknown as { Identifier: unknown }).Identifier,
+    ).toBe("string");
   });
 });
 
@@ -227,13 +261,9 @@ describe("pmp group manifest drops foreign keys (PMPGroupJson, PMP.cs:1387-1408,
     );
   }
 
-  it("drops SelectedSettings and an arbitrary unrecognized key from the written group_NNN.json", () => {
+  it("drops SelectedSettings and an arbitrary unrecognized key from the written meta.Groups entry", () => {
     const out = readZip(writePmp(readPmp(makeGroupWithForeignKeys())));
-    const groupName = [...out.keys()].find((n) =>
-      /^group_\d+.*\.json$/i.test(n),
-    );
-    expect(groupName).toBeDefined();
-    const grp = JSON.parse(dec.decode(out.get(groupName as string)!));
+    const grp = JSON.parse(dec.decode(out.get("meta.json")!)).Groups[0];
     expect("SelectedSettings" in grp).toBe(false);
     expect("SomeToolMetadata" in grp).toBe(false);
     // The typed fields survive untouched.

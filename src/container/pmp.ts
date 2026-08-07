@@ -13,6 +13,7 @@ import {
   type ModpackOption,
   type ModpackPage,
 } from "../model/modpack";
+import { dotnetRoundTripLocal } from "../util/dotnet-datetime";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
 import { clearNulls } from "./clear-nulls";
@@ -26,6 +27,7 @@ import {
   parsePmpOption,
 } from "./manifest-types";
 import { optionPrefixes } from "./option-prefix";
+import { pmpIdentifier } from "./pmp-identifier";
 import { normalizeImcEntry, normalizeManipulations } from "./pmp-manipulation";
 import { resolveDuplicates } from "./resolve-duplicates";
 
@@ -256,9 +258,11 @@ export function readPmp(
   // empties the pulled-back data out of the meta object itself. Nothing downstream of `readPmp`
   // reads either — `data.meta.raw` (our analogue of `pmp.Meta`) is consulted only for scalar meta
   // fields, and `writePmp` regenerates meta.json from the typed model rather than from `raw`, the
-  // way `WizardData.WritePmp` rebuilds Groups/DefaultData from `DataPages` (:1481-1487). Revisit
-  // when the writer starts emitting a v4-shaped meta.json (the v4 port plan's Task 11): if it ever
-  // reads `data.meta.raw.Groups`, it must see the CLEARED value, not the source pack's.
+  // way `WizardData.WritePmp` rebuilds Groups/DefaultData from `DataPages` (:1481-1487). Still true
+  // now that the writer emits a v4-shaped meta.json: its `Groups`/`DefaultData` come from the
+  // rebuilt `groupJsons`/`defaultMod`, never from `data.meta.raw`. If a future change DOES read
+  // `data.meta.raw.Groups`, it must see the CLEARED value, not the source pack's — port :223-224
+  // then.
   const pullBack =
     (metaRaw.Groups?.length ?? 0) > 0 || (metaRaw.DefaultData ?? null) !== null;
   const groups = pullBack
@@ -463,11 +467,11 @@ export function readPmp(
   };
 }
 
-// Port of PMP.MakePMPPathSafe (PMP.cs:1414-1424) -> IOUtil.MakePathSafe (IOUtil.cs:738-759).
+// The invalid-character set `folderSafeName` (below) reproduces: IOUtil.MakePathSafe
+// (IOUtil.cs:738-759) rejects `Path.GetInvalidFileNameChars()`.
 // QUIRK: Path.GetInvalidFileNameChars() is platform-dependent; goldens are generated on Windows,
 // so we reproduce the WINDOWS set — control chars 0x00-0x1F plus these nine. (Unix would be just
-// \0 and /.) Replace invalid chars with '_' (_PMPSafeNameReplacement, PMP.cs:49), lowercase the
-// rest (makeLowercase=true), then Trim(). "." -> "_", ".." -> "__" (PMP.cs:1417-1421).
+// \0 and /.)
 const WINDOWS_INVALID_FILENAME_CHARS = new Set<number>([
   0x22,
   0x3c,
@@ -482,9 +486,10 @@ const WINDOWS_INVALID_FILENAME_CHARS = new Set<number>([
 function isInvalidFileNameChar(code: number): boolean {
   return code <= 0x1f || WINDOWS_INVALID_FILENAME_CHARS.has(code);
 }
-// Shared by both C# path-safety helpers below — they use the SAME invalid-char set
-// (Path.GetInvalidFileNameChars(), IOUtil.cs:49) and both lowercase+Trim(), differing only in the
-// replacement char and PMP.MakePMPPathSafe's extra "."/".." special-casing (see safeName).
+// The shared body of IOUtil.MakePathSafe (IOUtil.cs:738-759): replace each invalid char with `rep`,
+// lowercase the rest (makeLowercase=true), then Trim(). `rep` is a parameter because the C# has two
+// call shapes with different replacement chars; only the `'-'` one (`folderSafeName`) is still
+// reachable from the port — see that function's doc comment.
 function makePathSafe(name: string, rep: string): string {
   // IOUtil.MakePathSafe iterates UTF-16 chars; match that (not code points) for fidelity.
   // NOTE: C#'s Char.ToLower uses CurrentCulture; we use JS's locale-invariant toLowerCase.
@@ -498,21 +503,18 @@ function makePathSafe(name: string, rep: string): string {
   }
   return out.trim();
 }
-/** Port of PMP.MakePMPPathSafe (PMP.cs:1414-1424): used ONLY for the `group_NNN_<name>.json`
- * MANIFEST FILENAME (WritePmp, PMP.cs:908-962). NFKC-normalizes first, replaces an invalid char
- * with '_' (_PMPSafeNameReplacement, PMP.cs:49), and special-cases "." -> "_" / ".." -> "__"
- * (PMP.cs:1417-1421) — none of which the Files-value folder-prefix helper below does. */
-export function safeName(s: string): string {
-  if (s === ".") return "_";
-  if (s === "..") return "__";
-  return makePathSafe(s.normalize("NFKC"), "_");
-}
 /** Port of IOUtil.MakePathSafe's DEFAULT overload (IOUtil.cs:733-736 -> :738-759): used for the
  * Files-value FOLDER PREFIX inside MakeGroupPrefix/MakeOptionPrefix (WizardData.cs:1409/1451,
- * `option-prefix.ts`) — a DIFFERENT function from `safeName` above, confirmed empirically
- * (2026-07-13, `[Nyameru]Cute Loop.pmp`): group name `"Which Dance?"` folder-prefixes to
- * `"which dance-/"` in the /resave golden, not `"which dance_/"`. No NFKC normalization and no
- * "."/".." special-casing; the invalid-char replacement is `'-'`, not `'_'`. */
+ * `option-prefix.ts`). Confirmed empirically (2026-07-13, `[Nyameru]Cute Loop.pmp`): group name
+ * `"Which Dance?"` folder-prefixes to `"which dance-/"` in the /resave golden, not
+ * `"which dance_/"` — i.e. the invalid-char replacement is `'-'`, and there is no NFKC
+ * normalization and no "."/".." special-casing.
+ *
+ * That contrast used to be drawn against a `safeName` sibling here — the port of
+ * PMP.MakePMPPathSafe (PMP.cs:1414-1424), which replaced with `'_'`, NFKC-normalized, and
+ * special-cased "."/"..". It is DELETED: `MakePMPPathSafe` is `private static` and its only C#
+ * caller sits inside the `group_NNN_<name>.json` write loop that is commented out at PMP.cs:948-955,
+ * and our own only caller was the group filename we no longer emit. Dead on both sides. */
 export function folderSafeName(s: string): string {
   return makePathSafe(s, "-");
 }
@@ -638,7 +640,12 @@ function optionToJson(
       if (zip === undefined) continue; // absent: no member, no key (PMP.cs:976-981)
       Files[gamePath] = zip.replace(/\//g, "\\"); // PMP.cs:1007
     }
-    base.Files = Files;
+    // ShouldSerializeFiles / ShouldSerializeFileSwaps / ShouldSerializeManipulations
+    // (PMP.cs:1679-1681) are LIVE at this pin — they were block-commented at the old one, behind the
+    // comment "TODO: Comment this out in the future to mimic Penumbra's behavior". An EMPTY
+    // container is therefore an ABSENT KEY, not `{}` / `[]`. Applies to every standard option and to
+    // DefaultData alike (PmpDefaultMod extends PmpStandardOptionJson, PMP.cs:1684).
+    if (Object.keys(Files).length > 0) base.Files = Files;
     // INTENTIONAL DIVERGENCE -- do NOT "fix" this to `{}` to match TexTools. PopulatePmpStandardOption
     // sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:966-968), silently destroying
     // every swap the pack carried: docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. A swap
@@ -648,8 +655,13 @@ function optionToJson(
     // reproducing that would hand the user a modpack quietly missing functionality. Per AGENTS.md's
     // first principle we carry them through instead. See
     // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md.
-    base.FileSwaps = o.fileSwaps;
-    base.Manipulations = normalizeManipulations(o.manipulations);
+    // Note how the FileSwaps divergence above interacts with the ShouldSerialize gates: we KEEP
+    // swaps the golden destroys, so we emit a FileSwaps key exactly where the golden now omits it
+    // entirely. That shape is what dropConfirmedAbsentKeys' carve-out confirms
+    // (test/helpers/upgrade-archive-diff.ts).
+    if (Object.keys(o.fileSwaps).length > 0) base.FileSwaps = o.fileSwaps;
+    const manipulations = normalizeManipulations(o.manipulations);
+    if (manipulations.length > 0) base.Manipulations = manipulations;
     if (isMultiOption) {
       base.Priority = o.priority; // PmpMultiOptionJson.Priority, always serialized (PMP.cs:1697-1698)
     }
@@ -794,51 +806,6 @@ export function writePmp(
     if (isMetaInternalFile(gamePathOf.get(f)!)) zipPaths.delete(f);
   }
 
-  // meta.json is always regenerated from the model: PMPMetaJson (PMP.cs:1467-1488) is a flat, fully
-  // typed class with no extension-data capture, so ANY key the source carries outside its fields
-  // (e.g. Penumbra's own `DefaultPreferredItems`) is silently dropped by a real typed round-trip —
-  // confirmed empirically (`[DVNO] DMBX Shoes 1.pmp` /resave golden drops it). FileVersion is
-  // hard-forced to PMP._WriteFileVersion regardless of source (WizardData.cs:1515).
-  //
-  // Image: WizardHelpers.WriteImage (WizardData.cs:1516) re-encodes a REFERENCED image into a fresh
-  // 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than passing the
-  // source value through — unported (no image encoder here; see
-  // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This carries the
-  // source value verbatim, which diverges from the golden whenever meta actually carries an image
-  // (no corpus pack does, so the corpus alone doesn't expose this).
-  // `PmpMetaJsonWrite`, not `PmpMetaJson`: WritePmp assigns Name/Author/Website/Description verbatim
-  // (WizardData.cs:1509-1512) — no `?? ""`, unlike the option/group seams — and meta.json is
-  // serialized with Newtonsoft defaults (PMP.cs:943), so a null from a TTMP-sourced model is written
-  // as an explicit `null`. See the type's doc comment in manifest-types.ts.
-  const meta: PmpMetaJsonWrite = {
-    // NOT YET PMP._WriteFileVersion (now 4, PMP.cs:47, forced at WizardData.cs:1515): this writer
-    // still emits v3-shaped PMPs (separate default_mod.json/group_NNN.json members below); flipping
-    // to a v4-shaped single-meta.json write is a later task in the v4 port plan
-    // (docs/superpowers/plans/2026-08-06-pmp-v4-port.md, Task 11).
-    FileVersion: 3,
-    Name: data.meta.name,
-    Author: data.meta.author,
-    Description: data.meta.description,
-    // WritePmp reformats the version through .NET Version semantics before assigning it
-    // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
-    // WizardData.cs · WritePmp · 1493-1494; `pmp.Meta.Version = ver.ToString()`, :1513), so a
-    // source spelling "1" is written "1.0". See src/util/dotnet-version.ts for the .NET contract.
-    Version: reformatDotnetVersion(data.meta.version),
-    Website: data.meta.url,
-    Image: data.meta.image,
-    ModTags: data.meta.tags,
-    // Identifier/LastWrite/Groups/DefaultData deliberately OMITTED, not fabricated: the real
-    // WizardData.WritePmp always builds Groups/DefaultData non-null (WizardData.cs:1481-1487) and
-    // PMP.WritePmp re-stamps LastWrite before serializing (:941) — none of that is ported here yet
-    // (same later task as FileVersion above), so this writer does not claim to emit real values for
-    // any of the four. They are OPTIONAL on `PmpMetaJsonWrite` (unlike required-on-read
-    // `PmpMetaJson`) specifically so leaving them out here is well-typed and `JSON.stringify` emits
-    // nothing for them — a synthesized placeholder value (`""`/`null`) would be worse than an absent
-    // key: it looks like real data and matches no genuine TexTools shape, v3 or v4. See
-    // `PmpMetaJsonWrite`'s doc comment (manifest-types.ts).
-  };
-  entries.set("meta.json", enc.encode(JSON.stringify(meta, null, 2)));
-
   // Port of WizardData.WritePmp's "synthesize a PMP default mod from wizard data" absorption
   // (WizardData.cs:1567-1619): searches `DataPages` — page 0..N, each page's groups in order — for
   // the FIRST Standard-type group (Single or Multi, not Imc) named literally "Default"/"Default
@@ -898,26 +865,28 @@ export function writePmp(
         Version: 0, // PmpDefaultMod.Version is a hardcoded 0 (PMP.cs:1687), not sourced from the model
       }
     : // No candidate survived: `pmp.DefaultMod` is never touched beyond `new PmpDefaultMod()`'s own
-      // field initializers (empty Files/FileSwaps/Manipulations, PmpStandardOptionJson, PMP.cs:1667-1671).
-      { Version: 0, Files: {}, FileSwaps: {}, Manipulations: [] };
-  entries.set(
-    "default_mod.json",
-    enc.encode(JSON.stringify(defaultMod, null, 2)),
-  );
+      // field initializers. Under the live ShouldSerialize gates (PMP.cs:1679-1681) those empty
+      // containers are OMITTED, so an empty default option serializes as exactly `{ "Version": 0 }`
+      // — confirmed against a real v4 golden (test/corpus/.resave-cache, 2026-08-06). The old pin
+      // wrote `{ Version, Files: {}, FileSwaps: {}, Manipulations: [] }` into default_mod.json.
+      { Version: 0 };
+  // NOT written as its own member: PMP.WritePmp's default_mod.json write is COMMENTED OUT
+  // (PMP.cs:946-947). It becomes `meta.DefaultData` instead (the push-forward at PMP.cs:935-939).
 
-  // Port of WizardData.WritePmp's group_NNN.json assembly (WizardData.cs:1602-1619), run over the
-  // SAME pruned `pages` the absorption search used above — i.e. `ClearNulls`' group-level pruning
-  // (a group with `!HasData` never becomes a group_NNN.json — see src/container/clear-nulls.ts) is
-  // applied here too, not just at the option-prefix level. `pageCounter` is a LOCAL counter,
-  // incremented once per DataPages entry that contributed at least one non-absorbed group — NOT a
-  // group-carried page number (`ModpackGroup` carries none) — so a page that contributed nothing
-  // (all its groups absorbed or pruned) does not consume a page number, exactly mirroring the C#'s
-  // `numGroupsThisPage > 0` gate. group_NNN's numeric prefix is a
-  // flat counter across the whole (pruned, absorption-excluded) sequence. (At this pin `PMP.WritePmp`
-  // no longer numbers `pmp.Groups` itself — its group-file writes are commented out, PMP.cs:946-955 —
-  // so there is no live C# list-index counterpart to cite here; see PMP.cs:908-962's header note.)
+  // Port of WizardData.WritePmp's group assembly (WizardData.cs:1602-1619), run over the SAME pruned
+  // `pages` the absorption search used above — i.e. ClearNulls' group-level pruning (a group with
+  // `!HasData` never becomes a group entry, src/container/clear-nulls.ts) applies here too, not just
+  // at the option-prefix level. `pageCounter` is a LOCAL counter, incremented once per DataPages
+  // entry that contributed at least one non-absorbed group — NOT a group-carried page number
+  // (`ModpackGroup` carries none) — so a page that contributed nothing (all its groups absorbed or
+  // pruned) does not consume a page number, mirroring the C#'s `numGroupsThisPage > 0` gate (:1617).
+  //
+  // The per-group `group_NNN_<name>.json` member is GONE: that loop is commented out in
+  // PMP.WritePmp (PMP.cs:948-955). Groups are pushed onto `pmp.Groups` in this order (:1614) and
+  // moved wholesale into `meta.Groups` by the push-forward (:928-933), so ORDER is the only thing
+  // the old numeric prefix ever encoded and the array preserves it directly.
+  const groupJsons: PmpGroupJsonRaw[] = [];
   let pageCounter = 0;
-  let groupNumber = 0;
   for (const page of pages) {
     let numGroupsThisPage = 0;
     for (const g of page.groups) {
@@ -992,6 +961,26 @@ export function writePmp(
       // Image: same WizardHelpers.WriteImage caveat as meta.json's Image and an option's Image
       // above (WizardData.cs:964) — carried through verbatim, unported; see
       // docs/backlog/2026-07-13-pmp-writer-image-reencode.md.
+      // PMPGroupJson.Identifier (PMP.cs:1514) is a `Guid.NewGuid()` field initializer that
+      // ToPmpGroup (WizardData.cs:957-964) never assigns, so TexTools writes a fresh GUID per group
+      // per write. Regenerated here like every other typed base field — a v4 SOURCE pack's own
+      // Identifier must NOT survive through `filteredRaw`.
+      //
+      // EXCEPT for an Imc group. `PMPImcGroupJson` declares `public PmpIdentifierJson Identifier;`
+      // (PMP.cs:1538), which HIDES the base `Guid`; Json.NET resolves a hidden member in favour of
+      // the most-derived declaring type, so an Imc group serializes the identifier OBJECT and NO
+      // GUID at all. Confirmed against a real v4 golden (an Imc group whose `Identifier` is
+      // `{ ObjectType, PrimaryId, SecondaryId, Variant, EquipSlot, BodySlot }`,
+      // test/corpus/.resave-cache, 2026-08-06). That object is already carried through verbatim by
+      // `filteredRaw` (KNOWN_GROUP_KEYS lists "Identifier"), so the override must not fire here.
+      const identifierOverride: Record<string, unknown> =
+        g.selectionType === "Imc"
+          ? {}
+          : {
+              Identifier: pmpIdentifier(
+                `group:${groupJsons.length}:${g.name.trim()}`,
+              ),
+            };
       const groupJson: PmpGroupJsonRaw = {
         ...filteredRaw,
         ...defaultEntryOverride,
@@ -1010,17 +999,64 @@ export function writePmp(
         // next line, :961, is deliberately not modelled: the field is `[JsonIgnore]`
         // (PMP.cs:1508) with no ShouldSerialize, so it never reaches a group json.)
         DefaultSettings: groupSelection(g),
+        // Positioned between the base fields and `Options` because that is where the golden puts it:
+        // `Identifier` is an ordinary member of the base class (PMP.cs:1514) while `Options` carries
+        // `[JsonProperty(Order = 99)]` on every subtype (:1522/:1530/:1543), which sorts it last.
+        ...identifierOverride,
         Options: g.options.map((o) =>
           optionToJson(o, true, hasStandardFields, isMultiOption, zipPaths),
         ),
       };
-      groupNumber++;
-      const fileName = `group_${String(groupNumber).padStart(3, "0")}_${safeName(g.name)}.json`;
-      entries.set(fileName, enc.encode(JSON.stringify(groupJson, null, 2)));
+      groupJsons.push(groupJson);
       numGroupsThisPage++;
     }
     if (numGroupsThisPage > 0) pageCounter++;
   }
+
+  // meta.json is always regenerated from the model: PMPMetaJson (PMP.cs:1467-1488) is a flat, fully
+  // typed class with no extension-data capture, so ANY key the source carries outside its fields
+  // (e.g. Penumbra's own `DefaultPreferredItems`) is silently dropped by a real typed round-trip —
+  // confirmed empirically (`[DVNO] DMBX Shoes 1.pmp` /resave golden drops it). FileVersion is
+  // hard-forced to PMP._WriteFileVersion regardless of source (WizardData.cs:1515).
+  //
+  // Assembled HERE, after the group loop, because `Groups` is one of its keys now.
+  //
+  // Image: WizardHelpers.WriteImage (WizardData.cs:1516) re-encodes a REFERENCED image into a fresh
+  // 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than passing the
+  // source value through — unported (no image encoder here; see
+  // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This carries the source value verbatim,
+  // which diverges from the golden whenever meta actually carries an image (no corpus pack does).
+  //
+  // `PmpMetaJsonWrite`, not `PmpMetaJson`: WritePmp assigns Name/Author/Website/Description verbatim
+  // (WizardData.cs:1509-1512) — no `?? ""`, unlike the option/group seams — and meta.json is
+  // serialized with Newtonsoft defaults (PMP.cs:943), so a null from a TTMP-sourced model is written
+  // as an explicit `null`. See the type's doc comment in manifest-types.ts.
+  const meta: PmpMetaJsonWrite = {
+    FileVersion: 4, // PMP._WriteFileVersion (PMP.cs:47), forced at WizardData.cs:1515
+    Name: data.meta.name,
+    Author: data.meta.author,
+    Description: data.meta.description,
+    // WritePmp reformats the version through .NET Version semantics before assigning it
+    // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
+    // WizardData.cs · WritePmp · 1493-1494; `pmp.Meta.Version = ver.ToString()`, :1513), so a source
+    // spelling "1" is written "1.0". See src/util/dotnet-version.ts for the .NET contract.
+    Version: reformatDotnetVersion(data.meta.version),
+    Website: data.meta.url,
+    Image: data.meta.image,
+    // PMPMetaJson.Identifier (PMP.cs:1476) — a `Guid.NewGuid()` initializer nothing ever assigns.
+    // See src/container/pmp-identifier.ts for why ours is derived rather than random or empty.
+    Identifier: pmpIdentifier(`meta:${data.meta.name}`),
+    // Re-stamped on every write at PMP.cs:941, `DateTime.Now.ToString("O", InvariantCulture)`.
+    LastWrite: dotnetRoundTripLocal(new Date()),
+    // PMP.cs:923-926 coalesces a null ModTags to an empty list before serializing.
+    ModTags: data.meta.tags,
+    // The v4 push-forward (PMP.cs:928-939): `pmp.Meta.Groups = pmp.Groups` and
+    // `pmp.Meta.DefaultData = pmp.DefaultMod`. `WizardData.WritePmp` builds both non-null
+    // (WizardData.cs:1481-1487), so both branches always fire and both keys are always present.
+    Groups: groupJsons,
+    DefaultData: defaultMod,
+  };
+  entries.set("meta.json", enc.encode(JSON.stringify(meta, null, 2)));
 
   // Port of PopulatePmpStandardOption's payload write (PMP.cs:1001-1003) followed by WritePmp's
   // directory zip (PMP.cs:957-961): TexTools writes every option's payload via
