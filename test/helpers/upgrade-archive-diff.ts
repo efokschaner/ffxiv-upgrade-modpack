@@ -2,6 +2,7 @@ import { readZip } from "../../src/zip/zip";
 import { payloadMemberNames, resolveRedirects } from "./archive-redirects";
 import { bytesEqual } from "./compare";
 import { jsonPointerDiff } from "./json-diff";
+import { confirmNondeterministicMetaFields } from "./pmp-v4-nondeterminism";
 import type { FileDiff } from "./upgrade-diff";
 
 const dec = new TextDecoder();
@@ -298,7 +299,9 @@ export function dropConfirmedAbsentKeys(
     if (isObj(golden.DefaultData)) {
       out.DefaultData = option(ours.DefaultData, golden.DefaultData);
     }
-    return out;
+    // The three v4 meta fields TexTools regenerates on every write, and that therefore can never
+    // match — confirmed narrowly, never merely tolerated. See pmp-v4-nondeterminism.ts.
+    return confirmNondeterministicMetaFields(ours, out);
   }
   // v3 group_NNN.json.
   if (Array.isArray(golden.Options) && Array.isArray(ours.Options)) {
