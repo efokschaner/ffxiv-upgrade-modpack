@@ -1028,15 +1028,21 @@ describe("dropConfirmedAbsentKeys — v4 meta.json (PMP.cs:1484/1487)", () => {
       ],
       { Version: 0 },
     );
+    const ours = v4([{ Name: "G", Type: "Single", Options: [{ Name: "A" }] }], {
+      Version: 0,
+    });
     const pruned = dropConfirmedAbsentKeys(
-      v4([{ Name: "G", Type: "Single", Options: [{ Name: "A" }] }], {
-        Version: 0,
-      }),
+      ours,
       golden,
       new Map<string, Uint8Array>(),
     ) as { Groups: Array<{ Options: Array<{ FileSwaps: unknown }> }> };
     expect(pruned.Groups[0]!.Options[0]!.FileSwaps).toEqual({
       "chara/x.tex": "chara/y.tex",
     });
+    // Direct pointer-diff assertion, matching this file's established precedent for pinning the
+    // reject direction (see the v3 "still REJECTS ours-empty against golden-populated" case above):
+    // a structural check alone only proves the carve-out stays quiet, not that the surrounding
+    // comparison still SURFACES the loss to jsonPointerDiff.
+    expect(jsonPointerDiff(ours, pruned).length).toBeGreaterThan(0);
   });
 });
