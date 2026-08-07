@@ -185,10 +185,10 @@ describe("writePmp model-building fallback (no raw)", () => {
               defaultSettings: 0,
               options: [
                 {
-                  // "Default": matches WritePmp's absorption predicate (WizardData.cs:1553-1578)
+                  // "Default": matches WritePmp's absorption predicate (WizardData.cs:1567-1598)
                   // structurally, exactly as FromPmp's REAL synthesized Default option would
-                  // (Name hardcoded "Default", WizardData.cs:1122/1128) -- not a blank name, which the
-                  // blank-name guard (WizardData.cs:1520-1523) would otherwise reject before absorption
+                  // (Name hardcoded "Default", WizardData.cs:1141/1147) -- not a blank name, which the
+                  // blank-name guard (WizardData.cs:1539-1542) would otherwise reject before absorption
                   // is ever considered.
                   name: "Default",
                   description: "",
@@ -1130,7 +1130,7 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
   });
 });
 
-describe("writePmp IsMetaInternalFile drop (PMP.cs:901-905 -> IOUtil.cs:577-592)", () => {
+describe("writePmp IsMetaInternalFile drop (PMP.cs:994-998 -> IOUtil.cs:577-592)", () => {
   // A raw .cmp/.eqp/.eqdp/.gmp/.est/.imc file gets neither a payload member nor a Files key --
   // PopulatePmpStandardOption's third skip, after the absent-file and .meta/.rgsp branches. Unlike
   // an absent file, this one DOES have real bytes and IS accepted by canImport (its game path starts
@@ -1190,7 +1190,7 @@ describe("writePmp IsMetaInternalFile drop (PMP.cs:901-905 -> IOUtil.cs:577-592)
   });
 });
 
-describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
+describe("writePmp blank-name guard (WizardData.cs:1539-1542)", () => {
   // WritePmp's own assembly loop throws BEFORE any prefix is put to use when a Standard-type
   // option's name, or its owning group's name, is blank/whitespace-only -- but only for an option
   // that SURVIVES pruning (has a data-carrying group; the synthesized Default group is exempt, see
@@ -1268,20 +1268,20 @@ describe("writePmp blank-name guard (WizardData.cs:1520-1523)", () => {
 
   it("throws when a Standard-type option's name is blank", () => {
     expect(() => writePmp(modeledData("Choice", "  "))).toThrow(
-      /PMP Files must have valid group and option names \(WizardData\.cs:1520-1523\)/,
+      /PMP Files must have valid group and option names \(WizardData\.cs:1539-1542\)/,
     );
   });
 
   it("throws when a Standard-type group's name is blank", () => {
     expect(() => writePmp(modeledData("  ", "Only"))).toThrow(
-      /PMP Files must have valid group and option names \(WizardData\.cs:1520-1523\)/,
+      /PMP Files must have valid group and option names \(WizardData\.cs:1539-1542\)/,
     );
   });
 });
 
-describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
+describe("writePmp .meta/.rgsp write guard (PMP.cs:984-993)", () => {
   // PopulatePmpStandardOption converts a .meta/.rgsp file to Manipulations instead of writing it as
-  // a zip member (PMP.cs:891-900 -> PMPExtensions.MetadataToManipulations/RgspToManipulations) --
+  // a zip member (PMP.cs:984-993 -> PMPExtensions.MetadataToManipulations/RgspToManipulations) --
   // unported (see pmp.ts's own comment on this guard /
   // docs/backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md), so writePmp fails loud instead
   // of silently emitting a member TexTools would never write.
@@ -1335,13 +1335,13 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:891-900)", () => {
 
   it("throws when writing a .meta file into a PMP", () => {
     expect(() => writePmp(modeledData("chara/foo.meta"))).toThrow(
-      /unported \(PMP\.cs:891-900 converts it to Manipulations\): chara\/foo\.meta/,
+      /unported \(PMP\.cs:984-993 converts it to Manipulations\): chara\/foo\.meta/,
     );
   });
 
   it("throws when writing a .rgsp file into a PMP", () => {
     expect(() => writePmp(modeledData("chara/foo.rgsp"))).toThrow(
-      /unported \(PMP\.cs:891-900 converts it to Manipulations\): chara\/foo\.rgsp/,
+      /unported \(PMP\.cs:984-993 converts it to Manipulations\): chara\/foo\.rgsp/,
     );
   });
 });

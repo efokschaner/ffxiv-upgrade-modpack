@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parsePmpGroup } from "../../src/container/manifest-types";
+import {
+  type PmpMetaJsonRaw,
+  parsePmpGroup,
+  parsePmpMeta,
+} from "../../src/container/manifest-types";
 import {
   makeLegacyTtmp,
   makePmpZip,
@@ -36,6 +40,32 @@ describe("parsePmpGroup group Type resolution", () => {
     expect(() => parsePmpGroup(group())).toThrow(
       "Unimplemented PMP group type: ",
     );
+  });
+});
+
+describe("parsePmpMeta v4 fields (PMP.cs · PMPMetaJson · 1467-1488)", () => {
+  it("defaults the four v4 fields when the document omits them (a v3 meta.json)", () => {
+    const parsed = parsePmpMeta({ FileVersion: 3, Name: "V3" });
+    expect(parsed.Identifier).toBe("");
+    expect(parsed.LastWrite).toBe("");
+    expect(parsed.Groups).toBeNull();
+    expect(parsed.DefaultData).toBeNull();
+  });
+
+  it("carries a v4 document's Identifier/LastWrite/Groups/DefaultData through verbatim", () => {
+    const raw: PmpMetaJsonRaw = {
+      FileVersion: 4,
+      Name: "V4",
+      Identifier: "5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3",
+      LastWrite: "2026-08-06T04:41:11.0160172-07:00",
+      Groups: [{ Type: "Single", Name: "G", Options: [{ Name: "On" }] }],
+      DefaultData: { Version: 0 },
+    };
+    const parsed = parsePmpMeta(raw);
+    expect(parsed.Identifier).toBe("5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3");
+    expect(parsed.LastWrite).toBe("2026-08-06T04:41:11.0160172-07:00");
+    expect(parsed.Groups).toHaveLength(1);
+    expect(parsed.DefaultData).toEqual({ Version: 0 });
   });
 });
 

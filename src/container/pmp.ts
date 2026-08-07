@@ -1,7 +1,7 @@
 // PMP (Penumbra Mod Pack) container reader/writer, ported from xivModdingFramework
-// Mods/FileTypes/PMP.cs. readPmp mirrors LoadPMP (PMP.cs:124); writePmp mirrors WritePmp
-// (PMP.cs:830) / CreateSimplePmp (:777). optionFromJson/optionToJson map the PMPOptionJson /
-// PMPGroupJson / PMPMetaJson manifest structs (PMP.cs:1485 / :1387 / :1369).
+// Mods/FileTypes/PMP.cs. readPmp mirrors LoadPMP (PMP.cs:159); writePmp mirrors WritePmp
+// (PMP.cs:908) / CreateSimplePmp (:853). optionFromJson/optionToJson map the PMPOptionJson /
+// PMPGroupJson / PMPMetaJson manifest structs (PMP.cs:1645 / :1495 / :1467).
 import {
   allGroups,
   allPages,
@@ -33,9 +33,9 @@ const dec = new TextDecoder();
 
 // Emulates the subset of Win32 path normalization that TexTools' NTFS filesystem applies on BOTH
 // sides of a PMP load. ResolvePMPBasePath unzips the whole archive to a temp folder
-// (PMP.cs:76 -> IOUtil.UnzipFiles), where NTFS strips each written ENTRY name; files are then read
-// back by Path.Combine(unzipPath, file.Value) (PMP.cs:1080), which LoadPMP never guards with an
-// existence check (PMP.cs:124). That normalization is lowercase (case-insensitive filesystem) plus
+// (PMP.cs:78 -> IOUtil.UnzipFiles), where NTFS strips each written ENTRY name; files are then read
+// back by Path.Combine(unzipPath, file.Value) (PMP.cs:1178), which LoadPMP never guards with an
+// existence check (PMP.cs:159). That normalization is lowercase (case-insensitive filesystem) plus
 // TrimEnd('.', ' ') on each path segment (Windows drops trailing dots/spaces from every name
 // component). readZip already normalizes '\' -> '/', so segments split on '/'. Penumbra lowercases
 // the Files value and can retain a trailing dot/space the archive/on-disk name drops; normalizing
@@ -48,12 +48,12 @@ function windowsPathKey(path: string): string {
     .join("/");
 }
 
-// Port of the ExtraFiles-scan "referenced" comparison (PMP.cs:196/:209 build allPmpFiles, :214
-// compare it against the on-disk listing). Deliberately NOT windowsPathKey: allPmpFiles is built
-// from the RAW `Files` value with only `.ToLower()` applied (backslashes and all, no trailing
-// dot/space trim), and PMP.cs:214 compares it against `IOUtil.GetFilesInFolder(path)` — the
-// on-disk relative path, which NTFS already trimmed when PMP.cs:76 unzipped the archive before this
-// scan ever runs. So a `Files` value that keeps a trailing dot/space on a folder segment (e.g.
+// Port of the ExtraFiles-scan "referenced" comparison (PMP.cs:232 declares allPmpFiles, :234-276
+// fills it, :279 compares it against the on-disk listing). Deliberately NOT windowsPathKey:
+// allPmpFiles is built from the RAW `Files` value with only `.ToLower()` applied (backslashes and
+// all, no trailing dot/space trim), and PMP.cs:279 compares it against `IOUtil.GetFilesInFolder(path)`
+// — the on-disk relative path, which NTFS already trimmed when PMP.cs:78 unzipped the archive before
+// this scan ever runs. So a `Files` value that keeps a trailing dot/space on a folder segment (e.g.
 // `optional\rose acc.\…`) never matches the (already-trimmed) on-disk name, even though the SAME
 // file resolves as a payload one section up via the looser, NTFS-read-equivalent windowsPathKey
 // lookup (optionFromJson, below): that file is BOTH a resolved payload AND an ExtraFile in
@@ -62,10 +62,10 @@ function looseCaseKey(path: string): string {
   return path.toLowerCase();
 }
 
-/** Port of IsPmpJsonFile (PMP.cs:228-241): matches on the lowercased BASENAME only (a manifest
+/** Port of IsPmpJsonFile (PMP.cs:293-306): matches on the lowercased BASENAME only (a manifest
  *  json nested in a subfolder would still count — we don't reproduce that beyond mirroring the
  *  basename-only check, since PMP manifests are never actually written into subfolders). Used by
- *  LoadPMP's extras scan (PMP.cs:214) to exclude meta.json/default_mod.json/group_* from
+ *  LoadPMP's extras scan (PMP.cs:279) to exclude meta.json/default_mod.json/group_* from
  *  ExtraFiles; deliberately looser than the `groupNames` group-parsing regex above (that one
  *  requires a numeric suffix to actually parse a group — this one only decides what counts as
  *  "manifest" for extras purposes, matching the C# exactly). */
@@ -79,7 +79,7 @@ function isPmpJsonFile(zipPath: string): boolean {
   );
 }
 
-// Port of CanImport (PMP.cs:752-770), called from UnpackPmpOption's Files loop (PMP.cs:1075-1078): a
+// Port of CanImport (PMP.cs:828-846), called from UnpackPmpOption's Files loop (PMP.cs:1169-1200): a
 // Files entry whose gamePath does not start with any recognized XivDataFile folder key is skipped
 // ENTIRELY on load — dropped from the option's Files map altogether (unlike an absent-bytes entry,
 // which is KEPT with no data), so it never becomes a ModpackFile and is never assigned a zip path on
@@ -93,7 +93,7 @@ function isPmpJsonFile(zipPath: string): boolean {
 // that still RESOLVE to real archive bytes (via windowsPathKey) — byte-identical to the real "Ear
 // Physics" group's own "On"/"Off" option content. Left unfiltered, those garbage entries are still fed
 // into resolveDuplicates' shared idx counter (PmpExtensions.cs:528-551) AHEAD of the real group's
-// options (default_mod's synthesized "Default" group is always visited first, WizardData.cs:1118-1138),
+// options (default_mod's synthesized "Default" group is always visited first, WizardData.cs:1137-1157),
 // so their spurious hash-collision with the real content swaps which of "On"/"Off" lands on
 // common/1 vs common/2 — a genuine payload-content divergence, not a cosmetic manifest one.
 const KNOWN_GAME_FOLDER_PREFIXES = [
@@ -122,22 +122,22 @@ function optionFromJson(
   const modFiles = new Map<string, ModpackFile>();
   for (const [gamePath, zipPathRaw] of Object.entries(o.Files)) {
     const zipPath = zipPathRaw.replace(/\\/g, "/");
-    // PMP.cs:196/:209 build the ExtraFiles "referenced" set from the RAW Files value directly,
+    // PMP.cs:234-276 build the ExtraFiles "referenced" set from the RAW Files value directly,
     // independently of (and earlier than) UnpackPmpOption/CanImport — so a rejected gamePath's zip
     // path still counts as referenced (its member must not become an ExtraFile) even though the
     // entry itself never reaches the model below. See readPmp's ExtraFiles-scan comment.
     referencedKeys.add(looseCaseKey(zipPath));
-    if (!canImport(gamePath)) continue; // PMP.cs:752-770/:1075-1078 — dropped, not "absent"
+    if (!canImport(gamePath)) continue; // PMP.cs:828-846/:1169-1200 — dropped, not "absent"
     // Windows-filesystem-equivalent resolution. Penumbra lowercases the Files value and may keep a
     // trailing dot/space on a folder segment that the archive/NTFS name drops; TexTools reads
-    // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1080) after a LoadPMP
-    // that never verifies existence (PMP.cs:124). Look up the windowsPathKey; pmpPath keeps the
+    // Path.Combine(unzipPath, file.Value) from the unzipped folder (PMP.cs:1178) after a LoadPMP
+    // that never verifies existence (PMP.cs:159). Look up the windowsPathKey; pmpPath keeps the
     // manifest value verbatim so the writer/golden are unaffected.
     //
     // A miss is NOT an error: the file is genuinely not packed. TexTools tolerates that at load —
-    // UnpackPmpOption still adds the entry, with a RealPath that does not exist (PMP.cs:1071-1102)
+    // UnpackPmpOption still adds the entry, with a RealPath that does not exist (PMP.cs:1191-1200)
     // — and defers the consequences to each read seam (ResolveFile, EndwalkerUpgrade.cs:1758) and
-    // to the writer, which drops it (PMP.cs:883-888). So we emit the file with NO bytes.
+    // to the writer, which drops it (PMP.cs:976-981). So we emit the file with NO bytes.
     const data = filesByKey.get(windowsPathKey(zipPath));
     modFiles.set(gamePath, {
       data,
@@ -151,7 +151,7 @@ function optionFromJson(
     priority: o.Priority ?? 0, // multi-option-only field; absent on other subtypes
     // Placeholder only. `Selected` is not an option-level field in the C# either: FromPMPGroup
     // derives it from the OWNING GROUP's Type + DefaultSettings and the option's INDEX
-    // (WizardData.cs:805-813), neither of which is in scope here — so both call sites below
+    // (WizardData.cs:811-819), neither of which is in scope here — so both call sites below
     // overwrite this.
     selected: false,
     files: modFiles,
@@ -163,9 +163,9 @@ function optionFromJson(
   };
 }
 
-// Port of PmpStandardOptionJson.IsEmptyOption (PMP.cs:1513-1517), read directly against the RAW
+// Port of PmpStandardOptionJson.IsEmptyOption (PMP.cs:1673-1677), read directly against the RAW
 // default_mod.json document — exactly what WizardData.FromPmp's `!pmp.DefaultMod.IsEmptyOption`
-// guard (:1118) consults. Runs at LOAD time, where `raw` (the parsed default_mod.json) already IS
+// guard (:1137) consults. Runs at LOAD time, where `raw` (the parsed default_mod.json) already IS
 // the unfiltered document, so there is no canImport-filtered model to reconstruct counts from (the
 // write-time check that once needed that reconstruction, option-prefix.ts's `isEmptyDefaultOption`,
 // was deleted along with `ModpackData.groups` — this is now the only such check, run at load).
@@ -199,9 +199,9 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     .filter((k) => /^group_\d+.*\.json$/i.test(k))
     .sort();
 
-  // Port of the ExtraFiles scan (PMP.cs:213-215): every archive member that is neither a manifest
+  // Port of the ExtraFiles scan (PMP.cs:279-280): every archive member that is neither a manifest
   // json nor referenced by an option's `Files` value is preserved verbatim so writePmp can re-emit
-  // it (WizardData.WritePmp, WizardData.cs:1477-1488). "Referenced" is decided the way PMP.cs
+  // it (WizardData.WritePmp, WizardData.cs:1495-1507). "Referenced" is decided the way PMP.cs
   // itself decides it — `looseCaseKey`, NOT `windowsPathKey` — so a member referenced only via
   // case-folding is still NOT an extra (case-fold is part of both), but a member referenced only
   // via a trailing dot/space Files value IS still an extra (see `looseCaseKey`'s doc comment):
@@ -213,20 +213,20 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   const referencedKeys = new Set<string>();
 
   // Pairs each real (non-Default) built group with the raw Page index FromPmp assigns it by
-  // (WizardData.cs:1152-1157) — `page` is read transiently from the parsed group JSON (`g.Page`
+  // (WizardData.cs:1171-1176) — `page` is read transiently from the parsed group JSON (`g.Page`
   // below) purely to route the group into `pages` construction further down; it is not a model
   // field (`WizardGroupEntry` carries no page of its own).
   const realGroups: { page: number; group: ModpackGroup | null }[] = [];
   for (const name of groupNames) {
     const gRaw = JSON.parse(dec.decode(entries.get(name)!)) as PmpGroupJsonRaw;
     const g = parsePmpGroup(gRaw);
-    // WizardData.cs:805-813 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a
+    // WizardData.cs:811-819 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a
     // Single group, a BITMASK otherwise. `group.OptionType = pGroup.Type == "Single" ? Single :
-    // Multi` (:769), so an Imc/Combining group takes the bitmask branch exactly like a real Multi.
+    // Multi` (:775), so an Imc/Combining group takes the bitmask branch exactly like a real Multi.
     //
-    // DefaultSettings -> ulong via CustomUInt64Converter (PMP.cs:1558-1571), which reinterprets a
+    // DefaultSettings -> ulong via CustomUInt64Converter (PMP.cs:1723-1749), which reinterprets a
     // negative JSON number as its 64-bit two's-complement UNSIGNED value (the documented "-1 meant
-    // 2^64-1" shim, :1564-1565). BigInt.asUintN(64, ...) reproduces that; JS's 32-bit `|` would not.
+    // 2^64-1" shim, :1731-1734). BigInt.asUintN(64, ...) reproduces that; JS's 32-bit `|` would not.
     const rawSettings = BigInt.asUintN(
       64,
       BigInt(Math.trunc(g.DefaultSettings)),
@@ -234,7 +234,7 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     const options = g.Options.map((o, idx) => {
       const opt = optionFromJson(o, filesByKey, referencedKeys);
       // `idx & 63` reproduces .NET's SHIFT-COUNT MASKING, not a bounds clamp. C# writes
-      // `var bit = 1UL << idx;` (WizardData.cs:811) on a 64-bit operand, and the C# language
+      // `var bit = 1UL << idx;` (WizardData.cs:817) on a 64-bit operand, and the C# language
       // specification requires the shift count to be masked to its low 6 bits — the compiler emits
       // an explicit `and 63` to guarantee it, whereas ECMA-335 leaves `shl` with a count at or
       // above the operand width unspecified, so the guarantee is C#'s and not the IL's. `idx == 64`
@@ -256,16 +256,16 @@ export function readPmp(bytes: Uint8Array): ModpackData {
           : (rawSettings & (1n << BigInt(idx & 63))) !== 0n;
       return opt;
     });
-    // WizardData.cs · FromPMPGroup · 851-855 — `if (group.Options.Count == 0) return null;`,
-    // BEFORE the backstop at :857-860. NOT a skip-the-push: FromPmp adds the result
-    // unconditionally (:1156) and ClearNulls prunes it afterwards (:1249), so the null must
+    // WizardData.cs · FromPMPGroup · 857-861 — `if (group.Options.Count == 0) return null;`,
+    // BEFORE the backstop at :863-866. NOT a skip-the-push: FromPmp adds the result
+    // unconditionally (:1156) and ClearNulls prunes it afterwards (:1268-1271), so the null must
     // reach page.groups for the control flow to match.
     if (options.length === 0) {
       realGroups.push({ page: g.Page, group: null });
       continue;
     }
-    // WizardData.cs:857-860 — FromPMPGroup's tail. Same "none selected" backstop as the TTMP seam
-    // (which is a DIFFERENT C# symbol, FromWizardGroup:755-757, so it is transcribed there
+    // WizardData.cs:863-866 — FromPMPGroup's tail. Same "none selected" backstop as the TTMP seam
+    // (which is a DIFFERENT C# symbol, FromWizardGroup:761-764, so it is transcribed there
     // separately rather than shared). It never clamps a group with more than one selected.
     if (g.Type === "Single" && !options.some((o) => o.selected)) {
       options[0]!.selected = true;
@@ -285,14 +285,14 @@ export function readPmp(bytes: Uint8Array): ModpackData {
     realGroups.push({ page: g.Page, group: built });
   }
 
-  // WizardData.cs:1118-1159 (FromPmp) — builds DataPages the way the C# loader does, at LOAD time
+  // WizardData.cs:1117-1178 (FromPmp) — builds DataPages the way the C# loader does, at LOAD time
   // (see docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md §4). Built
   // BEFORE the ExtraFiles scan below: the synthesized Default page's `optionFromJson` call (just
   // like every real option's, in the groups loop above) is what feeds `referencedKeys`, and the
   // scan must see every referenced key or it misclassifies a still-referenced member as an extra.
   const pages: ModpackPage[] = [];
 
-  // WizardData.cs:1118-1138 — the synthesized Default page, iff default_mod.json is not an empty
+  // WizardData.cs:1137-1157 — the synthesized Default page, iff default_mod.json is not an empty
   // option. `isEmptyPmpOption` (above) reads the RAW document, which is exactly what we hold
   // here — no canImport-filtered reconstruction needed, unlike the write-time check this
   // superseded.
@@ -302,9 +302,9 @@ export function readPmp(bytes: Uint8Array): ModpackData {
       filesByKey,
       referencedKeys,
     );
-    // WizardData.cs:1122/1128 — fakeOption.Name and fakeGroup.Name are HARDCODED "Default",
+    // WizardData.cs:1141/1147 — fakeOption.Name and fakeGroup.Name are HARDCODED "Default",
     // not read from default_mod.json (whose Name is virtually always absent —
-    // ShouldSerializeName is false, PMP.cs:1499).
+    // ShouldSerializeName is false, PMP.cs:1659).
     defaultPageOption.name = "Default";
     defaultPageOption.selected = true; // fakeGroup.DefaultSettings defaults to 0 -> Single index 0
     pages.push({
@@ -323,16 +323,16 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   }
 
   if (realGroups.length > 0) {
-    // WizardData.cs:1142-1150 — one page per index 0..pageMax, APPENDED after the Default page.
+    // WizardData.cs:1159-1169 — one page per index 0..pageMax, APPENDED after the Default page.
     const pageMax = Math.max(...realGroups.map((r) => r.page));
     for (let i = 0; i <= pageMax; i++) pages.push({ groups: [] });
-    // WizardData.cs:1152-1157 — `data.DataPages[g.Page]`, a RAW index into a list that already has
+    // WizardData.cs:1171-1176 — `data.DataPages[g.Page]`, a RAW index into a list that already has
     // the optional Default page on the front. Ported verbatim; this IS the page off-by-one
-    // (docs/TEXTOOLS_BUGS.md #7). The add is UNCONDITIONAL (:1156).
+    // (docs/TEXTOOLS_BUGS.md #7). The add is UNCONDITIONAL (:1175).
     for (const r of realGroups) pages[r.page]!.groups.push(r.group);
   }
 
-  clearNulls(pages); // WizardData.cs · FromPmp · 1159 — FromPmp's own call, on the way out
+  clearNulls(pages); // WizardData.cs · FromPmp · 1178 — FromPmp's own call, on the way out
 
   const extraFiles = new Map<string, Uint8Array>();
   for (const [name, data] of entries) {
@@ -360,11 +360,11 @@ export function readPmp(bytes: Uint8Array): ModpackData {
   };
 }
 
-// Port of PMP.MakePMPPathSafe (PMP.cs:1316-1326) -> IOUtil.MakePathSafe (IOUtil.cs:738-759).
+// Port of PMP.MakePMPPathSafe (PMP.cs:1414-1424) -> IOUtil.MakePathSafe (IOUtil.cs:738-759).
 // QUIRK: Path.GetInvalidFileNameChars() is platform-dependent; goldens are generated on Windows,
 // so we reproduce the WINDOWS set — control chars 0x00-0x1F plus these nine. (Unix would be just
-// \0 and /.) Replace invalid chars with '_' (_PMPSafeNameReplacement, PMP.cs:47), lowercase the
-// rest (makeLowercase=true), then Trim(). "." -> "_", ".." -> "__" (PMP.cs:1319-1323).
+// \0 and /.) Replace invalid chars with '_' (_PMPSafeNameReplacement, PMP.cs:49), lowercase the
+// rest (makeLowercase=true), then Trim(). "." -> "_", ".." -> "__" (PMP.cs:1417-1421).
 const WINDOWS_INVALID_FILENAME_CHARS = new Set<number>([
   0x22,
   0x3c,
@@ -395,17 +395,17 @@ function makePathSafe(name: string, rep: string): string {
   }
   return out.trim();
 }
-/** Port of PMP.MakePMPPathSafe (PMP.cs:1316-1326): used ONLY for the `group_NNN_<name>.json`
- * MANIFEST FILENAME (WritePmp, PMP.cs:830-869). NFKC-normalizes first, replaces an invalid char
- * with '_' (_PMPSafeNameReplacement, PMP.cs:47), and special-cases "." -> "_" / ".." -> "__"
- * (PMP.cs:1319-1323) — none of which the Files-value folder-prefix helper below does. */
+/** Port of PMP.MakePMPPathSafe (PMP.cs:1414-1424): used ONLY for the `group_NNN_<name>.json`
+ * MANIFEST FILENAME (WritePmp, PMP.cs:908-962). NFKC-normalizes first, replaces an invalid char
+ * with '_' (_PMPSafeNameReplacement, PMP.cs:49), and special-cases "." -> "_" / ".." -> "__"
+ * (PMP.cs:1417-1421) — none of which the Files-value folder-prefix helper below does. */
 export function safeName(s: string): string {
   if (s === ".") return "_";
   if (s === "..") return "__";
   return makePathSafe(s.normalize("NFKC"), "_");
 }
 /** Port of IOUtil.MakePathSafe's DEFAULT overload (IOUtil.cs:733-736 -> :738-759): used for the
- * Files-value FOLDER PREFIX inside MakeGroupPrefix/MakeOptionPrefix (WizardData.cs:1390/1432,
+ * Files-value FOLDER PREFIX inside MakeGroupPrefix/MakeOptionPrefix (WizardData.cs:1409/1451,
  * `option-prefix.ts`) — a DIFFERENT function from `safeName` above, confirmed empirically
  * (2026-07-13, `[Nyameru]Cute Loop.pmp`): group name `"Which Dance?"` folder-prefixes to
  * `"which dance-/"` in the /resave golden, not `"which dance_/"`. No NFKC normalization and no
@@ -423,23 +423,23 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** Port of `WizardGroupEntry.Selection` (WizardData.cs:578-604). `ToPmpGroup` writes
- * `pg.DefaultSettings = Selection` (WizardData.cs:949) rather than carrying the source value
+/** Port of `WizardGroupEntry.Selection` (WizardData.cs:580-607). `ToPmpGroup` writes
+ * `pg.DefaultSettings = Selection` (WizardData.cs:960) rather than carrying the source value
  * through, so a written group's `DefaultSettings` is always regenerated from the per-option
  * `Selected` flags.
  *
  * This used to RECONSTRUCT those flags from the group's raw `defaultSettings`, because the domain
  * model had none. It now reads the real `selected` flags, which `readPmp`/`readTtmp2` derive at the
- * same seam the two C# loaders do (`FromPMPGroup`, WizardData.cs:805-813 + the "none selected"
- * fixup :857-860; `FromWizardGroup`, :755-757) -- so this is the getter itself, nothing more.
+ * same seam the two C# loaders do (`FromPMPGroup`, WizardData.cs:811-819 + the "none selected"
+ * fixup :863-866; `FromWizardGroup`, :761-764) -- so this is the getter itself, nothing more.
  *
- * Single (WizardData.cs:582-589): `Options.FirstOrDefault(x => x.Selected)`, `return 0` when none
+ * Single (WizardData.cs:584-592): `Options.FirstOrDefault(x => x.Selected)`, `return 0` when none
  * matched, else `Options.IndexOf(op)` -- `findIndex` is both in one call (`IndexOf` on a list of
  * reference-typed options finds the very element `FirstOrDefault` returned). Note the C# does NOT
  * clamp a Single group carrying several selected options; the first wins, as here.
  *
- * Multi (WizardData.cs:593-602), which also covers Imc/Combining groups since
- * `group.OptionType = pGroup.Type == "Single" ? Single : Multi` (WizardData.cs:769) gives every
+ * Multi (WizardData.cs:593-605), which also covers Imc/Combining groups since
+ * `group.OptionType = pGroup.Type == "Single" ? Single : Multi` (WizardData.cs:775) gives every
  * non-"Single" type the bitmask branch: OR bit i for each selected option, i < Options.Count.
  * `i & 63` reproduces .NET's 6-bit masking of `1UL << i`'s shift count on a 64-bit operand
  * (docs/TEXTOOLS_BUGS.md #17), matching the read side's identical `idx & 63` so the two derivations
@@ -467,22 +467,22 @@ function groupSelection(g: ModpackGroup): number {
 }
 
 /** Reconstruct a PMP option JSON document, regenerating `Files`/`FileSwaps`/`Manipulations` from the
- * model. TexTools NEVER round-trips these: PopulatePmpStandardOption (PMP.cs:871-928) builds `Files`
- * fresh from the typed model (`opt.Files.Add(fi.Path, fi.PmpPath.Replace("/", "\\"))`, :914), and
+ * model. TexTools NEVER round-trips these: PopulatePmpStandardOption (PMP.cs:964-1021) builds `Files`
+ * fresh from the typed model (`opt.Files.Add(fi.Path, fi.PmpPath.Replace("/", "\\"))`, :1007), and
  * `WizardStandardOptionData` types `FileSwaps`/`Manipulations` the same way (WizardData.cs:71-73;
  * `Manipulations` is further re-typed per entry, see pmp-manipulation.ts). We used to re-emit `o.raw`'s
  * `Files` map (and `FileSwaps`/`Manipulations`) verbatim, which made any file the pipeline ADDED (a
  * generated index map) unnameable and any file it REPOINTED (a regenerated hair normal) dangle, on top
  * of carrying stale/foreign keys forward. Regenerating removes that whole class of bug: a file with no
  * zip path contributes no `Files` key AND no payload member, reproducing the absent-file drop
- * (PMP.cs:883-888) for free.
+ * (PMP.cs:976-981) for free.
  *
- * `hasStandardFields` is false for an Imc-type group's options: `PmpImcOptionJson` (PMP.cs:1544-1551)
- * carries no Files/FileSwaps/Manipulations at all (unlike `PmpStandardOptionJson`, PMP.cs:1504-1511),
+ * `hasStandardFields` is false for an Imc-type group's options: `PmpImcOptionJson` (PMP.cs:1709-1716)
+ * carries no Files/FileSwaps/Manipulations at all (unlike `PmpStandardOptionJson`, PMP.cs:1664-1682),
  * so those three keys must not be added there even as empty containers.
  *
  * `includeMeta=false` (the default option only) omits Name/Description/Image, mirroring C#'s
- * `ShouldSerialize*` on `IsDataContainerOnly` for default_mod.json (PMP.cs:1496-1501).
+ * `ShouldSerialize*` on `IsDataContainerOnly` for default_mod.json (PMP.cs:1657-1661).
  * `includeMeta=true` (every other option, Standard or Imc alike — the base class's ShouldSerialize*
  * default to true) always (re)writes them, even when the source omitted `Image` — confirmed
  * empirically (`[DVNO] DMBX Shoes 1.pmp` /resave golden: every group option gains `"Image": ""`).
@@ -490,11 +490,11 @@ function groupSelection(g: ModpackGroup): number {
  * `o.raw` is consulted ONLY for the genuinely untyped Imc/Combining GROUP extras (Identifier/
  * DefaultEntry/AllVariants/OnlyAttributes — handled at the group level, below) and, for an Imc
  * OPTION, its two typed-but-`ShouldSerialize`-gated fields (`IsDisableSubMod`/`AttributeMask`,
- * `PmpImcOptionJson`, PMP.cs:1544-1551). Every OTHER field of `o.raw` is a foreign key the typed
- * model does not own and must NOT survive: for a Standard option, `PmpStandardOptionJson`
- * (PMP.cs:1504-1517) owns exactly Name/Description/Image/Files/FileSwaps/Manipulations(/Priority on
+ * `PmpImcOptionJson`, PMP.cs:1709-1716). Every OTHER field of `o.raw` is a foreign key the typed
+ * model does not own and must NOT survive: for a Standard option, `PMPOptionJson`/`PmpStandardOptionJson`
+ * (PMP.cs:1645-1682) own exactly Name/Description/Image/Files/FileSwaps/Manipulations(/Priority on
  * the Multi subtype) and nothing else, the same class of drop already proven for `meta.json`'s
- * `DefaultPreferredItems`. `Priority` only exists on `PmpMultiOptionJson` (PMP.cs:1538-1542, always
+ * `DefaultPreferredItems`. `Priority` only exists on `PmpMultiOptionJson` (PMP.cs:1697-1698, always
  * serialized — `o.priority` already defaults to 0 when the source omits it, `optionFromJson` above)
  * — a Single/Imc/default_mod option gets no `Priority` key at all, confirmed empirically
  * (`Flower Child - by Solona.pmp`'s Single-type "Size" group drops a stray source `Priority`). */
@@ -510,13 +510,13 @@ function optionToJson(
   const base: PmpOptionJsonRaw = {};
 
   if (includeMeta) {
-    base.Name = o.name.trim(); // WizardData.cs:928 -- `option.Name = option.Name.Trim();`
-    // WizardData.cs · WizardOptionEntry.ToPmpOption · 543-544 — `op.Name = Name ?? ""; op.Description
+    base.Name = o.name.trim(); // WizardData.cs:939 -- `option.Name = option.Name.Trim();`
+    // WizardData.cs · WizardOptionEntry.ToPmpOption · 545-546 — `op.Name = Name ?? ""; op.Description
     // = Description ?? "";`. The PMP export path coalesces where the TTMP path (TTMPWriter.cs ·
     // AddOption · 144) does not, so `o.description`'s nullability is absorbed HERE rather than by the
     // model — see ModpackOption.description (src/model/modpack.ts) for why the asymmetry is kept.
     base.Description = o.description ?? "";
-    // WizardHelpers.WriteImage (WizardData.cs:545/:953/:1497) re-encodes a REFERENCED image into a
+    // WizardHelpers.WriteImage (WizardData.cs:547/:964/:1516) re-encodes a REFERENCED image into a
     // fresh 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than
     // passing the source value through — unported (no image encoder here; see
     // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This
@@ -526,18 +526,18 @@ function optionToJson(
     base.Image = o.image;
   }
   // else: IsDataContainerOnly (default_mod.json) — ShouldSerializeName/.../Image all false
-  // (PMP.cs:1499-1501), so Name/Description/Image stay absent.
+  // (PMP.cs:1659-1661), so Name/Description/Image stay absent.
 
   if (hasStandardFields) {
     const Files: Record<string, string> = {};
     for (const [gamePath, f] of o.files) {
       const zip = zipPaths.get(f);
-      if (zip === undefined) continue; // absent: no member, no key (PMP.cs:883-888)
-      Files[gamePath] = zip.replace(/\//g, "\\"); // PMP.cs:914
+      if (zip === undefined) continue; // absent: no member, no key (PMP.cs:976-981)
+      Files[gamePath] = zip.replace(/\//g, "\\"); // PMP.cs:1007
     }
     base.Files = Files;
     // INTENTIONAL DIVERGENCE -- do NOT "fix" this to `{}` to match TexTools. PopulatePmpStandardOption
-    // sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:873-875), silently destroying
+    // sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:966-968), silently destroying
     // every swap the pack carried: docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. A swap
     // is a live redirection in Penumbra -- merged into the same `redirections` table as Files, with
     // Files winning a gamePath collision (SubMod.AddContainerTo, Penumbra repo
@@ -548,11 +548,11 @@ function optionToJson(
     base.FileSwaps = o.fileSwaps;
     base.Manipulations = normalizeManipulations(o.manipulations);
     if (isMultiOption) {
-      base.Priority = o.priority; // PmpMultiOptionJson.Priority, always serialized (PMP.cs:1540-1541)
+      base.Priority = o.priority; // PmpMultiOptionJson.Priority, always serialized (PMP.cs:1697-1698)
     }
   } else {
-    // Imc: PmpImcOptionJson (PMP.cs:1544-1551) — IsDisableSubMod/AttributeMask, both
-    // ShouldSerialize-gated (PMP.cs:1549-1550). Neither is modeled on ModpackOption, so read them
+    // Imc: PmpImcOptionJson (PMP.cs:1709-1716) — IsDisableSubMod/AttributeMask, both
+    // ShouldSerialize-gated (PMP.cs:1714-1715). Neither is modeled on ModpackOption, so read them
     // off the source raw directly; a foreign/absent value defaults to the C# field's own default
     // (`false`/`0`) exactly like a real typed deserialize of a document that omits the key.
     const raw = isObj(o.raw) ? (o.raw as PmpOptionJsonRaw) : {};
@@ -572,7 +572,7 @@ function optionToJson(
  * `store` writes the zip members uncompressed (level 0) instead of DEFLATE-ing them.
  *
  * The DEFAULT (`false` — DEFLATE) is the faithful one and is what we ship: TexTools writes a PMP
- * with `System.IO.Compression.ZipFile.CreateFromDirectory` (PMP.cs:867), whose default is
+ * with `System.IO.Compression.ZipFile.CreateFromDirectory` (PMP.cs:960), whose default is
  * `CompressionLevel.Optimal`. Do not change that default.
  *
  * `store: true` exists purely as a TEST-SPEED knob, and it is sound because the compressed
@@ -586,7 +586,7 @@ function optionToJson(
  *
  * MUTATES `data`: `allPages(data)` returns `data.pages` by reference, and the `clearNulls` call
  * just below splices dead pages/groups out of it in place. Faithful — `ClearNulls` mutates
- * `this.DataPages` in the C# too (WizardData.cs:1462) — but currently inert for any caller that
+ * `this.DataPages` in the C# too (WizardData.cs:1481) — but currently inert for any caller that
  * only ever writes once.
  */
 export function writePmp(
@@ -596,38 +596,38 @@ export function writePmp(
   const enc = new TextEncoder();
   const entries = new Map<string, Uint8Array>();
 
-  // WizardData.cs · WritePmp · 1462 — the FIRST statement of WritePmp, before anything else in the
+  // WizardData.cs · WritePmp · 1481 — the FIRST statement of WritePmp, before anything else in the
   // function (including the prefix computation just below) ever reads DataPages. The C# genuinely
-  // calls ClearNulls twice — once at load (FromPmp:1159, already run by `readPmp`) and again here —
+  // calls ClearNulls twice — once at load (FromPmp:1178, already run by `readPmp`) and again here —
   // so this call is a no-op for any pack that came through `readPmp`, but matters for a hand-built
   // ModpackData that never did.
   const pages = allPages(data);
   clearNulls(pages);
 
   // Regenerate every zip path from the typed model, the way TexTools does: optionPrefix + gamePath,
-  // then content-dedup into common/{idx}/ (WizardData.cs:1526 -> PmpExtensions.cs:476-566). The
+  // then content-dedup into common/{idx}/ (WizardData.cs:1565 -> PmpExtensions.cs:476-566). The
   // source pack's own member names are NOT reused — that round-trip is what made a generated file
   // unnameable (see optionToJson's doc comment).
   const prefixes = optionPrefixes(data);
 
-  // Port of the blank-name guard in WritePmp's assembly loop (WizardData.cs:1520-1523): a
-  // Standard-type option (an Imc-type group's options are skipped first, WizardData.cs:1513-1516)
+  // Port of the blank-name guard in WritePmp's assembly loop (WizardData.cs:1539-1542): a
+  // Standard-type option (an Imc-type group's options are skipped first, WizardData.cs:1532-1535)
   // whose name, or whose owning group's name, is blank throws BEFORE any prefix is put to use. Only
   // options that SURVIVED pruning are checked (`prefixes.has(o)`) — the C# loop only ever visits
   // `DataPages`, so a blank name on an option pruned for carrying no data is never reached at all.
   // No exemption is needed for the synthesized Default group: FromPmp hardcodes both its group and
-  // option name to the literal "Default" (WizardData.cs:1122/1128), and the `data.pages` construction
+  // option name to the literal "Default" (WizardData.cs:1141/1147), and the `data.pages` construction
   // (`readPmp`, above) reproduces that hardcoding directly on the synthesized option/group objects —
   // unlike the flat `data.groups[0]` entry this loop used to walk, whose option name came straight
   // from default_mod.json's (virtually always absent) Name field. Walking `allGroups(data)` (which
   // reads `data.pages`) therefore can never trip this check on the Default group.
   for (const g of allGroups(data)) {
-    if (g.selectionType === "Imc") continue; // WizardData.cs:1513-1516
+    if (g.selectionType === "Imc") continue; // WizardData.cs:1532-1535
     for (const o of g.options) {
       if (!prefixes.has(o)) continue; // pruned — WritePmp's own loop never reaches it either
       if (o.name.trim() === "" || g.name.trim() === "") {
         throw new Error(
-          "pmp: PMP Files must have valid group and option names (WizardData.cs:1520-1523): " +
+          "pmp: PMP Files must have valid group and option names (WizardData.cs:1539-1542): " +
             `group "${g.name}" option "${o.name}"`,
         );
       }
@@ -646,12 +646,12 @@ export function writePmp(
   }
 
   // PopulatePmpStandardOption turns a .meta into Manipulations and a .rgsp into Manipulations
-  // (PMP.cs:891-900 -> PMPExtensions.MetadataToManipulations / RgspToManipulations,
+  // (PMP.cs:984-993 -> PMPExtensions.MetadataToManipulations / RgspToManipulations,
   // PmpExtensions.cs:417) rather than writing either as a zip member. We do NOT port that: a
   // PMP-sourced model holds no .meta at all (the upgrade load path passes mergeManipulations=false,
-  // WizardData.cs:818, so manipulations stay opaque), and a TTMP-sourced one can only reach here
+  // WizardData.cs:824, so manipulations stay opaque), and a TTMP-sourced one can only reach here
   // through a format conversion that no upgrade flow performs (WriteModpack dispatches on the
-  // destination extension and the GUI reuses the source's, WizardData.cs:1312-1326) — and which
+  // destination extension and the GUI reuses the source's, WizardData.cs:1331-1350) — and which
   // writeModpack already rejects outright (src/index.ts). Fail loud instead of silently emitting a
   // member TexTools would never write. See docs/backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md.
   for (const f of zipPaths.keys()) {
@@ -659,20 +659,20 @@ export function writePmp(
     if (/\.(meta|rgsp)$/.test(gamePath)) {
       throw new Error(
         `pmp: writing a ${gamePath.endsWith(".meta") ? ".meta" : ".rgsp"} file into a PMP is ` +
-          `unported (PMP.cs:891-900 converts it to Manipulations): ${gamePath}`,
+          `unported (PMP.cs:984-993 converts it to Manipulations): ${gamePath}`,
       );
     }
   }
 
-  // PopulatePmpStandardOption's THIRD skip (PMP.cs:901-905, checked after the absent-file and
+  // PopulatePmpStandardOption's THIRD skip (PMP.cs:994-998, checked after the absent-file and
   // .meta/.rgsp branches above): `else if (IOUtil.IsMetaInternalFile(fi.Path)) { continue; }` — a
   // raw .cmp/.eqp/.eqdp/.gmp/.est/.imc file gets NEITHER a payload member NOR a `Files` key
   // (IOUtil.cs:577-592 for the exact extension set). Order matters: ResolveDuplicates
   // (PmpExtensions.cs:476-566, our `resolveDuplicates` above) runs BEFORE this skip in WritePmp's own
-  // pipeline (WizardData.cs:1502/:1526 -> PMP.cs:871-928), so the file must still be hashed and still
+  // pipeline (WizardData.cs:1565 -> PMP.cs:964-1021), so the file must still be hashed and still
   // claim/burn its zip path (already done, above) — this drop is purely at the EMISSION step: delete
   // it from `zipPaths` now, after resolveDuplicates ran, so optionToJson's Files-loop and the payload
-  // -write loop below both skip it exactly like an absent file (PMP.cs:883-888) already does.
+  // -write loop below both skip it exactly like an absent file (PMP.cs:976-981) already does.
   const META_INTERNAL_EXTENSIONS = new Set([
     ".cmp",
     ".eqp",
@@ -691,54 +691,66 @@ export function writePmp(
     if (isMetaInternalFile(gamePathOf.get(f)!)) zipPaths.delete(f);
   }
 
-  // meta.json is always regenerated from the model: PMPMetaJson (PMP.cs:1369-1381) is a flat, fully
-  // typed class with no extension-data capture, so ANY key the source carries outside its 8 fields
+  // meta.json is always regenerated from the model: PMPMetaJson (PMP.cs:1467-1488) is a flat, fully
+  // typed class with no extension-data capture, so ANY key the source carries outside its fields
   // (e.g. Penumbra's own `DefaultPreferredItems`) is silently dropped by a real typed round-trip —
   // confirmed empirically (`[DVNO] DMBX Shoes 1.pmp` /resave golden drops it). FileVersion is
-  // hard-forced to PMP._WriteFileVersion regardless of source (WizardData.cs:1496).
+  // hard-forced to PMP._WriteFileVersion regardless of source (WizardData.cs:1515).
   //
-  // Image: WizardHelpers.WriteImage (WizardData.cs:1497) re-encodes a REFERENCED image into a fresh
+  // Image: WizardHelpers.WriteImage (WizardData.cs:1516) re-encodes a REFERENCED image into a fresh
   // 16-bit PNG under a new name (or "" if the source path doesn't exist) rather than passing the
   // source value through — unported (no image encoder here; see
   // docs/backlog/2026-07-13-pmp-writer-image-reencode.md). This carries the
   // source value verbatim, which diverges from the golden whenever meta actually carries an image
   // (no corpus pack does, so the corpus alone doesn't expose this).
   // `PmpMetaJsonWrite`, not `PmpMetaJson`: WritePmp assigns Name/Author/Website/Description verbatim
-  // (WizardData.cs:1490-1493) — no `?? ""`, unlike the option/group seams — and meta.json is
-  // serialized with Newtonsoft defaults (PMP.cs:850), so a null from a TTMP-sourced model is written
+  // (WizardData.cs:1509-1512) — no `?? ""`, unlike the option/group seams — and meta.json is
+  // serialized with Newtonsoft defaults (PMP.cs:943), so a null from a TTMP-sourced model is written
   // as an explicit `null`. See the type's doc comment in manifest-types.ts.
   const meta: PmpMetaJsonWrite = {
-    FileVersion: 3, // PMP._WriteFileVersion (PMP.cs:45)
+    // NOT YET PMP._WriteFileVersion (now 4, PMP.cs:47, forced at WizardData.cs:1515): this writer
+    // still emits v3-shaped PMPs (separate default_mod.json/group_NNN.json members below); flipping
+    // to a v4-shaped single-meta.json write is a later task in the v4 port plan
+    // (docs/superpowers/plans/2026-08-06-pmp-v4-port.md, Task 11).
+    FileVersion: 3,
     Name: data.meta.name,
     Author: data.meta.author,
     Description: data.meta.description,
     // WritePmp reformats the version through .NET Version semantics before assigning it
     // (`Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`,
-    // WizardData.cs · WritePmp · 1474-1475; `pmp.Meta.Version = ver.ToString()`, :1494), so a
+    // WizardData.cs · WritePmp · 1493-1494; `pmp.Meta.Version = ver.ToString()`, :1513), so a
     // source spelling "1" is written "1.0". See src/util/dotnet-version.ts for the .NET contract.
     Version: reformatDotnetVersion(data.meta.version),
     Website: data.meta.url,
     Image: data.meta.image,
     ModTags: data.meta.tags,
+    // PLACEHOLDERS pending the v4 write port (same later task as FileVersion above): the real
+    // WizardData.WritePmp always builds both non-null (WizardData.cs:1481-1487) and PMP.WritePmp
+    // re-stamps LastWrite before serializing (:941) — none of that is ported here yet, so this
+    // writer does not claim to emit a real Identifier/LastWrite/Groups/DefaultData.
+    Identifier: "",
+    LastWrite: "",
+    Groups: null,
+    DefaultData: null,
   };
   entries.set("meta.json", enc.encode(JSON.stringify(meta, null, 2)));
 
   // Port of WizardData.WritePmp's "synthesize a PMP default mod from wizard data" absorption
-  // (WizardData.cs:1548-1600): searches `DataPages` — page 0..N, each page's groups in order — for
+  // (WizardData.cs:1567-1619): searches `DataPages` — page 0..N, each page's groups in order — for
   // the FIRST Standard-type group (Single or Multi, not Imc) named literally "Default"/"Default
   // Group" with exactly ONE option named "Default"/"Default Option", and MOVES its regenerated
   // Files/FileSwaps/Manipulations into default_mod.json instead of writing it as its own
-  // group_NNN.json (`break` in the C#, WizardData.cs:1571).
+  // group_NNN.json (`break` in the C#, WizardData.cs:1590).
   //
   // CRITICAL: `DataPages` is not "the real groups" — FromPmp UNSHIFTS a synthesized Default group
   // onto the FRONT of `DataPages` whenever the source default_mod.json is non-empty
-  // (WizardData.cs:1118-1138), with Name/Options[0].Name hardcoded to the literal "Default"
-  // (:1122/:1128) regardless of what default_mod.json's own (near-always-absent, ShouldSerializeName
-  // false, PMP.cs:1499) Name field said — `readPmp`'s `pages` construction (above) reproduces that
+  // (WizardData.cs:1137-1157), with Name/Options[0].Name hardcoded to the literal "Default"
+  // (:1141/:1147) regardless of what default_mod.json's own (near-always-absent, ShouldSerializeName
+  // false, PMP.cs:1659) Name field said — `readPmp`'s `pages` construction (above) reproduces that
   // hardcoding directly, so the synthesized group ALWAYS satisfies the predicate below STRUCTURALLY
   // whenever it exists, with no identity check needed. Being DataPages[0], it is always checked
   // FIRST, so it ALWAYS wins the search whenever it survives ClearNulls (already run, at the top of
-  // this function — WizardData.cs:1234-1263 -> src/container/clear-nulls.ts). A real
+  // this function — WizardData.cs:1253-1282 -> src/container/clear-nulls.ts). A real
   // "Default"/"Default Group" group elsewhere in the pack can only ever be selected when the
   // synthesized group does NOT survive (default_mod.json was empty or carried no HasData). Searching
   // only the real groups (as this used to) re-creates the orphan-member bug the writer regeneration
@@ -750,15 +762,15 @@ export function writePmp(
     // holds a null — same reasoning as optionPrefixes' own null filter (option-prefix.ts).
     p.groups.filter((g): g is ModpackGroup => g !== null),
   );
-  // `g.name` is compared TRIMMED: WizardData.cs:1510 (`g.Name = g.Name.Trim();`) mutates every
+  // `g.name` is compared TRIMMED: WizardData.cs:1529 (`g.Name = g.Name.Trim();`) mutates every
   // group's Name in place, in the SAME loop that builds `allFiles`/`identifiers`, which runs to
-  // completion (across ALL pages) BEFORE this absorption search (:1553-1578) ever looks at it — so
+  // completion (across ALL pages) BEFORE this absorption search (:1567-1598) ever looks at it — so
   // by the time the search runs, every group's Name is already trimmed, structurally: a real group
   // literally named "Default " (trailing space) DOES match here in the real C#.
   //
   // `g.options[0]!.name`, by contrast, is compared UNTRIMMED: an option's Name is only ever trimmed
-  // inside ToPmpGroup (WizardData.cs:928), which this search calls AFTER its own name comparison has
-  // already succeeded or failed (:1562, `g.ToPmpGroup(...)`) — so the search itself never sees a
+  // inside ToPmpGroup (WizardData.cs:939), which this search calls AFTER its own name comparison has
+  // already succeeded or failed (:1581, `g.ToPmpGroup(...)`) — so the search itself never sees a
   // trimmed option name. Trimming it here would falsely absorb a group whose sole option is named
   // e.g. " Default" (leading space), which the real C# does NOT absorb.
   const defaultModGroup = orderedGroups.find(
@@ -779,17 +791,17 @@ export function writePmp(
           false,
           zipPaths,
         ),
-        Version: 0, // PmpDefaultMod.Version is a hardcoded 0 (PMP.cs:1530), not sourced from the model
+        Version: 0, // PmpDefaultMod.Version is a hardcoded 0 (PMP.cs:1687), not sourced from the model
       }
     : // No candidate survived: `pmp.DefaultMod` is never touched beyond `new PmpDefaultMod()`'s own
-      // field initializers (empty Files/FileSwaps/Manipulations, PmpStandardOptionJson, PMP.cs:1507-1511).
+      // field initializers (empty Files/FileSwaps/Manipulations, PmpStandardOptionJson, PMP.cs:1667-1671).
       { Version: 0, Files: {}, FileSwaps: {}, Manipulations: [] };
   entries.set(
     "default_mod.json",
     enc.encode(JSON.stringify(defaultMod, null, 2)),
   );
 
-  // Port of WizardData.WritePmp's group_NNN.json assembly (WizardData.cs:1583-1600), run over the
+  // Port of WizardData.WritePmp's group_NNN.json assembly (WizardData.cs:1602-1619), run over the
   // SAME pruned `pages` the absorption search used above — i.e. `ClearNulls`' group-level pruning
   // (a group with `!HasData` never becomes a group_NNN.json — see src/container/clear-nulls.ts) is
   // applied here too, not just at the option-prefix level. `pageCounter` is a LOCAL counter,
@@ -797,8 +809,9 @@ export function writePmp(
   // group-carried page number (`ModpackGroup` carries none) — so a page that contributed nothing
   // (all its groups absorbed or pruned) does not consume a page number, exactly mirroring the C#'s
   // `numGroupsThisPage > 0` gate. group_NNN's numeric prefix is a
-  // flat counter across the whole (pruned, absorption-excluded) sequence, matching `pmp.Groups`'
-  // own list-index numbering in `PMP.WritePmp` (PMP.cs:856-862).
+  // flat counter across the whole (pruned, absorption-excluded) sequence. (At this pin `PMP.WritePmp`
+  // no longer numbers `pmp.Groups` itself — its group-file writes are commented out, PMP.cs:946-955 —
+  // so there is no live C# list-index counterpart to cite here; see PMP.cs:908-962's header note.)
   let pageCounter = 0;
   let groupNumber = 0;
   for (const page of pages) {
@@ -809,12 +822,12 @@ export function writePmp(
       if (g === null) continue;
       if (g === defaultModGroup) continue; // absorbed into default_mod.json above
 
-      // PmpImcOptionJson has no Files/FileSwaps/Manipulations (PMP.cs:1544-1551) — see optionToJson.
+      // PmpImcOptionJson has no Files/FileSwaps/Manipulations (PMP.cs:1709-1716) — see optionToJson.
       const hasStandardFields = g.selectionType !== "Imc";
       const isMultiOption = g.selectionType === "Multi"; // Priority only exists on PmpMultiOptionJson
       const rawObj = isObj(g.raw) ? (g.raw as Record<string, unknown>) : {};
-      // PMPGroupJson (PMP.cs:1387-1408) is fully typed with NO [JsonExtensionData], and
-      // SelectedSettings is [JsonIgnore] (:1400) -- a real typed round-trip therefore drops every
+      // PMPGroupJson (PMP.cs:1495-1518) is fully typed with NO [JsonExtensionData], and
+      // SelectedSettings is [JsonIgnore] (:1508) -- a real typed round-trip therefore drops every
       // foreign key on the source document, exactly like meta.json's DefaultPreferredItems and an
       // option's own foreign keys (see optionToJson's doc comment). Filter `rawObj` down to the
       // known typed keys BEFORE spreading, instead of the old blanket `...rawObj`, so an unrecognized
@@ -822,7 +835,7 @@ export function writePmp(
       // survive into the output. Filtering (not rebuilding from scratch) preserves whatever KEY
       // ORDER the source document had for a real PMP: Json.NET's default member order for a type
       // without explicit [JsonProperty(Order=...)] sorts DERIVED class members before INHERITED base
-      // members (see PMP.cs:1487-1488's own comment on why PMPOptionJson.Name/Description/Image
+      // members (see PMP.cs:1647-1648's own comment on why PMPOptionJson.Name/Description/Image
       // need Order=-10 for exactly this reason), so an
       // Imc group's real order is Identifier/DefaultEntry/AllVariants/OnlyAttributes THEN the base
       // Version/Name/.../DefaultSettings THEN Options (Order=99) -- exactly the order a genuine
@@ -837,7 +850,7 @@ export function writePmp(
         "Type",
         "DefaultSettings",
         "Options",
-        "Identifier", // PMPImcGroupJson-only (PMP.cs:1426-1436)
+        "Identifier", // PMPImcGroupJson-only (PMP.cs:1536-1546)
         "DefaultEntry",
         "AllVariants",
         "OnlyAttributes",
@@ -846,7 +859,7 @@ export function writePmp(
       for (const [k, v] of Object.entries(rawObj)) {
         if (KNOWN_GROUP_KEYS.has(k)) filteredRaw[k] = v;
       }
-      // PMPImcGroupJson.DefaultEntry (PMP.cs:1429) is a PMPImcEntry — the SAME struct as a per-
+      // PMPImcGroupJson.DefaultEntry (PMP.cs:1539) is a PMPImcEntry — the SAME struct as a per-
       // manipulation Imc `Entry` (PmpManipulation.cs:311-321) — so its `AttributeAndSound` field is
       // dropped by the SAME [JsonIgnore] (:318) on write. Override it (not passed through verbatim)
       // so it survives the typed round-trip the same way `Manipulations`' own Imc entries already do
@@ -862,24 +875,24 @@ export function writePmp(
             }
           : {};
       // PMPGroupJson's 8 base fields (Version/Name/Description/Image/Page/Priority/Type/
-      // DefaultSettings, PMP.cs:1387-1404) are ALWAYS regenerated from the model, never raw-carried —
+      // DefaultSettings, PMP.cs:1495-1512) are ALWAYS regenerated from the model, never raw-carried —
       // confirmed empirically (`Flower Child - by Solona.pmp`'s source "Size" group spells
       // `"Description": null`, but the /resave golden writes `""`: TexTools' JSON settings use
       // NullValueHandling.Ignore, so a literal `null` deserializes as ABSENT, leaving the C# field
       // at its own initializer default — exactly what `g.description` (parsePmpGroup's `?? ""`)
-      // already models. Version has no source at all; it is hard-forced to 0 (PMP.cs:1389 field
+      // already models. Version has no source at all; it is hard-forced to 0 (PMP.cs:1497 field
       // initializer, never reassigned). `filteredRaw` is kept ONLY for genuinely untyped subtype
-      // extras — Imc's Identifier/AllVariants/OnlyAttributes (PMP.cs:1426-1436) and (overridden
+      // extras — Imc's Identifier/AllVariants/OnlyAttributes (PMP.cs:1536-1546) and (overridden
       // above) DefaultEntry.
       //
       // Image: same WizardHelpers.WriteImage caveat as meta.json's Image and an option's Image
-      // above (WizardData.cs:953) — carried through verbatim, unported; see
+      // above (WizardData.cs:964) — carried through verbatim, unported; see
       // docs/backlog/2026-07-13-pmp-writer-image-reencode.md.
       const groupJson: PmpGroupJsonRaw = {
         ...filteredRaw,
         ...defaultEntryOverride,
         Version: 0,
-        // WizardData.cs:946 (`pg.Name = (Name ?? "").Trim();`) -- redundant with :1510's earlier
+        // WizardData.cs:957 (`pg.Name = (Name ?? "").Trim();`) -- redundant with :1529's earlier
         // in-place mutation for a real PMP group's Name (both trims are idempotent), but this is
         // the ONLY trim a model-built (no-`raw`) group's Name ever goes through.
         Name: g.name.trim(),
@@ -888,10 +901,10 @@ export function writePmp(
         Page: pageCounter,
         Priority: g.priority,
         Type: g.selectionType,
-        // WizardData.cs:949 (`pg.DefaultSettings = Selection;`) -- regenerated, not carried through
+        // WizardData.cs:960 (`pg.DefaultSettings = Selection;`) -- regenerated, not carried through
         // verbatim; see groupSelection's doc comment. (`pg.SelectedSettings = Selection` on the
-        // next line, :950, is deliberately not modelled: the field is `[JsonIgnore]`
-        // (PMP.cs:1399-1400) with no ShouldSerialize, so it never reaches a group json.)
+        // next line, :961, is deliberately not modelled: the field is `[JsonIgnore]`
+        // (PMP.cs:1508) with no ShouldSerialize, so it never reaches a group json.)
         DefaultSettings: groupSelection(g),
         Options: g.options.map((o) =>
           optionToJson(o, true, hasStandardFields, isMultiOption, zipPaths),
@@ -905,8 +918,8 @@ export function writePmp(
     if (numGroupsThisPage > 0) pageCounter++;
   }
 
-  // Port of PopulatePmpStandardOption's payload write (PMP.cs:908-910) followed by WritePmp's
-  // directory zip (PMP.cs:864-868): TexTools writes every option's payload via
+  // Port of PopulatePmpStandardOption's payload write (PMP.cs:1001-1003) followed by WritePmp's
+  // directory zip (PMP.cs:957-961): TexTools writes every option's payload via
   // `File.WriteAllBytes(Path.Combine(workingPath, fi.PmpPath), data)` into a *working directory*,
   // and only zips that directory afterward (`ZipFile.CreateFromDirectory`). A Windows directory
   // cannot hold two names differing only by case (or a trailing dot/space): NTFS resolves the
@@ -941,7 +954,7 @@ export function writePmp(
     entries.set(zipPath, payload);
   }
 
-  // Re-emit ExtraFiles verbatim (WizardData.WritePmp, WizardData.cs:1477-1488 — both /upgrade and
+  // Re-emit ExtraFiles verbatim (WizardData.WritePmp, WizardData.cs:1495-1507 — both /upgrade and
   // /resave pass saveExtraFiles=true). A payload member of the same name always wins; readPmp's
   // referencedKeys check means the two sets can't actually collide, but guard explicitly rather
   // than rely on that — via windowsPathKey (not an exact-string check), matching the same
