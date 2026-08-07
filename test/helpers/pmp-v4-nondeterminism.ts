@@ -57,15 +57,25 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
  *  RANDOM RFC-4122 v4 GUID — version nibble `4`, variant nibble in `[89ab]`, never nil, never
  *  v1/v3/v5. Verified against 8 cached goldens (review, 2026-08-07).
  *
- *  OURS: `pmpIdentifier` (src/container/pmp-identifier.ts) always mints a DERIVED RFC-4122 v5
- *  (name-based, SHA-1) GUID — version nibble `5`, same variant range, never nil. Requiring `5`
+ *  OURS: `pmpIdentifier` (src/container/pmp-identifier.ts) always mints a DERIVED, v5-SHAPED GUID
+ *  (SHA-1 over a namespace string and a seed — see that file for why it is v5-shaped rather than a
+ *  conformant RFC 4122 §4.3 v5 UUID) — version nibble `5`, same variant range, never nil. What is
+ *  asserted here is the SHAPE, which is exactly what our producer guarantees. Requiring `5`
  *  here is not a concession to our writer; it is an assertion ABOUT it. A `4` arriving on our side
  *  would mean something other than `pmpIdentifier` produced that value — a random GUID leaking in,
  *  or a golden value being echoed back — which is precisely a writer bug this rule must report
  *  rather than confirm.
  *
  *  A plain "32 lowercase hex digits" shape on either side would confirm values neither producer can
- *  emit (the nil GUID, an out-of-range version/variant nibble). */
+ *  emit (the nil GUID, an out-of-range version/variant nibble).
+ *
+ *  ONE CALL SITE HAS NO GOLDEN AT ALL, and must say so explicitly — see `referenceIsOurs` on
+ *  `confirmNondeterministicMetaFields` below. `confirmOracleErrorDivergence` (corpus-upgrade.ts)
+ *  compares OUR archive against OUR OWN write of the sibling pack; the reference side there is
+ *  `pmpIdentifier`'s output, not `Guid.NewGuid()`'s, so `GOLDEN_GUID_RE` is simply the wrong
+ *  assertion for it — and, silently, an unsatisfiable one: with `4` required on a side that only
+ *  ever spells `5`, `confirmedString` returned `undefined` and this confirmation never fired there
+ *  at all. */
 export const GOLDEN_GUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const OURS_GUID_RE =
@@ -100,18 +110,38 @@ function confirmedString(
   return oursValue;
 }
 
+/** `referenceIsOurs` declares that the "golden" argument is NOT a ConsoleTools golden but a SECOND
+ *  archive OUR OWN writer produced — the shape `confirmOracleErrorDivergence` (corpus-upgrade.ts)
+ *  compares, where the reference is our upgrade of the crashing pack's declared sibling. It only
+ *  swaps which producer's shape the REFERENCE side is held to (`OURS_GUID_RE`, not
+ *  `GOLDEN_GUID_RE`); everything else — both sides must be well-formed, the duplicate check, the
+ *  Imc-object passthrough, the group pairing by index — is unchanged, so this is a re-aiming of the
+ *  assertion, not a relaxation of it. Two things it deliberately does NOT do:
+ *
+ *   - it does not widen either regex. `GOLDEN_GUID_RE | OURS_GUID_RE` would be strictly looser than
+ *     either at EVERY call site, which is the tightening the split exists to preserve;
+ *   - it does not become the default. A real golden held to `OURS_GUID_RE` would confirm a cached
+ *     golden that never came from `Guid.NewGuid()`.
+ *
+ *  What an ours-vs-ours pairing gives up, stated plainly: the two VALUES are no longer required to
+ *  be equal. They cannot be, in general — the two sides are different packs, and `pmpIdentifier`
+ *  derives from pack content (src/container/pmp-identifier.ts), so equality is a property of a
+ *  particular fixture pair, not of the writer. What remains asserted is what this rule was always
+ *  for: both sides well-formed for their own producer, and never duplicated across slots. */
 export function confirmNondeterministicMetaFields(
   ours: unknown,
   goldenMeta: Record<string, unknown>,
+  referenceIsOurs = false,
 ): Record<string, unknown> {
   if (!isObj(ours)) return goldenMeta;
   const out: Record<string, unknown> = { ...goldenMeta };
+  const referenceShape = referenceIsOurs ? OURS_GUID_RE : GOLDEN_GUID_RE;
 
   const idCandidate = confirmedString(
     ours.Identifier,
     goldenMeta.Identifier,
     OURS_GUID_RE,
-    GOLDEN_GUID_RE,
+    referenceShape,
   );
 
   const lastWrite = confirmedString(
@@ -138,7 +168,7 @@ export function confirmNondeterministicMetaFields(
           o.Identifier,
           g.Identifier,
           OURS_GUID_RE,
-          GOLDEN_GUID_RE,
+          referenceShape,
         );
       })
     : [];

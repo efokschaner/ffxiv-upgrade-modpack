@@ -179,11 +179,24 @@ export function confirmOracleErrorDivergence(
   const siblingArchive = writeModpack(siblingUpgrade.data, target, {
     store: true,
   });
+  // BOTH SIDES ARE OURS here — that is the point of the check (see the paragraph above), and it is
+  // load-bearing for the v4 `meta.json` GUID confirmation, hence the explicit `referenceIsOurs`
+  // below. `confirmNondeterministicMetaFields` pins each side to its OWN producer's shape, and the
+  // reference here is `writeModpack`, not ConsoleTools: held to the default (`GOLDEN_GUID_RE`, which
+  // demands a version-4 nibble `Guid.NewGuid()` alone can mint) the reference's v5 identifier would
+  // never shape-confirm, `confirmedString` would return `undefined`, and the whole Identifier
+  // confirmation would be INERT at this call site — passing only for as long as the two sides happen
+  // to derive the same value. `layoutEquivalent`/`confirmGoldenOnlyMember` stay at their defaults:
+  // no ORACLE_ERROR_DIVERGENCE_RULES sibling carries FileSwaps, and there is no golden here whose
+  // extra members would need the docs/TEXTOOLS_BUGS.md #23 confirmation.
   const structure = diffArchives(
     oursArchive,
     siblingArchive,
     target === "pmp",
     confirmDivergence,
+    /* layoutEquivalent */ false,
+    /* confirmGoldenOnlyMember */ undefined,
+    /* referenceIsOurs */ true,
   );
   if (structure.length > 0) {
     expect.fail(

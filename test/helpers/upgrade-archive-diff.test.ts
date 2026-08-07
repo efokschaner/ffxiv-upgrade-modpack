@@ -462,7 +462,9 @@ describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:883-888)", ()
 });
 
 // diffPayloadSemantic compares the redirect table resolveRedirects builds (archive-redirects.ts),
-// keyed PER OPTION as `${manifestName}#${optionIndex}|${gamePath}` (redirectKey) rather than by bare
+// keyed PER OPTION as `${manifestName}#${optionId}|${gamePath}` (redirectKey — `optionId` is a
+// STRING, not an index: `"<groupIndex>/<optionIndex>"` for a v4 meta.json group option, `"default"`
+// for `meta.DefaultData`, and the bare array index under v3) rather than by bare
 // gamePath — see that module's doc comment for why an archive-wide merge would silently hide a
 // divergence between two mutually exclusive options that define the same gamePath. These fixtures
 // all use a single option (group_001_g.json, index 0), so every reported key has the fixed prefix

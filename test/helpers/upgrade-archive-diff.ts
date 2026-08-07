@@ -137,12 +137,19 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *   - it is a re-keying, not a content check: `diffPayloadSemantic`'s redirect-table comparison has
  *     already proven the gamePath resolves to identical bytes on both sides, so this only suppresses
  *     the redundant name-shaped report of that same fact, never substitutes for it. Callers must gate
- *     `layoutEquivalent` on `packHasFileSwaps` of the INPUT pack, same as `diffArchives` requires. */
+ *     `layoutEquivalent` on `packHasFileSwaps` of the INPUT pack, same as `diffArchives` requires.
+ *
+ *  `referenceIsOurs` is forwarded verbatim to `confirmNondeterministicMetaFields` (see its doc
+ *  comment): it declares that `golden` is a second archive OUR writer produced rather than a
+ *  ConsoleTools one, so the v4 `meta.json` GUID fields are held to our producer's shape on BOTH
+ *  sides. Nothing else in this function reads it — the absent-key drop and the FileSwaps carve-out
+ *  are producer-agnostic. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,
   goldenMembers: Map<string, Uint8Array>,
   layoutEquivalent = false,
+  referenceIsOurs = false,
 ): unknown {
   const present = memberKeys(goldenMembers);
   // Deliberately `toLowerCase()`, NOT `looseKey`: this is an EXEMPTION test, not a resolution test.
@@ -250,6 +257,19 @@ export function dropConfirmedAbsentKeys(
     // would make this confirmation never fire and turn every swap-carrying pack into a hard
     // manifest diff. A key that IS present but is not an object is malformed, not empty, and stays
     // unconfirmed.
+    //
+    // ONE SHAPE THIS READS WRONG, scoped and unreachable. `PmpImcOptionJson` (PMP.cs:1709-1716)
+    // declares no `FileSwaps` AT ALL, so an Imc option's absent key means "this option type has no
+    // such field", not "this option's swaps are empty" — for that shape the absent-as-empty reading
+    // is a category error rather than a ShouldSerialize inference, and the "deliberately tight, and
+    // NOT symmetric" claim above does not hold of it. It cannot fire today: the carve-out also
+    // requires OURS to carry a NON-EMPTY FileSwaps for the same option, and `optionToJson`
+    // (src/container/pmp.ts) emits no Files/FileSwaps/Manipulations for an Imc option either
+    // (`hasStandardFields === false`), so `oSwaps` is `undefined` and the condition short-circuits.
+    // Left as-is rather than scoped to standard options: a narrowing predicate here would have to
+    // re-derive "is this an Imc option" from the JSON, which is a second, untested copy of the
+    // reader's discriminator. If ours ever starts emitting FileSwaps on an Imc option, that is a
+    // writer bug and this comment is the record that this rule would bless it.
     const gSwaps = Object.hasOwn(goldenOpt, "FileSwaps")
       ? isObj(goldenOpt.FileSwaps)
         ? goldenOpt.FileSwaps
@@ -302,7 +322,7 @@ export function dropConfirmedAbsentKeys(
     }
     // The three v4 meta fields TexTools regenerates on every write, and that therefore can never
     // match — confirmed narrowly, never merely tolerated. See pmp-v4-nondeterminism.ts.
-    return confirmNondeterministicMetaFields(ours, out);
+    return confirmNondeterministicMetaFields(ours, out, referenceIsOurs);
   }
   // v3 group_NNN.json.
   if (Array.isArray(golden.Options) && Array.isArray(ours.Options)) {
@@ -451,7 +471,15 @@ function diffPayloadMembers(
  * silently absorb genuine writer regressions in every pack. See the spec, §5.2.
  *
  * `layoutEquivalent` REQUIRES `checkPayloadMembers` — see the guard at the top of the function body
- * for why the two are coupled. */
+ * for why the two are coupled.
+ *
+ * `referenceIsOurs` says the `golden` argument is NOT a ConsoleTools golden but a second archive OUR
+ * OWN writer produced — the ours-vs-ours comparison `confirmOracleErrorDivergence`
+ * (corpus-upgrade.ts) performs. Its only effect is to hold the v4 `meta.json` GUID fields to OUR
+ * producer's shape on both sides instead of TexTools'; see
+ * `confirmNondeterministicMetaFields`'s doc comment (pmp-v4-nondeterminism.ts). Leave it `false` for
+ * every real golden — passing `true` there would confirm a cached golden whose identifiers did not
+ * come from `Guid.NewGuid()`. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
@@ -467,6 +495,7 @@ export function diffArchives(
    *  the same injection shape `confirmDivergence` already uses. See
    *  test/helpers/pmp-v4-extrafile-divergence.ts. */
   confirmGoldenOnlyMember?: GoldenOnlyMemberConfirmation,
+  referenceIsOurs = false,
 ): FileDiff[] {
   if (layoutEquivalent && !checkPayloadMembers) {
     // Fail loud (AGENTS.md), not silently diverge: dropConfirmedAbsentKeys' Files-VALUE
@@ -517,7 +546,7 @@ export function diffArchives(
       // comment for why the old document-granular `mismatch` was a ratchet hazard.
       for (const d of jsonPointerDiff(
         o,
-        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent),
+        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent, referenceIsOurs),
       )) {
         diffs.push({
           kind: "manifest",

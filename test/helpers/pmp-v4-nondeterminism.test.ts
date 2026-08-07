@@ -6,7 +6,7 @@ import {
   OURS_GUID_RE,
 } from "./pmp-v4-nondeterminism";
 
-// OURS_* are RFC-4122 v5 (version nibble `5`) — the shape `pmpIdentifier` derives. GOLD_* are v4
+// OURS_* are v5-SHAPED (version nibble `5`) — the shape `pmpIdentifier` derives. GOLD_* are v4
 // (nibble `4`) — the shape `Guid.NewGuid()` mints. The rule pins each side to its own producer's
 // shape, so a fixture using the wrong nibble on the wrong side is NOT interchangeable here.
 const OURS_GUID = "11111111-2222-5333-8444-555555555555";
@@ -252,6 +252,71 @@ describe("confirmNondeterministicMetaFields", () => {
     const groups = out.Groups as Array<{ Identifier: string }>;
     expect(groups[0]!.Identifier).toBe(GOLD_GUID);
     expect(groups[1]!.Identifier).toBe(GOLD_GUID_2);
+  });
+
+  // --- referenceIsOurs: the ours-vs-ours pairing confirmOracleErrorDivergence performs -------------
+  // The reference archive there is OUR writer's output, so its identifiers are v5, not v4. These
+  // three cases pin that the flag is what makes the confirmation fire at all, that leaving it off is
+  // exactly the inert-rule bug it was added to fix, and that it re-aims the assertion rather than
+  // relaxing it.
+  it("referenceIsOurs: adopts when BOTH sides carry a v5 identifier", () => {
+    const out = confirmNondeterministicMetaFields(
+      meta({
+        Identifier: OURS_GUID,
+        LastWrite: OURS_TIME,
+        Groups: [{ Name: "G", Identifier: OURS_GUID_2 }],
+      }),
+      meta({
+        // A different pack (the declared sibling), so a DIFFERENT derived value on the reference
+        // side — the general case. Value equality is not what this rule asserts.
+        Identifier: OURS_GUID_LETTERS,
+        Groups: [
+          { Name: "G", Identifier: "33333333-4444-5555-a666-777777777777" },
+        ],
+      }),
+      true,
+    );
+    expect(out.Identifier).toBe(OURS_GUID);
+    expect(out.LastWrite).toBe(OURS_TIME);
+    expect((out.Groups as Array<{ Identifier: string }>)[0]!.Identifier).toBe(
+      OURS_GUID_2,
+    );
+  });
+
+  it("WITHOUT referenceIsOurs, an ours-vs-ours pair confirms NOTHING (the inert-rule bug)", () => {
+    // Same fixture as above minus the flag: the reference's v5 value fails GOLDEN_GUID_RE, so
+    // `confirmedString` returns undefined and the reference's own values survive untouched. If this
+    // ever starts adopting, the two regexes have been collapsed into one and the split — the whole
+    // reason each side is pinned to its own producer — is gone.
+    const referenceIds = {
+      Identifier: OURS_GUID_LETTERS,
+      Groups: [
+        { Name: "G", Identifier: "33333333-4444-5555-a666-777777777777" },
+      ],
+    };
+    const out = confirmNondeterministicMetaFields(
+      meta({
+        Identifier: OURS_GUID,
+        Groups: [{ Name: "G", Identifier: OURS_GUID_2 }],
+      }),
+      meta(referenceIds),
+    );
+    expect(out.Identifier).toBe(OURS_GUID_LETTERS);
+    expect((out.Groups as Array<{ Identifier: string }>)[0]!.Identifier).toBe(
+      "33333333-4444-5555-a666-777777777777",
+    );
+  });
+
+  it("referenceIsOurs still REJECTS a v4 identifier on the reference side", () => {
+    // The flag re-aims the assertion at our producer; it does not widen it. A v4 value arriving from
+    // an archive our own writer supposedly produced means something other than `pmpIdentifier` made
+    // it, which is precisely the writer bug this rule must report.
+    const out = confirmNondeterministicMetaFields(
+      meta({ Identifier: OURS_GUID }),
+      meta({ Identifier: GOLD_GUID_2 }),
+      true,
+    );
+    expect(out.Identifier).toBe(GOLD_GUID_2);
   });
 
   it("refuses adoption when ours reuses meta.Identifier as a group Identifier", () => {
