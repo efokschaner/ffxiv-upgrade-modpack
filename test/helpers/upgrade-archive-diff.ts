@@ -2,6 +2,7 @@ import { readZip } from "../../src/zip/zip";
 import { payloadMemberNames, resolveRedirects } from "./archive-redirects";
 import { bytesEqual } from "./compare";
 import { jsonPointerDiff } from "./json-diff";
+import type { GoldenOnlyMemberConfirmation } from "./pmp-v4-extrafile-divergence";
 import { confirmNondeterministicMetaFields } from "./pmp-v4-nondeterminism";
 import type { FileDiff } from "./upgrade-diff";
 
@@ -354,6 +355,7 @@ function diffPayloadMembers(
     ours: Uint8Array,
     golden: Uint8Array,
   ) => boolean,
+  confirmGoldenOnlyMember?: GoldenOnlyMemberConfirmation,
 ): FileDiff[] {
   const bucket = (names: string[]): Map<string, string[]> => {
     const m = new Map<string, string[]>();
@@ -393,6 +395,8 @@ function diffPayloadMembers(
     // past the shared count are ones ours has that the golden doesn't. Orientation matches the
     // manifest-name diff above: golden-only => "added", ours-only => "removed".
     for (let i = n; i < gs.length; i++) {
+      if (confirmGoldenOnlyMember?.(gs[i]!, golden.get(gs[i]!)!, ours))
+        continue;
       diffs.push({
         kind: "structure",
         gamePath: gs[i]!,
@@ -455,6 +459,11 @@ export function diffArchives(
     golden: Uint8Array,
   ) => boolean,
   layoutEquivalent = false,
+  /** Consulted before a payload member present only in the GOLDEN is reported. Supplied by the
+   *  caller (which alone holds the input pack) so this module stays ignorant of PMP-v4 specifics,
+   *  the same injection shape `confirmDivergence` already uses. See
+   *  test/helpers/pmp-v4-extrafile-divergence.ts. */
+  confirmGoldenOnlyMember?: GoldenOnlyMemberConfirmation,
 ): FileDiff[] {
   if (layoutEquivalent && !checkPayloadMembers) {
     // Fail loud (AGENTS.md), not silently diverge: dropConfirmedAbsentKeys' Files-VALUE
@@ -520,8 +529,18 @@ export function diffArchives(
   if (checkPayloadMembers)
     diffs.push(
       ...(layoutEquivalent
-        ? diffPayloadSemantic(om, gm, confirmDivergence)
-        : diffPayloadMembers(om, gm, confirmDivergence)),
+        ? diffPayloadSemantic(
+            om,
+            gm,
+            confirmDivergence,
+            confirmGoldenOnlyMember,
+          )
+        : diffPayloadMembers(
+            om,
+            gm,
+            confirmDivergence,
+            confirmGoldenOnlyMember,
+          )),
     );
   return diffs;
 }
@@ -563,6 +582,7 @@ export function diffPayloadSemantic(
     ours: Uint8Array,
     golden: Uint8Array,
   ) => boolean,
+  confirmGoldenOnlyMember?: GoldenOnlyMemberConfirmation,
 ): FileDiff[] {
   const diffs: FileDiff[] = [];
 
@@ -653,6 +673,8 @@ export function diffPayloadSemantic(
     const gs = (gb.get(bucketKey) ?? []).slice().sort();
     const n = Math.min(os.length, gs.length);
     for (let i = n; i < gs.length; i++) {
+      if (confirmGoldenOnlyMember?.(gs[i]!, golden.get(gs[i]!)!, ours))
+        continue;
       diffs.push({
         kind: "structure",
         gamePath: gs[i]!,

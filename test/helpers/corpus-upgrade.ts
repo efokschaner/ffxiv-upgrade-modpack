@@ -488,6 +488,10 @@ export function registerUpgradeCheck(pack: string): void {
       // outside this branch made such a throw escape the assertion and fail the test as an error
       // instead of passing as the matched failure it is.
       if (golden.kind === "error") {
+        // A v4 PMP input lands here every time (ModpackUpgrader.cs:226-232 refuses it, and so do
+        // we — see src/upgrade/upgrade.ts), so `diffArchives` below is never reached for one; no
+        // `confirmGoldenOnlyMember` wiring belongs in this file for docs/TEXTOOLS_BUGS.md #23 (that
+        // divergence is /resave-only — see corpus-resave.ts, pmp-v4-extrafile-divergence.ts).
         assertMatchedUpgradeFailure(name, golden.message, () =>
           upgradeModpack(loadModpack(name, bytes)),
         );

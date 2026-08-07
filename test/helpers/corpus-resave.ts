@@ -5,6 +5,7 @@ import { loadModpack, writeModpack } from "../../src/index";
 import { readZip } from "../../src/zip/zip";
 import { packHasFileSwaps } from "./archive-redirects";
 import { oracleKey } from "./oracle";
+import { makeV4ExtraFileDuplicateConfirmation } from "./pmp-v4-extrafile-divergence";
 import { DEFAULT_RESAVE_BASELINE, resaveGoldenCached } from "./resave-golden";
 import { diffArchives } from "./upgrade-archive-diff";
 import {
@@ -77,14 +78,27 @@ export function registerResaveCheck(pack: string): void {
         golden,
         confirmDivergence,
       );
+      // ONE readZip of the input, used by both the FileSwaps gate and the v4 ExtraFile-duplication
+      // confirmation below. Both are properties of the INPUT pack — the cause — not of the diff.
+      const inputMembers = readZip(bytes);
       // The gate comes from the INPUT pack, not `ours` or the golden — PopulatePmpStandardOption
       // (PMP.cs:873-875) has already destroyed the golden's swaps by the time we'd read it here, so
       // gating on the golden would never fire. See the FileSwap-preservation spec, §5.2.
-      const layoutEquivalent = packHasFileSwaps(readZip(bytes));
+      const layoutEquivalent = packHasFileSwaps(inputMembers);
       if (layoutEquivalent) {
         console.log(
           `[resave] ${name}: input carries FileSwaps -> payload compared SEMANTICALLY ` +
             `(redirect table, not member names). See the FileSwap-preservation spec, §5.2.`,
+        );
+      }
+      // docs/TEXTOOLS_BUGS.md #23 — our one deliberate divergence on the v4 read path. `undefined`
+      // for every non-v4 input, so no other pack is affected at all.
+      const confirmGoldenOnlyMember =
+        makeV4ExtraFileDuplicateConfirmation(inputMembers);
+      if (confirmGoldenOnlyMember !== undefined) {
+        console.log(
+          `[resave] ${name}: v4 input -> golden-only payload members are checked against the ` +
+            `ExtraFile-duplication confirmation (docs/TEXTOOLS_BUGS.md #23).`,
         );
       }
       // Payload MEMBER NAMES are compared here from the start (unlike the /upgrade harness, which
@@ -96,6 +110,7 @@ export function registerResaveCheck(pack: string): void {
         target === "pmp",
         undefined,
         layoutEquivalent,
+        confirmGoldenOnlyMember,
       );
       const diff = { ...payload, files: [...payload.files, ...archive] };
       const key = oracleKey(bytes);
