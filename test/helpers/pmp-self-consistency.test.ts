@@ -10,6 +10,9 @@ function archive(members: Record<string, Uint8Array>): Uint8Array {
   return writeZip(new Map(Object.entries(members)), { store: false });
 }
 
+const zip = (m: Record<string, Uint8Array>) =>
+  writeZip(new Map(Object.entries(m)));
+
 const META = j({ Name: "t", Image: "" });
 
 describe("pmpSelfConsistency", () => {
@@ -125,6 +128,71 @@ describe("pmpSelfConsistency", () => {
         status: "removed",
         detail: "chara/b.tex",
       },
+    ]);
+  });
+});
+
+describe("pmpSelfConsistency on a v4 archive (PMP.cs:1484/1487)", () => {
+  const v4Meta = {
+    FileVersion: 4,
+    Name: "t",
+    Image: "",
+    Identifier: "5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3",
+    LastWrite: "2026-08-06T04:41:11.0160172-07:00",
+    ModTags: [],
+    Groups: [
+      {
+        Name: "G",
+        Type: "Single",
+        Image: "grp.png",
+        Options: [
+          { Name: "A", Image: "", Files: { "chara/a.tex": "g\\chara\\a.tex" } },
+        ],
+      },
+    ],
+    DefaultData: { Version: 0, Files: { "chara/d.tex": "def\\chara\\d.tex" } },
+  };
+
+  it("reports NO orphans when every payload member is named by an inline group, DefaultData or an Image", () => {
+    const diffs = pmpSelfConsistency(
+      zip({
+        "meta.json": j(v4Meta),
+        "g/chara/a.tex": new Uint8Array([1]),
+        "def/chara/d.tex": new Uint8Array([2]),
+        "grp.png": new Uint8Array([3]),
+      }),
+      new Set<string>(),
+    );
+    expect(diffs).toEqual([]);
+  });
+
+  it("still reports a genuine orphan under v4", () => {
+    const diffs = pmpSelfConsistency(
+      zip({
+        "meta.json": j(v4Meta),
+        "g/chara/a.tex": new Uint8Array([1]),
+        "def/chara/d.tex": new Uint8Array([2]),
+        "grp.png": new Uint8Array([3]),
+        "stray/unreferenced.tex": new Uint8Array([4]),
+      }),
+      new Set<string>(),
+    );
+    expect(diffs.map((d) => d.gamePath)).toEqual([
+      "self:orphan:stray/unreferenced.tex",
+    ]);
+  });
+
+  it("still reports a dangling Files value under v4", () => {
+    const diffs = pmpSelfConsistency(
+      zip({
+        "meta.json": j(v4Meta),
+        "def/chara/d.tex": new Uint8Array([2]),
+        "grp.png": new Uint8Array([3]),
+      }),
+      new Set<string>(),
+    );
+    expect(diffs.map((d) => d.gamePath)).toEqual([
+      "self:dangling:g/chara/a.tex",
     ]);
   });
 });
