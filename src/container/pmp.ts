@@ -724,14 +724,15 @@ export function writePmp(
     Website: data.meta.url,
     Image: data.meta.image,
     ModTags: data.meta.tags,
-    // PLACEHOLDERS pending the v4 write port (same later task as FileVersion above): the real
-    // WizardData.WritePmp always builds both non-null (WizardData.cs:1481-1487) and PMP.WritePmp
-    // re-stamps LastWrite before serializing (:941) — none of that is ported here yet, so this
-    // writer does not claim to emit a real Identifier/LastWrite/Groups/DefaultData.
-    Identifier: "",
-    LastWrite: "",
-    Groups: null,
-    DefaultData: null,
+    // Identifier/LastWrite/Groups/DefaultData deliberately OMITTED, not fabricated: the real
+    // WizardData.WritePmp always builds Groups/DefaultData non-null (WizardData.cs:1481-1487) and
+    // PMP.WritePmp re-stamps LastWrite before serializing (:941) — none of that is ported here yet
+    // (same later task as FileVersion above), so this writer does not claim to emit real values for
+    // any of the four. They are OPTIONAL on `PmpMetaJsonWrite` (unlike required-on-read
+    // `PmpMetaJson`) specifically so leaving them out here is well-typed and `JSON.stringify` emits
+    // nothing for them — a synthesized placeholder value (`""`/`null`) would be worse than an absent
+    // key: it looks like real data and matches no genuine TexTools shape, v3 or v4. See
+    // `PmpMetaJsonWrite`'s doc comment (manifest-types.ts).
   };
   entries.set("meta.json", enc.encode(JSON.stringify(meta, null, 2)));
 

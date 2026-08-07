@@ -213,19 +213,35 @@ export type PmpMetaJsonRaw = Partial<PmpMetaJson>;
  * with `NullValueHandling.Ignore` (PMP.cs:170-173), which leaves an explicit null at the field
  * initializer's `""`, exactly as `parsePmpMeta` models.
  *
- * Since the v4 re-pin this view also requires `Identifier`, `LastWrite`, `Groups` and
- * `DefaultData` (PMP.cs · PMPMetaJson · 1476-1487): `PMP.WritePmp` moves `pmp.Groups` and
- * `pmp.DefaultMod` into the meta (:928-939) and re-stamps `LastWrite` (:941) before serializing,
- * and `WizardData.WritePmp` builds both non-null (WizardData.cs:1481-1487), so all four are always
- * physically present in a written meta.json. */
+ * In the real C#, `Identifier`/`LastWrite`/`Groups`/`DefaultData` (PMP.cs · PMPMetaJson · 1476-1487)
+ * are ALSO always physically present in a written meta.json: `PMP.WritePmp` moves `pmp.Groups` and
+ * `pmp.DefaultMod` into the meta (:928-939) and re-stamps `LastWrite` (:941) before serializing, and
+ * `WizardData.WritePmp` builds both non-null (WizardData.cs:1481-1487). But `writePmp` (pmp.ts) does
+ * not yet PORT that — its `meta` object literal still writes the pre-v4 8-key shape, unchanged from
+ * before the re-pin (see that literal's own comment for why, and the v4 port plan's Task 11, which is
+ * what starts emitting real values). Making the four OPTIONAL here — rather than required, as they
+ * are on the read-side `PmpMetaJson` above — lets that literal go on omitting the keys entirely, so
+ * `JSON.stringify` emits nothing for them and the output byte-shape is unchanged. TIGHTEN this back to
+ * required (mirroring `PmpMetaJson`) once `writePmp` actually populates them for real. */
 export type PmpMetaJsonWrite = Omit<
   PmpMetaJson,
-  "Name" | "Author" | "Description" | "Website"
+  | "Name"
+  | "Author"
+  | "Description"
+  | "Website"
+  | "Identifier"
+  | "LastWrite"
+  | "Groups"
+  | "DefaultData"
 > & {
   Name: string | null;
   Author: string | null;
   Description: string | null;
   Website: string | null;
+  Identifier?: string;
+  LastWrite?: string;
+  Groups?: PmpGroupJsonRaw[] | null;
+  DefaultData?: PmpOptionJsonRaw | null;
 };
 
 /** Applies PMPMetaJson's field initializers (PMP.cs · PMPMetaJson · 1467-1488). */
