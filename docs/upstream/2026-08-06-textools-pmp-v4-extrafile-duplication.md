@@ -8,14 +8,16 @@ commit `8e2a2603f963ceb38062798c128b7f4efd966e11`). Written 2026-08-06.*
 
 `PMP.LoadPMP` computes the set of "extra" (unreferenced) files in a modpack from the wrong list when
 the pack uses the Penumbra **v4** manifest layout, where groups live inline in `meta.json` instead of
-in separate `group_*.json` files. Every payload file belonging to a v4 inline group is misclassified
-as an extra file.
+in separate `group_*.json` files. A payload file referenced only by a v4 inline group is misclassified
+as an extra file. (A file referenced by an inline group *and* by `DefaultData` escapes, since the
+`DefaultData` scan is correct — see §3.)
 
-That misclassification is harmless on the write paths that discard extra files, but
+That misclassification is harmless on the write paths that do not preserve extra files, but
 `ConsoleTools.exe /resave` asks for them to be preserved. There, each such file is written **twice**
 into the output archive: once verbatim at its original archive path (as an "extra" file), and once at
-the regenerated deduplicated path the group option actually points at. Files referenced by
-`DefaultData` are unaffected, which makes the asymmetry easy to see in a single pack.
+the regenerated deduplicated path the group option actually points at. Where those two paths differ —
+the normal case — both copies survive into the zip. Files referenced by `DefaultData` are unaffected,
+which makes the asymmetry easy to see in a single pack.
 
 The trigger is structural rather than version-gated: it needs a `meta.json` that carries inline
 `Groups`, which only the v4 layout produces. A v3 pack, whose groups live in `group_*.json` files, is
@@ -48,7 +50,8 @@ Line numbers are from `xivModdingFramework/Mods/FileTypes/PMP.cs` at `8e2a2603`,
             }
 ```
 
-A v4 pack has no `group_*.json` members, so `groups` ends up **empty**.
+This loop looks only on disk. A pack whose groups live inline in `meta.json` has nothing here for it
+to find, so `groups` ends up **empty**.
 
 ### 2. The v4 pull-back assigns `pmp.Groups`, not `groups` (`:210-225`)
 
@@ -101,7 +104,8 @@ list from step 1.
                 }
 ```
 
-For a v4 pack this loop has nothing to iterate, so no inline group's files reach `allPmpFiles`.
+For a pack whose groups are inline, this loop has nothing to iterate, so no inline group's files reach
+`allPmpFiles`.
 
 The `DefaultMod` scan immediately below (`:267-276`) reads the **pulled-back** value and is therefore
 correct:
@@ -203,8 +207,8 @@ So `/resave` is the one live path today.
 
 Where `saveExtraFiles` is `false` the misclassification is inert rather than destructive:
 `WizardData.ExtraFiles` (declared `:1094`, filled `:1126`) has no reader outside the gated block at
-`:1496-1498`, so each payload file is still written exactly once, by the group loop. **No files are
-lost.**
+`:1496-1498` (`ShrinkRay.cs:74` also touches it, but only to clear it — it never reads it), so each
+payload file is still written exactly once, by the group loop. **No files are lost.**
 
 ## Reproduction
 
@@ -302,9 +306,11 @@ Each payload file appears once, at its regenerated path — the same as for an e
 
 ## Impact
 
-A v4 pack re-saved via `/resave` carries a redundant copy of every inline-group payload file, so for
-a typical pack (where the bulk of the payload sits in groups rather than `DefaultData`) the output is
-roughly twice the necessary size. The pack still installs and behaves correctly in Penumbra, since
+A v4 pack re-saved via `/resave` carries a redundant copy of every inline-group payload file whose
+archive path differs from the path TexTools regenerates for it (`<option folder>/<game path>`) — the
+normal case, since a pack is only laid out that way if TexTools itself wrote it. So for a typical
+pack, where the bulk of the payload sits in groups rather than `DefaultData`, the output is roughly
+twice the necessary size. The pack still installs and behaves correctly in Penumbra, since
 the duplicated members are unreferenced — the symptom is size and confusion, not breakage. It does
 not compound across repeated re-saves: the second pass regenerates the same paths and overwrites in
 place.
@@ -318,11 +324,17 @@ Iterate the list the pull-back actually populates:
 + foreach (var g in pmp.Groups)
 ```
 
-at `PMP.cs:234`. On the v3 path `pmp.Groups` is assigned `groups` at `:214` and the pull-back at
-`:217` does not fire, so v3 behaviour is unchanged.
+at `PMP.cs:234`. For a v3 pack `meta.Groups` is empty and `meta.DefaultData` is null, so the pull-back
+at `:217` does not fire and `pmp.Groups` is still the `groups` assigned at `:214` — v3 behaviour is
+unchanged.
 
-One consequence worth being aware of: for a pack carrying *both* inline `Groups` and on-disk
-`group_*.json` members, `:220` replaces `pmp.Groups` with the inline set, discarding the on-disk
-groups. After this change their files are no longer counted as referenced, so they become extra
-files. That is the accurate classification — nothing in the written output points at them — but it
-is a behaviour change for that (unusual) input shape.
+One consequence worth being aware of, for the mixed input shape where a pack has on-disk
+`group_*.json` members *and* the pull-back at `:217` fires. Note that guard is wider than "has inline
+groups": a non-null `meta.DefaultData` fires it on its own, and `:220` then assigns
+`meta.Groups ?? new List<PMPGroupJson>()` — so the on-disk groups are dropped from `pmp.Groups`
+either way, whether they are replaced by an inline set or by an empty list.
+
+For such a pack, those discarded groups' files are today counted as referenced by `:234` (it is still
+reading the on-disk list) even though nothing downstream writes them. After this change they are no
+longer counted, so they become extra files. That is the accurate classification — nothing in the
+written output points at them — but it is a behaviour change for that unusual input shape.
