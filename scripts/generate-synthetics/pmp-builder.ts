@@ -167,3 +167,70 @@ export function writePmp(
   writeFileSync(out, zipSync(members, { mtime: FIXED_MTIME }));
   console.log("wrote", out);
 }
+
+// ---------------------------------------------------------------------------------------------
+// PENUMBRA V4 EMITTER
+//
+// `writePmpV4` below is the ONLY builder in this repo that emits a v4 pack. `writePmp` above and
+// every existing build-synthetic-*.ts emit v3 and MUST STAY v3: the three oracle caches are keyed
+// on sha256(input pack), so changing a v3 builder's output silently invalidates every cached golden
+// for its packs and re-spawns ConsoleTools for all of them.
+//
+// A v4 pack has exactly ONE manifest member — meta.json, carrying `Groups` and `DefaultData` inline
+// (PMP.cs · PMPMetaJson · 1484/1487). No default_mod.json, no group_NNN.json. That is the member set
+// PMP.WritePmp emits now that :946-955 is commented out (PMP.cs:908-962).
+// ---------------------------------------------------------------------------------------------
+
+/** meta.json for a v4 pack, in Newtonsoft declaration order (PMP.cs:1469-1487) — the order fixes
+ *  the member bytes and therefore the golden-cache key, so do not reorder.
+ *
+ *  `Identifier` and `LastWrite` are PINNED LITERALS, not generated. TexTools generates both fresh on
+ *  every write (`Guid.NewGuid()` at :1476, `DateTime.Now` at :941), but this is an INPUT pack: a
+ *  generated value would change its sha256 on every rebuild and blow the cache, exactly like an
+ *  unpinned zip mtime would (see FIXED_MTIME). The values below are arbitrary and well-formed. */
+export function syntheticMetaV4(
+  name: string,
+  groups: PmpGroupJsonRaw[],
+  defaultData: PmpOptionJsonRaw | null,
+): PmpMetaJsonRaw {
+  return {
+    FileVersion: 4,
+    Name: name,
+    Author: "synthetic",
+    Description: "",
+    Version: "1.0.0",
+    Website: "",
+    Image: "",
+    Identifier: "00000000-0000-4000-8000-00000000f001",
+    LastWrite: "2024-01-01T00:00:00.0000000+00:00",
+    ModTags: [],
+    Groups: groups,
+    DefaultData: defaultData,
+  };
+}
+
+export interface SyntheticV4Pack {
+  /** Build with `syntheticMetaV4` so the key order stays pinned. */
+  meta: PmpMetaJsonRaw;
+  /** zip path (forward slashes) -> raw bytes. */
+  files: Record<string, Uint8Array>;
+}
+
+/** Zips `pack` into test/corpus/<root>/<fileName> (gitignored, like the real corpus). */
+export function writePmpV4(
+  fileName: string,
+  pack: SyntheticV4Pack,
+  root: SyntheticRoot = "synthetic",
+): void {
+  const members: Record<string, Uint8Array> = {
+    "meta.json": encodeJson(pack.meta),
+  };
+  for (const [zipPath, bytes] of Object.entries(pack.files)) {
+    members[zipPath] = bytes;
+  }
+  const outDir = join(CORPUS_DIR, root);
+  mkdirSync(outDir, { recursive: true });
+  const out = join(outDir, fileName);
+  writeFileSync(out, zipSync(members, { mtime: FIXED_MTIME }));
+  console.log("wrote", out);
+}
