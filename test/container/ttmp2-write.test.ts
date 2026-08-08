@@ -114,7 +114,7 @@ describe("writeTtmp2 round-trip", () => {
 });
 
 describe("writeTtmp2 page renumbering", () => {
-  it("renumbers PageIndex densely over surviving pages (WriteWizardPack:1348-1357)", () => {
+  it("renumbers PageIndex densely over surviving pages (WriteWizardPack:1367-1376)", () => {
     // Measured against ConsoleTools /resave 2026-08-04: a source page whose only group is
     // option-less is dropped, and the survivor is emitted as PageIndex 0, not 1.
     const data = readTtmp2(

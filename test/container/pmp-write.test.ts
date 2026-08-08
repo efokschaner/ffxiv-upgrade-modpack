@@ -1014,7 +1014,7 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
       // Mirrors what readPmp would build: no Default page (empty), then one page per real group,
       // by array position (no off-by-one shift here, since there is no Default page to unshift
       // onto the front). `writePmp`'s own `clearNulls(pages)` call (src/container/pmp.ts,
-      // WritePmp:1462) is what actually prunes `emptyGroup`'s page here -- this fixture supplies
+      // WritePmp:1481) is what actually prunes `emptyGroup`'s page here -- this fixture supplies
       // the PRE-prune layout, exactly as a real load would hand it to WritePmp.
       pages: [
         { groups: [alphaGroup] },

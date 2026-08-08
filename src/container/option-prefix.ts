@@ -2,8 +2,8 @@
 // MakeGroupPrefix / MakeOptionPrefix (WizardData.cs:1381-1477). Page construction (FromPmp,
 // WizardData.cs:1137-1177) and pruning (ClearNulls, WizardData.cs:1253-1285) do NOT live here
 // anymore: construction happens at load, in `readPmp` (src/container/pmp.ts), and pruning is its
-// own module (src/container/clear-nulls.ts), called at both the load seam (FromPmp:1159) and the
-// write seams (WritePmp:1462, WriteWizardPack:1334) — so every `ModpackPage` reaching this module's
+// own module (src/container/clear-nulls.ts), called at both the load seam (FromPmp:1178) and the
+// write seams (WritePmp:1481, WriteWizardPack:1353) — so every `ModpackPage` reaching this module's
 // exported `optionPrefixes` has already had its nulls and empty groups/pages removed.
 //
 // This module ports one TexTools bug faithfully; see docs/TEXTOOLS_BUGS.md #6 for the full writeup:
@@ -158,8 +158,8 @@ function makeOptionPrefix(
  *  entry — TexTools never assigns it one either, since WritePmp's iteration
  *  (WizardData.cs:1525-1561) only visits `DataPages`. */
 export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
-  // ClearNulls has already run (at load for PMP, FromPmp:1159; at write for both, WritePmp:1462 /
-  // WriteWizardPack:1334), so no page reaching here holds a null. Narrow rather than assert that.
+  // ClearNulls has already run (at load for PMP, FromPmp:1178; at write for both, WritePmp:1481 /
+  // WriteWizardPack:1353), so no page reaching here holds a null. Narrow rather than assert that.
   const pages = allPages(data).map((p) => ({
     ...p,
     groups: p.groups.filter((g): g is ModpackGroup => g !== null),

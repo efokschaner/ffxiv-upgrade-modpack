@@ -69,7 +69,7 @@ describe("validateTexFileData", () => {
   it("Branch B: a POT tex with a broken first offset is rewritten, not resized", () => {
     // 16x16 (not 4x4/mipCount=2): a canonical mipCount=2 A8R8G8B8 header has LoDMips=[0,1,0]
     // (CreateTexFileHeader, Tex.cs:1124-1126 — LoD2 stays 0 unless mipCount>2), which is
-    // non-monotonic and trips assertTexHeaderWritable's ordering guard (Tex.cs:138) the moment this
+    // non-monotonic and trips assertTexHeaderWritable's ordering guard (Tex.cs:138 *pre-fix*, deleted by 1993bf6) the moment this
     // path needs to rewrite the header — a genuine TexTools defect, not a fixture mistake; see
     // docs/TEXTOOLS_BUGS.md #19. 16x16 (mipCount=4) keeps LoDMips=[0,1,2], avoiding the crash while
     // still exercising the same offset-rewrite behaviour.

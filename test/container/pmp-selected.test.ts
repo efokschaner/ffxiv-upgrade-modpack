@@ -91,7 +91,7 @@ describe("readPmp selected", () => {
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
     );
     // Only the synthesized Default group (one option) survives: `clearNulls`, wired in at the
-    // `readPmp` load seam (FromPmp:1159, src/container/clear-nulls.ts), prunes the zero-option
+    // `readPmp` load seam (FromPmp:1178, src/container/clear-nulls.ts), prunes the zero-option
     // real group's null out of its page before `allGroups` ever walks it.
     expect(allGroups(data)).toHaveLength(1);
     expect(allGroups(data)[0]!.name).toBe("Default");

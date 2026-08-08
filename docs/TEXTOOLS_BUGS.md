@@ -844,7 +844,7 @@ System.NullReferenceException: Object reference not set to an instance of an obj
 ```
 
 Row 4 is the mechanism confirming itself twice: a `Page: 0` group is shielded only because
-`FromPmp:1136` puts the synthesized Default group in front of it, and row 5 shows the shield is
+`FromPmp:1155` puts the synthesized Default group in front of it, and row 5 shows the shield is
 positional rather than page-numbered — the same empty group one page over still crashes.
 `HandleUpgrade` catches the exception (`ConsoleTools/Program.cs:183-186`), `Trace.WriteLine`s it and
 returns -1, so the user gets **no output file at all** and no message on stdout.
@@ -869,7 +869,7 @@ the content check alone is a payload multiset keyed by gamePath and cannot see a
 
 **Upstream fix:** null-guard the page predicate the same way the group loop already is —
 `Groups.Any(x => x != null && x.HasData)` — or, better, have `FromPmp` skip the add when
-`FromPMPGroup` returns null, as `FromWizardModpackPage:986` already does, so `ClearNulls` never has
+`FromPMPGroup` returns null, as `FromWizardModpackPage:997` already does, so `ClearNulls` never has
 a null to survive in the first place.
 
 ---

@@ -161,7 +161,7 @@ export function readTtmp2(
     // WizardData.cs · WizardPageEntry.FromWizardModpackPage · 988-1001 — one page per ModPackPages
     // element, in array order. WizardPageEntry itself carries no page-index field; page identity is
     // positional and the writer re-derives PageIndex with a dense counter at write time
-    // (WriteWizardPack:1348-1357).
+    // (WriteWizardPack:1367-1376).
     const builtPage: ModpackPage = {
       groups: [],
     };
@@ -273,8 +273,8 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
       `ttmp2: cannot write ExtraFiles (${data.extraFiles.size}) — TTMP has no equivalent container member`,
     );
   }
-  // Computed BEFORE `clearNulls` runs below (the wizard branch's, at :391), inverting
-  // `WriteWizardPack`'s order (`ClearNulls()` is its first statement, :1432). Verified inert: every
+  // Computed BEFORE `clearNulls` runs below (the wizard branch's, at line 341 of this file), inverting
+  // `WriteWizardPack`'s order (`ClearNulls()` is its first statement, WizardData.cs:1353). Verified inert: every
   // page/group `clearNulls` can remove is, by construction, one with zero surviving options
   // (`groupHasData`/`pageHasData`, src/container/clear-nulls.ts), so it contributes zero entries to
   // `allFiles` either way — pruning it after the fact changes nothing this blob build reads.
@@ -323,12 +323,12 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
   };
 
   if (data.isSimple) {
-    // No `clearNulls` call on this branch, though `WriteWizardPack:1334` calls it unconditionally.
+    // No `clearNulls` call on this branch, though `WriteWizardPack:1353` calls it unconditionally.
     // Not a gap: C# never reaches WriteWizardPack for a simple pack at all (`isSimple` write is a
     // wholly separate C# path, TTMP.CreateSimpleModPack/SimpleModPackData — a different class
     // hierarchy this port merges into one module, see this file's own citations), so `ClearNulls`
     // simply doesn't apply here. Inert either way: a simple pack's one hand-built page/group/option
-    // (readTtmp2's simple path, mirroring FromSimpleTtmp:1204-1231 — see
+    // (readTtmp2's simple path, mirroring FromSimpleTtmp:1223-1250 — see
     // docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md §4) can never be
     // the zero-option/zero-group case `clearNulls` prunes.
     mpl.SimpleModsList = files.map((e) => modOf(e.gamePath, e.file));

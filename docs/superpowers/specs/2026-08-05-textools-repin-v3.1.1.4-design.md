@@ -439,7 +439,11 @@ and it is the trap most likely to recur:
 | bare continuation | `:2464` for a file named earlier | context routinely spans a **whole module** — a header names the file, the body cites bare |
 | dot | `WizardData.cs · ClearNulls · 1234-1266`, and bare `(· 621-627)` | AGENTS.md's own prescribed `file · symbol · lines` |
 | wrapped | `ModelModifiers.cs:` ending a line, digits starting the next | invisible to any single-line regex |
-| symbol-qualified | `WizardData.FromPmp:1118-1159` | no `.cs` at all |
+| file-qualified symbol | `WizardData.FromPmp:1118-1159` | no `.cs`, but the file base name is there |
+| **bare symbol** | `FromPmp:1159`, `WriteWizardPack:1348-1357` | **no file reference at all** — resolvable only by knowing which C# file owns the symbol |
+
+The last row is the one to watch: a *scanner* cannot resolve it without a symbol table, and every
+automated pass here missed it (18 sites). Those were fixed **by hand**.
 
 **Method.** One scanner over the whole file text: any `<Name>.cs` occurrence sets the current-file
 context (file-scoped, last-wins); any following line-number token in any of the above spellings is a
@@ -466,14 +470,41 @@ resolved by symbol identity instead: `PMP.cs:124 → :159` (`LoadPMP` gained `en
 deliberately **not** repointed — they name the guard block `1993bf6` deleted, and the register now
 marks them *pre-fix*.
 
-**Completeness, measured rather than asserted.** An independent audit
-(`.superpowers/…/audit.mjs`, written to *not* reuse the mapper's bookkeeping) walks the final tree,
-resolves all 1,202 citations into the ten changed files, and re-derives each one's old-pin
-counterpart: **1,176 verified stable; 26 flagged, all explained** — 19 are the audit's own
-last-wins misattributions (provably so: out of range for the file it guessed, so they cannot be
-citations into a changed file at all — they belong to `EndwalkerUpgrade.cs`,
-`XivDependencyRoot.cs`), and 7 are correct new-pin citations pointing *into* a region the re-pin
-changed (`PMP.cs:170-173`, `:1679-1681`). **No genuine staleness remains in these three trees.**
+**Completeness.** An audit (`.superpowers/…/audit.mjs`) resolves all 1,202 citations into the ten
+changed files and re-derives each one's old-pin counterpart: 1,176 verified stable, 26 flagged and
+individually explained (19 are the audit's own context misattributions — provably so, being out of
+range for the file it guessed; 7 are correct new-pin citations pointing *into* a changed region,
+`PMP.cs:170-173` and `:1679-1681`).
+
+**That audit is necessary but NOT sufficient, and the reason is the important part.** It re-uses the
+same last-wins context heuristic as the mapper, so where the mapper guessed the wrong C# file the
+audit agrees with it and reports clean. It is not an independent check; it is the same check run
+twice. Three citations were rewritten to *confidently wrong* values before this was understood —
+worse than staleness, because they read as freshly verified. All three were the same cause: a bare
+ref attributed to the wrong file, where the hardened vacuity proof still passed because the wrong
+file's line happened to be in range and substantive.
+
+The check that **is** independent — it shares no logic with the mapper and never needs to know which
+C# file a ref belongs to — is `.superpowers/…/detect-divergent.mjs`:
+
+> Pair each removed line with its added counterpart using git's own hunk alignment, extract every
+> `<old> → <new>` line-number rewrite, and flag any old number rewritten to **two or more different
+> new values**. One old line cannot legitimately land on two new lines, so divergence means two
+> citations of it were attributed to different files.
+
+Measured, not assumed — over the 1,123 number rewrites of the two automated passes:
+
+| variant | flags | caught | noise |
+|---|---|---|---|
+| per repo file | 1 | breakage 1 (`WizardData.cs:1334 → :1432` vs `:1353`, one file contradicting itself) | none |
+| repo-wide | 24 | breakages 1 and 3 (`:1230 → :1232` vs `:1249`) | ~22 legitimate — the same line number in *different* C# files properly maps to different values |
+
+**Breakage 2 is not catchable by this method at all**, and that is worth stating plainly: `:326` was
+never a C# citation — it was an intra-file self-reference to this module's own `clearNulls` call,
+which the scanner swept into a C# shift. There is no second citation of it to disagree with. It is
+now rewritten as prose carrying no bare `:N` token, so no future scanner can mistake it again.
+
+Run the per-file variant as the zero-noise gate after any sweep; the repo-wide one as a triage list.
 
 Caveats, recorded so the next re-pin does not trip on them:
 
@@ -483,8 +514,14 @@ Caveats, recorded so the next re-pin does not trip on them:
   which `git blame` cannot distinguish from its own automated edits, so every token on a round-1
   line in `TEXTOOLS_BUGS.md` had to be re-reviewed by hand.
 - A **last-wins file context can misattribute** a bare ref when two `.cs` files are named in one
-  comment. The hardened proof catches this whenever the wrong file makes the line out-of-range or
-  blank, which covered every instance here — but it is not a guarantee.
+  comment, and the hardened proof is *not* a sufficient backstop: it only catches the cases where the
+  wrong file's line is out of range or blank. Three misattributions survived it here. The
+  divergent-rewrite detector above is the check that catches them; run it, and hand-verify anything a
+  sweep touches in a file that names more than one C# source.
+- **Prefer a citation that names its file.** Every failure in this section traces to a citation that
+  did not: bare `:N`, bare `FromPmp:1159`, or an intra-file `:326` indistinguishable from a C# ref.
+  When adding a citation, spell the file at least once per comment block — it costs nine characters
+  and makes the reference machine-resolvable instead of a guess.
 - Some citations live inside **runtime message strings**, not comments, so correcting one is
   observable. Three moved (`src/container/option-prefix.ts`'s `MakeGroupPrefix` non-termination
   throw, and two in `src/mdl/model/model-modifiers.ts`, `ModelModifiers.cs:2021/:2026 → :2041/:2046`).

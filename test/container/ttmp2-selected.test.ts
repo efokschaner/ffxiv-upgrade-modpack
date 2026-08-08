@@ -37,7 +37,7 @@ describe("readTtmp2 selected", () => {
     ]);
   });
 
-  it("drops a zero-option group entirely (FromWizardGroup:749-753 + FromWizardModpackPage:986)", () => {
+  it("drops a zero-option group entirely (FromWizardGroup:755-759 + FromWizardModpackPage:997)", () => {
     const data = readTtmp2(
       buildWizardTtmp2([
         { name: "Empty", options: [] },

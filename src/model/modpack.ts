@@ -100,7 +100,7 @@ export interface ModpackGroup {
 /** Mirrors WizardPageEntry (reference/.../Mods/WizardData.cs · WizardPageEntry · 974-1001). A `null`
  *  entry is deliberate and load-bearing: WizardData.FromPmp adds FromPMPGroup's result to
  *  page.Groups UNCONDITIONALLY at both its call sites (:1155, :1175), and that result is `null` for
- *  a zero-option group (FromPMPGroup:851-855). ClearNulls prunes them afterwards. The TTMP path
+ *  a zero-option group (FromPMPGroup:857-861). ClearNulls prunes them afterwards. The TTMP path
  *  never admits one — FromWizardModpackPage discards it at the call site (:997). */
 export interface ModpackPage {
   groups: (ModpackGroup | null)[];

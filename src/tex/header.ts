@@ -152,7 +152,8 @@ export function fixUpBrokenMipOffsets(
 }
 
 /** The write-time validation Tex.TexHeader.ToBytes performs before emitting header bytes
- *  (Tex.cs:138-145), messages verbatim. Kept SEPARATE from serializeTexHeader (which writes retained
+ *  (Tex.cs:138-145 *pre-fix* — the block `1993bf6` deleted; see docs/TEXTOOLS_BUGS.md #19),
+ *  messages verbatim. Kept SEPARATE from serializeTexHeader (which writes retained
  *  headers verbatim and must not throw on them); called only where ToBytes' guard is part of the
  *  ported behaviour (validateTexFileData Branch B), where a throw drops the file at the load seam. */
 export function assertTexHeaderWritable(

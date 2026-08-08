@@ -107,7 +107,7 @@ export function readLegacyTtmp(
     },
     // WizardData.cs · FromSimpleTtmp · 1223-1250 — a legacy pack loads through FromSimpleTtmp via
     // the synthesized "0.1s" mpl (TTMP.cs:453-462): one hand-built page holding one hand-built
-    // group, added UNCONDITIONALLY (:1232) with no ClearNulls call.
+    // group, added UNCONDITIONALLY (:1249) with no ClearNulls call.
     pages: [page],
   };
 }

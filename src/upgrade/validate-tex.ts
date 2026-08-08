@@ -1,6 +1,6 @@
 // Port of EndwalkerUpgrade.ValidateTexFileData (EndwalkerUpgrade.cs:2100-2129) — the load-time .tex
 // repair TTMP.FixOldTexData (TTMP.cs:1415-1462) runs on every .tex of an old pack, called from
-// WizardData.FromWizardGroup:705 (the /upgrade + /resave load path). Given the UNCOMPRESSED tex bytes,
+// WizardData.FromWizardGroup:711 (the /upgrade + /resave load path). Given the UNCOMPRESSED tex bytes,
 // returns fixed bytes, or null when nothing changed. See
 // docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md.
 import {
@@ -46,7 +46,7 @@ export function validateTexFileData(
   // Branch B — EndwalkerUpgrade.cs:2116-2124. Fix broken mip offsets; rebuild only if something moved.
   const fix = fixUpBrokenMipOffsets(tex, uncompressedTex.length);
   if (fix.headerChanged || fix.calculatedTexSize !== uncompressedTex.length) {
-    assertTexHeaderWritable(tex); // header.ToBytes() guard (Tex.cs:138-145); throw → drop at the seam
+    assertTexHeaderWritable(tex); // header.ToBytes() guard (Tex.cs:138-145 *pre-fix*, deleted by 1993bf6); throw → drop at the seam
     // Array.Copy(uncompressedTex, 80, newData, 80, CalculatedTexSize-80) throws on a source overrun
     // (EndwalkerUpgrade.cs:2122) — a truncated/corrupt tex whose computed mip0 exceeds the file. That
     // throw is caught by FromWizardGroup's catch → the file is dropped. Reproduce it (a bare subarray
