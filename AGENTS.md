@@ -64,7 +64,10 @@ intuition** when the two conflict:
   quirk in a comment rather than correcting it. When what you are reproducing is a genuine
   **defect** rather than a transcribed oddity — a null deref, a guard that can never fire, a
   loop that can't terminate — also add an entry to `docs/TEXTOOLS_BUGS.md`, the register of
-  TexTools bugs we knowingly reproduce and could propose upstream.
+  TexTools bugs we knowingly reproduce and could propose upstream. That file is an **index**;
+  each entry is its own file under `docs/textools-bugs/NN-slug.md`, where `NN` is a permanent
+  ID rather than a rank. Cite one as `` `docs/TEXTOOLS_BUGS.md` #N `` — see the index's *How
+  this works* for why the ID, not the path.
 - **Every line of business logic has TexTools provenance.** All non-test, non-
   scaffolding code traces to a named C# source, cited as `file · symbol · lines` in a
   header or comment. If you can't point to the TexTools code a behaviour came from, it
