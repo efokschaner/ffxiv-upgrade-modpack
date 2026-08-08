@@ -423,7 +423,7 @@ export function mergeShapeData(model: TTModel, rm: ReadMdl): void {
 }
 
 /** No-op — and byte-parity-correct as such. C# `ModelModifiers.FixUpSkinReferences`
- *  (ModelModifiers.cs:2309-2399) rewrites skin/hair material race codes, but in the `/upgrade`
+ *  (ModelModifiers.cs:2329-2419) rewrites skin/hair material race codes, but in the `/upgrade`
  *  pipeline it never fires: `EndwalkerUpgrade.FixOldModel` (EndwalkerUpgrade.cs:194) builds the model
  *  via `Mdl.GetXivMdl(uncomp)` with no path, and `GetXivMdl(byte[], string mdlPath = "")` (Mdl.cs:349)
  *  defaults `MdlPath` to `""`. `TTModel.FromRaw` then calls `FixUpSkinReferences(ttModel, "")`, whose
@@ -440,7 +440,7 @@ export function fixUpSkinReferences(
   // Intentionally no-op: inert in /upgrade because FixOldModel passes MdlPath="" (see doc comment).
 }
 
-/** Port of ModelModifiers.GetWeldedMeshData (ModelModifiers.cs:1935-2100), weldMirrors=false only
+/** Port of ModelModifiers.GetWeldedMeshData (ModelModifiers.cs:1955-2120), weldMirrors=false only
  *  (the recompute never passes true). Combines the group's parts into one vertex/index list, builds
  *  the triangle-adjacency graph, and welds vertices sharing Position/UV1/Normal — except across a
  *  UV-seam mirror point. Returns the translated index list and, per new welded vertex, the list of
@@ -464,7 +464,7 @@ function weldKey(v: TtVertex): string {
 }
 
 export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
-  // Combine parts (ModelModifiers.cs:1940-1950): index list offset by running vertex count.
+  // Combine parts (ModelModifiers.cs:1960-1970): index list offset by running vertex count.
   const indices: number[] = [];
   const vertices: TtVertex[] = [];
   let offset = 0;
@@ -474,7 +474,7 @@ export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
     for (const v of p.vertices) vertices.push(v);
   }
 
-  // Triangle-adjacency graph (ModelModifiers.cs:1953-1982).
+  // Triangle-adjacency graph (ModelModifiers.cs:1973-2002).
   const connected = new Map<number, Set<number>>();
   const connect = (a: number, b: number): void => {
     let s = connected.get(a);
@@ -499,7 +499,7 @@ export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
     connect(v2, v1);
   }
 
-  // Weld (ModelModifiers.cs:1985-2088).
+  // Weld (ModelModifiers.cs:2005-2108).
   const weldBuckets = new Map<string, number[]>(); // key -> original vertex ids
   const oldToNew = new Map<number, number>();
   const vertexIdTable: number[][] = []; // new id -> original ids welded in
@@ -519,17 +519,17 @@ export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
           vec3Eq(nv.position, ov.position) &&
           vec3Eq(nv.normal, ov.normal)
         ) {
-          // Mirror-point check (ModelModifiers.cs:2018-2055).
+          // Mirror-point check (ModelModifiers.cs:2038-2075).
           let isMirror = false;
           const alreadyConnected = new Set<number>();
           for (const vi of vertexIdTable[ni]!) {
             const viConn = connected.get(vi);
-            // C# indexes connectedVertices[vi] unguarded (ModelModifiers.cs:2021): a vertex never
+            // C# indexes connectedVertices[vi] unguarded (ModelModifiers.cs:2041): a vertex never
             // referenced by a triangle throws KeyNotFoundException -> FixOldModel drops the file.
             // Fail loud to match, rather than silently substituting empty connections.
             if (viConn === undefined) {
               throw new Error(
-                `getWeldedMeshData: vertex ${vi} not referenced by any triangle (ModelModifiers.cs:2021)`,
+                `getWeldedMeshData: vertex ${vi} not referenced by any triangle (ModelModifiers.cs:2041)`,
               );
             }
             for (const c of viConn) alreadyConnected.add(c);
@@ -537,7 +537,7 @@ export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
           const myConnected = connected.get(i);
           if (myConnected === undefined) {
             throw new Error(
-              `getWeldedMeshData: vertex ${i} not referenced by any triangle (ModelModifiers.cs:2026)`,
+              `getWeldedMeshData: vertex ${i} not referenced by any triangle (ModelModifiers.cs:2046)`,
             );
           }
           for (const wc of alreadyConnected) {
@@ -577,13 +577,13 @@ export function getWeldedMeshData(group: TTMeshGroup): WeldedMeshData {
     }
   }
 
-  // Translate indices (ModelModifiers.cs:2091-2097).
+  // Translate indices (ModelModifiers.cs:2111-2117).
   const finalIndices = indices.map((ov) => oldToNew.get(ov)!);
   return { indices: finalIndices, vertexTable };
 }
 
 // Local float vector helpers mirroring SharpDX Vector3 ops used by the recompute
-// (ModelModifiers.cs:2195-2246). Kept local: only the recompute uses them.
+// (ModelModifiers.cs:2215-2266). Kept local: only the recompute uses them.
 function vAdd(a: Vec3, b: Vec3): Vec3 {
   return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 }
@@ -606,7 +606,7 @@ function vNormalize(a: Vec3): Vec3 {
   return [a[0] / len, a[1] / len, a[2] / len];
 }
 
-/** Port of ModelModifiers.CopyShapeTangentsForPart (ModelModifiers.cs:2257-2270) restricted to the
+/** Port of ModelModifiers.CopyShapeTangentsForPart (ModelModifiers.cs:2277-2290) restricted to the
  *  serialized fields (Binormal, Handedness); Tangent is never serialized so it is omitted. Copies
  *  each shape vertex's binormal/handedness from the base part vertex it replaces. This is the byte-
  *  affecting tail shared by BOTH branches of CalculateTangentsForMesh. */
@@ -623,7 +623,7 @@ export function copyShapeBinormalsForPart(part: TTMeshPart): void {
   }
 }
 
-/** Port of ModelModifiers.CalculateTangentsForMesh (ModelModifiers.cs:2102-2253), force=false only.
+/** Port of ModelModifiers.CalculateTangentsForMesh (ModelModifiers.cs:2122-2273), force=false only.
  *  Dispatches per mesh group:
  *   - Empty guard (:2106-2109).
  *   - The C# `anyMissing` early-return (:2111-2124) reads v.Tangent, which this port never stores
@@ -671,7 +671,7 @@ export function calculateTangentsForMesh(group: TTMeshGroup): void {
     const dZ1 = p2.position[2] - p1.position[2];
     const dZ2 = p3.position[2] - p1.position[2];
 
-    // Top-left addressing flip (ModelModifiers.cs:2179-2181): y -> -y + 1.
+    // Top-left addressing flip (ModelModifiers.cs:2199-2201): y -> -y + 1.
     const v1y = -p1.uv1[1] + 1;
     const v2y = -p2.uv1[1] + 1;
     const v3y = -p3.uv1[1] + 1;
@@ -681,7 +681,7 @@ export function calculateTangentsForMesh(group: TTMeshGroup): void {
     const dV2 = v3y - v1y;
 
     let r = 1.0 / (dU1 * dV2 - dU2 * dV1);
-    // C# guards float.IsInfinity(r) only (ModelModifiers.cs:2190) — NOT NaN; match it exactly so a
+    // C# guards float.IsInfinity(r) only (ModelModifiers.cs:2210) — NOT NaN; match it exactly so a
     // NaN UV1 propagates as C# does rather than being silently zeroed.
     if (r === Infinity || r === -Infinity) r = 0;
 
@@ -723,7 +723,7 @@ export function calculateTangentsForMesh(group: TTMeshGroup): void {
   for (const p of group.parts) copyShapeBinormalsForPart(p);
 }
 
-/** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2284-2295): anisotropic lighting is
+/** Port of ModelModifiers.MergeFlags (ModelModifiers.cs:2304-2315): anisotropic lighting is
  *  enabled iff any LoD0 mesh's vertex declaration carried a Flow usage (mirrored here by
  *  the presence of decoded flow-direction data); flags1 is copied verbatim. */
 export function mergeFlags(model: TTModel, rm: ReadMdl): void {

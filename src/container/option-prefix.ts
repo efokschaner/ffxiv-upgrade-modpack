@@ -1,13 +1,13 @@
 // Port of WizardData's PMP-write prefix generators, the three prefix builders MakePagePrefix /
-// MakeGroupPrefix / MakeOptionPrefix (WizardData.cs:1362-1458). Page construction (FromPmp,
-// WizardData.cs:1118-1158) and pruning (ClearNulls, WizardData.cs:1234-1266) do NOT live here
+// MakeGroupPrefix / MakeOptionPrefix (WizardData.cs:1381-1477). Page construction (FromPmp,
+// WizardData.cs:1137-1177) and pruning (ClearNulls, WizardData.cs:1253-1285) do NOT live here
 // anymore: construction happens at load, in `readPmp` (src/container/pmp.ts), and pruning is its
 // own module (src/container/clear-nulls.ts), called at both the load seam (FromPmp:1159) and the
 // write seams (WritePmp:1462, WriteWizardPack:1334) — so every `ModpackPage` reaching this module's
 // exported `optionPrefixes` has already had its nulls and empty groups/pages removed.
 //
 // This module ports one TexTools bug faithfully; see docs/TEXTOOLS_BUGS.md #6 for the full writeup:
-// MakeGroupPrefix's non-incrementing collision loop (WizardData.cs:1406-1409), ported as written,
+// MakeGroupPrefix's non-incrementing collision loop (WizardData.cs:1425-1428), ported as written,
 // but throwing rather than reproducing the hang if collision resolution would need more than one
 // retry. (The FromPmp page-index off-by-one, docs/TEXTOOLS_BUGS.md #7, is likewise ported
 // faithfully, but its citation now lives at the page-construction seam itself, `readPmp` in
@@ -17,10 +17,10 @@
 //   - `optionPrefixes` returns NO ENTRY for an option whose group never made it into a surviving
 //     page (e.g. the synthesized Default option when it is empty). "Absent from the map" means "this
 //     option contributes no files and no folder" — it is NOT `""`, which is a real, valid prefix for
-//     a different case (a lone group on a lone page, MakePagePrefix's WizardData.cs:1375-1378 branch).
+//     a different case (a lone group on a lone page, MakePagePrefix's WizardData.cs:1394-1397 branch).
 //   - The "Blank Group" / "Blank Option" substitutions inside `makeGroupPrefix` / `makeOptionPrefix`
 //     are UNREACHABLE on the real write path: `WritePmp`'s assembly loop throws first on a blank name
-//     (`InvalidDataException`, WizardData.cs:1520-1523), and `writePmp` reproduces that throw
+//     (`InvalidDataException`, WizardData.cs:1539-1542), and `writePmp` reproduces that throw
 //     (src/container/pmp.ts). They are ported faithfully anyway, because the guard lives in the
 //     caller loop rather than in the prefix builders, and these functions are correct ports of their
 //     own C# symbols regardless of what calls them. Note the loop only reaches :1520 for
@@ -36,7 +36,7 @@ import {
 } from "../model/modpack";
 import { folderSafeName } from "./pmp";
 
-// Port of MakePagePrefix (WizardData.cs:1362-1382). `WizardPageEntry.FolderPath` (:967) is the C#'s
+// Port of MakePagePrefix (WizardData.cs:1381-1401). `WizardPageEntry.FolderPath` (:967) is the C#'s
 // memo; `ModpackPage` carries no equivalent field (see its doc comment, src/model/modpack.ts), so
 // `pageFolderPaths` — local to this module's exported `optionPrefixes`, one per call — stands in for
 // it instead.
@@ -53,7 +53,7 @@ function makePagePrefix(
     const pIdx = pages.indexOf(page) + 1;
     pagePrefix = `p${pIdx}/`;
   } else if (page.groups.length === 1) {
-    // WizardData.cs:1375-1378 — a no-op branch: pagePrefix is already "" from initialization.
+    // WizardData.cs:1394-1397 — a no-op branch: pagePrefix is already "" from initialization.
     // Reproduced for 1:1 traceability with the C#, not because it changes behaviour.
     pagePrefix = "";
   }
@@ -62,7 +62,7 @@ function makePagePrefix(
   return pagePrefix;
 }
 
-// Port of MakeGroupPrefix (WizardData.cs:1383-1413).
+// Port of MakeGroupPrefix (WizardData.cs:1402-1432).
 function makeGroupPrefix(
   pages: ModpackPage[],
   page: ModpackPage,
@@ -73,7 +73,7 @@ function makeGroupPrefix(
   const existing = groupFolderPaths.get(group);
   if (existing !== undefined) return existing;
 
-  // WizardData.cs:1390-1394 — IOUtil.MakePathSafe (folderSafeName) first, THEN substitute the
+  // WizardData.cs:1409-1413 — IOUtil.MakePathSafe (folderSafeName) first, THEN substitute the
   // literal if the result is blank. "Blank Group" is NOT itself re-run through folderSafeName: it
   // is used verbatim, capitalized.
   let gName = folderSafeName(group.name);
@@ -82,14 +82,14 @@ function makeGroupPrefix(
   const pagePrefix = makePagePrefix(pages, page, pageFolderPaths);
   let prefix = pagePrefix;
   if (page.groups.length > 0) {
-    // WizardData.cs:1398-1401 — always true whenever this runs (group is a member of page.groups),
+    // WizardData.cs:1417-1420 — always true whenever this runs (group is a member of page.groups),
     // so this in practice always executes. Kept for 1:1 traceability with the C#.
     prefix = `${pagePrefix}${gName}/`;
   }
 
   let groupPrefix = prefix;
   const i = 1;
-  // WizardData.cs:1406-1409 — `i` is never incremented in the C#, so a genuine collision beyond the
+  // WizardData.cs:1425-1428 — `i` is never incremented in the C#, so a genuine collision beyond the
   // first retry would spin forever recomputing the same " (1)/" candidate. We port the loop
   // condition as written but throw instead of hanging if a second retry would be needed
   // (docs/TEXTOOLS_BUGS.md #6).
@@ -109,7 +109,7 @@ function makeGroupPrefix(
     ) {
       throw new Error(
         `option-prefix: MakeGroupPrefix's collision loop would not terminate for group ` +
-          `"${group.name}" (WizardData.cs:1406-1409 never increments its retry counter — see ` +
+          `"${group.name}" (WizardData.cs:1425-1428 never increments its retry counter — see ` +
           "docs/TEXTOOLS_BUGS.md #6)",
       );
     }
@@ -119,7 +119,7 @@ function makeGroupPrefix(
   return groupPrefix;
 }
 
-// Port of the internal, 2-arg MakeOptionPrefix overload (WizardData.cs:1419-1458).
+// Port of the internal, 2-arg MakeOptionPrefix overload (WizardData.cs:1438-1477).
 function makeOptionPrefix(
   group: ModpackGroup,
   groupFolderPath: string,
@@ -129,7 +129,7 @@ function makeOptionPrefix(
   const existing = optionFolderPaths.get(option);
   if (existing !== undefined) return existing;
 
-  // WizardData.cs:1432-1435 — same substitute-after-folderSafeName rule as the group name.
+  // WizardData.cs:1451-1454 — same substitute-after-folderSafeName rule as the group name.
   let oName = folderSafeName(option.name);
   if (oName.trim() === "") oName = "Blank Option";
 
@@ -140,7 +140,7 @@ function makeOptionPrefix(
     path = groupFolderPath;
   }
 
-  // WizardData.cs:1448-1453 — this sibling loop DOES increment `i`, unlike MakeGroupPrefix's.
+  // WizardData.cs:1467-1472 — this sibling loop DOES increment `i`, unlike MakeGroupPrefix's.
   let i = 1;
   while (group.options.some((o) => optionFolderPaths.get(o) === path)) {
     path = `${groupFolderPath}${oName} (${i})/`;
@@ -156,7 +156,7 @@ function makeOptionPrefix(
  *  unless empty. An option whose group never made it into a surviving page (the Default option when
  *  its lone option is empty, per `readPmp`'s `IsEmptyOption` check, src/container/pmp.ts) has no
  *  entry — TexTools never assigns it one either, since WritePmp's iteration
- *  (WizardData.cs:1506-1542) only visits `DataPages`. */
+ *  (WizardData.cs:1525-1561) only visits `DataPages`. */
 export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   // ClearNulls has already run (at load for PMP, FromPmp:1159; at write for both, WritePmp:1462 /
   // WriteWizardPack:1334), so no page reaching here holds a null. Narrow rather than assert that.
@@ -174,14 +174,14 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   // loops here (not one page/group/option nesting pass) because they resolve MakeGroupPrefix
   // collisions in a DIFFERENT ORDER than a single pass would:
   //
-  //   PASS 1 (WizardData.cs:1506-1542, "compose file storage information"): the per-OPTION loop
+  //   PASS 1 (WizardData.cs:1525-1561, "compose file storage information"): the per-OPTION loop
   //   `continue`s past any option whose GroupType != Standard BEFORE it ever reaches
   //   MakeOptionPrefix (:1513-1516/:1526) — and MakeOptionPrefix's 3-arg overload calls
   //   MakeGroupPrefix as a side effect (:1414-1418, `MakeGroupPrefix(page, group);`). So every
   //   Standard-type group across the WHOLE pack claims its MakeGroupPrefix slot (and its options'
   //   MakeOptionPrefix slots) here — an Imc-type group's FolderPath is untouched by this pass.
   //
-  //   PASS 2 (WizardData.cs:1583-1600, the group_NNN.json emission loop): calls MakeGroupPrefix(p, g)
+  //   PASS 2 (WizardData.cs:1602-1619, the group_NNN.json emission loop): calls MakeGroupPrefix(p, g)
   //   directly for EVERY surviving group, Standard or Imc alike, with no type check — a no-op for a
   //   group PASS 1 already resolved (MakeGroupPrefix/MakePagePrefix both memoize via a
   //   present/absent FolderPath), but the FIRST resolution for an Imc-type group.
@@ -194,7 +194,7 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   // names.
   for (const page of pages) {
     for (const group of page.groups) {
-      if (group.selectionType === "Imc") continue; // WizardData.cs:1513-1516
+      if (group.selectionType === "Imc") continue; // WizardData.cs:1532-1535
       const groupFolderPath = makeGroupPrefix(
         pages,
         page,

@@ -574,7 +574,7 @@ function groupSelection(g: ModpackGroup): number {
 /** Reconstruct a PMP option JSON document, regenerating `Files`/`FileSwaps`/`Manipulations` from the
  * model. TexTools NEVER round-trips these: PopulatePmpStandardOption (PMP.cs:964-1021) builds `Files`
  * fresh from the typed model (`opt.Files.Add(fi.Path, fi.PmpPath.Replace("/", "\\"))`, :1007), and
- * `WizardStandardOptionData` types `FileSwaps`/`Manipulations` the same way (WizardData.cs:71-73;
+ * `WizardStandardOptionData` types `FileSwaps`/`Manipulations` the same way (WizardData.cs:73-75;
  * `Manipulations` is further re-typed per entry, see pmp-manipulation.ts). We used to re-emit `o.raw`'s
  * `Files` map (and `FileSwaps`/`Manipulations`) verbatim, which made any file the pipeline ADDED (a
  * generated index map) unnameable and any file it REPOINTED (a regenerated hair normal) dangle, on top

@@ -1,8 +1,8 @@
 // TexTools' per-file LOAD fix, ported from WizardData.FromWizardGroup's inner ModsJsons loop, the
-// whole body guarded by `if (File.Exists(finfo.RealPath))` (WizardData.cs:685-738) — both the
+// whole body guarded by `if (File.Exists(finfo.RealPath))` (WizardData.cs:691-744) — both the
 // `.meta`/`.rgsp` branch (:685-698, this module ports its `.meta` half) and the tex/mdl `else` branch
 // (:699-738) — the fix that runs on each file BEFORE it is collapsed into the option's Files dict.
-// FromWizardGroup is the load path both /upgrade (ModpackUpgrader.cs:58 -> FromModpack)
+// FromWizardGroup is the load path both /upgrade (ModpackUpgrader.cs:63 -> FromModpack)
 // and /resave (Program.cs:204) actually take, so these fixes are part of "load", not "upgrade".
 //
 // `makeTtmpLoadFix` is the factory the TTMP readers call (via the LoadFixFactory seam in
@@ -30,7 +30,7 @@ const IS_META = /\.meta$/;
 /**
  * Build the FromWizardGroup per-file load fix for a TTMP pack whose gates are `gates`:
  *
- * - `.meta` (WizardData.cs:685-691, `mj.FullPath.EndsWith(".meta") || .EndsWith(".rgsp")`, the
+ * - `.meta` (WizardData.cs:691-697, `mj.FullPath.EndsWith(".meta") || .EndsWith(".rgsp")`, the
  *   `.meta` half of that branch): UNGATED — the C# check at :685 has no `needsTexFix`/`needsMdlFix`
  *   equivalent, and it is a separate `if` from the tex/mdl work, which sits in the `else` at
  *   :699-738. A `.meta` can never reach the tex/mdl branches in the C#, so this branch runs first
@@ -40,9 +40,9 @@ const IS_META = /\.meta$/;
  *   in-memory Manipulations list a later PMP.ManipulationsToMetadata-equivalent could re-serialize
  *   from for a TTMP pack): instead we keep a manipulation-*bearing* meta as a file, our stand-in for
  *   those manipulations, later re-materialized by `metadataRound` (mirroring the write-side
- *   `PMP.ManipulationsToMetadata`, PMP.cs:1253-1295) — and drop only the manipulation-*less* ones,
+ *   `PMP.ManipulationsToMetadata`, PMP.cs:1351-1393) — and drop only the manipulation-*less* ones,
  *   the subset TexTools loses permanently either way. Dropping HERE rather than in the transform
- *   keeps `ModpackUpgrader.AnyChanges` (ModpackUpgrader.cs:25-49) parity on a no-op pack: its
+ *   keeps `ModpackUpgrader.AnyChanges` (ModpackUpgrader.cs:28-52) parity on a no-op pack: its
  *   per-option file-set baseline is captured from the load result, and in TexTools a
  *   manipulation-less `.meta` was never part of that file set to begin with. That parity is
  *   necessarily partial, though: it only covers the manipulation-*less* case — a manipulation-bearing
@@ -56,7 +56,7 @@ const IS_META = /\.meta$/;
  *   Byte-identical when kept: the load seam must not rewrite meta bytes; `metadataRound` still owns
  *   reconstruction.
  *
- * - `.tex` when `needsTexFix` (WizardData.cs:701-712): runs the full `ValidateTexFileData`
+ * - `.tex` when `needsTexFix` (WizardData.cs:707-718): runs the full `ValidateTexFileData`
  *   (`validateTexFileData`, port of EndwalkerUpgrade.ValidateTexFileData / TTMP.FixOldTexData) — NPOT
  *   resize-for-merge (Branch A) and mip-offset fixup (Branch B). A BC-compressed NPOT-with-mips source
  *   is resized and emitted as A8R8G8B8 — we have no BC encoder to match TexTools' nvtt re-encode back
@@ -69,16 +69,16 @@ const IS_META = /\.meta$/;
  *   majorly-broken or unfixable texture. The `Tex.CompressTexFile`
  *   recompress step remains deferred (invisible to the golden: we always store uncompressed .tex
  *   payloads pre-SqPack-compression, so there is no observable byte difference). The `ui/` exclusion
- *   here does NOT come from FromWizardGroup itself — `WizardData.cs:701`'s gate is
+ *   here does NOT come from FromWizardGroup itself — `WizardData.cs:707`'s gate is
  *   `needsTexFix && path.EndsWith(".tex")`, with no `ui/` check at all. It is carried instead from a
- *   different C# symbol, `MakeFileStorageInformationDictionary` (`TTMP.cs:1367`,
+ *   different C# symbol, `MakeFileStorageInformationDictionary` (`TTMP.cs:1369`,
  *   `!FullPath.StartsWith("ui/")`), preserved verbatim from the retired `texFixRound`.
  *
- * - `.mdl` when `needsMdlFix` (WizardData.cs:714-727): run FixOldModel (normalizeModel) — parse,
+ * - `.mdl` when `needsMdlFix` (WizardData.cs:720-733): run FixOldModel (normalizeModel) — parse,
  *   build the editable TTModel, re-serialize as a v6 uncompressed model, re-wrapped as a Model
  *   (Type-3) entry. ANY throw (undecodable entry, or an unported model structure normalizeModel
  *   rejects) returns `null` to DROP the file, reproducing FixOldModel's catch -> continue
- *   (WizardData.cs:721-727). This is the drop that closes the model-round-throw divergence: a bad
+ *   (WizardData.cs:727-733). This is the drop that closes the model-round-throw divergence: a bad
  *   model no longer kills the whole pack.
  *
  * - Everything else: returned unchanged. (`.rgsp` is NOT handled here — out of scope for this
@@ -89,7 +89,7 @@ export function makeTtmpLoadFix(gates: LoadFixGates): LoadFix {
   return (gamePath, file) => {
     if (IS_META.test(gamePath)) {
       // requireBytes (not resolveFile): a TTMP `.meta` always carries a compressed blob at this
-      // seam — WizardData.cs:687's GetUncompressedFile is unguarded too — so a missing-bytes case
+      // seam — WizardData.cs:693's GetUncompressedFile is unguarded too — so a missing-bytes case
       // here is a corrupt pack, not a legitimate absent-file path. Fail loud, matching
       // metadataRound's own requireBytes call for the same reason.
       const { bytes } = requireBytes(file, gamePath);
@@ -97,11 +97,11 @@ export function makeTtmpLoadFix(gates: LoadFixGates): LoadFix {
       return yieldsManipulations(meta) ? file : null;
     }
     if (gates.needsTexFix && IS_TEX.test(gamePath)) {
-      // ui/ carve-out from MakeFileStorageInformationDictionary (TTMP.cs:1367), not FromWizardGroup —
+      // ui/ carve-out from MakeFileStorageInformationDictionary (TTMP.cs:1369), not FromWizardGroup —
       // preserved verbatim from the retired texFixRound; see this module's header comment.
       if (IS_UI.test(gamePath)) return file;
       try {
-        // GetUncompressedFile (TTMP.cs:1426): decode the Type-4 entry; a decode failure throws and is
+        // GetUncompressedFile (TTMP.cs:1428): decode the Type-4 entry; a decode failure throws and is
         // caught below → DROP (FixOldTexData's catch → continue on a majorly-broken texture).
         const { bytes } = requireBytes(file, gamePath);
         const fixed = validateTexFileData(bytes);

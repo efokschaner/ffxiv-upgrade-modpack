@@ -35,7 +35,7 @@ export function resizeToPowerOfTwo(
 }
 
 /** Downsampled mip chain — a faithful port of xivModdingFramework's `CreateFast8888DDS`
- *  (`Tex.cs:823`), the filter the Dawntrail upgrade ACTUALLY uses for regenerated `A8R8G8B8`
+ *  (`Tex.cs:822`), the filter the Dawntrail upgrade ACTUALLY uses for regenerated `A8R8G8B8`
  *  textures. `FrameworkSettings.DefaultTextureFormat` is `A8R8G8B8`, so every regenerated texture
  *  takes `ConvertToDDS(..., allowFast8888: true)`'s fast path (`EndwalkerUpgrade.cs:1213/1222/2069/
  *  2094`) — a nearest-neighbour DECIMATION (the top-left texel of each 2×2 block, NOT a box average;

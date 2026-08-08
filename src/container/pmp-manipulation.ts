@@ -1,10 +1,10 @@
 // Port of PmpManipulation.cs's typed manipulation subtypes, as far as they affect Manipulations
 // regeneration on write. TexTools deserializes each `Manipulations[]` entry into a TYPED
 // `PMPManipulationWrapperJson` (JsonSubtypes keyed on `Type`) and the writer re-serializes those
-// SAME typed objects: on the PMP load path (`mergeManipulations=false`, WizardData.cs:818)
+// SAME typed objects: on the PMP load path (`mergeManipulations=false`, WizardData.cs:824)
 // `UnpackPmpOption`'s typed `OtherManipulations` list is carried straight through to
-// `WizardStandardOptionData.Manipulations` (WizardData.cs:820) and back out via
-// `opt.Manipulations.Add(manip)` (`PopulatePmpStandardOption`, PMP.cs:921-926). So — like the rest
+// `WizardStandardOptionData.Manipulations` (WizardData.cs:826) and back out via
+// `opt.Manipulations.Add(manip)` (`PopulatePmpStandardOption`, PMP.cs:1014-1019). So — like the rest
 // of this port's manifest-regeneration work — re-emitting the SOURCE `Manipulations` array verbatim
 // is wrong in two ways a typed round-trip cannot produce:
 //
@@ -108,7 +108,7 @@ const IMC_ENTRY_NUMERIC_FIELDS = [
 ] as const;
 /** Port of the PMPImcEntry struct normalization (PmpManipulation.cs:311-321). Reused for BOTH a
  *  per-manipulation Imc `Entry` (normalizeImc, below) and `PMPImcGroupJson.DefaultEntry`
- *  (PMP.cs:1429, `src/container/pmp.ts`) — the SAME struct type, so it drops the same [JsonIgnore]
+ *  (PMP.cs:1539, `src/container/pmp.ts`) — the SAME struct type, so it drops the same [JsonIgnore]
  *  `AttributeAndSound` field (:318) and gets the same numeric-string coercion under Newtonsoft's
  *  typed round-trip either way. */
 export function normalizeImcEntry(

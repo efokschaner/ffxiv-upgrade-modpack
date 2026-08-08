@@ -1,5 +1,5 @@
 // Port of EndwalkerUpgrade.ValidateTexFileData (EndwalkerUpgrade.cs:2100-2129) — the load-time .tex
-// repair TTMP.FixOldTexData (TTMP.cs:1413-1460) runs on every .tex of an old pack, called from
+// repair TTMP.FixOldTexData (TTMP.cs:1415-1462) runs on every .tex of an old pack, called from
 // WizardData.FromWizardGroup:705 (the /upgrade + /resave load path). Given the UNCOMPRESSED tex bytes,
 // returns fixed bytes, or null when nothing changed. See
 // docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md.

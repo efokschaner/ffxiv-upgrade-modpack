@@ -3,7 +3,7 @@
 // `common/{idx}/{basename}` for a file whose bytes repeat anywhere in the pack (any option, any
 // group). `optionPrefix` per option comes from `optionPrefixes` (src/container/option-prefix.ts,
 // MakeOptionPrefix); this module is the second half of `WizardData.WritePmp`'s file-naming pipeline
-// (WizardData.cs:1502-1546 -> FileIdentifier.IdentifierListFromDictionaries, PmpExtensions.cs:594-626).
+// (WizardData.cs:1521-1565 -> FileIdentifier.IdentifierListFromDictionaries, PmpExtensions.cs:594-626).
 //
 // Three things ported deliberately, not by omission:
 //
@@ -37,18 +37,18 @@
 //    order (no removals: PmpExtensions.cs:503-551 never calls `.Remove`), and insertion order is
 //    option-by-option, file-by-file (`FileIdentifier.IdentifierListFromDictionaries`,
 //    PmpExtensions.cs:594-611, itself fed by `WizardData.WritePmp`'s own `DataPages -> p.Groups ->
-//    o.Options` walk, WizardData.cs:1506-1542). `optionPrefixes` (option-prefix.ts) already performs
+//    o.Options` walk, WizardData.cs:1525-1561). `optionPrefixes` (option-prefix.ts) already performs
 //    that exact page-bucketed walk to compute each option's prefix, and a `Map`'s iteration order IS
 //    its insertion order -- so `prefixes.keys()` reproduces the C#'s option visiting order without
 //    us re-deriving `DataPages` a second time here (which would blend `readPmp`'s page construction
 //    into this module). Within an option, `option.files` is now literally a `Map`
-//    (mirroring C#'s `Dictionary<string, FileStorageInformation>`, WizardData.cs:71), so its
+//    (mirroring C#'s `Dictionary<string, FileStorageInformation>`, WizardData.cs:73), so its
 //    iteration order IS the `Files`-map insertion order the reader builds it in
 //    (src/container/pmp.ts). Get either order wrong and the `common/N` numbers come out different
 //    from TexTools'.
 //
 // Absent files get no zip path in the RETURNED map at all -- that is a different guard,
-// `PopulatePmpStandardOption`'s `!File.Exists` skip (PMP.cs:883-888), which drops the file's
+// `PopulatePmpStandardOption`'s `!File.Exists` skip (PMP.cs:976-981), which drops the file's
 // `Files` key and payload member without touching `idx` (already spent, in a different function, by
 // the time this guard runs). We fold that drop into this module's return value directly, since our
 // return type IS exactly "the paths PopulatePmpStandardOption would actually use".
@@ -100,18 +100,18 @@ export function resolveDuplicates(
 
   // INTENTIONAL DIVERGENCE -- FileSwaps are preserved, not modelled as placeholders. In TexTools,
   // ResolveDuplicates runs over WizardStandardOptionData.Files, which UnpackPmpOption
-  // (PMP.cs:1104-1137) populates by merging custom Files AND FileSwaps into one dictionary. On the
-  // /upgrade load path (WizardData.cs:818: `UnpackPmpOption(o, null, unzipPath, false)`)
-  // `zipArchivePath` is null, so `includeData` is false (PMP.cs:1015) and each FileSwap whose
+  // (PMP.cs:1202-1235) populates by merging custom Files AND FileSwaps into one dictionary. On the
+  // /upgrade load path (WizardData.cs:824: `UnpackPmpOption(o, null, unzipPath, false)`)
+  // `zipArchivePath` is null, so `includeData` is false (PMP.cs:1113) and each FileSwap whose
   // source resolves in the live game index becomes an empty placeholder,
-  // `ret.Add(src, new FileStorageInformation())` (PMP.cs:1130). `WizardStandardOptionData` has no
-  // separate FileSwaps field (WizardData.cs:69-80), so that placeholder flows on as an ordinary
+  // `ret.Add(src, new FileStorageInformation())` (PMP.cs:1228). `WizardStandardOptionData` has no
+  // separate FileSwaps field (WizardData.cs:71-82), so that placeholder flows on as an ordinary
   // Files entry and reaches ResolveDuplicates, where it fails `File.Exists(null)` and burns an idx
   // on the zero-hash path (PmpExtensions.cs:509-514; docs/TEXTOOLS_BUGS.md #8) once the zero-hash
   // class reaches two members -- shifting every later common/N number.
   //
   // We do NOT reproduce that, because TexTools' own writer then destroys the swaps outright
-  // (`opt.FileSwaps = new()`, PMP.cs:873-875 -- docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine
+  // (`opt.FileSwaps = new()`, PMP.cs:966-968 -- docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine
   // defect: silent data loss). A Penumbra file swap is a live redirection -- it merges into the
   // same `redirections` table as Files (Penumbra SubMod.AddContainerTo, Penumbra repo
   // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/) -- so
@@ -157,7 +157,7 @@ export function resolveDuplicates(
 
   // PmpExtensions.cs:556-565 -- re-loop to read back each file's FINAL path (a hash's seenFiles
   // entry may have been promoted to common/ by an occurrence later than the file's own). Absent
-  // files are dropped here (PMP.cs:883-888's job in the C#, folded in -- see the module header).
+  // files are dropped here (PMP.cs:976-981's job in the C#, folded in -- see the module header).
   const result = new Map<ModpackFile, string>();
   for (const e of entries) {
     if (e.file.data === undefined) continue;

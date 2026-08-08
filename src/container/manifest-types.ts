@@ -28,7 +28,7 @@ export interface TtmpModOptionJson {
   // ModOptionJson.IsChecked (ModPackJson.cs:189-198) — a plain C# `bool` behind a
   // NotifyPropertyChanged setter, so an absent key deserializes to `false`. Optional here to
   // model that absence; FromWizardGroup copies it to WizardOptionEntry.Selected verbatim
-  // (WizardData.cs:668).
+  // (WizardData.cs:674).
   IsChecked?: boolean;
 }
 export interface TtmpModGroupJson {
@@ -54,7 +54,7 @@ export interface ModPackJson {
   Author: string | null;
   // `Version` is the ONE exception — never null. WriteWizardPack forces it non-null with
   // `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`
-  // (WizardData.cs:1335-1337) and the TTMPWriter ctor re-guards it
+  // (WizardData.cs:1354-1356) and the TTMPWriter ctor re-guards it
   // (`modPackData.Version ?? new Version(1, 0, 0, 0)`, TTMPWriter.cs · TTMPWriter · 61).
   Version: string;
   Description: string | null;
@@ -110,7 +110,7 @@ export type TtmpModsJsonWrite = TtmpModsJson & {
 export type TtmpModOptionJsonWrite = TtmpModOptionJson & {
   ModsJsons: TtmpModsJsonWrite[];
   // TTMPWriter.cs · AddOption · 141-150 — `IsChecked = modOption.IsChecked`, a verbatim copy with
-  // no write-time derivation, mirroring the verbatim read at WizardData.cs:668.
+  // no write-time derivation, mirroring the verbatim read at WizardData.cs:674.
   IsChecked: boolean;
 };
 

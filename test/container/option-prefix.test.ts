@@ -260,6 +260,8 @@ describe("optionPrefixes", () => {
     const g2 = group("Same", [option("Only")]);
     const d = data([page([g0, g1, g2])]);
 
-    expect(() => optionPrefixes(d)).toThrow(/WizardData\.cs:1406-1409/);
+    // The cited line range moved 1406-1409 -> 1425-1428 in the v3.1.1.4 re-pin (the citation is
+    // inside the thrown message, so this assertion tracks it). See the design spec's §10.1.
+    expect(() => optionPrefixes(d)).toThrow(/WizardData\.cs:1425-1428/);
   });
 });

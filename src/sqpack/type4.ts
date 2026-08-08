@@ -79,7 +79,7 @@ export function decodeType4(entry: Uint8Array): Uint8Array {
 
 /**
  * Compress a raw uncompressed .tex (80-byte header + mip pixels) into a Type 4 entry.
- * Mirrors Tex.CompressTexFile (Tex.cs:1300) + Dat.MakeType4DatHeader (Dat.cs:1056).
+ * Mirrors Tex.CompressTexFile (Tex.cs:1299) + Dat.MakeType4DatHeader (Dat.cs:1056).
  */
 export function encodeType4(data: Uint8Array): Uint8Array {
   const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);

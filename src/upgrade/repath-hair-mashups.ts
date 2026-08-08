@@ -1,4 +1,4 @@
-// Port of ModpackUpgrader.RepathHairMashups (ModpackUpgrader.cs:379-482): the material-only
+// Port of ModpackUpgrader.RepathHairMashups (ModpackUpgrader.cs:407-510): the material-only
 // "mashup hair" half of the ResolveHighlightOptionsAndMashupHair pre-round. For each option's
 // hair/zear/tail .mtrl, retargets a Hair/Character material's normal/mask/diffuse sampler suffix to
 // its Dawntrail name when the old texture is gone from the game and the renamed one exists

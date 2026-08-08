@@ -1,6 +1,6 @@
 // Port of TTModel.FromRaw (TTModel.cs:2695-2729). Builds the editable TTModel from a
-// ReadMdl. TTModel.cs:2728 calls ModelModifiers.CalculateTangents (ModelModifiers.cs:1851-1892), a
-// wrapper that dispatches CalculateTangentsForMesh (ModelModifiers.cs:2102-2253) per group; that
+// ReadMdl. TTModel.cs:2728 calls ModelModifiers.CalculateTangents (ModelModifiers.cs:1871-1912), a
+// wrapper that dispatches CalculateTangentsForMesh (ModelModifiers.cs:2122-2273) per group; that
 // per-group call is what we port below (see the call site for why the wrapper's extra gating is
 // inert here). The fast path (mesh has binormals) leaves base binormals untouched and only copies
 // them onto shape vertices; the full recompute (binormal-less mesh) writes Binormal + Handedness
@@ -52,8 +52,8 @@ export function fromRaw(rm: ReadMdl): TTModel {
   model.mdlVersion = rm.mdlVersion;
   fixUpSkinReferences(model, rm.source); // no-op: inert in /upgrade (MdlPath="", see model-modifiers)
   mergeFlags(model, rm);
-  // TTModel.cs:2728 calls the wrapper ModelModifiers.CalculateTangents (ModelModifiers.cs:1851-1892),
-  // which dispatches CalculateTangentsForMesh per group (ModelModifiers.cs:2102-2253) - that per-group
+  // TTModel.cs:2728 calls the wrapper ModelModifiers.CalculateTangents (ModelModifiers.cs:1871-1912),
+  // which dispatches CalculateTangentsForMesh per group (ModelModifiers.cs:2122-2273) - that per-group
   // call is what we port below. The wrapper's extra steps are all inert on a fresh FromRaw model: its
   // ApplyShapes(model, [], true) no-ops because ActiveShapes is still the default empty set (:2459-2486);
   // AnyMissingTangentData is always true because Tangent is never populated here (see below), so the

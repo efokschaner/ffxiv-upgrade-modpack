@@ -1,5 +1,5 @@
 // Vertex declaration rebuild from model usage, ported from the element-set
-// construction in xivModdingFramework's MakeUncompressedMdlFile (Mdl.cs:2594-2767;
+// construction in xivModdingFramework's MakeUncompressedMdlFile (Mdl.cs:2590-2763;
 // element set/types :2614-2711, buffer-overflow/precision gate :2513-2542).
 // Split, don't blend: this produces the structured VertexElement[][]; byte
 // serialization stays in serializeVertexDeclarations (geometry/declaration.ts).
@@ -12,11 +12,11 @@ import {
 } from "../geometry/format";
 import { getUsageInfo, hasWeights, type TTModel } from "./tt-model";
 
-/** Mdl._MaxVertexBufferSize (Mdl.cs:2468, 8 MB). Exported so serialize.ts's port of the
- *  post-assembly hard cap (Mdl.cs:2822) reuses the one source of truth. */
+/** Mdl._MaxVertexBufferSize (Mdl.cs:2464, 8 MB). Exported so serialize.ts's port of the
+ *  post-assembly hard cap (Mdl.cs:2818) reuses the one source of truth. */
 export const MAX_VERTEX_BUFFER_SIZE = 8388608;
 
-/** Per-vertex byte estimate mirroring Mdl.cs:2513-2535's precision-independent vertexSize
+/** Per-vertex byte estimate mirroring Mdl.cs:2509-2531's precision-independent vertexSize
  *  (always the Float layout), used to decide upgradePrecision in buildDeclarations. */
 function estimatePerVertexSize(
   needsEightWeights: boolean,
@@ -31,14 +31,14 @@ function estimatePerVertexSize(
   return 48 + weightsExtra + uvExtra + vColor2Extra + flowExtra;
 }
 
-/** Port of the element-set construction in MakeUncompressedMdlFile (Mdl.cs:2614-2711),
- *  including the precision gate (Mdl.cs:2513-2543). `upgradePrecision` starts true (the
+/** Port of the element-set construction in MakeUncompressedMdlFile (Mdl.cs:2610-2707),
+ *  including the precision gate (Mdl.cs:2509-2539). `upgradePrecision` starts true (the
  *  /upgrade path's Half->Float upgrade) and is declined when the estimated Float vertex
  *  buffer would reach the 8 MB _MaxVertexBufferSize; the declaration then stays Half-
  *  precision (Position/Normal Half4, texcoord Half2/Half4) and the Flow element is dropped
- *  entirely (Mdl.cs:2655 gates it on upgradePrecision). The estimate is precision-independent
- *  (always the Float per-vertex size) and mirrors Mdl.cs:2513-2538, including shape-part
- *  vertices (Mdl.cs:2536-2538).
+ *  entirely (Mdl.cs:2651 gates it on upgradePrecision). The estimate is precision-independent
+ *  (always the Float per-vertex size) and mirrors Mdl.cs:2509-2534, including shape-part
+ *  vertices (Mdl.cs:2532-2534).
  *
  *  The element set is model-wide (depends only on getUsageInfo(m), hasWeights(m) and
  *  m.anisotropicLighting), so every mesh group receives an identical declaration (distinct
@@ -54,7 +54,7 @@ export function buildDeclarations(m: TTModel): VertexElement[][] {
     usesVColor2,
     flow,
   );
-  // Mdl.cs:2536-2538: totalVertexCount = shapeVertCount + VertexCount. shapeVertCount sums
+  // Mdl.cs:2532-2534: totalVertexCount = shapeVertCount + VertexCount. shapeVertCount sums
   // every shapePart's vertices EXCEPT the "original" key (the base geometry, already counted).
   let totalVertexCount = 0;
   for (const group of m.meshGroups) {
@@ -105,7 +105,7 @@ export function buildDeclarations(m: TTModel): VertexElement[][] {
     upgradePrecision ? VertexDataType.Float3 : VertexDataType.Half4,
   );
   add(1, VertexUsageType.Binormal, VertexDataType.Ubyte4n);
-  // Mdl.cs:2655: the Flow element is emitted only when upgradePrecision is true -- the Half
+  // Mdl.cs:2651: the Flow element is emitted only when upgradePrecision is true -- the Half
   // fallback drops it even if the model uses flow data.
   if (upgradePrecision && flow) {
     add(1, VertexUsageType.Flow, VertexDataType.Ubyte4n);

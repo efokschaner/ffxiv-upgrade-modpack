@@ -20,14 +20,14 @@
 
 import type { ModpackGroup, ModpackPage } from "../model/modpack";
 
-// Port of WizardGroupEntry.HasData (WizardData.cs:621-627), reduced to `Options.Count > 0` per the
+// Port of WizardGroupEntry.HasData (WizardData.cs:627-633), reduced to `Options.Count > 0` per the
 // `WizardOptionEntry.HasData` Read-mode short-circuit documented above.
 export function groupHasData(g: ModpackGroup): boolean {
   return g.options.length > 0;
 }
 
 // DELIBERATE DIVERGENCE — docs/TEXTOOLS_BUGS.md #22.
-// The C# is `Groups.Any(x => x.HasData)` (WizardData.cs:973), which dereferences a null group and
+// The C# is `Groups.Any(x => x.HasData)` (WizardData.cs:984), which dereferences a null group and
 // throws. Measured 2026-08-03: ConsoleTools /upgrade exits -1 with NO output file whenever a
 // zero-option group is FIRST on its page; any preceding data-carrying group shields it, because
 // Any short-circuits. We treat a null as "no data" so the pack upgrades instead of failing.

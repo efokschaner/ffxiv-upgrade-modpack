@@ -1,5 +1,5 @@
 // Vertex declaration enums, ported from xivModdingFramework Models/Enums.
-// The enum numeric value IS the on-wire byte (SE's own translation table; Mdl.cs:5360-5391).
+// The enum numeric value IS the on-wire byte (SE's own translation table; Mdl.cs:5361-5392).
 
 export enum VertexUsageType {
   Position = 0x0,

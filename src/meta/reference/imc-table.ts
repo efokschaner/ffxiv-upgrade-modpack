@@ -4,7 +4,7 @@
 // (ItemMetadata.cs · CreateFromRaw · 233-247), via ports of the three symbols that path
 // executes -- XivDependencyRoot.GetRawImcFilePath (XivDependencyRoot.cs:1093-1126),
 // XivDependencyRoot.GetImcEntryPaths (XivDependencyRoot.cs:1133-1202) and Imc.GetEntries
-// (Imc.cs:189-238). Those ports live in scripts/lib/imc-entries.ts; see
+// (Imc.cs:200-249). Those ports live in scripts/lib/imc-entries.ts; see
 // scripts/extract-meta-reference.ts for the enumeration, extraction, and the golden
 // spot-check that validates them against real ConsoleTools output.
 //
@@ -12,7 +12,7 @@
 // "chara/equipment/e0724/e0724_top.meta").
 // VALUE: the ordered 6-byte entries that root's .meta IMC section carries -- one per subset
 // (default first, then each variant subset), each (MaterialSet, Decal, Mask lo, Mask hi, Vfx,
-// Animation -- SerializeEntry/DeserializeEntry, Imc.cs:310-342).
+// Animation -- SerializeEntry/DeserializeEntry, Imc.cs:321-353).
 // [] means the game has no .imc file for that root at all, which TexTools seeds as no entries
 // (ItemMetadata.cs · CreateFromRaw · 236,243-246) -- a real, faithful state, not missing data.
 // A MISS means the root is unknown to item_sets.db, which we cannot seed faithfully: it is a

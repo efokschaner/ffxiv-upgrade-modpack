@@ -1,5 +1,5 @@
 // Port of ModpackUpgrader.ResolveHighlightOptionsAndMashupHair, highlight-resolution half
-// (reference/.../Mods/ModpackUpgrader.cs:267-377). A pre-round (run before round 1, ungated by
+// (reference/.../Mods/ModpackUpgrader.cs:295-405). A pre-round (run before round 1, ungated by
 // includePartials — :83) that staples split Hair-shader normal/mask ("highlight/visibility")
 // textures across options, or falls through to RepathHairMashups (:379-482, ported in
 // repath-hair-mashups.ts) for the material-only mashup-hair case.
@@ -15,7 +15,7 @@ import type { MtrlTexture, XivMtrl } from "../mtrl/types";
 import { repathHairMashups } from "./repath-hair-mashups";
 import { resolveFile } from "./upgrade";
 
-/** Sampler lookup by id, reproducing C#'s UNGUARDED `x.Sampler.SamplerId` (ModpackUpgrader.cs:294-295
+/** Sampler lookup by id, reproducing C#'s UNGUARDED `x.Sampler.SamplerId` (ModpackUpgrader.cs:322-323
  * in the highlight half; :406-408 in RepathHairMashups): a texture that bound no sampler NREs when
  * reached before a match. In the highlight half the caller's try/catch (:301-304) turns that into
  * "skip this .mtrl"; RepathHairMashups (repath-hair-mashups.ts) has no catch, so the NRE propagates

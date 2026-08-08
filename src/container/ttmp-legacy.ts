@@ -42,7 +42,7 @@ export function readLegacyTtmp(
   });
 
   // Build the option's file map in line order, reproducing FromWizardGroup's fix-then-collapse
-  // (WizardData.cs:700-737): apply the load fix FIRST, then `.set`. A dropped file (loadFix -> null,
+  // (WizardData.cs:706-743): apply the load fix FIRST, then `.set`. A dropped file (loadFix -> null,
   // the C# `catch { continue }`) never reaches the collapse, so it cannot overwrite an earlier
   // duplicate; `.set` on a repeated FullPath is C#'s last-write-wins collapse (:729-737).
   const files = new Map<string, ModpackFile>();
@@ -76,7 +76,7 @@ export function readLegacyTtmp(
     priority: 0,
     // GetLegacyModpackMpl synthesizes a "0.1s" ModPackJson carrying a SimpleModsList
     // (TTMP.cs:453-462), so a legacy pack loads through FromSimpleTtmp, whose one fake option is
-    // built with `IsChecked = true` (WizardData.cs:1218-1221) and copied to Selected at :668.
+    // built with `IsChecked = true` (WizardData.cs:1237-1240) and copied to Selected at :668.
     selected: true,
     fileSwaps: {},
     manipulations: [],

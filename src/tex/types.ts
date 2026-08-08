@@ -76,7 +76,7 @@ export function minDimension(format: number): number {
 // Enum member names exactly as C#'s default `enum.ToString()` renders XivTexFormat — the member
 // name for a declared value, the bare number otherwise (XivTexFormat.cs:27-45). Used ONLY to
 // reproduce the literal text of Tex.GetCompressionFormat's error verbatim
-// (Tex.cs:743, `"Format is currently unsupported: " + format.ToString()`), not for any decoding.
+// (Tex.cs:742, `"Format is currently unsupported: " + format.ToString()`), not for any decoding.
 //
 // Covers every format THIS MODULE declares, which is every one a real .tex can carry. The C# enum
 // additionally declares `INVALID = 0`, which we do not: format 0 would fall through to the numeric

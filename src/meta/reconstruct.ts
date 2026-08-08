@@ -52,10 +52,10 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       throw new Error(`meta: ${gamePath} has an EST segment but no est type`);
     }
     // The ttmp2 /upgrade path re-materializes each .meta rather than passing it through: the raw
-    // .meta is converted to per-race Manipulations (WizardData.cs:685-691
+    // .meta is converted to per-race Manipulations (WizardData.cs:691-697
     // MetadataToManipulations), which are then re-applied via PMP.ManipulationsToMetadata
-    // (WizardData.cs:463-467). That base-seeds EstEntries from the game
-    // (PMP.cs:1271 -> ItemMetadata.cs:253 `EstEntries = Est.GetExtraSkeletonEntries(root, ...)`)
+    // (WizardData.cs:465-469). That base-seeds EstEntries from the game
+    // (PMP.cs:1369 -> ItemMetadata.cs:253 `EstEntries = Est.GetExtraSkeletonEntries(root, ...)`)
     // and then overwrites each manipulation's race in place (PmpManipulation.cs:275-279,
     // `metadata.EstEntries[race].SkelId = Entry`). The base seed itself
     // (Est.GetExtraSkeletonEntries(XivDependencyRootInfo), Est.cs:259-291) branches by EstType:
@@ -158,7 +158,7 @@ export function reconstructMeta(mod: ItemMeta, gamePath: string): ItemMeta {
       // — one added to the game after the last regen, or one item_sets.db never listed. It also
       // means a root outside Imc.UsesImc's five types altogether: parseMetaRoot can return
       // itemType: "other" for hair/face roots, and the table has no `human` keys at all —
-      // correctly, since Imc.UsesImc excludes XivItemType.human (Imc.cs:76-80) and
+      // correctly, since Imc.UsesImc excludes XivItemType.human (Imc.cs:82-86) and
       // GetRawImcFilePath returns null for it (XivDependencyRoot.cs:1093-1098). A hair/face .meta
       // that carried an IMC segment would hit this throw rather than silently reproducing one.
       // That is believed unreachable in practice — Penumbra's ImcIdentifier only admits the five

@@ -27,7 +27,7 @@ interface ModpackFileBase {
 /** OPAQUE payload: an SQPack blob (ttmp) or a raw file (pmp).
  *  ABSENT (undefined) when the PMP's `Files` map named a zip member the archive does not
  *  contain — TexTools' analogue is a FileStorageInformation whose RealPath does not exist
- *  (PMP.cs:1071-1102, after a LoadPMP that never checks existence, PMP.cs:124). The entry is
+ *  (PMP.cs:1169-1200, after a LoadPMP that never checks existence, PMP.cs:159). The entry is
  *  still a member of the option: the upgrade rounds gate on files.ContainsKey
  *  (EndwalkerUpgrade.cs:1840/:1852/:1867), which is true for it. We do NOT substitute empty
  *  bytes — an empty buffer would decode-fail inside a codec instead of being skipped.
@@ -71,15 +71,15 @@ export interface ModpackOption {
   description: string | null;
   image: string;
   priority: number;
-  /** Mirrors `WizardOptionEntry.Selected` (WizardData.cs:281-321) — a plain `bool` field with no
+  /** Mirrors `WizardOptionEntry.Selected` (WizardData.cs:283-323) — a plain `bool` field with no
    *  initializer, so `false` by default. NOT an exclusivity flag: the C# setter does IMC-only
    *  mutual exclusion (:297-319) and nothing at all for Single groups (Single radio behaviour is a
    *  WPF binding, not a model invariant), so a Single group CAN legally carry several selected
    *  options. The only fixup either reader applies is the "none selected" backstop
-   *  (WizardData.cs:755-757 / :857-860), which never clamps a group that has more than one. */
+   *  (WizardData.cs:761-763 / :857-860), which never clamps a group that has more than one. */
   selected: boolean;
   files: Map<string, ModpackFile>; // keyed by gamePath, insertion order (mirrors C#'s
-  // WizardStandardOptionData.Files = Dictionary<string, FileStorageInformation>, WizardData.cs:71)
+  // WizardStandardOptionData.Files = Dictionary<string, FileStorageInformation>, WizardData.cs:73)
   fileSwaps: Record<string, string>; // PMP only; {} for TTMP
   manipulations: unknown[]; // PMP only; opaque JSON, [] for TTMP
   raw?: unknown; // opaque carry-through: full original PMP option JSON (Imc/Combining
@@ -105,8 +105,8 @@ export interface ModpackGroup {
 export interface ModpackPage {
   groups: (ModpackGroup | null)[];
 }
-// `WizardPageEntry.FolderPath` (WizardData.cs:967) has no field here. It is a per-COMPUTATION memo
-// (`WizardData.cs:1375` writes it, `:1239`/`:1462`/`:1334` null it before every recompute), not
+// `WizardPageEntry.FolderPath` (WizardData.cs:978) has no field here. It is a per-COMPUTATION memo
+// (`WizardData.cs:1394` writes it, `:1239`/`:1462`/`:1334` null it before every recompute), not
 // model state a caller ever reads back — `optionPrefixes` (src/container/option-prefix.ts) owns the
 // only consumer, `makePagePrefix`, and keeps its own local memo across its own two passes instead
 // (code review, 2026-08-05: a `ModpackPage.folderPath` field existed here briefly, but
@@ -126,7 +126,7 @@ export interface ModpackMeta {
   author: string | null;
   // `version` is NOT nullable: WriteWizardPack forces it non-null via
   // `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`
-  // (WizardData.cs:1335-1337), re-guarded in the TTMPWriter ctor (TTMPWriter.cs · TTMPWriter · 61).
+  // (WizardData.cs:1354-1356), re-guarded in the TTMPWriter ctor (TTMPWriter.cs · TTMPWriter · 61).
   version: string;
   description: string | null;
   url: string | null;
@@ -142,15 +142,15 @@ export interface ModpackData {
   sourceFormat: ModpackFormat;
   isSimple: boolean; // TTMP simple (flat SimpleModsList) vs wizard/grouped
   meta: ModpackMeta;
-  /** Mirrors WizardData.DataPages (WizardData.cs:1079). There is no flat group list in the C# —
+  /** Mirrors WizardData.DataPages (WizardData.cs:1090). There is no flat group list in the C# —
    *  use `allGroups` to iterate every group in page order. */
   pages: ModpackPage[];
   /** PMP-only: archive members that are neither a manifest json (meta.json / default_mod.json /
    *  group_*.json) nor referenced by any option's `Files` value — preview images, readmes, etc.
    *  Keyed by the archive path (forward slashes) after the same NTFS-equivalent normalization
    *  readPmp applies to `Files` resolution (lowercase, trailing dot/space trimmed per segment):
-   *  LoadPMP builds this set from the actual unzipped-to-disk folder listing (PMP.cs:213-215,
-   *  after the PMP.cs:76 unzip), so a name Windows would have normalized on write is already
+   *  LoadPMP builds this set from the actual unzipped-to-disk folder listing (PMP.cs:278-280,
+   *  after the PMP.cs:78 unzip), so a name Windows would have normalized on write is already
    *  normalized by the time it's read back. TTMP has no equivalent (its payloads are byte offsets
    *  into an .mpd, not zip members), so a TTMP-sourced pack simply carries none. Undefined (rather
    *  than an empty Map) when there are none. */
@@ -178,7 +178,7 @@ export function allPages(data: ModpackData): ModpackPage[] {
 }
 
 /** Every non-null group across every page, in page order — the order WritePmp's own loops use
- *  (WizardData.cs:1506-1542, :1583-1600). Nulls are skipped rather than thrown on: ClearNulls has
+ *  (WizardData.cs:1525-1561, :1583-1600). Nulls are skipped rather than thrown on: ClearNulls has
  *  already removed them from any page this walks (see src/container/clear-nulls.ts). */
 export function allGroups(data: ModpackData): ModpackGroup[] {
   return allPages(data).flatMap((p) =>
