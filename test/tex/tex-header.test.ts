@@ -86,7 +86,7 @@ describe("fixUpBrokenMipOffsets", () => {
   it("leaves mipCount untouched on the passed header (struct-copy quirk)", () => {
     // A file whose header claims 3 mips but only mip0 fits: the loop reduces the LOCAL mip count,
     // but the caller's header.mipCount must stay 3 (C# passes TexHeader by value; scalar writes to
-    // MipCount do not escape). Tex.cs:168-235 + ValidateTexFileData's use at EndwalkerUpgrade.cs:2121.
+    // MipCount do not escape). Tex.cs:159-234 + ValidateTexFileData's use at EndwalkerUpgrade.cs:2121.
     const header = {
       format: A8R8G8B8,
       width: 4,

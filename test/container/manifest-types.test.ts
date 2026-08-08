@@ -20,7 +20,7 @@ describe("parsePmpGroup group Type resolution", () => {
     Options: [],
   });
 
-  it("accepts every Type JsonSubtypes resolves to a subtype (PMP.cs:1384-1386)", () => {
+  it("accepts every Type JsonSubtypes resolves to a subtype (PMP.cs:1491-1493)", () => {
     for (const type of ["Single", "Multi", "Imc"]) {
       expect(parsePmpGroup(group(type)).Type).toBe(type);
     }
@@ -28,13 +28,13 @@ describe("parsePmpGroup group Type resolution", () => {
 
   // Matches C#'s message exactly: assertMatchedUpgradeFailure substring-matches our thrown message
   // against the oracle's trace, so any drift here breaks the corpus check above.
-  it("throws PMPGroupJson.Options' message for an unrecognized Type (PMP.cs:1407)", () => {
+  it("throws PMPGroupJson.Options' message for an unrecognized Type (PMP.cs:1517)", () => {
     expect(() => parsePmpGroup(group("Not A Real Type"))).toThrow(
       "Unimplemented PMP group type: Not A Real Type",
     );
   });
 
-  // Not a separate branch in the C#: the field initializes to `""` (PMP.cs:1397) and an absent key
+  // Not a separate branch in the C#: the field initializes to `""` (PMP.cs:1505) and an absent key
   // never overwrites it, so the same interpolation yields the trailing-colon-and-nothing message.
   it("throws the same, with an empty Type, when the key is absent", () => {
     expect(() => parsePmpGroup(group())).toThrow(

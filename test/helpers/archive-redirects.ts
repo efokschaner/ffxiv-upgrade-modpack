@@ -115,7 +115,7 @@ function optionDocs(
 /** True iff any option in the archive carries a non-empty `FileSwaps` map. This is the CAUSE gate
  *  for the layout-equivalent comparison: it is a property of the INPUT pack, known before any
  *  diffing, and it is exactly the condition under which TexTools' placeholder mechanism
- *  (PMP.cs:1104-1137) can burn an idx we do not. Gating on the cause rather than on the diff's
+ *  (PMP.cs:1202-1235) can burn an idx we do not. Gating on the cause rather than on the diff's
  *  SHAPE is what keeps every swap-free pack under full byte-and-name exactness. */
 export function packHasFileSwaps(members: Map<string, Uint8Array>): boolean {
   return optionDocs(members).some(
@@ -158,7 +158,7 @@ export function redirectKey(
  *  option's mapping is preserved and compared independently.
  *
  *  A gamePath whose member is absent is OMITTED rather than defaulted — an absent payload is a real
- *  state (PMP.cs:883-888 drops such a key on write) and inventing bytes for it would mask a genuinely
+ *  state (PMP.cs:976-981 drops such a key on write) and inventing bytes for it would mask a genuinely
  *  lost member. `looseKey` matches the resolution the rest of the diff harness uses, so a member
  *  differing only by case or a stripped trailing dot still resolves. */
 export function resolveRedirects(

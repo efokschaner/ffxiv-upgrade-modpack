@@ -188,7 +188,7 @@ const firstIris = [...EYE_MATERIALS.keys()][0]!;
 const rc = /c([0-9]{4}).*?f([0-9]{4})/.exec(firstIris)!;
 const realMask = `chara/human/c${rc[1]}/obj/face/f${rc[2]}/texture/--c${rc[1]}f${rc[2]}_iri_s.tex`;
 
-describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:174-177)", () => {
+describe("upgradeModpack — eye-mask wiring (ModpackUpgrader.cs:180-183)", () => {
   it("writes a converted diffuse for an unclaimed iri_s.tex whose iris material exists", () => {
     const out = upgradedOk(pack({ [realMask]: buildMinimalTex() }));
     const diffuse = EYE_MATERIALS.get(

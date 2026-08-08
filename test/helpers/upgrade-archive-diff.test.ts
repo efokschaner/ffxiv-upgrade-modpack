@@ -107,7 +107,7 @@ describe("diffArchives", () => {
 
 // Regression coverage for the hole the (now-removed) orphan-payload-member heuristic used to patch:
 // `dropConfirmedAbsentKeys` only ever inspects `Files` KEYS, so a payload member silently lost for
-// any other reason — e.g. an `ExtraFile` (PMP.cs:213-215, a preview image or readme no `Files`/`Image`
+// any other reason — e.g. an `ExtraFile` (PMP.cs:278-280, a preview image or readme no `Files`/`Image`
 // field ever names) that a reader/writer bug drops from the archive without touching any manifest —
 // was invisible to the manifest-only comparison. Before `checkPayloadMembers` existed, `diffArchives`
 // never looked at non-manifest member NAMES at all, so this scenario returned `[]`.
@@ -227,7 +227,7 @@ describe("diffArchives confirmGoldenOnlyMember (sixth parameter) wiring", () => 
   });
 });
 
-describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
+describe("diffArchives absent-file drop (PMP.cs:976-981)", () => {
   const enc = new TextEncoder();
   const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";
   const ABSENT = "chara/equipment/e0002/model/c0101e0002_top.mdl";
@@ -266,7 +266,7 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
 
   it("confirms a dropped key whose payload is genuinely absent from the golden", () => {
     // Golden lists ABSENT in its Files map but never actually contained a member for it — the
-    // PMP.cs:883 drop this confirmation exists for. See dropConfirmedAbsentKeys' doc comment for
+    // PMP.cs:976 drop this confirmation exists for. See dropConfirmedAbsentKeys' doc comment for
     // why no current harness call site can reach this arm (both remaining callers compare against
     // real TexTools output, which has already dropped any such key); the direct unit tests here are
     // what keeps it covered.
@@ -286,7 +286,7 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
 
   it("REJECTS a dropped key that only LOOKS absent (resolves under the confirmation's own looseKey)", () => {
     // The member is stored with display case + a trailing dot stripped — a correct reader would
-    // resolve it, so it is NOT absent and dropping it is a real bug, not the PMP.cs:883 drop. This
+    // resolve it, so it is NOT absent and dropping it is a real bug, not the PMP.cs:976 drop. This
     // scenario is exactly the one a SHARED reader/confirmation key function could never catch: the
     // "ours" side here is constructed directly (standing in for whatever a reader — buggy or not —
     // produced), so the confirmation's OWN resolution has to reject it independently. Because
@@ -344,7 +344,7 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
 // by index inside an Options array. Regression coverage for the argument-inversion bug where the
 // group branch called option(golden, ours) instead of option(ours, golden) — the swap made the
 // group check compare `ours` against itself (always equal), silently disabling it entirely.
-describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:883-888)", () => {
+describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:976-981)", () => {
   const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";
   const ABSENT = "chara/equipment/e0002/model/c0101e0002_top.mdl";
   const payload = new Uint8Array([1, 2, 3]);
@@ -679,7 +679,7 @@ describe("diffArchives layoutEquivalent parameter", () => {
 // map's VALUE is a zip path too, so `dropConfirmedAbsentKeys` must also stop reporting a `Files`
 // value difference that is purely a `common/N` renumbering — otherwise the exact same shift
 // reappears as a manifest (`jsonPointerDiff`) diff instead of a structure diff. See the
-// FileSwap-preservation spec, §5.2, and PMP.cs · UnpackPmpOption · 1104-1137 ->
+// FileSwap-preservation spec, §5.2, and PMP.cs · UnpackPmpOption · 1202-1235 ->
 // PmpExtensions.cs · ResolveDuplicates · 500,543 for why the renumbering happens at all.
 // `Files` KEYS (the gamePath) are the effective result and are never
 // exempted here — only the VALUE (the zip path) is layout.
@@ -762,7 +762,7 @@ describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => 
 
   it("still reports a Files KEY present in golden but missing from ours, unaffected by layoutEquivalent", () => {
     // The missing key's own payload genuinely exists in the golden archive (a resolvable member),
-    // so this is NOT the PMP.cs:883 confirmed-absent-drop case — it must stay a reported diff.
+    // so this is NOT the PMP.cs:976 confirmed-absent-drop case — it must stay a reported diff.
     const ours = pmp({
       "meta.json": META,
       "default_mod.json": {
@@ -966,7 +966,7 @@ describe("diffArchives layoutEquivalent: non-Files manifest fields are never exe
 });
 
 // CONFIRMATION (not a baseline suppression) of the ONE FileSwaps divergence we intend:
-// PopulatePmpStandardOption sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:873-875),
+// PopulatePmpStandardOption sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:966-968),
 // silently destroying every Penumbra file swap the pack carried (docs/TEXTOOLS_BUGS.md #10, a
 // genuine defect). We preserve them instead (SubMod.AddContainerTo, Penumbra repo
 // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/), so the

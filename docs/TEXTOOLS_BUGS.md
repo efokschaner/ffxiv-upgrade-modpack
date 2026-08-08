@@ -138,7 +138,7 @@ by luck: it maps to 0 either way.)
 The loop that de-collides duplicate group folder names never increments its counter `i`, so two
 groups whose names sanitize to the same folder AND whose first retry (`" (1)/"`) also collides
 would spin forever recomputing the same candidate. (The sibling loop in `MakeOptionPrefix`,
-`:1448-1453`, increments correctly — see below.)
+`:1467-1472`, increments correctly — see below.)
 
 **Us:** ported the loop condition as written (a single retry at `" (1)/"` succeeds silently, matching
 the C#), but if resolving the collision would need a second retry we throw, citing this entry,
@@ -151,7 +151,7 @@ called by `writePmp` (`src/container/pmp.ts`) to regenerate every zip path from 
 
 ## 7. `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page
 
-**Status:** reproduced · **Where:** `WizardData.cs:1137-1177` construction + `:1234-1244`
+**Status:** reproduced · **Where:** `WizardData.cs:1137-1177` construction + `:1253-1263`
 (`ClearNulls`' page-level pruning) — see `src/container/pmp.ts:325-333` (construction) and
 `src/container/clear-nulls.ts` (pruning)
 
@@ -162,8 +162,8 @@ number — so a group meant for page 0 lands on `DataPages[0]`, which is now the
 page just created for it; the page created for page 0 is left with zero groups.
 
 That would inflate `DataPages.Count` and switch on the `pN/` prefix for the whole pack — except
-`ClearNulls` (WizardData.cs:1253-1263) runs immediately afterward (`:1159`, inside `FromPmp` itself,
-and again — redundantly — at `:1462` inside `WritePmp`) and drops any page with zero
+`ClearNulls` (WizardData.cs:1253-1263) runs immediately afterward (`:1178`, inside `FromPmp` itself,
+and again — redundantly — at `:1481` inside `WritePmp`) and drops any page with zero
 data-carrying groups. For the common case (a single real page, `pageMax === 0`), that prunes the
 now-empty created page right back out, so `DataPages.Count` ends up **unchanged** (still 1) and NO
 `pN/` prefix appears. The bug's only surviving, observable effect is that the misrouted group's
@@ -250,9 +250,9 @@ no-op distinctly.
 > it "the first divergence justified under `AGENTS.md`'s user-benefit principle"; only the tag was
 > out of step.
 
-`PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:874`) alongside `opt.Files` and
+`PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:967`) alongside `opt.Files` and
 `opt.Manipulations`, but unlike those two, nothing ever adds to it afterward — the function's body
-(`:876-928`) only populates `opt.Files` (from `files`) and `opt.Manipulations` (from the metadata/
+(`:969-1021`) only populates `opt.Files` (from `files`) and `opt.Manipulations` (from the metadata/
 rgsp conversion and `otherManipulations`). This is the **only** writer of `PmpStandardOptionJson`
 (`WizardData.WritePmp` → `PopulatePmpStandardOption` is the sole call site that builds an option's
 JSON for the zip), so any option that came in with file swaps — a Penumbra mod that swaps one game
@@ -361,7 +361,7 @@ input: the modeled NPOT-resize gap this used to also swallow is gone, the resize
 its sentinel deleted (see `docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`).
 
 **Upstream fix:** catch only the specific expected conditions — the two `MergePixelData` failures
-(`Tex.cs:655-659`, `:718-747`) are the ones a resize can legitimately raise here — and either
+(`Tex.cs:655-659`, `:717-746`) are the ones a resize can legitimately raise here — and either
 log-and-skip explicitly for those or let a genuinely unexpected exception (a corrupt input) surface
 instead of silently swallowing it.
 
@@ -414,14 +414,14 @@ material or surface a clearer error naming the missing sampler.
 ## 15. `RepathHairMashups`' sampler scan dereferences `x.Sampler.SamplerId` unguarded
 
 **Status:** reproduced · **Where:** `ModpackUpgrader.cs:434-436` (and the sibling highlight-half scan
-at `:294-295`) — see `src/upgrade/repath-hair-mashups.ts` / `src/upgrade/resolve-highlight.ts`,
+at `:322-323`) — see `src/upgrade/repath-hair-mashups.ts` / `src/upgrade/resolve-highlight.ts`,
 `findSamplerUnguarded`
 
 `RepathHairMashups` finds its normal/mask/diffuse textures with
-`Textures.FirstOrDefault(x => x.Sampler.SamplerId == ...)` (`:406-408`), reading `x.Sampler.SamplerId`
+`Textures.FirstOrDefault(x => x.Sampler.SamplerId == ...)` (`:434-436`), reading `x.Sampler.SamplerId`
 with no null guard — the same defect class as entry 3, at a different call site. A texture that bound
 no sampler NREs mid-scan. `ResolveHighlightOptionsAndMashupHair`'s highlight half does the identical
-unguarded scan (`:294-295`), but there the enclosing `try/catch` (`:301-304`) folds the NRE into "skip
+unguarded scan (`:322-323`), but there the enclosing `try/catch` (`:329-332`) folds the NRE into "skip
 this .mtrl"; `RepathHairMashups` has **no** try/catch, so the NRE propagates and aborts the whole
 `/upgrade`.
 
@@ -440,7 +440,7 @@ than abort the run.
 ## 16. `GetFullImcInfo`'s NonSet default subset reads `Vfx` from the material-set byte
 
 **Status:** **not reached** — the buggy symbol is not on our path · **Where:** `Imc.cs:395` (vs
-`:401` and the `Set` branch's `:414`/`:431`)
+`:412` and the `Set` branch's `:425`/`:442`)
 
 `Imc.GetFullImcInfo`'s `ImcType.NonSet` branch reads the default subset's six bytes into named
 locals and then builds the entry with **`Vfx = variant`** (`Imc.cs:390-397`):
@@ -449,7 +449,7 @@ locals and then builds the entry with **`Vfx = variant`** (`Imc.cs:390-397`):
 byte variant = br.ReadByte();
 byte unknown = br.ReadByte();
 ushort mask   = br.ReadUInt16();
-byte vfx      = br.ReadByte();   // :376 — read, then discarded
+byte vfx      = br.ReadByte();   // :387 — read, then discarded
 byte anim     = br.ReadByte();
 
 imcData.DefaultSubset.Add(new XivImc
@@ -457,26 +457,26 @@ imcData.DefaultSubset.Add(new XivImc
     MaterialSet = variant,
     Decal = unknown,
     Mask = mask,
-    Vfx = variant,               // :384 — should be `vfx`
+    Vfx = variant,               // :395 — should be `vfx`
     Animation = anim
 });
 ```
 
 The `vfx` local is read off the stream and then never used, so the default entry's `Vfx` is silently
 a copy of its material-set byte. Every *other* entry the function builds reads its own `vfx` byte:
-the NonSet variant-subset loop immediately below (`:393`, assigned at `:401`) and both the default
-and variant subsets of the `Set` branch (`:414-422` and `:431-439`, each reading `Vfx =
+the NonSet variant-subset loop immediately below (`:404`, assigned at `:412`) and both the default
+and variant subsets of the `Set` branch (`:425-433` and `:442-450`, each reading `Vfx =
 br.ReadByte()` inline). The asymmetry is confined to one field of
 one entry in one branch — a plain transcription defect, not a format rule: nothing about the NonSet
 layout makes the default subset's fifth byte mean something different from the same byte in the very
 next entry. The surrounding comment ("This type uses the first short for both Variant and VFX",
-`:372`) explains the `variant`/`unknown` pair, not this assignment.
+`:383`) explains the `variant`/`unknown` pair, not this assignment.
 
 **Us:** we do not reproduce it, because we never execute this function. The `.meta` IMC base seed
 runs through an entirely different reader: `ItemMetadata.CreateFromRaw` (`ItemMetadata.cs:238-241`)
 → `XivDependencyRoot.GetImcEntryPaths` (`XivDependencyRoot.cs:1133-1202`) → `Imc.GetEntries`
 (`Imc.cs:200-249`), which computes a byte offset per entry and reads six **raw** bytes there
-(`:226-233`) without constructing an `XivImc` field-by-field at all. Our port
+(`:237-244`) without constructing an `XivImc` field-by-field at all. Our port
 (`scripts/lib/imc-entries.ts`, extraction tooling) mirrors that path and records the raw six bytes,
 so the correct `vfx` byte lands in the table. This entry is registered as an upstream defect
 **observed while porting**, not one we knowingly reproduce — the `not reached` status.
@@ -511,7 +511,7 @@ set, so it is a behavioural fix for that function's own consumers, not a cosmeti
 one bit per option index:
 
 ```csharp
-var bit = 1UL << idx;                              // :811
+var bit = 1UL << idx;                              // :817
 wizOp.Selected = (pGroup.DefaultSettings & bit) != 0;
 ```
 
@@ -525,9 +525,9 @@ mirrors of options 0..N — their selection state is not read from any bit of th
 none; the field is only 64 bits wide) but silently aliased onto an earlier option's.
 
 Nothing about the PMP format caps a group at 64 options: `PMPGroupJson.Options` (`PMP.cs:1515`) is
-an unbounded list, and `DefaultSettings` is a fixed-width `ulong` (`:1404`). So the format admits
+an unbounded list, and `DefaultSettings` is a fixed-width `ulong` (`:1512`). So the format admits
 groups the selection encoding cannot represent, and the C# neither rejects them nor truncates them
-— it wraps, which is the defect. The write-side getter `WizardGroupEntry.Selection` (`:594-601`)
+— it wraps, which is the defect. The write-side getter `WizardGroupEntry.Selection` (`WizardData.cs:596-603`)
 has the identical unmasked `1UL << i`, so a round-trip folds the aliased options' state back down
 onto the low bits as well.
 
@@ -602,7 +602,7 @@ reproduce anyway.
 **Upstream fix:** in the three NPOT pre-steps, resize with `TextureHelpers.ResizeImage` (raw pixels)
 instead of `Tex.ResizeXivTx`, dropping the `MergePixelData` round-trip — matching what `:1205` already
 does. Note the same round-trip incidentally owns the `<64` and unsupported-format aborts
-(`Tex.cs:655-659`, `:718-747`, the TexImpNet compressor guards); removing it also removes those
+(`Tex.cs:655-659`, `:717-746`, the TexImpNet compressor guards); removing it also removes those
 aborts, which is itself an improvement (TexTools currently refuses some tiny/odd-format NPOT sources
 it has no real need to).
 
@@ -785,21 +785,21 @@ returns a tuple) and have the caller apply it to `header` before calling `ToByte
 ## 22. `ClearNulls` reads `WizardPageEntry.HasData` over a list it is about to remove nulls from
 
 **Status:** diverged · **Where:** `WizardData.ClearNulls` (`WizardData.cs:1253-1285`) reading
-`WizardPageEntry.HasData` (`:969-975`), over nulls admitted by `WizardData.FromPmp` (`:1136`, `:1156`)
-from `WizardGroupEntry.FromPMPGroup`'s empty-group early return (`:851-855`). See
+`WizardPageEntry.HasData` (`:980-986`), over nulls admitted by `WizardData.FromPmp` (`:1155`, `:1175`)
+from `WizardGroupEntry.FromPMPGroup`'s empty-group early return (`:857-861`). See
 `src/container/clear-nulls.ts` and
 `docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md`.
 
 `FromPMPGroup` returns `null` for a group with no options, and `FromPmp` adds the result to
-`page.Groups` **unconditionally** at both its call sites — the synthesized Default group (`:1136`)
-and the real ones (`:1156`). So a zero-option PMP group puts a literal `null` into a
-`List<WizardGroupEntry>`. `FromPmp` then calls `ClearNulls()` (`:1159`) to prune exactly that:
+`page.Groups` **unconditionally** at both its call sites — the synthesized Default group (`:1155`)
+and the real ones (`:1175`). So a zero-option PMP group puts a literal `null` into a
+`List<WizardGroupEntry>`. `FromPmp` then calls `ClearNulls()` (`:1178`) to prune exactly that:
 
 ```csharp
 foreach (var p in pages)
 {
     p.FolderPath = null;
-    if (!p.HasData)          // :1240 — evaluated BEFORE the null-removing loop below
+    if (!p.HasData)          // :1259 — evaluated BEFORE the null-removing loop below
     {
         DataPages.Remove(p);
         continue;
@@ -808,14 +808,14 @@ foreach (var p in pages)
     var groups = p.Groups.ToList();
     foreach (var g in groups)
     {
-        if (g == null || !g.HasData) { p.Groups.Remove(g); continue; }   // :1249 — null-SAFE
+        if (g == null || !g.HasData) { p.Groups.Remove(g); continue; }   // :1268 — null-SAFE
 ```
 
-The group-level check at `:1249` is correctly null-guarded. The page-level check one statement
+The group-level check at `:1268` is correctly null-guarded. The page-level check one statement
 earlier is not:
 
 ```csharp
-public bool HasData { get { return Groups.Any(x => x.HasData); } }   // :969-975
+public bool HasData { get { return Groups.Any(x => x.HasData); } }   // :980-986
 ```
 
 `Any` dereferences `x` to read the instance property, so it throws `NullReferenceException` the
@@ -823,8 +823,8 @@ moment it reaches a null element. The method crashes on the list it exists to cl
 
 It is **order-dependent**, because `Any` short-circuits on the first `true`. Every non-null group on
 the paths a modpack load reaches is `HasData == true` (`WizardGroupEntry.HasData` is
-`Options.Any(x => x.HasData)`, `:621-627`, and `WizardOptionEntry.HasData` returns `true` on its
-first line whenever `ModOption != null`, `:257-278` — which both group constructors always set). So
+`Options.Any(x => x.HasData)`, `:627-633`, and `WizardOptionEntry.HasData` returns `true` on its
+first line whenever `ModOption != null`, `:259-280` — which both group constructors always set). So
 any data-carrying group *preceding* the null shields it, and the NRE fires **iff the zero-option
 group is the first group added to its page**.
 

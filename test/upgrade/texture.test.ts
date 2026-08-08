@@ -101,10 +101,10 @@ describe("createIndexFromNormal", () => {
   // The next two assert the guards' FULL message text, not a fragment, and that is deliberate.
   // assertMatchedUpgradeFailure (test/helpers/corpus-upgrade.ts) substring-matches our thrown
   // message against ConsoleTools' captured trace, so these strings must stay byte-identical to the
-  // C# (Tex.cs:659, Tex.cs:743) or the expected-failure packs stop matching. The corpus is
+  // C# (Tex.cs:658, Tex.cs:742) or the expected-failure packs stop matching. The corpus is
   // gitignored and empty on a fresh clone, so without these literals nothing in the committed tree
   // would catch a reword. Same reasoning as test/container/manifest-types.test.ts.
-  it("throws when a rounded dimension is under 64 (Tex.cs:656-660)", () => {
+  it("throws when a rounded dimension is under 64 (Tex.cs:655-659)", () => {
     // 40 -> RoundToPowerOfTwo picks 32 (|40-32| = 8 < |64-40| = 24), so MergePixelData's
     // TexImpNet size guard fires on the POST-resize dims.
     const rgba = new Uint8Array(40 * 40 * 4);
@@ -113,7 +113,7 @@ describe("createIndexFromNormal", () => {
     );
   });
 
-  it("throws on a format GetCompressionFormat rejects (Tex.cs:718-747)", () => {
+  it("throws on a format GetCompressionFormat rejects (Tex.cs:717-746)", () => {
     // DXT3 decodes fine for us but is absent from GetCompressionFormat's switch, so TexTools
     // aborts the whole upgrade rather than resizing it.
     const blocks = new Uint8Array((400 / 4) * (400 / 4) * 16);
@@ -122,7 +122,7 @@ describe("createIndexFromNormal", () => {
     );
   });
 
-  it("exempts BC7 from the <64 guard (Tex.cs:650-653 takes the TexConv path)", () => {
+  it("exempts BC7 from the <64 guard (Tex.cs:649-652 takes the TexConv path)", () => {
     // Mode-6 blocks: byte0 = 0x40 is six zero bits then the mode bit, LSB-first.
     const blocks = new Uint8Array((40 / 4) * (40 / 4) * 16);
     for (let i = 0; i < blocks.length; i += 16) blocks[i] = 0x40;
@@ -158,21 +158,21 @@ describe("upgradeMaskTex", () => {
     expect(Array.from(decodeToRgba(parsed))).toEqual(Array.from(expected));
   });
 
-  it("throws when a rounded dimension is under 64 (Tex.cs:656-660)", () => {
+  it("throws when a rounded dimension is under 64 (Tex.cs:655-659)", () => {
     const rgba = new Uint8Array(40 * 40 * 4);
     expect(() => upgradeMaskTex(a8r8g8b8Tex(40, 40, rgba), false)).toThrow(
       "Image is too small for DDS Compressor. (64x64 Minimum Size)",
     );
   });
 
-  it("throws on a format GetCompressionFormat rejects (Tex.cs:718-747)", () => {
+  it("throws on a format GetCompressionFormat rejects (Tex.cs:717-746)", () => {
     const blocks = new Uint8Array((400 / 4) * (400 / 4) * 16);
     expect(() => upgradeMaskTex(rawTex(DXT3, 400, 400, blocks), false)).toThrow(
       "Format is currently unsupported: DXT3",
     );
   });
 
-  it("exempts BC7 from the <64 guard (Tex.cs:650-653 takes the TexConv path)", () => {
+  it("exempts BC7 from the <64 guard (Tex.cs:649-652 takes the TexConv path)", () => {
     const blocks = new Uint8Array((40 / 4) * (40 / 4) * 16);
     for (let i = 0; i < blocks.length; i += 16) blocks[i] = 0x40;
     const out = upgradeMaskTex(rawTex(BC7, 40, 40, blocks), false);
@@ -236,7 +236,7 @@ describe("updateEndwalkerHairTextures", () => {
     //
     // 96 rather than a smaller tie like 3->2 deliberately, and it buys two things at once. The
     // hair NPOT pre-step is a ResizeXivTx call, so it now runs MergePixelData's `<64` guard
-    // (Tex.cs:656-660) like the index/mask sites — a 3x3 fixture would round to 2x2 and throw,
+    // (Tex.cs:655-659) like the index/mask sites — a 3x3 fixture would round to 2x2 and throw,
     // testing the guard instead of the resize. Landing exactly ON 64 also pins the guard's
     // boundary: `w < 64` must be false at 64, so this test fails if that comparison is ever
     // written as `<=`.
@@ -264,7 +264,7 @@ describe("updateEndwalkerHairTextures", () => {
     );
   });
 
-  it("propagates the <64 guard from the hair NPOT pre-step (Tex.cs:656-660 via EndwalkerUpgrade.cs:1195-1202)", () => {
+  it("propagates the <64 guard from the hair NPOT pre-step (Tex.cs:655-659 via EndwalkerUpgrade.cs:1195-1202)", () => {
     // The hair pre-step is a ResizeXivTx call like the index/mask sites, so it owns the same two
     // MergePixelData failures. 3 -> 2 is under the guard, so TexTools aborts the pack here and so
     // must we — before this was routed through resizeToPow2ForMerge we silently succeeded.
@@ -395,12 +395,12 @@ describe("upgradeRemainingTextures", () => {
     expect(parseTex(idxFile!.data!).width).toBe(512);
   });
 
-  it("propagates a too-small NPOT normal instead of swallowing it (Tex.cs:656-660)", () => {
+  it("propagates a too-small NPOT normal instead of swallowing it (Tex.cs:655-659)", () => {
     // 3x2 rounds to 2x2 (roundToPowerOfTwo ties to the floor, IOUtil.cs:905-930), below
     // MergePixelData's 64x64 size guard. upgradeRemainingTextures has no try/catch around this
     // call -- matching TexTools, where EndwalkerUpgrade.cs:1842 has no try/catch around
     // CreateIndexFromNormal either -- so the error propagates and aborts the whole upgrade
-    // (ModpackUpgrader.cs:133-141 rethrows wrapped).
+    // (ModpackUpgrader.cs:139-147 rethrows wrapped).
     const normalPath = "chara/x/tex/npot_n.tex";
     const indexPath = "chara/x/tex/npot_id.tex";
     const o = option([

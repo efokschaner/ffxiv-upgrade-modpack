@@ -424,39 +424,76 @@ below also touches unported files.
 
 ### 10.1 Citation drift sweep (2026-08-07)
 
-§7.3's citation-drift obligation is discharged for all ten changed cited files, mechanically rather
-than by eye — 447 `<File>.cs:<line>` citations was well past what hand-checking could claim honestly.
-The method, and what makes it safe to trust:
+§7.3's citation-drift obligation is discharged for `src/`, `test/` and `docs/TEXTOOLS_BUGS.md`,
+mechanically rather than by eye — 1,202 citations into the ten changed files is well past what
+hand-checking could claim honestly. The scope of the claim is stated precisely at the end of this
+section; read it before relying on this.
 
-- The OLD→NEW line map comes from `git diff -U0 e20179a0..8e2a2603` per file, so it is git's own
-  answer, not a guess. Every proposed correction is then **proved** by requiring
-  `OLD[n] === NEW[n + shift]` textually; anything that fails (a citation pointing *into* a changed
-  hunk) is refused and left for a human.
-- Lines authored on this branch already cite the **new** pin (the PMP-v4 port, rows 6/8/9/10/11), so
-  shifting them would double-count. They are identified per-line by `git blame` against `main..HEAD`
-  and skipped — 154 such citations.
+**Citations come in five spellings, and a sweep that handles only the first is worse than useless
+— it leaves a third of them stale while looking complete.** The first pass here did exactly that,
+and it is the trap most likely to recur:
 
-Result: **226 proven corrections applied across 39 `src/` files**, 62 already correct, plus 28 more
-in `docs/TEXTOOLS_BUGS.md`. Five needed hands: `PMP.cs:124 → :159` (`LoadPMP`, the drift §7.3
-predicted) and `ModpackUpgrader.cs:58 → :63` (`WizardData.FromModpack`, ×2) landed inside changed
-hunks and were resolved by symbol; the three `Tex.cs:138-145` citations point at the guard block
-`1993bf6` **deleted**, and are rewritten in row 1's terms rather than repointed.
+| form | example | note |
+|---|---|---|
+| named | `Mdl.cs:2464`, `Mdl.cs:2513-2535` | the obvious one |
+| bare continuation | `:2464` for a file named earlier | context routinely spans a **whole module** — a header names the file, the body cites bare |
+| dot | `WizardData.cs · ClearNulls · 1234-1266`, and bare `(· 621-627)` | AGENTS.md's own prescribed `file · symbol · lines` |
+| wrapped | `ModelModifiers.cs:` ending a line, digits starting the next | invisible to any single-line regex |
+| symbol-qualified | `WizardData.FromPmp:1118-1159` | no `.cs` at all |
 
-Two caveats, recorded so the next re-pin does not trip on them:
+**Method.** One scanner over the whole file text: any `<Name>.cs` occurrence sets the current-file
+context (file-scoped, last-wins); any following line-number token in any of the above spellings is a
+citation against that context. The OLD→NEW line map comes from `git diff -U0 e20179a0..8e2a2603` per
+file — git's own answer, not a guess. Every correction is then **proved** by requiring
+`OLD[n] === NEW[n + shift]` textually, and the proof **explicitly rejects three ways it can pass
+vacuously**, each of which produced a real misattribution here before it was tightened:
+
+1. **out of range** — `:2009` under a 540-line `ModpackUpgrader.cs` indexes `undefined` on *both*
+   sides, and `undefined === undefined` "proves" a citation that actually belongs to
+   `EndwalkerUpgrade.cs`;
+2. **blank line** — matches any other blank line at any shift;
+3. **punctuation-only line** (`{`, `}`, `);`) — same, slightly weaker.
+
+A range must therefore have at least one substantive endpoint. Lines authored by the PMP-v4 port
+already cite the new pin and are skipped via `git blame` against `main..HEAD`.
+
+**Result.** 226 + 416 = **642 proven corrections** across `src/`, `test/` and the bug register, plus
+**24 hand-resolved**, each individually proved against the C# before editing. Of the hand cases,
+three could not be proved textually because the upstream commit edited that very line, and were
+resolved by symbol identity instead: `PMP.cs:124 → :159` (`LoadPMP` gained `enforceCompatibility`),
+`ModpackUpgrader.cs:58 → :63` (`FromModpack(path)` → `FromModpack(path, true)`), and
+`Tex.cs:1127 → :1126` (the LoD2 line `1993bf6` changed). The `Tex.cs:138-145` citations are
+deliberately **not** repointed — they name the guard block `1993bf6` deleted, and the register now
+marks them *pre-fix*.
+
+**Completeness, measured rather than asserted.** An independent audit
+(`.superpowers/…/audit.mjs`, written to *not* reuse the mapper's bookkeeping) walks the final tree,
+resolves all 1,202 citations into the ten changed files, and re-derives each one's old-pin
+counterpart: **1,176 verified stable; 26 flagged, all explained** — 19 are the audit's own
+last-wins misattributions (provably so: out of range for the file it guessed, so they cannot be
+citations into a changed file at all — they belong to `EndwalkerUpgrade.cs`,
+`XivDependencyRoot.cs`), and 7 are correct new-pin citations pointing *into* a region the re-pin
+changed (`PMP.cs:170-173`, `:1679-1681`). **No genuine staleness remains in these three trees.**
+
+Caveats, recorded so the next re-pin does not trip on them:
 
 - The mapper is **not idempotent** — it rewrites OLD-pin numbers to NEW-pin ones, so re-running it
-  over an already-corrected tree silently double-shifts. Run once per re-pin, per tree.
-- It cannot see a citation that **wraps across a line break** (`` `Tex.cs:206-\n211` ``), and will
-  half-fix one. Exactly one existed, in `docs/TEXTOOLS_BUGS.md` #19; `grep -n '\.cs:[0-9]\+-\s*$'`
-  finds them and should be run after any future sweep.
-- A handful of citations live inside **runtime message strings**, not comments, so correcting one is
-  observable. Exactly one test asserted on such a message and was updated with it
-  (`test/container/option-prefix.test.ts`, `WizardData.cs:1406-1409 → :1425-1428` in
-  `MakeGroupPrefix`'s non-termination throw). The suite is the reliable detector here — a
+  over an already-corrected tree silently double-shifts. Run once per re-pin, per tree. Round 2 hit
+  this in a subtler form: round 1 had *hand-written* new-pin bare refs into register entries 19–21,
+  which `git blame` cannot distinguish from its own automated edits, so every token on a round-1
+  line in `TEXTOOLS_BUGS.md` had to be re-reviewed by hand.
+- A **last-wins file context can misattribute** a bare ref when two `.cs` files are named in one
+  comment. The hardened proof catches this whenever the wrong file makes the line out-of-range or
+  blank, which covered every instance here — but it is not a guarantee.
+- Some citations live inside **runtime message strings**, not comments, so correcting one is
+  observable. Three moved (`src/container/option-prefix.ts`'s `MakeGroupPrefix` non-termination
+  throw, and two in `src/mdl/model/model-modifiers.ts`, `ModelModifiers.cs:2021/:2026 → :2041/:2046`).
+  One test asserted on the first and was updated with it. The suite is the reliable detector — a
   hand-written `grep` missed it, because the assertion spells the citation as an escaped regex
   (`WizardData\.cs:…`).
-- `test/` citations were **not** swept (the brief scoped this task to `src/`); `test/` carries ~40
-  citations into the ten files and is known-stale. Worth a follow-up sweep with the same tool.
+- **Not swept:** everything under `docs/` except `TEXTOOLS_BUGS.md` — including the other specs and
+  the backlog — plus `AGENTS.md` and `README.md`. Those carry citations into the ten changed files
+  and are known-stale. The tooling handles them unchanged; it was scoped out, not attempted.
 
 Baseline totals, recorded via `npm run baseline:report`:
 

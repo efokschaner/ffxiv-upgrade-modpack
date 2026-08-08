@@ -9,8 +9,8 @@
  * not blending — the callers' logic stays with the callers.)
  *
  * Current call sites:
- * - `WizardData.cs · WritePmp · 1474-1475` + `:1494` (meta.json `Version`), via `src/container/pmp.ts`.
- * - `WizardData.cs · WriteWizardPack · 1335-1337` (the `ModPackData.Version` the TTMPWriter ctor
+ * - `WizardData.cs · WritePmp · 1493-1494` + `:1513` (meta.json `Version`), via `src/container/pmp.ts`.
+ * - `WizardData.cs · WriteWizardPack · 1354-1356` (the `ModPackData.Version` the TTMPWriter ctor
  *   stringifies at `TTMPWriter.cs · TTMPWriter · 61-69`), via `src/container/ttmp2.ts`.
  *
  * .NET's `Version.TryParse` splits the input on `'.'` and requires 2 to 4 components

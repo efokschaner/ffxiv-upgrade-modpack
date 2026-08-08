@@ -44,7 +44,7 @@ export function readLegacyTtmp(
   // Build the option's file map in line order, reproducing FromWizardGroup's fix-then-collapse
   // (WizardData.cs:706-743): apply the load fix FIRST, then `.set`. A dropped file (loadFix -> null,
   // the C# `catch { continue }`) never reaches the collapse, so it cannot overwrite an earlier
-  // duplicate; `.set` on a repeated FullPath is C#'s last-write-wins collapse (:729-737).
+  // duplicate; `.set` on a repeated FullPath is C#'s last-write-wins collapse (:735-743).
   const files = new Map<string, ModpackFile>();
   for (const line of lines) {
     const m = JSON.parse(line) as OriginalModPackJson;
@@ -76,7 +76,7 @@ export function readLegacyTtmp(
     priority: 0,
     // GetLegacyModpackMpl synthesizes a "0.1s" ModPackJson carrying a SimpleModsList
     // (TTMP.cs:453-462), so a legacy pack loads through FromSimpleTtmp, whose one fake option is
-    // built with `IsChecked = true` (WizardData.cs:1237-1240) and copied to Selected at :668.
+    // built with `IsChecked = true` (WizardData.cs:1237-1240) and copied to Selected at :674.
     selected: true,
     fileSwaps: {},
     manipulations: [],
@@ -105,9 +105,9 @@ export function readLegacyTtmp(
       tags: [],
       minimumFrameworkVersion: "1.0.0.0",
     },
-    // WizardData.cs · FromSimpleTtmp · 1204-1231 — a legacy pack loads through FromSimpleTtmp via
+    // WizardData.cs · FromSimpleTtmp · 1223-1250 — a legacy pack loads through FromSimpleTtmp via
     // the synthesized "0.1s" mpl (TTMP.cs:453-462): one hand-built page holding one hand-built
-    // group, added UNCONDITIONALLY (:1230) with no ClearNulls call.
+    // group, added UNCONDITIONALLY (:1232) with no ClearNulls call.
     pages: [page],
   };
 }

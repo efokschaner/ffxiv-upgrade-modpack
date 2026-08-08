@@ -54,7 +54,7 @@ describe("encodeVertexData", () => {
 
   it("truncates Half4 position values instead of rounding (SharpDX Half parity)", () => {
     // TexTools packs Half4 vertex data via SharpDX new Half() (WriteVectorData
-    // Mdl.cs:4121-4154), which truncates toward zero -- not round-to-nearest. 1.00146484375
+    // Mdl.cs:4117-4150), which truncates toward zero -- not round-to-nearest. 1.00146484375
     // is the decisive divergence value: RTNE (floatToHalf) rounds it up to 0x3c02, but
     // truncation (floatToHalfTruncate, matching SharpDX) yields 0x3c01.
     const elements: VertexElement[] = [
@@ -78,7 +78,7 @@ describe("encodeVertexData", () => {
 
   it("truncates Half4 texcoord UV values instead of rounding (SharpDX Half parity)", () => {
     // Same truncation-vs-RTNE divergence as the Position write site above, but for the UV write
-    // site (pushUv), which TextureCoordinate Half2/Half4 elements go through (Mdl.cs:4234-4274,
+    // site (pushUv), which TextureCoordinate Half2/Half4 elements go through (Mdl.cs:4230-4270,
     // the `(Half)` cast on texcoord components -- same SharpDX HalfUtils.Pack truncation).
     const elements: VertexElement[] = [
       {

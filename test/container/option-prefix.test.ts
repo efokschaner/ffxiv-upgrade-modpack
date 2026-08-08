@@ -141,9 +141,9 @@ describe("optionPrefixes", () => {
   });
 
   it("6. non-empty default + a page-0 group: FromPmp's page-index bug merges the group onto the Default page (no pN/)", () => {
-    // WizardData.cs:1118-1158: the Default page is unshifted onto DataPages[0]; the page created
+    // WizardData.cs:1137-1177: the Default page is unshifted onto DataPages[0]; the page created
     // for the real group's page 0 is then assigned via DataPages[g.Page] === DataPages[0], i.e. the
-    // Default page, not the page created for it. ClearNulls (WizardData.cs:1234-1244) then drops
+    // Default page, not the page created for it. ClearNulls (WizardData.cs:1253-1263) then drops
     // the now-empty created page, leaving DataPages.Count === 1: no pN/ prefix at all, and the real
     // group's files merge directly under the (still page-less) Default page instead of getting
     // their own page. See docs/TEXTOOLS_BUGS.md #7 (the off-by-one construction itself is pinned at
@@ -171,12 +171,12 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(g.options[0]!)).toBe("a-b-c-/");
   });
 
-  it("8. a content-free group is KEPT (WizardOptionEntry.HasData's Read-mode short-circuit, WizardData.cs:257-266) and DOES occupy a collision slot ahead of a later, same-named group", () => {
-    // WizardData.cs:1246-1263: within a surviving page, ClearNulls removes any group whose HasData is
-    // false (WizardGroupEntry.HasData, WizardData.cs:621-627 — Options.Any(x => x.HasData)). But
-    // WizardOptionEntry.HasData (WizardData.cs:257-278) short-circuits TRUE whenever `_Group.ModOption
+  it("8. a content-free group is KEPT (WizardOptionEntry.HasData's Read-mode short-circuit, WizardData.cs:259-268) and DOES occupy a collision slot ahead of a later, same-named group", () => {
+    // WizardData.cs:1265-1282: within a surviving page, ClearNulls removes any group whose HasData is
+    // false (WizardGroupEntry.HasData, WizardData.cs:627-633 — Options.Any(x => x.HasData)). But
+    // WizardOptionEntry.HasData (WizardData.cs:259-280) short-circuits TRUE whenever `_Group.ModOption
     // != null` — "Read mode" — and ModOption is set unconditionally by BOTH group constructors our
-    // load paths ever reach (FromWizardGroup :649, FromPMPGroup :767). So on every pack this port
+    // load paths ever reach (FromWizardGroup :655, FromPMPGroup :773). So on every pack this port
     // loads, `emptyReal`'s lone (file-less, manipulation-less) option still HasData=true, the group
     // survives ClearNulls intact, and — being FIRST in the page — claims the "same/" folder itself,
     // pushing `realGroup` (which collides on the same sanitized name) to "same (1)/". A "fix" that
@@ -191,7 +191,7 @@ describe("optionPrefixes", () => {
   });
 
   it("9. non-empty default + a page-0 group + a page-1 group: the shift strands the LAST created page empty instead of merging page 0", () => {
-    // WizardData.cs:1118-1158 + :1234-1244 (docs/TEXTOOLS_BUGS.md #7): with a non-empty Default AND
+    // WizardData.cs:1137-1177 + :1253-1263 (docs/TEXTOOLS_BUGS.md #7): with a non-empty Default AND
     // more than one real page, the raw-index bug still routes the page-0 group onto the Default
     // page (DataPages[0]), but the page-1 group lands on DataPages[1] -- the page CREATED for real
     // page 0 -- because the loop always writes DataPages[g.Page] regardless of the Default-page
@@ -217,7 +217,7 @@ describe("optionPrefixes", () => {
     // Case 7 above only exercises folderSafeName() on a GROUP name; its group has a single option,
     // so MakeOptionPrefix's `group.options.length > 1` branch -- the one that actually appends
     // `oName` to the path -- never runs there (the single-option branch discards `oName` and
-    // returns `groupFolderPath` verbatim, WizardData.cs:1443-1446). Use a multi-option group so the
+    // returns `groupFolderPath` verbatim, WizardData.cs:1462-1465). Use a multi-option group so the
     // sanitized option-name segment is actually visible in the result.
     const g = group("Group", [option("X<Y>Z"), option("Normal")]);
     const d = data([page([g])]);
@@ -227,12 +227,12 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(g.options[1]!)).toBe("group/normal/");
   });
 
-  it("11. an Imc group never gets a FolderPath in the Standard-only first pass (WizardData.cs:1513-1516): a same-named Standard group appearing LATER still claims the clean slot", () => {
-    // WritePmp's own loop (WizardData.cs:1506-1542) `continue`s past any option whose GroupType !=
-    // Standard BEFORE it ever reaches MakeOptionPrefix (:1526), whose 3-arg overload is what calls
-    // MakeGroupPrefix as a side effect (:1414-1418). So EVERY Standard-type group across the WHOLE
+  it("11. an Imc group never gets a FolderPath in the Standard-only first pass (WizardData.cs:1532-1535): a same-named Standard group appearing LATER still claims the clean slot", () => {
+    // WritePmp's own loop (WizardData.cs:1525-1561) `continue`s past any option whose GroupType !=
+    // Standard BEFORE it ever reaches MakeOptionPrefix (:1545), whose 3-arg overload is what calls
+    // MakeGroupPrefix as a side effect (:1433-1437). So EVERY Standard-type group across the WHOLE
     // pack claims its MakeGroupPrefix slot during that pass, before an Imc-type group ever gets one
-    // -- Imc groups are only resolved later, in the group_NNN.json emission loop (:1583-1600), which
+    // -- Imc groups are only resolved later, in the group_NNN.json emission loop (:1602-1619), which
     // calls MakeGroupPrefix(p, g) unconditionally for every surviving group. A single page/group
     // iteration order (assigning prefixes as groups are encountered) would let an Imc group occupy
     // the clean slot if it happens to appear FIRST on the page -- wrong, since here the Imc group

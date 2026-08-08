@@ -1,6 +1,6 @@
 // Harness-side mirror of ModpackUpgrader.AnyChanges
 // (reference/FFXIV_TexTools_UI/lib/xivModdingFramework/xivModdingFramework/Mods/ModpackUpgrader.cs
-// · AnyChanges · 25-49, called at :186-209 and gating the write at :212-219).
+// · AnyChanges · 28-52, called at :192-215 and gating the write at :218-247).
 //
 // This is NOT ported business logic and does not belong in src/: our product deliberately diverges
 // from TexTools by ALWAYS resaving rather than declining to write when nothing changed. The harness
@@ -14,14 +14,14 @@
 // be free to do the same. Do NOT tighten this to whole-model identity -- upgrade-noop.test.ts pins
 // that deliberately.
 //
-// C# captures `originals` AFTER WizardData.FromModpack (:58 then :64-80), so load-time fixes are
+// C# captures `originals` AFTER WizardData.FromModpack (:63 then :70-86), so load-time fixes are
 // baked into the baseline and are invisible to the predicate. Our caller mirrors that by passing
 // the POST-LOAD, PRE-TRANSFORM model as `before`. This is therefore the ONLY assertion on the no-op
 // branch that bypasses the writer, deliberately: it is about the transform alone.
 //
 // TWO deliberate departures from the C#, both of which make this predicate WEAKER, never stronger:
 //
-//  1. Pairing. C# keys `originals` by WizardOptionEntry REFERENCE (:64, :76), which works because
+//  1. Pairing. C# keys `originals` by WizardOptionEntry REFERENCE (:70, :82), which works because
 //     its transform mutates options in place; ours clones, so we pair by group index then option
 //     index. Neither pipeline adds or removes options, so position aligns them -- the same
 //     assumption 2026-07-04-upgrade-golden-harness-design.md §3 already relies on. A count mismatch

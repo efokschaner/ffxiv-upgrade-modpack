@@ -82,7 +82,7 @@ export function registerResaveCheck(pack: string): void {
       // confirmation below. Both are properties of the INPUT pack — the cause — not of the diff.
       const inputMembers = readZip(bytes);
       // The gate comes from the INPUT pack, not `ours` or the golden — PopulatePmpStandardOption
-      // (PMP.cs:873-875) has already destroyed the golden's swaps by the time we'd read it here, so
+      // (PMP.cs:966-968) has already destroyed the golden's swaps by the time we'd read it here, so
       // gating on the golden would never fire. See the FileSwap-preservation spec, §5.2.
       const layoutEquivalent = packHasFileSwaps(inputMembers);
       if (layoutEquivalent) {

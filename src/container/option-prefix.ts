@@ -23,8 +23,8 @@
 //     (`InvalidDataException`, WizardData.cs:1539-1542), and `writePmp` reproduces that throw
 //     (src/container/pmp.ts). They are ported faithfully anyway, because the guard lives in the
 //     caller loop rather than in the prefix builders, and these functions are correct ports of their
-//     own C# symbols regardless of what calls them. Note the loop only reaches :1520 for
-//     `EGroupType.Standard` options (`:1513-1516` continues past the others first), so a blank name
+//     own C# symbols regardless of what calls them. Note the loop only reaches :1539 for
+//     `EGroupType.Standard` options (`:1532-1535` continues past the others first), so a blank name
 //     on an Imc group never trips that throw.
 
 import {
@@ -36,7 +36,7 @@ import {
 } from "../model/modpack";
 import { folderSafeName } from "./pmp";
 
-// Port of MakePagePrefix (WizardData.cs:1381-1401). `WizardPageEntry.FolderPath` (:967) is the C#'s
+// Port of MakePagePrefix (WizardData.cs:1381-1401). `WizardPageEntry.FolderPath` (:978) is the C#'s
 // memo; `ModpackPage` carries no equivalent field (see its doc comment, src/model/modpack.ts), so
 // `pageFolderPaths` — local to this module's exported `optionPrefixes`, one per call — stands in for
 // it instead.
@@ -176,8 +176,8 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   //
   //   PASS 1 (WizardData.cs:1525-1561, "compose file storage information"): the per-OPTION loop
   //   `continue`s past any option whose GroupType != Standard BEFORE it ever reaches
-  //   MakeOptionPrefix (:1513-1516/:1526) — and MakeOptionPrefix's 3-arg overload calls
-  //   MakeGroupPrefix as a side effect (:1414-1418, `MakeGroupPrefix(page, group);`). So every
+  //   MakeOptionPrefix (:1532-1535/:1545) — and MakeOptionPrefix's 3-arg overload calls
+  //   MakeGroupPrefix as a side effect (:1433-1437, `MakeGroupPrefix(page, group);`). So every
   //   Standard-type group across the WHOLE pack claims its MakeGroupPrefix slot (and its options'
   //   MakeOptionPrefix slots) here — an Imc-type group's FolderPath is untouched by this pass.
   //

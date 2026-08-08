@@ -273,7 +273,7 @@ export const ORACLE_ERROR_DIVERGENCE_RULES: OracleErrorDivergenceRule[] = [
   {
     reason:
       "WizardData.ClearNulls reads WizardPageEntry.HasData (`Groups.Any(x => x.HasData)`, " +
-      "WizardData.cs:969-975) over a list FromPmp fills with nulls (:1136/:1156) and that the very " +
+      "WizardData.cs:980-986) over a list FromPmp fills with nulls (:1155/:1175) and that the very " +
       "next loop prunes — so a zero-option PMP group that lands FIRST on its page NREs the load and " +
       "ConsoleTools /upgrade emits no file at all. We treat a null as 'no data' and upgrade the " +
       "pack. docs/TEXTOOLS_BUGS.md #22; spec 2026-08-04-datapages-model-and-empty-group-design §5.",

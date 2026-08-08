@@ -77,7 +77,7 @@ function referenced(
  * Two failures, both of which shipped silently before the writer regeneration:
  *  - DANGLING: an option's `Files` value names a zip path with no member. Penumbra cannot load it.
  *  - ORPHAN:   a payload member that no `Files`/`Image` field names, and that was not already an
- *              unreferenced extra of the SOURCE pack (PMP.cs:213-215 preserves those verbatim, so
+ *              unreferenced extra of the SOURCE pack (PMP.cs:278-280 preserves those verbatim, so
  *              they are legitimately unreferenced on the way out too).
  *
  * `sourceExtras` is the source pack's `data.extraFiles` key set. Pass an empty set for a pack with

@@ -1,9 +1,9 @@
 // Ported from xivModdingFramework Models/Helpers/ModelModifiers.cs: MergeGeometryData
 // (:376-576), MergeAttributeData (:578-623), MergeMaterialData (:626-655), MergeShapeData
-// (:658-846), ClearShapeData (:848-860), GetWeldedMeshData (:1935-2100),
-// CalculateTangentsForMesh (:2102-2253), CopyShapeTangentsForPart (:2257-2270), MergeFlags
-// (:2284-2295). FixUpSkinReferences
-// (:2309) is a deferred stub (see its doc comment below) -- "split, don't blend".
+// (:658-846), ClearShapeData (:848-860), GetWeldedMeshData (:1955-2120),
+// CalculateTangentsForMesh (:2122-2273), CopyShapeTangentsForPart (:2277-2290), MergeFlags
+// (:2304-2315). FixUpSkinReferences
+// (:2329) is a deferred stub (see its doc comment below) -- "split, don't blend".
 
 import type {
   Rgba,
@@ -625,14 +625,14 @@ export function copyShapeBinormalsForPart(part: TTMeshPart): void {
 
 /** Port of ModelModifiers.CalculateTangentsForMesh (ModelModifiers.cs:2122-2273), force=false only.
  *  Dispatches per mesh group:
- *   - Empty guard (:2106-2109).
- *   - The C# `anyMissing` early-return (:2111-2124) reads v.Tangent, which this port never stores
+ *   - Empty guard (:2126-2129).
+ *   - The C# `anyMissing` early-return (:2131-2144) reads v.Tangent, which this port never stores
  *     (Tangent is unserialized). Our Tangent is conceptually always zero, so anyMissing is always
  *     true and the early-return never fires — so it is intentionally not reproduced; we go straight
  *     to the binormal branch, which is behaviourally identical here.
- *   - Fast path (:2127-2137): if any vertex already has a non-zero binormal, only the shape copy is
+ *   - Fast path (:2147-2157): if any vertex already has a non-zero binormal, only the shape copy is
  *     byte-affecting (Tangent write is skipped), so run copyShapeBinormalsForPart per part.
- *   - Full recompute (:2140-2253): weld, accumulate per-triangle sdir/tdir, then per welded vertex
+ *   - Full recompute (:2160-2273): weld, accumulate per-triangle sdir/tdir, then per welded vertex
  *     write Binormal + Handedness onto every original vertex welded into it; finally the shape copy. */
 export function calculateTangentsForMesh(group: TTMeshGroup): void {
   const vertexCount = group.parts.reduce((s, p) => s + p.vertices.length, 0);

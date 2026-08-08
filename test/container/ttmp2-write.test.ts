@@ -128,7 +128,7 @@ describe("writeTtmp2 page renumbering", () => {
     expect(mplDoc.ModPackPages![0]!.PageIndex).toBe(0);
   });
 
-  it("emits pages in source array order, not sorted by PageIndex (:1349)", () => {
+  it("emits pages in source array order, not sorted by PageIndex (:1368)", () => {
     const data = readTtmp2(
       buildWizardTtmp2Pages([
         { pageIndex: 1, groups: [{ name: "Second", options: ["On"] }] },
@@ -143,7 +143,7 @@ describe("writeTtmp2 page renumbering", () => {
     expect(mplDoc.ModPackPages!.map((p) => p.PageIndex)).toEqual([0, 1]);
   });
 
-  it("keeps two source pages sharing a PageIndex separate (:1349)", () => {
+  it("keeps two source pages sharing a PageIndex separate (:1368)", () => {
     const data = readTtmp2(
       buildWizardTtmp2Pages([
         { pageIndex: 0, groups: [{ name: "Alpha", options: ["On"] }] },
@@ -268,7 +268,7 @@ function withMpl(
 // normalize everything to `""`, which diverged from the golden on exactly those packs.
 describe("writeTtmp2 null fidelity", () => {
   // Load copies verbatim (`wizOp.Description = o.Description`, WizardData.cs · FromWizardGroup ·
-  // 663), export copies verbatim (`Description = Description`, · ToModOption · 414), and the writer
+  // 669), export copies verbatim (`Description = Description`, · ToModOption · 416), and the writer
   // copies verbatim again (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144).
   // So a null in, a null out — no `?? ""` anywhere along that chain.
   it("round-trips a null option Description as null, and '' as ''", () => {
@@ -301,10 +301,10 @@ describe("writeTtmp2 null fidelity", () => {
     ).toBeNull();
   });
 
-  // WizardMetaEntry.FromTtmp (WizardData.cs · FromTtmp · 1052-1069) assigns all five verbatim with
-  // no `?? ""`; WriteWizardPack (· WriteWizardPack · 1332-1346) passes Name/Author/Url/Description
-  // straight through. `ClearNulls()` at :1334 touches only pages/groups/options, never a string, and
-  // the `= ""` field initializers (:1015-1020) are overwritten by the load assignments.
+  // WizardMetaEntry.FromTtmp (WizardData.cs · FromTtmp · 1063-1080) assigns all five verbatim with
+  // no `?? ""`; WriteWizardPack (· WriteWizardPack · 1351-1365) passes Name/Author/Url/Description
+  // straight through. `ClearNulls()` at :1353 touches only pages/groups/options, never a string, and
+  // the `= ""` field initializers (:1026-1031) are overwritten by the load assignments.
   it("round-trips null top-level Name/Author/Description/Url", () => {
     const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
       doc.Name = null;
@@ -320,7 +320,7 @@ describe("writeTtmp2 null fidelity", () => {
   });
 
   // `Version` is the exception: WriteWizardPack forces it non-null via `Version.TryParse(...)` +
-  // `ver ??= new Version("1.0")` (WizardData.cs:1335-1337), re-guarded in the TTMPWriter ctor
+  // `ver ??= new Version("1.0")` (WizardData.cs:1354-1356), re-guarded in the TTMPWriter ctor
   // (TTMPWriter.cs · TTMPWriter · 61). It must never come out null.
   it("never writes a null Version", () => {
     const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
@@ -332,7 +332,7 @@ describe("writeTtmp2 null fidelity", () => {
 
   // The .NET Version round-trip is not a null guard only: WriteWizardPack RE-RENDERS the version
   // through `Version.TryParse` + `ver ??= new Version("1.0")` + `ToString()` (WizardData.cs ·
-  // WriteWizardPack · 1335-1337, stringified at TTMPWriter.cs · TTMPWriter · 61-69). A bare "1" has
+  // WriteWizardPack · 1354-1356, stringified at TTMPWriter.cs · TTMPWriter · 61-69). A bare "1" has
   // too few components for TryParse, so the fallback applies and the .mpl says "1.0"; "01.2"
   // normalizes to "1.2". Pinned end-to-end because ttmp2.ts writing `data.meta.version` raw would
   // otherwise pass every other test here — the PMP side has its own pin in pmp-manifest.test.ts.

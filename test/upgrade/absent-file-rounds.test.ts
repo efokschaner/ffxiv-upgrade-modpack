@@ -26,7 +26,7 @@ function upgradedOk(input: ModpackData): ModpackData {
   return r.data;
 }
 
-/** A file the archive did not contain: present in the option, no bytes (PMP.cs:1071-1102). */
+/** A file the archive did not contain: present in the option, no bytes (PMP.cs:1169-1200). */
 function absent(gamePath: string): [string, ModpackFile] {
   return [gamePath, { storage: FileStorageType.RawUncompressed }];
 }
@@ -91,7 +91,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
     expect(f.data).toBeUndefined();
   });
 
-  it("model fix never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:916)", () => {
+  it("model fix never reaches an absent file — gated off for PMP (needsMdlFix, TTMP.cs:918)", () => {
     // FixOldModel (EndwalkerUpgrade.cs:190-192) reads its file unguarded, unlike the different,
     // unrelated UpdateEndwalkerModel (:250-256). The model fix (makeTtmpLoadFix's .mdl branch, run at
     // LOAD) only fires when needsMdlFix is true, which is never the case for PMP — and absent files
@@ -161,7 +161,7 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
   });
 
   it("metadataRound THROWS on an absent .meta (no C# analogue — fail-loud guard, not a ported behaviour)", () => {
-    // PMP .meta files are materialized from manipulations (PMP.cs:1141-1164), never read from a
+    // PMP .meta files are materialized from manipulations (PMP.cs:1239-1262), never read from a
     // zip member, so a `.meta` `Files` entry with no bytes is structurally unreachable from a real
     // PMP. requireBytes's no-bytes throw is what pins that guard.
     const data = packOf(
@@ -178,13 +178,13 @@ describe("upgrade rounds vs an absent file (ResolveFile, EndwalkerUpgrade.cs:175
     expect(r.diagnostics.at(-1)!.message).toMatch(/file has no bytes/);
   });
 
-  it("HairMaps THROWS when a key-present normal has no bytes (:1187)", () => {
+  it("HairMaps THROWS when a key-present normal has no bytes (:1285)", () => {
     const normal =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_n.tex";
     const mask =
       "chara/human/c0101/obj/hair/h0001/texture/c0101h0001_hir_m.tex";
     // Both keys are present in the option — C#'s ContainsKey guard (:1852) passes — but the
-    // normal has no bytes, so UpdateEndwalkerHairTextures throws FileNotFoundException (:1187).
+    // normal has no bytes, so UpdateEndwalkerHairTextures throws FileNotFoundException (:1285).
     const option = optionOf([
       absent(normal),
       present(mask, new Uint8Array([0, 1, 2, 3])),

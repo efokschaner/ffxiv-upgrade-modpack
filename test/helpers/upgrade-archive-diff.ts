@@ -75,7 +75,7 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
 
 /** CONFIRMATION (not a tolerance) of the ONE manifest difference we intend: TexTools' writer drops
  *  a file whose payload does not exist from both the zip and the option's `Files` map
- *  (PopulatePmpStandardOption, PMP.cs:883-888), and our writer now does too. So: a `Files` key
+ *  (PopulatePmpStandardOption, PMP.cs:976-981), and our writer now does too. So: a `Files` key
  *  missing from OURS is allowed iff the golden's value for it names a zip path that does not resolve
  *  as a member of the GOLDEN's own archive.
  *
@@ -172,7 +172,7 @@ export function dropConfirmedAbsentKeys(
       const isStringValue = typeof value === "string";
       const zipPath = isStringValue ? value.replace(/\\/g, "/") : "";
       const absent = isStringValue && !present.has(looseKey(zipPath));
-      if (missingFromOurs && absent) continue; // the PMP.cs:883 drop — confirmed
+      if (missingFromOurs && absent) continue; // the PMP.cs:976 drop — confirmed
       if (
         layoutEquivalent &&
         !missingFromOurs &&
@@ -200,7 +200,7 @@ export function dropConfirmedAbsentKeys(
     }
 
     // INTENTIONAL DIVERGENCE (spec §5.1). PopulatePmpStandardOption sets `opt.FileSwaps = new()`
-    // and never repopulates it (PMP.cs:873-875), silently destroying every swap the pack carried --
+    // and never repopulates it (PMP.cs:966-968), silently destroying every swap the pack carried --
     // docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. We preserve them instead, because a
     // swap is a live redirection in Penumbra (SubMod.AddContainerTo, Penumbra repo
     // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/). So: an EMPTY
@@ -344,7 +344,7 @@ function payloadNames(members: Map<string, Uint8Array>): string[] {
  *  orphan-payload-member guard that used to live here unnecessary: that guard existed because the
  *  drop confirmation above only ever looks at `Files` keys, so a member the WRITER silently dropped
  *  for any OTHER reason (e.g. a writer bug dropping an `ExtraFile` no `Files`/`Image` field ever
- *  referenced — PMP.cs:213-215) was invisible to it. Comparing the member-name sets directly catches
+ *  referenced — PMP.cs:278-280) was invisible to it. Comparing the member-name sets directly catches
  *  a member missing on one side, per member — see the regression test in
  *  upgrade-archive-diff.test.ts pinning the "silently lost an unreferenced member" hole this
  *  replaces. It does NOT catch every way a member could be wrong: an entry name fflate would decode
@@ -582,7 +582,7 @@ export function diffArchives(
  *  see `resolveRedirects`'s doc comment, archive-redirects.ts — Penumbra SubMod.AddContainerTo,
  *  Penumbra repo Mods/SubMods/SubMod.cs:23-32, a separate repo from this project's reference/)
  *  instead of the member-name multiset, because a preserved FileSwap means
- *  TexTools burned a dedup `idx` we did not (PMP.cs · UnpackPmpOption · 1104-1137 ->
+ *  TexTools burned a dedup `idx` we did not (PMP.cs · UnpackPmpOption · 1202-1235 ->
  *  PmpExtensions.cs · ResolveDuplicates · 500,543 — `var idx = 1` then `idx++` on a repeat hit),
  *  shifting every later `common/N`.
  *

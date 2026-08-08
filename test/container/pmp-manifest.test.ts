@@ -37,7 +37,7 @@ function makeImcPmp(): Uint8Array {
     Name: "T",
     Author: "a",
     Description: "",
-    // A bare "3" fails .NET Version.TryParse (needs at least major.minor) -- WizardData.cs:1474-1475
+    // A bare "3" fails .NET Version.TryParse (needs at least major.minor) -- WizardData.cs:1493-1494
     // falls back to `new Version("1.0")`. See the "1.0" assertion below.
     Version: "3",
     Website: "",
@@ -68,12 +68,12 @@ function makeImcPmp(): Uint8Array {
         Files: { [GAME]: ZIP },
         FileSwaps: {},
         Manipulations: [],
-        // A foreign key: PmpStandardOptionJson (PMP.cs:1504-1517) owns no such field, so a real
+        // A foreign key: PmpStandardOptionJson (PMP.cs:1664-1677) owns no such field, so a real
         // typed round-trip drops it -- the same class of drop already proven for meta.json's
         // DefaultPreferredItems, below.
         FavoriteColor: "blue",
       },
-      // No `Priority` key at all: PmpMultiOptionJson.Priority is ALWAYS serialized (PMP.cs:1540-1541,
+      // No `Priority` key at all: PmpMultiOptionJson.Priority is ALWAYS serialized (PMP.cs:1697-1698,
       // no ShouldSerialize gate), so an option that omits it must still get `"Priority": 0` in the
       // golden -- `optionFromJson` (pmp.ts) already defaults `priority` to 0 for a source that omits it.
       {
@@ -112,7 +112,7 @@ function makeImcPmp(): Uint8Array {
     OnlyAttributes: false,
     Options: [
       { Name: "no tufts", Description: "", AttributeMask: 5 },
-      // ShouldSerializeIsDisableSubMod/AttributeMask (PMP.cs:1549-1550): IsDisableSubMod only
+      // ShouldSerializeIsDisableSubMod/AttributeMask (PMP.cs:1714-1715): IsDisableSubMod only
       // written when true; AttributeMask only written when !IsDisableSubMod -- so a disabled
       // sub-mod option must DROP its (foreign, here) AttributeMask entirely.
       {
@@ -160,16 +160,16 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
       SoundId: 0,
     });
     expect("AttributeAndSound" in imcGroup.DefaultEntry).toBe(false);
-    // The other three Imc-only group extras (PMP.cs:1426-1436) round-trip verbatim too, alongside
+    // The other three Imc-only group extras (PMP.cs:1536-1546) round-trip verbatim too, alongside
     // DefaultEntry -- all four are the genuinely untyped subtype extras `filteredRaw` (pmp.ts)
     // exists to preserve.
     expect(imcGroup.Identifier).toEqual({ PrimaryId: 1 });
     expect(imcGroup.AllVariants).toBe(false);
     expect(imcGroup.OnlyAttributes).toBe(false);
-    expect("Files" in imcOpt).toBe(false); // Imc options have no Files (PmpImcOptionJson, PMP.cs:1544-1551)
+    expect("Files" in imcOpt).toBe(false); // Imc options have no Files (PmpImcOptionJson, PMP.cs:1709-1716)
     // Every OTHER option (Standard or Imc alike) always regenerates Name/Description/Image, even
     // when the source omitted Image (PMPOptionJson's base ShouldSerialize* default true; only
-    // default_mod.json's IsDataContainerOnly override turns them off, PMP.cs:1496-1501) --
+    // default_mod.json's IsDataContainerOnly override turns them off, PMP.cs:1656-1661) --
     // confirmed empirically against the /resave golden (`[DVNO] Desert Years.pmp`'s Imc group and
     // `[DVNO] DMBX Shoes 1.pmp`'s group options both gain "Image": "").
     expect(imcOpt.Image).toBe("");
@@ -181,13 +181,13 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
     expect(multiGroup.Options[1].Priority).toBe(0);
 
     const meta = writtenMetaJson;
-    // meta.json is always regenerated from PMPMetaJson's flat, fully-typed field set (PMP.cs:1369-1381,
+    // meta.json is always regenerated from PMPMetaJson's flat, fully-typed field set (PMP.cs:1467-1488,
     // no extension-data capture), so a foreign key like Penumbra's own `DefaultPreferredItems` is
     // silently dropped by a real typed round-trip -- confirmed empirically (`[DVNO] DMBX Shoes
     // 1.pmp` /resave golden drops it).
     expect("DefaultPreferredItems" in meta).toBe(false);
     // Version.TryParse("3") fails (needs at least major.minor) -> falls back to "1.0"
-    // (WizardData.cs:1474-1475/:1494).
+    // (WizardData.cs:1493-1494/:1513).
     expect(meta.Version).toBe("1.0");
   });
 
@@ -205,8 +205,8 @@ describe("pmp manifest fidelity (Imc/Combining extras)", () => {
   });
 });
 
-describe("pmp group manifest drops foreign keys (PMPGroupJson, PMP.cs:1387-1408, no [JsonExtensionData])", () => {
-  // PMPGroupJson is fully typed and SelectedSettings is [JsonIgnore] (:1400) -- a real typed
+describe("pmp group manifest drops foreign keys (PMPGroupJson, PMP.cs:1495-1518, no [JsonExtensionData])", () => {
+  // PMPGroupJson is fully typed and SelectedSettings is [JsonIgnore] (:1508) -- a real typed
   // round-trip drops ANY key the class does not own, the same class of bug already proven for
   // meta.json's DefaultPreferredItems and an option's own foreign keys. Finding 5's fix
   // (`filteredRaw` in pmp.ts) replaced a blanket `...rawObj` spread -- which used to carry every

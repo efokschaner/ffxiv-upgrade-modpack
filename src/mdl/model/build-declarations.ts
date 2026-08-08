@@ -1,6 +1,6 @@
 // Vertex declaration rebuild from model usage, ported from the element-set
 // construction in xivModdingFramework's MakeUncompressedMdlFile (Mdl.cs:2590-2763;
-// element set/types :2614-2711, buffer-overflow/precision gate :2513-2542).
+// element set/types :2610-2707, buffer-overflow/precision gate :2509-2538).
 // Split, don't blend: this produces the structured VertexElement[][]; byte
 // serialization stays in serializeVertexDeclarations (geometry/declaration.ts).
 

@@ -28,7 +28,7 @@ describe("readTtmp2", () => {
     expect(allGroups(data)[0]!.options.map((o) => o.name)).toEqual(["A", "B"]);
   });
 
-  it("collapses a duplicate FullPath within one option last-write-wins (WizardData.cs:729-737)", () => {
+  it("collapses a duplicate FullPath within one option last-write-wins (WizardData.cs:735-743)", () => {
     const enc = new TextEncoder();
     const bytesA = new Uint8Array([1, 1, 1]);
     const bytesB = new Uint8Array([2, 2, 2]);

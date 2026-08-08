@@ -51,7 +51,7 @@ export function floatToHalf(value: number): number {
 
 /** float32 -> IEEE-754 binary16 by TRUNCATION toward zero (drop low mantissa bits, no
  *  rounding). Matches TexTools' model vertex writer, which packs via SharpDX `new Half()`
- *  (Mdl.cs:4117-4150 WriteVectorData / :4251-4256 UV1-UV2, :4271-4272 UV3) -- SharpDX
+ *  (Mdl.cs:4117-4150 WriteVectorData / :4247-4252 UV1-UV2, :4267-4268 UV3) -- SharpDX
  *  truncates, unlike .NET's
  *  round-to-nearest `(Half)`. Distinct from floatToHalf (RTNE), which the colorset path
  *  keeps. Verified byte-exact against the ConsoleTools /upgrade golden for a Half-format

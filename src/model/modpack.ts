@@ -60,12 +60,12 @@ export type RawUncompressedFile = Extract<
 export interface ModpackOption {
   name: string;
   /** `string | null`, because the TTMP path copies it verbatim end to end with no coalesce — load
-   *  (`wizOp.Description = o.Description`, WizardData.cs · FromWizardGroup · 663), export
-   *  (`Description = Description`, · WizardOptionEntry.ToModOption · 414) and write
+   *  (`wizOp.Description = o.Description`, WizardData.cs · FromWizardGroup · 669), export
+   *  (`Description = Description`, · WizardOptionEntry.ToModOption · 416) and write
    *  (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144) — and the manifest
    *  serializer includes nulls, so a null description survives a TexTools round-trip as a literal
    *  `"Description": null`. The PMP path is deliberately NOT symmetric: it coalesces at its own seam
-   *  (`op.Description = Description ?? ""`, WizardData.cs · WizardOptionEntry.ToPmpOption · 543-544),
+   *  (`op.Description = Description ?? ""`, WizardData.cs · WizardOptionEntry.ToPmpOption · 545-546),
    *  which `optionToJson` (src/container/pmp.ts) reproduces — so the model does not force a value
    *  here and flatten the TTMP side to match. */
   description: string | null;
@@ -73,10 +73,10 @@ export interface ModpackOption {
   priority: number;
   /** Mirrors `WizardOptionEntry.Selected` (WizardData.cs:283-323) — a plain `bool` field with no
    *  initializer, so `false` by default. NOT an exclusivity flag: the C# setter does IMC-only
-   *  mutual exclusion (:297-319) and nothing at all for Single groups (Single radio behaviour is a
+   *  mutual exclusion (:299-321) and nothing at all for Single groups (Single radio behaviour is a
    *  WPF binding, not a model invariant), so a Single group CAN legally carry several selected
    *  options. The only fixup either reader applies is the "none selected" backstop
-   *  (WizardData.cs:761-763 / :857-860), which never clamps a group that has more than one. */
+   *  (WizardData.cs:761-763 / :863-866), which never clamps a group that has more than one. */
   selected: boolean;
   files: Map<string, ModpackFile>; // keyed by gamePath, insertion order (mirrors C#'s
   // WizardStandardOptionData.Files = Dictionary<string, FileStorageInformation>, WizardData.cs:73)
@@ -97,16 +97,16 @@ export interface ModpackGroup {
   raw?: unknown; // opaque carry-through: full original PMP group JSON. Re-emitted verbatim.
 }
 
-/** Mirrors WizardPageEntry (reference/.../Mods/WizardData.cs · WizardPageEntry · 963-990). A `null`
+/** Mirrors WizardPageEntry (reference/.../Mods/WizardData.cs · WizardPageEntry · 974-1001). A `null`
  *  entry is deliberate and load-bearing: WizardData.FromPmp adds FromPMPGroup's result to
- *  page.Groups UNCONDITIONALLY at both its call sites (:1136, :1156), and that result is `null` for
+ *  page.Groups UNCONDITIONALLY at both its call sites (:1155, :1175), and that result is `null` for
  *  a zero-option group (FromPMPGroup:851-855). ClearNulls prunes them afterwards. The TTMP path
- *  never admits one — FromWizardModpackPage discards it at the call site (:986). */
+ *  never admits one — FromWizardModpackPage discards it at the call site (:997). */
 export interface ModpackPage {
   groups: (ModpackGroup | null)[];
 }
 // `WizardPageEntry.FolderPath` (WizardData.cs:978) has no field here. It is a per-COMPUTATION memo
-// (`WizardData.cs:1394` writes it, `:1239`/`:1462`/`:1334` null it before every recompute), not
+// (`WizardData.cs:1394` writes it, `:1258`/`:1481`/`:1353` null it before every recompute), not
 // model state a caller ever reads back — `optionPrefixes` (src/container/option-prefix.ts) owns the
 // only consumer, `makePagePrefix`, and keeps its own local memo across its own two passes instead
 // (code review, 2026-08-05: a `ModpackPage.folderPath` field existed here briefly, but
@@ -116,11 +116,11 @@ export interface ModpackPage {
 
 export interface ModpackMeta {
   // Name/Author/Description/Url are `string | null`: WizardMetaEntry.FromTtmp assigns all four
-  // verbatim from the `.mpl` (WizardData.cs · WizardMetaEntry.FromTtmp · 1052-1069) and
-  // WriteWizardPack passes them straight back out (· WriteWizardPack · 1332-1346). The `= ""` field
-  // initializers on WizardMetaEntry (:1015-1020) are OVERWRITTEN by that load, so they give no
-  // protection, and `ClearNulls()` (:1234-1266, called at :1334) prunes pages/groups/options and
-  // nulls only the `FolderPath` strings (:1239, :1254) — never one of these. So a null spelled in
+  // verbatim from the `.mpl` (WizardData.cs · WizardMetaEntry.FromTtmp · 1063-1080) and
+  // WriteWizardPack passes them straight back out (· WriteWizardPack · 1351-1365). The `= ""` field
+  // initializers on WizardMetaEntry (:1026-1031) are OVERWRITTEN by that load, so they give no
+  // protection, and `ClearNulls()` (:1253-1285, called at :1353) prunes pages/groups/options and
+  // nulls only the `FolderPath` strings (:1258, :1273) — never one of these. So a null spelled in
   // the source survives to serialization.
   name: string | null;
   author: string | null;
@@ -178,7 +178,7 @@ export function allPages(data: ModpackData): ModpackPage[] {
 }
 
 /** Every non-null group across every page, in page order — the order WritePmp's own loops use
- *  (WizardData.cs:1525-1561, :1583-1600). Nulls are skipped rather than thrown on: ClearNulls has
+ *  (WizardData.cs:1525-1561, :1602-1619). Nulls are skipped rather than thrown on: ClearNulls has
  *  already removed them from any page this walks (see src/container/clear-nulls.ts). */
 export function allGroups(data: ModpackData): ModpackGroup[] {
   return allPages(data).flatMap((p) =>

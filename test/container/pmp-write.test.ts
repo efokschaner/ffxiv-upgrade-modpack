@@ -177,11 +177,11 @@ describe("writePmp round-trip", () => {
   // A non-empty FileSwaps map is preserved verbatim through a read -> write round trip: this is
   // distinct from (and not covered by) the golden-harness carve-out in upgrade-archive-diff.ts,
   // which only confirms "golden empty, ours non-empty" -- TexTools always writes `{}`
-  // (PopulatePmpStandardOption, PMP.cs:873-875), so the golden carries zero signal on whether the
+  // (PopulatePmpStandardOption, PMP.cs:966-968), so the golden carries zero signal on whether the
   // VALUE we emit is the source's own swaps or something invented. This asserts the exact
   // key/value pairs -- including the backslashed value form Penumbra writes -- survive unchanged,
   // for both an `optionToJson` call site that includes meta (a group option) and one that doesn't
-  // (default_mod.json, PMP.cs:1499-1501). See
+  // (default_mod.json, PMP.cs:1659-1661). See
   // docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md §3 and
   // src/container/pmp.ts:437 (`base.FileSwaps = o.fileSwaps`).
   it("carries a non-empty FileSwaps map through read -> write unchanged", () => {
@@ -425,7 +425,7 @@ describe("writePmp model-building fallback (no raw)", () => {
     expect(byPath.get("chara/equipment/red.tex")).toEqual(redBytes);
   });
 
-  // Covers the absent-file skip in optionToJson's Files-building loop (pmp.ts, PMP.cs:883-888) on
+  // Covers the absent-file skip in optionToJson's Files-building loop (pmp.ts, PMP.cs:976-981) on
   // the model-building (non-`raw`) branch — every other absent-file test in this file goes through
   // the `raw`-carry branch instead, because a PMP source (unlike this modeled, no-`raw` data)
   // always has one.
@@ -434,7 +434,7 @@ describe("writePmp model-building fallback (no raw)", () => {
     const redOption = allGroups(data)[1]!.options[0]!;
     redOption.files.set("chara/equipment/missing.tex", {
       storage: FileStorageType.RawUncompressed,
-      // no `data` -> absent (PMP.cs:883-888)
+      // no `data` -> absent (PMP.cs:976-981)
     });
 
     const grp = writtenMeta(readZip(writePmp(data))).Groups[0]!;
@@ -504,9 +504,9 @@ describe("writePmp model-building fallback (no raw)", () => {
   });
 });
 
-// Port of WizardData.WritePmp's ExtraFiles copy-back (WizardData.cs:1477-1488), the write side of
-// the readPmp ExtraFiles scan (PMP.cs:213-215) tested in pmp-read.test.ts.
-describe("writePmp ExtraFiles (WizardData.cs:1477-1488)", () => {
+// Port of WizardData.WritePmp's ExtraFiles copy-back (WizardData.cs:1496-1507), the write side of
+// the readPmp ExtraFiles scan (PMP.cs:278-280) tested in pmp-read.test.ts.
+describe("writePmp ExtraFiles (WizardData.cs:1496-1507)", () => {
   const enc = new TextEncoder();
   const gamePath = "chara/equipment/e0001/model/c0101e0001_top.mdl";
   // The lone Default-group option's regenerated zip path ("default/" + gamePath, option-prefix.ts).
@@ -561,7 +561,7 @@ describe("writePmp ExtraFiles (WizardData.cs:1477-1488)", () => {
   });
 });
 
-describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", () => {
+describe("writePmp payload naming collision guard (PMP.cs:1001-1003 / :957-961)", () => {
   // Regenerated names should only ever collide (after windowsPathKey's NTFS-equivalent
   // normalization) for IDENTICAL content — resolveDuplicates content-dedups identical bytes onto
   // one shared path already, so two DIFFERENT zip-path strings colliding via windowsPathKey
@@ -651,11 +651,11 @@ describe("writePmp payload naming collision guard (PMP.cs:908-910 / :864-868)", 
   });
 });
 
-describe("writePmp default-mod absorption searches DataPages order, not just the real groups (WizardData.cs:1118-1138/:1553-1578)", () => {
+describe("writePmp default-mod absorption searches DataPages order, not just the real groups (WizardData.cs:1137-1157/:1572-1597)", () => {
   // The absorption search must consider the SYNTHESIZED Default group (data.pages[0]'s sole group,
   // built from default_mod.json) ahead of any REAL group, because FromPmp unshifts it onto the FRONT of
   // DataPages whenever default_mod.json is non-empty and hardcodes its Name/Options[0].Name to the
-  // literal "Default" (WizardData.cs:1118-1138) -- so it ALWAYS wins the search whenever it
+  // literal "Default" (WizardData.cs:1137-1157) -- so it ALWAYS wins the search whenever it
   // survives. A pack with BOTH a non-empty default_mod.json AND a real "Default" group (one option,
   // named "Default") used to search only the real groups, absorbing the REAL group's data into
   // default_mod.json while the synthesized Default option's own (already-written) payload member
@@ -739,11 +739,11 @@ describe("writePmp default-mod absorption searches DataPages order, not just the
   });
 });
 
-describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () => {
-  // WritePmp trims THREE places: `g.Name = g.Name.Trim();` (:1510, mutating every group in place,
+describe("writePmp trims group/option names (WizardData.cs:1529/:957/:939)", () => {
+  // WritePmp trims THREE places: `g.Name = g.Name.Trim();` (:1529, mutating every group in place,
   // in the SAME loop that builds `allFiles`/`identifiers` -- BEFORE the default-mod absorption
-  // search runs, :1553-1578), then `pg.Name = (Name ?? "").Trim();` (:946) and
-  // `option.Name = option.Name.Trim();` (:928), both inside ToPmpGroup. Because :1510 mutates the
+  // search runs, :1572-1597), then `pg.Name = (Name ?? "").Trim();` (:957) and
+  // `option.Name = option.Name.Trim();` (:939), both inside ToPmpGroup. Because :1529 mutates the
   // group's Name in place ACROSS ALL groups before the absorption search ever looks at it, the
   // search's `g.Name == "Default"` comparison sees the TRIMMED name -- so a real group literally
   // named "Default " (trailing space) IS absorbed into default_mod.json, a structural (not just
@@ -812,7 +812,7 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
     });
   });
 
-  it("trims leading/trailing whitespace off the emitted group Name and option Name (WizardData.cs:946/928)", () => {
+  it("trims leading/trailing whitespace off the emitted group Name and option Name (WizardData.cs:957/928)", () => {
     // "  Hair  " does not match "Default"/"Default Group" even trimmed, so it is written as its own
     // meta.Groups entry rather than absorbed -- exercising the emitted-Name trim in isolation.
     const meta = writtenMeta(
@@ -826,12 +826,12 @@ describe("writePmp trims group/option names (WizardData.cs:1510/:946/:928)", () 
   });
 });
 
-describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578-604)", () => {
+describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:580-606)", () => {
   // TexTools never carries a source DefaultSettings value through verbatim: ToPmpGroup writes
-  // `pg.DefaultSettings = Selection` (:949), and `Selection` is a GETTER recomputed from each
+  // `pg.DefaultSettings = Selection` (:960), and `Selection` is a GETTER recomputed from each
   // option's `Selected` flag. These cases drive that getter directly off the model's `selected`
-  // flags; the READ-side derivation that populates them (FromPMPGroup :805-813 plus the "none
-  // selected" backstop :857-860) is pinned separately by pmp-selected.test.ts.
+  // flags; the READ-side derivation that populates them (FromPMPGroup :811-819 plus the "none
+  // selected" backstop :863-866) is pinned separately by pmp-selected.test.ts.
   function modeledGroup(
     selectionType: "Single" | "Multi",
     selected: boolean[],
@@ -891,24 +891,24 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
     return grp.DefaultSettings;
   }
 
-  it("Single -> the index of the selected option (:589 `Options.IndexOf(op)`)", () => {
+  it("Single -> the index of the selected option (:591 `Options.IndexOf(op)`)", () => {
     const out = writePmp(modeledGroup("Single", [false, false, true]));
     expect(readGroupDefaultSettings(out)).toBe(2);
   });
 
-  it("Single with nothing selected -> 0 (:585-588 `FirstOrDefault` == null)", () => {
+  it("Single with nothing selected -> 0 (:587-590 `FirstOrDefault` == null)", () => {
     // Neither reader can normally leave a Single group in this state (both apply the "none
     // selected" backstop), but the getter's own null branch returns 0 regardless.
     const out = writePmp(modeledGroup("Single", [false, false]));
     expect(readGroupDefaultSettings(out)).toBe(0);
   });
 
-  it("Single with several selected -> the FIRST one wins; the getter does not clamp (:584)", () => {
+  it("Single with several selected -> the FIRST one wins; the getter does not clamp (:586)", () => {
     const out = writePmp(modeledGroup("Single", [false, true, true]));
     expect(readGroupDefaultSettings(out)).toBe(1);
   });
 
-  it("Multi -> a bitmask ORing bit i per selected option (:593-602)", () => {
+  it("Multi -> a bitmask ORing bit i per selected option (:595-604)", () => {
     const out = writePmp(modeledGroup("Multi", [true, false, true, true]));
     expect(readGroupDefaultSettings(out)).toBe(0b1101);
   });
@@ -919,8 +919,8 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
   });
 
   // docs/TEXTOOLS_BUGS.md #17, the WRITE half. `Selection`'s `var bit = 1UL << i;`
-  // (WizardData.cs:598) masks its shift count to the low 6 bits on a 64-bit operand exactly as
-  // `FromPMPGroup`'s read-side `1UL << idx` (:811) does, so option 64 contributes bit 0.
+  // (WizardData.cs:600) masks its shift count to the low 6 bits on a 64-bit operand exactly as
+  // `FromPMPGroup`'s read-side `1UL << idx` (:817) does, so option 64 contributes bit 0.
   //
   // The shape is chosen so masked and unmasked genuinely DIFFER. For most shapes they coincide:
   // option `i & 63` is itself in range and usually already contributes that bit, so ORing it twice
@@ -936,23 +936,23 @@ describe("writePmp regenerates DefaultSettings from Selection (WizardData.cs:578
   });
 
   it("the source group's own defaultSettings is ignored -- Selection is regenerated from the flags", () => {
-    // ToPmpGroup assigns `pg.DefaultSettings = Selection` (:949), never the value it read. A legacy
-    // `-1` source (CustomUInt64Converter's ulong.MaxValue shim, PMP.cs:1558-1571) must not survive.
+    // ToPmpGroup assigns `pg.DefaultSettings = Selection` (:960), never the value it read. A legacy
+    // `-1` source (CustomUInt64Converter's ulong.MaxValue shim, PMP.cs:1723-1736) must not survive.
     const out = writePmp(modeledGroup("Multi", [false, true, false], -1));
     expect(readGroupDefaultSettings(out)).toBe(0b010);
   });
 });
 
-describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:1246-1263/:1583-1600)", () => {
-  // ClearNulls' group-level prune (WizardData.cs:1246-1263, `if (g == null || !g.HasData)`) reduces
+describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:1265-1282/:1602-1619)", () => {
+  // ClearNulls' group-level prune (WizardData.cs:1265-1282, `if (g == null || !g.HasData)`) reduces
   // to a purely STRUCTURAL check on our load paths -- WizardOptionEntry.HasData's Read-mode
-  // short-circuit (WizardData.cs:257-266) means a group with content-FREE options still survives (see
+  // short-circuit (WizardData.cs:259-268) means a group with content-FREE options still survives (see
   // option-prefix.ts's module header comment and option-prefix.test.ts case 8); only a group with
   // literally ZERO options is ever pruned. "Empty" (page 1) models that: an authored group with no
   // options at all. Since it was the only occupant of page 1, the whole page is pruned too
-  // (WizardData.cs:1234-1244), leaving 2 surviving pages (0 and 2's content). WritePmp's own `Page`
+  // (WizardData.cs:1253-1263), leaving 2 surviving pages (0 and 2's content). WritePmp's own `Page`
   // counter only increments per DataPages entry that contributed a WRITTEN group
-  // (WizardData.cs:1583-1600), so "Gamma" (source page 2) must be renumbered to Page 1, not 2, and
+  // (WizardData.cs:1602-1619), so "Gamma" (source page 2) must be renumbered to Page 1, not 2, and
   // "Empty" (zero options -> pruned) must never become a group_NNN.json.
   function buildData(): ModpackData {
     const group = (
@@ -1035,7 +1035,7 @@ describe("writePmp regenerates Page from ClearNulls-pruned pages (WizardData.cs:
   });
 });
 
-describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mode short-circuit, WizardData.cs:257-266)", () => {
+describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mode short-circuit, WizardData.cs:259-268)", () => {
   // A group whose lone option carries no files/fileSwaps/manipulations at all (e.g. because EVERY
   // one of its raw Files entries was canImport-rejected) is NOT pruned by TexTools: it is written as
   // its own group_NNN.json with an empty "Files": {}. Pruning it would port WizardOptionEntry.
@@ -1092,9 +1092,9 @@ describe("writePmp keeps a content-free group (WizardOptionEntry.HasData Read-mo
   });
 });
 
-describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
+describe("writePmp absent-file drop (PMP.cs:976-981)", () => {
   // TexTools' writer skips a file whose RealPath does not exist, which bypasses BOTH the payload
-  // write (:910) and opt.Files.Add (:914). The written pack therefore has neither.
+  // write (:1003) and opt.Files.Add (:1007). The written pack therefore has neither.
   const enc = new TextEncoder();
   const present = "chara/equipment/e0001/model/c0101e0001_top.mdl";
   const second = "chara/equipment/e0002/model/c0101e0002_top.mdl";
@@ -1102,7 +1102,7 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
   const presentZipPath = `default/${present}`;
 
   // `secondMemberPresent` toggles whether `second`'s zip member is written: false reproduces the
-  // absent-file case (PMP.cs:883-888), true is the all-present control. The source Files values
+  // absent-file case (PMP.cs:976-981), true is the all-present control. The source Files values
   // use an arbitrary "on/..." prefix to prove the WRITER no longer reads it (the regenerated
   // output uses "default/...", not "on/...").
   function buildPmpFixture(secondMemberPresent: boolean): Uint8Array {
@@ -1165,7 +1165,7 @@ describe("writePmp absent-file drop (PMP.cs:883-888)", () => {
   it("drops only the absent file's Files key inside a group option, leaving the sibling option and every other key untouched", () => {
     // Covers the prune firing on a group_*.json option (the tests above only exercise the
     // default_mod.json path) — a multi-option group where only ONE option holds an absent file
-    // (PMP.cs:883-888).
+    // (PMP.cs:976-981).
     const optAFile = "chara/equipment/e0003/model/c0101e0003_top.mdl";
     const optBPresentFile = "chara/equipment/e0004/model/c0101e0004_top.mdl";
     const optBAbsentFile = "chara/equipment/e0005/model/c0101e0005_top.mdl";

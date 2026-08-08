@@ -55,7 +55,7 @@ export function fromRaw(rm: ReadMdl): TTModel {
   // TTModel.cs:2728 calls the wrapper ModelModifiers.CalculateTangents (ModelModifiers.cs:1871-1912),
   // which dispatches CalculateTangentsForMesh per group (ModelModifiers.cs:2122-2273) - that per-group
   // call is what we port below. The wrapper's extra steps are all inert on a fresh FromRaw model: its
-  // ApplyShapes(model, [], true) no-ops because ActiveShapes is still the default empty set (:2459-2486);
+  // ApplyShapes(model, [], true) no-ops because ActiveShapes is still the default empty set (:2479-2506);
   // AnyMissingTangentData is always true because Tangent is never populated here (see below), so the
   // wrapper never early-returns; and UVState is SE_Space (set at TTModel.cs:2726), so its guard never
   // throws. The fast path leaves base binormals untouched and copies them to shape vertices (byte-neutral

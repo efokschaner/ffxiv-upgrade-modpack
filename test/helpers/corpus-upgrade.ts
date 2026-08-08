@@ -424,7 +424,7 @@ export const EXPECTED_PACK_DIAGNOSTICS: ReadonlyMap<
     // scripts/generate-synthetics/build-synthetic-hair-transform-failure.ts — one loose hair
     // normal/specular pair whose normal is a well-formed 40x40 A8R8G8B8 texture. The NPOT pre-resize
     // (EndwalkerUpgrade.cs:1195-1198) rounds 40 down to 32 (IOUtil.cs:905-911), so MergePixelData's
-    // post-resize `< 64` size guard (Tex.cs:656-660) throws and EndwalkerUpgrade.cs:1498-1501's
+    // post-resize `< 64` size guard (Tex.cs:655-659) throws and EndwalkerUpgrade.cs:1498-1501's
     // swallow fires exactly once. (NOT a truncated .tex — see that builder's header.) ConsoleTools
     // /upgrade swallows identically (verified 2026-08-02), so the pack's BYTES match the golden and
     // this diagnostic is its only recorded diff.
@@ -583,12 +583,12 @@ export function registerUpgradeCheck(pack: string): void {
       //  - CONTENT is still compared, by `diffUpgrade` above, keyed by gamePath — the assertion the
       //    harness spec designed for this branch (2026-07-04-upgrade-golden-harness-design.md §4.3).
       //  - The TRANSFORM is asserted directly below, mirroring the very predicate the oracle
-      //    branches on when it declines to write (ModpackUpgrader.cs · AnyChanges · 25-49). This is
+      //    branches on when it declines to write (ModpackUpgrader.cs · AnyChanges · 28-52). This is
       //    STRICTER than diffUpgrade in one way that matters: it is keyed per OPTION, so a file
       //    moving between options is caught where diffUpgrade's whole-pack multiset flattens it away.
       //  - WRITER PARITY is covered by registerResaveCheck (corpus-resave.ts) against a real
       //    ConsoleTools /resave golden. /upgrade and /resave are the same call minus the transform
-      //    (Program.cs:204-211 vs ModpackUpgrader.cs:58 + :212-219), so when /upgrade no-ops the
+      //    (Program.cs:204-211 vs ModpackUpgrader.cs:63 + :218-247), so when /upgrade no-ops the
       //    /resave golden IS what /upgrade would have written. The two harnesses stay INDEPENDENT:
       //    this branch deliberately does not consult /resave's cache or its error markers.
       //
@@ -610,7 +610,7 @@ export function registerUpgradeCheck(pack: string): void {
       // biggest corpus pack) is only computed on THIS branch, because it is only ever consumed by
       // the `diffArchives` call below: on the no-op branch `diffArchives` does not run at all (see
       // the comment above), so there is nothing here for it to gate. Gated on the INPUT pack
-      // carrying FileSwaps, not on `ours` or the golden — PopulatePmpStandardOption (PMP.cs:873-875)
+      // carrying FileSwaps, not on `ours` or the golden — PopulatePmpStandardOption (PMP.cs:966-968)
       // has already destroyed the golden's swaps by the time we'd read it here, so gating on the
       // golden would never fire. See the FileSwap-preservation spec, §5.2.
       let archive: FileDiff[] = [];

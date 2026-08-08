@@ -19,7 +19,7 @@
 // fail-loud condition for consumers, never a pass-through.
 //
 // SCOPE: exhaustive over every root in item_sets.db whose primary type Imc.UsesImc accepts
-// (Imc.cs · UsesImc · 74-85) -- equipment, accessory, weapon, monster, demihuman -- covering
+// (Imc.cs · UsesImc · 80-91) -- equipment, accessory, weapon, monster, demihuman -- covering
 // both ImcType.Set and ImcType.NonSet files, not just the roots a corpus .meta references.
 export const IMC_TABLE: Record<string, number[][]> = {
   "chara/accessory/a0001/a0001_ear.meta": [[1, 0, 255, 3, 0, 0], [1, 0, 255, 3, 0, 0], [2, 0, 255, 3, 0, 0], [3, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [1, 0, 255, 3, 0, 0], [5, 0, 255, 3, 0, 0], [6, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0], [0, 0, 255, 3, 0, 0]],

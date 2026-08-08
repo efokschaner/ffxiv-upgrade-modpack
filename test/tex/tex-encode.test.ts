@@ -47,7 +47,7 @@ describe("tex encode: uncompressed", () => {
   });
 
   it("matches a faithful port of CreateFast8888DDS across sizes (oracle-free parity)", () => {
-    // Independent transcription of xivModdingFramework's CreateFast8888DDS mip loop (Tex.cs:823),
+    // Independent transcription of xivModdingFramework's CreateFast8888DDS mip loop (Tex.cs:822),
     // written to mirror the C# integer offsets literally. Its agreement with generateMipmaps is the
     // parity check that replaces the old captured-oracle fixture (design spec §6): the real filter is
     // a deterministic decimation, not Nvtt, so no oracle capture is needed.

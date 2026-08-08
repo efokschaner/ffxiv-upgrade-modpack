@@ -4,7 +4,7 @@ import { allGroups } from "../../src/model/modpack";
 import { makePmpWithGroup } from "../helpers/make-packs";
 
 describe("readPmp selected", () => {
-  // WizardData.cs:805-808 — Single reads DefaultSettings as an INDEX.
+  // WizardData.cs:811-814 — Single reads DefaultSettings as an INDEX.
   it("Single: DefaultSettings is an index", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 1, optionCount: 3 }),
@@ -16,7 +16,7 @@ describe("readPmp selected", () => {
     ]);
   });
 
-  // WizardData.cs:857-860 — out of range selects nothing, so the backstop takes option 0.
+  // WizardData.cs:863-866 — out of range selects nothing, so the backstop takes option 0.
   it("Single: out-of-range DefaultSettings backstops to option 0", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 9, optionCount: 3 }),
@@ -28,7 +28,7 @@ describe("readPmp selected", () => {
     ]);
   });
 
-  // WizardData.cs:809-813 — Multi reads it as a bitmask, and has NO backstop (Single only).
+  // WizardData.cs:815-819 — Multi reads it as a bitmask, and has NO backstop (Single only).
   it("Multi: DefaultSettings is a bitmask", () => {
     const data = readPmp(
       makePmpWithGroup({
@@ -55,7 +55,7 @@ describe("readPmp selected", () => {
     ]);
   });
 
-  // CustomUInt64Converter (PMP.cs:1558-1571) reinterprets a negative JSON number as its 64-bit
+  // CustomUInt64Converter (PMP.cs:1723-1736) reinterprets a negative JSON number as its 64-bit
   // two's-complement UNSIGNED value, so -1 is 2^64-1: every Multi bit set.
   it("Multi: a negative DefaultSettings is reinterpreted as unsigned", () => {
     const data = readPmp(
@@ -68,7 +68,7 @@ describe("readPmp selected", () => {
     ]);
   });
 
-  // docs/TEXTOOLS_BUGS.md #17 — C#'s `1UL << idx` (WizardData.cs:811) masks its shift count to 6
+  // docs/TEXTOOLS_BUGS.md #17 — C#'s `1UL << idx` (WizardData.cs:817) masks its shift count to 6
   // bits, so option 64 tests bit 0 and ALIASES option 0. With DefaultSettings = 1 only bit 0 is
   // set, and options 0 and 64 must BOTH come back selected (65 aliases bit 1, unset here, so it
   // does not). An unmasked `1n << 64n` would be 2^64 and AND to zero, deselecting option 64.
@@ -83,10 +83,10 @@ describe("readPmp selected", () => {
     expect(selected[65]).toBe(false);
   });
 
-  // The zero-option group never reaches the WizardData.cs:857-860 backstop at all: it is pruned
-  // by ClearNulls (WizardData.cs:1249) before allGroups ever walks it, so there is no options[0]!
+  // The zero-option group never reaches the WizardData.cs:863-866 backstop at all: it is pruned
+  // by ClearNulls (WizardData.cs:1268) before allGroups ever walks it, so there is no options[0]!
   // to crash on.
-  it("a zero-option group is pruned from the wizard model (ClearNulls, WizardData.cs:1249)", () => {
+  it("a zero-option group is pruned from the wizard model (ClearNulls, WizardData.cs:1268)", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 0 }),
     );
@@ -97,8 +97,8 @@ describe("readPmp selected", () => {
     expect(allGroups(data)[0]!.name).toBe("Default");
   });
 
-  // WizardData.cs:1118-1138 — FromPmp's synthesized Default group is Type "Single" with one
-  // option and DefaultSettings at its 0 default, so FromPMPGroup's index match (:807) selects it.
+  // WizardData.cs:1137-1157 — FromPmp's synthesized Default group is Type "Single" with one
+  // option and DefaultSettings at its 0 default, so FromPMPGroup's index match (:813) selects it.
   it("selects the synthesized Default group's sole option", () => {
     const data = readPmp(
       makePmpWithGroup({ Type: "Single", DefaultSettings: 0, optionCount: 1 }),

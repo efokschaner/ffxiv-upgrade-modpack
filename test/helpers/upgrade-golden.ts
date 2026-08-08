@@ -59,7 +59,7 @@ function upgradeTmpDir(): string {
 }
 
 /** Run ConsoleTools /upgrade on in-memory bytes; returns golden bytes, or null on a no-op
- * (ConsoleTools writes NO output file when there are no changes — ModpackUpgrader.cs:212). */
+ * (ConsoleTools writes NO output file when there are no changes — ModpackUpgrader.cs:218). */
 function upgradeViaConsoleTools(
   name: string,
   bytes: Uint8Array,

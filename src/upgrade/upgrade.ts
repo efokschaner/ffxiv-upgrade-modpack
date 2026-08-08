@@ -276,12 +276,12 @@ export function updateSkinPaths(option: ModpackOption): void {
 
 /**
  * Round 6 partials (ModpackUpgrader.cs:154-189, the includePartials block). Runs UpdateSkinPaths
- * over every option first (ForAllOptions, :158), then the third round (:162-182): per option,
+ * over every option first (ForAllOptions, :164), then the third round (:168-188): per option,
  * `contained` = `unused` (globally-unreferenced textures, {@link computeUnusedTextures}) intersected
- * with that option's own files (:171, `o.StandardData.Files.ContainsKey(x)`), fed to the
+ * with that option's own files (:177, `o.StandardData.Files.ContainsKey(x)`), fed to the
  * hair/tail/ear rescue and the accessory rescue (both `EndwalkerUpgrade.UpdateUnclaimedHairTextures`
- * calls fused into the C#'s single wrapper, :172/:1324-1330 — see src/upgrade/unclaimed-hair.ts), then
- * `UpdateEyeMask` (:174-177), which ports the full control flow including the ImageSharp pixel
+ * calls fused into the C#'s single wrapper, :178/:1324-1330 — see src/upgrade/unclaimed-hair.ts), then
+ * `UpdateEyeMask` (:180-183), which ports the full control flow including the ImageSharp pixel
  * conversion (`src/upgrade/eye-mask.ts`, `convertEyeMaskToDiffuse`).
  */
 function partials(
@@ -300,7 +300,7 @@ function partials(
   for (const group of allGroups(data)) {
     for (const option of group.options) {
       // ModpackUpgrader.cs:177: `unusedTextures.Where(x => o.StandardData.Files.ContainsKey(x))`.
-      // Snapshotted here (== the C# `.ToList()` at :172) for the hair/accessory calls.
+      // Snapshotted here (== the C# `.ToList()` at :178) for the hair/accessory calls.
       const contained = new Set([...unused].filter((t) => option.files.has(t)));
       updateUnclaimedHairTextures(
         option,
@@ -452,11 +452,11 @@ export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
     const out = cloneModpack(data);
     // Pre-round (ModpackUpgrader.cs:89): resolve split Hair-shader highlight/visibility options
     // BEFORE round 1, ungated by includePartials. Its throws propagate out of upgradeModpack — the
-    // C# pre-round sits outside the per-option try/catch that wraps round 1 (:97-116).
+    // C# pre-round sits outside the per-option try/catch that wraps round 1 (:103-122).
     resolveHighlightOptionsAndMashupHair(out);
     // Pass 1 (ModpackUpgrader.cs:94-126): material + metadata per option; collect
     // texture-upgrade targets into a single first-wins-deduped map, and every option's `.tex`
-    // keys into `allTextures` (:108-109).
+    // keys into `allTextures` (:114-115).
     const targets = new Map<string, UpgradeInfo>();
     const allTextures = new Set<string>();
     for (const group of allGroups(out)) {

@@ -14,12 +14,12 @@ export interface TtmpModOptionJson {
   // NULLABLE all the way to serialization. `ModOptionJson.Description` (ModPackJson.cs ·
   // ModOptionJson · 159-198) is an uninitialized C# `string`, so an absent key deserializes to
   // `null`; nothing coalesces it thereafter — load copies it verbatim (`wizOp.Description =
-  // o.Description`, WizardData.cs · FromWizardGroup · 663), TTMP export copies it verbatim
-  // (`Description = Description`, · WizardOptionEntry.ToModOption · 414) and TTMPWriter copies it
+  // o.Description`, WizardData.cs · FromWizardGroup · 669), TTMP export copies it verbatim
+  // (`Description = Description`, · WizardOptionEntry.ToModOption · 416) and TTMPWriter copies it
   // verbatim again (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144). With
   // Newtonsoft's default NullValueHandling.Include (see the write-view note below) that `null`
   // reaches the output `.mpl` as an explicit `null`. Only the PMP path coalesces, and it does so at
-  // its own seam (`op.Description = Description ?? ""`, WizardData.cs · ToPmpOption · 543-544).
+  // its own seam (`op.Description = Description ?? ""`, WizardData.cs · ToPmpOption · 545-546).
   Description: string | null;
   ImagePath: string;
   ModsJsons: TtmpModsJson[];
@@ -45,10 +45,10 @@ export interface ModPackJson {
   // Name/Author/Description/Url are NULLABLE for the same reason as ModOptionJson.Description
   // above: uninitialized C# `string` members of `ModPackJson` (ModPackJson.cs · ModPackJson ·
   // 24-118), read verbatim into WizardMetaEntry (WizardData.cs · WizardMetaEntry.FromTtmp ·
-  // 1052-1069 — the `= ""` field initializers at :1015-1020 are OVERWRITTEN by those assignments,
-  // so they offer no protection), written back verbatim (· WriteWizardPack · 1332-1346; the
-  // `ClearNulls()` at :1334 prunes empty pages/groups/options and touches no string but
-  // `FolderPath`, :1239/:1254), and
+  // 1063-1080 — the `= ""` field initializers at :1026-1031 are OVERWRITTEN by those assignments,
+  // so they offer no protection), written back verbatim (· WriteWizardPack · 1351-1365; the
+  // `ClearNulls()` at :1353 prunes empty pages/groups/options and touches no string but
+  // `FolderPath`, :1258/:1273), and
   // emitted as explicit `null` by Newtonsoft's default NullValueHandling.Include.
   Name: string | null;
   Author: string | null;

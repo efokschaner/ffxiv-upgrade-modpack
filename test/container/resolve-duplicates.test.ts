@@ -232,9 +232,9 @@ describe("resolveDuplicates", () => {
   });
 
   // INTENTIONAL DIVERGENCE (docs/superpowers/specs/2026-07-18-pmp-fileswap-preservation-design.md):
-  // TexTools merges FileSwaps into Files as dataless placeholders (PMP.cs:1104-1137) which burn an
+  // TexTools merges FileSwaps into Files as dataless placeholders (PMP.cs:1202-1235) which burn an
   // idx on the zero-hash path once two of them collide, then destroys the swaps on write
-  // (PMP.cs:873-875, docs/TEXTOOLS_BUGS.md #10). We preserve the swaps instead, so they never reach
+  // (PMP.cs:966-968, docs/TEXTOOLS_BUGS.md #10). We preserve the swaps instead, so they never reach
   // this function's dedup at all. These two tests pin that -- swaps contribute NO entries and burn
   // NO idx -- and replace two earlier tests that pinned the old fail-loud throw.
   it("ignores FileSwaps entirely: they contribute no entries and burn no idx", () => {

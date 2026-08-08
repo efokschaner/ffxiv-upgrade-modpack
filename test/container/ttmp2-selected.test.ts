@@ -26,7 +26,7 @@ describe("readTtmp2 selected", () => {
     ]);
   });
 
-  // WizardData.cs:668 copies verbatim and the :755-757 backstop only fires when ZERO are
+  // WizardData.cs:674 copies verbatim and the :761-763 backstop only fires when ZERO are
   // selected — a Single group with several checked stays several. Guards against inventing
   // an exclusivity invariant the C# model does not have.
   it("does NOT clamp a Single group with multiple IsChecked", () => {
@@ -47,7 +47,7 @@ describe("readTtmp2 selected", () => {
     expect(allGroups(data).map((g) => g.name)).toEqual(["Real"]);
   });
 
-  // WizardData.cs:1218-1221 — FromSimpleTtmp synthesizes its fake option with IsChecked = true.
+  // WizardData.cs:1237-1240 — FromSimpleTtmp synthesizes its fake option with IsChecked = true.
   it("marks the synthesized simple-pack option selected", () => {
     const data = readTtmp2(makeTtmp2Simple().bytes);
     expect(allGroups(data)[0]!.options.map((o) => o.selected)).toEqual([true]);

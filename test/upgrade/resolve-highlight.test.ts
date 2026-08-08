@@ -200,7 +200,7 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
     );
   });
 
-  it("falls through to repathHairMashups for material-only mashup hair (:348-353) instead of throwing", () => {
+  it("falls through to repathHairMashups for material-only mashup hair (:376-381) instead of throwing", () => {
     // No badOptions (option holds neither texture of the pair) and no containers (no option
     // holds either texture): the material-only mashup-hair branch now calls repathHairMashups
     // (src/upgrade/repath-hair-mashups.ts, tested independently in
@@ -233,7 +233,7 @@ describe("resolveHighlightOptionsAndMashupHair", () => {
     // sole container). A guarded stage-3 loop would `continue` past pair 2 for A (it holds
     // neither texture of that pair); the faithful NO-guard loop processes it anyway.
     //
-    // missingTex = hasMask ? pair.normal : pair.mask (ModpackUpgrader.cs:365) depends ONLY on
+    // missingTex = hasMask ? pair.normal : pair.mask (ModpackUpgrader.cs:393) depends ONLY on
     // hasMask, not hasNorm. For pair 2 against A: hasMask = A.files.has(M2) = false (A has
     // neither), so missingTex resolves to pair2.mask (M2) regardless of hasNorm — the formula
     // never even inspects whether A already "has" N2. So the cross-pair staple lands on M2, not

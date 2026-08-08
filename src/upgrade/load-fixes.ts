@@ -1,7 +1,7 @@
 // TexTools' per-file LOAD fix, ported from WizardData.FromWizardGroup's inner ModsJsons loop, the
 // whole body guarded by `if (File.Exists(finfo.RealPath))` (WizardData.cs:691-744) — both the
-// `.meta`/`.rgsp` branch (:685-698, this module ports its `.meta` half) and the tex/mdl `else` branch
-// (:699-738) — the fix that runs on each file BEFORE it is collapsed into the option's Files dict.
+// `.meta`/`.rgsp` branch (:691-704, this module ports its `.meta` half) and the tex/mdl `else` branch
+// (:705-744) — the fix that runs on each file BEFORE it is collapsed into the option's Files dict.
 // FromWizardGroup is the load path both /upgrade (ModpackUpgrader.cs:63 -> FromModpack)
 // and /resave (Program.cs:204) actually take, so these fixes are part of "load", not "upgrade".
 //
@@ -31,11 +31,11 @@ const IS_META = /\.meta$/;
  * Build the FromWizardGroup per-file load fix for a TTMP pack whose gates are `gates`:
  *
  * - `.meta` (WizardData.cs:691-697, `mj.FullPath.EndsWith(".meta") || .EndsWith(".rgsp")`, the
- *   `.meta` half of that branch): UNGATED — the C# check at :685 has no `needsTexFix`/`needsMdlFix`
+ *   `.meta` half of that branch): UNGATED — the C# check at :691 has no `needsTexFix`/`needsMdlFix`
  *   equivalent, and it is a separate `if` from the tex/mdl work, which sits in the `else` at
- *   :699-738. A `.meta` can never reach the tex/mdl branches in the C#, so this branch runs first
+ *   :705-744. A `.meta` can never reach the tex/mdl branches in the C#, so this branch runs first
  *   and returns before either gate is consulted. TexTools deserializes the meta straight into
- *   `data.Manipulations` (:690-691) and never adds it to `data.Files` at all — so no `.meta`
+ *   `data.Manipulations` (:696-697) and never adds it to `data.Files` at all — so no `.meta`
  *   survives into the loaded pack there, full stop. We cannot reproduce that half (we have no
  *   in-memory Manipulations list a later PMP.ManipulationsToMetadata-equivalent could re-serialize
  *   from for a TTMP pack): instead we keep a manipulation-*bearing* meta as a file, our stand-in for
