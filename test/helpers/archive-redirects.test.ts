@@ -271,7 +271,7 @@ describe("archive-redirects v4 (PMP.cs · PMPMetaJson · 1484/1487)", () => {
 // The discriminator is payload members no option container explains. See archive-redirects.ts.
 describe("archive-redirects: optionless vs unrecognized (PMP.cs · LoadPMP · 181-189)", () => {
   /** A legal, genuinely optionless Penumbra pack: meta.json and nothing else. `File.Exists` guards
-   *  the default_mod.json read (PMP.cs · LoadPMP · 182) and the group scan (:195-208) finds nothing,
+   *  the default_mod.json read (PMP.cs · LoadPMP · 182) and the group scan (:191-208) finds nothing,
    *  so TexTools loads this with zero options — and so do we. Built for real as a corpus pack by
    *  scripts/generate-synthetics/build-synthetic-pmp-absent-manifests.ts. */
   const metaOnly = (fileVersion: number): Map<string, Uint8Array> =>

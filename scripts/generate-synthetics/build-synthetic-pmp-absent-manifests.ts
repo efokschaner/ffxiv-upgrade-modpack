@@ -37,7 +37,12 @@
 // The .pmp files are gitignored; regenerate with `npm run synthetics`.
 
 import type { PmpGroupJsonRaw } from "../../src/container/manifest-types";
-import { encodeJson, syntheticMeta, writePmpMembers } from "./pmp-builder";
+import {
+  encodeJson,
+  singleOptionGroup,
+  syntheticMeta,
+  writePmpMembers,
+} from "./pmp-builder";
 
 // ---------------------------------------------------------------------------------------------
 // pmp-meta-only.pmp — the legal, genuinely optionless pack.
@@ -60,29 +65,15 @@ const GAME_PATH = "chara/dummy/no_default_mod.bin";
 const ZIP_PATH = "files/no_default_mod.bin";
 const PAYLOAD = new Uint8Array([0xc1, 0xc2, 0xc3, 0xc4]);
 
-// Written in the key order `singleOptionGroup` (pmp-builder.ts) uses — this builder assembles its
-// own member map, but the group document itself should spell out identically to every other v3
-// fixture's. Penumbra writes a Files VALUE as the backslashed zip path (PMP.cs:1107-1109).
-const group: PmpGroupJsonRaw = {
-  Version: 0,
-  Name: "No Default Mod",
-  Description: "",
-  Image: "",
-  Page: 0,
-  Priority: 0,
-  Type: "Single",
-  DefaultSettings: 0,
-  Options: [
-    {
-      Name: "On",
-      Description: "",
-      Image: "",
-      Files: { [GAME_PATH]: ZIP_PATH.replace(/\//g, "\\") },
-      FileSwaps: {},
-      Manipulations: [],
-    },
-  ],
-};
+// The shared helper, NOT a hand-written literal: this builder assembles its own member map (because
+// the pack is defined by an absent default_mod.json), but the group document itself must stay
+// spelled identically to every other v3 fixture's — which means CALLING the thing that spells them,
+// so a future edit to `singleOptionGroup` moves this fixture with the rest instead of silently
+// leaving it behind. Penumbra writes a Files VALUE as the backslashed zip path
+// (`PMP.cs · PopulatePmpStandardOption · 1005-1007`, `fi.PmpPath.Replace("/", "\\")`).
+const group: PmpGroupJsonRaw = singleOptionGroup("No Default Mod", {
+  [GAME_PATH]: ZIP_PATH.replace(/\//g, "\\"),
+});
 
 // Member ORDER is load-bearing (it decides the zip bytes, and the golden cache keys on
 // sha256(input pack)): meta, then the group, then payload — the same relative order `writePmp`

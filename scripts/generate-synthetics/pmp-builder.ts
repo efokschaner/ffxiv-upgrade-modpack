@@ -75,11 +75,16 @@ export const EMPTY_DEFAULT_MOD: PmpOptionJsonRaw = {
 };
 
 /** A Single-select group holding exactly one option ("On") that carries `files`
- * (gamePath -> zip path, backslashed on disk as Penumbra writes it).
+ * (gamePath -> zip path, backslashed on disk as Penumbra writes it —
+ * `PMP.cs · PopulatePmpStandardOption · 1005-1007`, `opt.Files.Add(fi.Path, fi.PmpPath.Replace("/", "\\"))`
+ * under the comment "Penumbra likes backslashes?"; the read side then joins it as a Windows
+ * relative path, `PMP.cs · UnpackPmpOption · 1178`).
  *
  * `fileSwaps` (gamePath being overridden -> base-game path served instead, backslashed the same way
- * — PMP.cs:1107-1109 notes the value is the backslashed one) defaults to `{}`, which keeps both the
- * emitted key ORDER and the emitted bytes identical for every pack that does not pass it.
+ * — `PMP.cs · UnpackPmpOption · 1205-1207` says so outright: "For some reason the destination value
+ * is backslashed instead of forward-slashed.", then `kv.Value.Replace("\\", "/")`) defaults to `{}`,
+ * which keeps both the emitted key ORDER and the emitted bytes identical for every pack that does
+ * not pass it.
  *
  * `page` (PMPGroupJson.Page, PMP.cs:1393 — a genuine DataPages index, `WizardData.FromPmp:1155`)
  * defaults to `0`, so every existing caller keeps emitting the same value it always did. */
