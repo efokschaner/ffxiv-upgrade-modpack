@@ -183,7 +183,15 @@ function isEmptyPmpOption(raw: PmpOptionJsonRaw): boolean {
 /** `enforceCompatibility` ports LoadPMP's 4th parameter (PMP.cs · LoadPMP · 159), which
  *  `WizardData.FromModpack(modpack, true)` (WizardData.cs:1717-1727, :1725) passes on the /upgrade
  *  load path. Default `false`, matching every other caller (PMP.cs:336/:393/:1046, TTMP.cs:1016,
- *  the wizard windows, and ModpackUpgrader.cs:225's deliberately-unenforced pre-check). */
+ *  the wizard windows, and ModpackUpgrader.cs:225's deliberately-unenforced pre-check).
+ *
+ *  NOT a knob for our own /upgrade entry point to set — this is the trap it looks like. Our
+ *  `upgradeModpack` deliberately refuses a v4 pack EARLIER, at `ModpackUpgrader.cs:226-232`'s
+ *  equivalent (see src/upgrade/upgrade.ts), because that is where ConsoleTools refuses it and its
+ *  message is what `assertMatchedUpgradeFailure` substring-matches against the oracle's trace.
+ *  Passing `enforceCompatibility: true` from there would throw LoadPMP's *different* message from a
+ *  *different* stage, breaking oracle parity on every v4 input. Reproduce the C#'s call graph, not
+ *  just its refusal. */
 export interface ReadPmpOptions {
   enforceCompatibility?: boolean;
 }

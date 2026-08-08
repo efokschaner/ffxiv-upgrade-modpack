@@ -123,10 +123,9 @@ writePmpV4("pmp-v4-extrafiles.pmp", {
 // path — confirming AGENTS.md's "manifest is not affected, only the member set" holds as originally
 // stated, with no shared-file caveat needed once dedup is out of the picture.
 //
-// Our port's /resave still emits the OLD v3 shape entirely (default_mod.json + group_NNN_*.json, no
-// meta.json Groups/DefaultData) — Tasks 6-8/11 haven't landed yet — so the corpus `resave` check for
-// this pack fails with 8 regressions today; that failure is EXPECTED per this task's brief and is not
-// blessed. The `upgrade` check passes as a matched failure (ConsoleTools /upgrade and our port both
-// refuse a v4 .pmp input, per bug #23's `saveExtraFiles` gate not applying to /upgrade).
-//
-// TASKS 5 AND 10: build/confirm against the FOUR-member shape above.
+// The `upgrade` check passes as a matched failure (ConsoleTools /upgrade and our port both refuse a
+// v4 .pmp input, per bug #23's `saveExtraFiles` gate not applying to /upgrade). The `resave` check
+// passes too: our writer emits the v4 shape, and the one-member-vs-two difference is confirmed — not
+// merely tolerated — by `makeV4ExtraFileDuplicateConfirmation`
+// (test/helpers/pmp-v4-extrafile-divergence.ts), so this pack carries NO entry in either ratchet
+// baseline.

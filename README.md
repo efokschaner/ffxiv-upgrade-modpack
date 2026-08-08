@@ -87,6 +87,13 @@ the tag first — `git -C reference/FFXIV_TexTools_UI fetch --depth=1 origin tag
 `test/corpus/.resave-cache/`), re-bless the ratchet baselines, and port only the
 upstream diff between the old and new pins.
 
+**Snapshot `test/corpus/.roundtrip-baseline/` before that bless and diff it after.**
+`UPDATE_UPGRADE_BASELINE=1` re-blesses all three baselines, and the roundtrip one records
+our codec contradicting *itself* with no oracle involved — so an oracle re-pin must not move
+it, and the bless would otherwise silently absorb a regression that the baselines being
+gitignored keeps `git` from showing. Any movement is investigated, never blessed away. See
+`docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md` §7.2.
+
 ## Development
 
 - **Format + lint:** `npm run check` (Biome owns formatting; don't hand-format).

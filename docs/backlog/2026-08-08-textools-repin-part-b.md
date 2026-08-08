@@ -53,6 +53,20 @@ Guard the `roundtrip` ratchet across any bless, per the spec's §7.2 rule: it re
 contradicting itself with no oracle involved, so it must not move. It is currently at zero, which is
 the goal state.
 
+## The deferral is category-1, not category-4
+
+Noted by the PR #45 reviewer, 2026-08-08, and worth stating plainly because the framing above
+undersells it. While `assertTexHeaderWritable` remains live, a `MipCount == 2` `.tex` with a broken
+mip-offset table is **dropped at our load seam** — the load-fix `catch` swallows the throw — where the
+v3.1.1.4 oracle repairs it and keeps it. On `docs/BACKLOG.md`'s own severity ladder that is **class 1,
+silent wrong output** (the user ships a mod missing a texture and never learns), not the class-4
+cosmetic byte divergence "this one moves bytes" suggests.
+
+Nothing is hidden today: **no corpus pack reaches it** (checked), and the case is pinned by
+`test/upgrade/validate-tex.test.ts`'s Branch-B fixture. But "no corpus pack reaches it" is the
+weakest kind of safety, and `docs/BACKLOG.md`'s deployment note applies directly — a public page
+accepts arbitrary uploads, so corpus silence stops being evidence of rarity.
+
 ## Why it is ranked first
 
 It is the only piece of work in the repo where **we know exactly what to do and have already proved
