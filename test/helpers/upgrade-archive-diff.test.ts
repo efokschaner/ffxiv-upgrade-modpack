@@ -107,7 +107,7 @@ describe("diffArchives", () => {
 
 // Regression coverage for the hole the (now-removed) orphan-payload-member heuristic used to patch:
 // `dropConfirmedAbsentKeys` only ever inspects `Files` KEYS, so a payload member silently lost for
-// any other reason — e.g. an `ExtraFile` (PMP.cs:213-215, a preview image or readme no `Files`/`Image`
+// any other reason — e.g. an `ExtraFile` (PMP.cs:278-280, a preview image or readme no `Files`/`Image`
 // field ever names) that a reader/writer bug drops from the archive without touching any manifest —
 // was invisible to the manifest-only comparison. Before `checkPayloadMembers` existed, `diffArchives`
 // never looked at non-manifest member NAMES at all, so this scenario returned `[]`.
@@ -174,7 +174,60 @@ describe("diffArchives payload-member comparison (replaces the orphan-payload-me
   });
 });
 
-describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
+// Wiring proof for `diffArchives`' sixth parameter (`confirmGoldenOnlyMember`), threaded through to
+// `diffPayloadMembers`' golden-only-member guard. Nothing before this pinned that the guard is
+// actually CONSULTED — see the 2026-08-07 review. The v4 corpus pack that exercises it in
+// production (`pmp-v4-extrafiles.pmp`) is green as of the v4 writer landing, so it now ratchets the
+// guard too; these cases stay because they pin the WIRING directly rather than through a whole-pack
+// diff. `pmp-v4-extrafile-divergence.test.ts` covers the CONFIRMATION FUNCTION itself in isolation;
+// these two prove `diffArchives` actually calls whatever it is given.
+describe("diffArchives confirmGoldenOnlyMember (sixth parameter) wiring", () => {
+  it("suppresses a golden-only payload member when the confirmation returns true", () => {
+    const ours = pmp({ "meta.json": META, "default_mod.json": DEF });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "extra.bin": new Uint8Array([9]),
+    });
+    const diffs = diffArchives(
+      ours,
+      golden,
+      /* checkPayloadMembers */ true,
+      /* confirmDivergence */ undefined,
+      /* layoutEquivalent */ false,
+      /* confirmGoldenOnlyMember */ () => true,
+    );
+    expect(diffs).toEqual([]);
+  });
+
+  it("still reports a golden-only payload member when the confirmation returns false", () => {
+    const ours = pmp({ "meta.json": META, "default_mod.json": DEF });
+    const golden = pmp({
+      "meta.json": META,
+      "default_mod.json": DEF,
+      "extra.bin": new Uint8Array([9]),
+    });
+    const diffs = diffArchives(
+      ours,
+      golden,
+      /* checkPayloadMembers */ true,
+      /* confirmDivergence */ undefined,
+      /* layoutEquivalent */ false,
+      /* confirmGoldenOnlyMember */ () => false,
+    );
+    expect(diffs).toEqual([
+      {
+        kind: "structure",
+        gamePath: "extra.bin",
+        index: 0,
+        status: "added",
+        detail: undefined,
+      },
+    ]);
+  });
+});
+
+describe("diffArchives absent-file drop (PMP.cs:976-981)", () => {
   const enc = new TextEncoder();
   const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";
   const ABSENT = "chara/equipment/e0002/model/c0101e0002_top.mdl";
@@ -213,7 +266,7 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
 
   it("confirms a dropped key whose payload is genuinely absent from the golden", () => {
     // Golden lists ABSENT in its Files map but never actually contained a member for it — the
-    // PMP.cs:883 drop this confirmation exists for. See dropConfirmedAbsentKeys' doc comment for
+    // PMP.cs:976 drop this confirmation exists for. See dropConfirmedAbsentKeys' doc comment for
     // why no current harness call site can reach this arm (both remaining callers compare against
     // real TexTools output, which has already dropped any such key); the direct unit tests here are
     // what keeps it covered.
@@ -233,7 +286,7 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
 
   it("REJECTS a dropped key that only LOOKS absent (resolves under the confirmation's own looseKey)", () => {
     // The member is stored with display case + a trailing dot stripped — a correct reader would
-    // resolve it, so it is NOT absent and dropping it is a real bug, not the PMP.cs:883 drop. This
+    // resolve it, so it is NOT absent and dropping it is a real bug, not the PMP.cs:976 drop. This
     // scenario is exactly the one a SHARED reader/confirmation key function could never catch: the
     // "ours" side here is constructed directly (standing in for whatever a reader — buggy or not —
     // produced), so the confirmation's OWN resolution has to reject it independently. Because
@@ -291,7 +344,7 @@ describe("diffArchives absent-file drop (PMP.cs:883-888)", () => {
 // by index inside an Options array. Regression coverage for the argument-inversion bug where the
 // group branch called option(golden, ours) instead of option(ours, golden) — the swap made the
 // group check compare `ours` against itself (always equal), silently disabling it entirely.
-describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:883-888)", () => {
+describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:976-981)", () => {
   const PRESENT = "chara/equipment/e0001/model/c0101e0001_top.mdl";
   const ABSENT = "chara/equipment/e0002/model/c0101e0002_top.mdl";
   const payload = new Uint8Array([1, 2, 3]);
@@ -409,7 +462,9 @@ describe("diffArchives absent-file drop — group_NNN.json (PMP.cs:883-888)", ()
 });
 
 // diffPayloadSemantic compares the redirect table resolveRedirects builds (archive-redirects.ts),
-// keyed PER OPTION as `${manifestName}#${optionIndex}|${gamePath}` (redirectKey) rather than by bare
+// keyed PER OPTION as `${manifestName}#${optionId}|${gamePath}` (redirectKey — `optionId` is a
+// STRING, not an index: `"<groupIndex>/<optionIndex>"` for a v4 meta.json group option, `"default"`
+// for `meta.DefaultData`, and the bare array index under v3) rather than by bare
 // gamePath — see that module's doc comment for why an archive-wide merge would silently hide a
 // divergence between two mutually exclusive options that define the same gamePath. These fixtures
 // all use a single option (group_001_g.json, index 0), so every reported key has the fixed prefix
@@ -550,6 +605,39 @@ describe("diffPayloadSemantic (layout-equivalent payload comparison)", () => {
   });
 });
 
+// Wiring proof for `diffPayloadSemantic`'s fourth parameter (`confirmGoldenOnlyMember`), threaded
+// through part 2's (non-common member NAME) golden-only-member guard — see the sibling wiring
+// describe block above (`diffArchives confirmGoldenOnlyMember (sixth parameter) wiring`) for why
+// this needs its own direct proof rather than relying on the v4 corpus pack to ratchet it.
+describe("diffPayloadSemantic confirmGoldenOnlyMember (fourth parameter) wiring", () => {
+  it("suppresses a golden-only NON-common member when the confirmation returns true", () => {
+    const ours = new Map<string, Uint8Array>();
+    const golden = new Map<string, Uint8Array>([
+      ["extra.bin", new Uint8Array([9])],
+    ]);
+    expect(diffPayloadSemantic(ours, golden, undefined, () => true)).toEqual(
+      [],
+    );
+  });
+
+  it("still reports a golden-only NON-common member when the confirmation returns false", () => {
+    const ours = new Map<string, Uint8Array>();
+    const golden = new Map<string, Uint8Array>([
+      ["extra.bin", new Uint8Array([9])],
+    ]);
+    const d = diffPayloadSemantic(ours, golden, undefined, () => false);
+    expect(d).toEqual([
+      {
+        kind: "structure",
+        gamePath: "extra.bin",
+        index: 0,
+        status: "added",
+        detail: undefined,
+      },
+    ]);
+  });
+});
+
 // diffArchives' fifth parameter (layoutEquivalent) swaps the payload comparison for
 // diffPayloadSemantic instead of diffPayloadMembers — see diffArchives' doc comment and the
 // FileSwap-preservation spec §5.2. Reuses the file's own `pmp` helper (writeZip, src/zip/zip.ts),
@@ -591,7 +679,7 @@ describe("diffArchives layoutEquivalent parameter", () => {
 // map's VALUE is a zip path too, so `dropConfirmedAbsentKeys` must also stop reporting a `Files`
 // value difference that is purely a `common/N` renumbering — otherwise the exact same shift
 // reappears as a manifest (`jsonPointerDiff`) diff instead of a structure diff. See the
-// FileSwap-preservation spec, §5.2, and PMP.cs · UnpackPmpOption · 1104-1137 ->
+// FileSwap-preservation spec, §5.2, and PMP.cs · UnpackPmpOption · 1202-1235 ->
 // PmpExtensions.cs · ResolveDuplicates · 500,543 for why the renumbering happens at all.
 // `Files` KEYS (the gamePath) are the effective result and are never
 // exempted here — only the VALUE (the zip path) is layout.
@@ -674,7 +762,7 @@ describe("diffArchives layoutEquivalent: Files VALUE common/N exemption", () => 
 
   it("still reports a Files KEY present in golden but missing from ours, unaffected by layoutEquivalent", () => {
     // The missing key's own payload genuinely exists in the golden archive (a resolvable member),
-    // so this is NOT the PMP.cs:883 confirmed-absent-drop case — it must stay a reported diff.
+    // so this is NOT the PMP.cs:976 confirmed-absent-drop case — it must stay a reported diff.
     const ours = pmp({
       "meta.json": META,
       "default_mod.json": {
@@ -878,7 +966,7 @@ describe("diffArchives layoutEquivalent: non-Files manifest fields are never exe
 });
 
 // CONFIRMATION (not a baseline suppression) of the ONE FileSwaps divergence we intend:
-// PopulatePmpStandardOption sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:873-875),
+// PopulatePmpStandardOption sets `opt.FileSwaps = new()` and never repopulates it (PMP.cs:966-968),
 // silently destroying every Penumbra file swap the pack carried (docs/TEXTOOLS_BUGS.md #10, a
 // genuine defect). We preserve them instead (SubMod.AddContainerTo, Penumbra repo
 // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/), so the
@@ -920,5 +1008,129 @@ describe("FileSwaps confirmation (TEXTOOLS_BUGS #10)", () => {
     };
     const pruned = dropConfirmedAbsentKeys(oursEmpty, golden, new Map());
     expect(jsonPointerDiff(oursEmpty, pruned).length).toBeGreaterThan(0);
+  });
+});
+
+describe("dropConfirmedAbsentKeys — v4 meta.json (PMP.cs:1484/1487)", () => {
+  const v4 = (
+    groups: unknown[],
+    defaultData: unknown,
+  ): Record<string, unknown> => ({
+    FileVersion: 4,
+    Name: "A",
+    Identifier: "5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3",
+    LastWrite: "2026-08-06T04:41:11.0160172-07:00",
+    ModTags: [],
+    Groups: groups,
+    DefaultData: defaultData,
+  });
+
+  it("prunes a confirmed-absent Files key inside meta.Groups[i].Options[j]", () => {
+    const golden = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [
+            {
+              Name: "A",
+              Files: {
+                "chara/a.tex": "g\\chara\\a.tex",
+                "chara/gone.tex": "g\\chara\\gone.tex",
+              },
+            },
+          ],
+        },
+      ],
+      { Version: 0 },
+    );
+    const ours = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [{ Name: "A", Files: { "chara/a.tex": "g\\chara\\a.tex" } }],
+        },
+      ],
+      { Version: 0 },
+    );
+    const goldenMembers = new Map<string, Uint8Array>([
+      ["g/chara/a.tex", new Uint8Array([1])],
+    ]);
+    const pruned = dropConfirmedAbsentKeys(ours, golden, goldenMembers) as {
+      Groups: Array<{ Options: Array<{ Files: Record<string, string> }> }>;
+    };
+    expect(Object.keys(pruned.Groups[0]!.Options[0]!.Files)).toEqual([
+      "chara/a.tex",
+    ]);
+  });
+
+  it("prunes inside meta.DefaultData too", () => {
+    const golden = v4([], {
+      Version: 0,
+      Files: { "chara/gone.tex": "d\\chara\\gone.tex" },
+    });
+    const pruned = dropConfirmedAbsentKeys(
+      v4([], { Version: 0 }),
+      golden,
+      new Map<string, Uint8Array>(),
+    ) as { DefaultData: { Files: Record<string, string> } };
+    expect(pruned.DefaultData.Files).toEqual({});
+  });
+
+  it("confirms the FileSwaps divergence when the golden OMITS the key entirely (ShouldSerializeFileSwaps, PMP.cs:1680)", () => {
+    // The old pin wrote `"FileSwaps": {}`; the new pin omits it. Without absent-as-empty the
+    // carve-out is disarmed and every swap-carrying pack turns into a hard manifest diff.
+    const golden = v4(
+      [{ Name: "G", Type: "Single", Options: [{ Name: "A" }] }],
+      { Version: 0 },
+    );
+    const ours = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [{ Name: "A", FileSwaps: { "chara/x.tex": "chara/y.tex" } }],
+        },
+      ],
+      { Version: 0 },
+    );
+    const pruned = dropConfirmedAbsentKeys(
+      ours,
+      golden,
+      new Map<string, Uint8Array>(),
+    ) as { Groups: Array<{ Options: Array<{ FileSwaps: unknown }> }> };
+    expect(pruned.Groups[0]!.Options[0]!.FileSwaps).toEqual({
+      "chara/x.tex": "chara/y.tex",
+    });
+  });
+
+  it("still reports when OURS lost swaps the golden kept — the carve-out is not symmetric", () => {
+    const golden = v4(
+      [
+        {
+          Name: "G",
+          Type: "Single",
+          Options: [{ Name: "A", FileSwaps: { "chara/x.tex": "chara/y.tex" } }],
+        },
+      ],
+      { Version: 0 },
+    );
+    const ours = v4([{ Name: "G", Type: "Single", Options: [{ Name: "A" }] }], {
+      Version: 0,
+    });
+    const pruned = dropConfirmedAbsentKeys(
+      ours,
+      golden,
+      new Map<string, Uint8Array>(),
+    ) as { Groups: Array<{ Options: Array<{ FileSwaps: unknown }> }> };
+    expect(pruned.Groups[0]!.Options[0]!.FileSwaps).toEqual({
+      "chara/x.tex": "chara/y.tex",
+    });
+    // Direct pointer-diff assertion, matching this file's established precedent for pinning the
+    // reject direction (see the v3 "still REJECTS ours-empty against golden-populated" case above):
+    // a structural check alone only proves the carve-out stays quiet, not that the surrounding
+    // comparison still SURFACES the loss to jsonPointerDiff.
+    expect(jsonPointerDiff(ours, pruned).length).toBeGreaterThan(0);
   });
 });

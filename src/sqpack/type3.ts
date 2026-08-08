@@ -94,7 +94,7 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   // whatever the cursor currently is, so the trailing unused LoDs of a `lodCount = 1` model come out
   // as the end-of-geometry cursor rather than 0. That is canonical, not a defect: TexTools' own
   // serializer writes the same end-of-geometry value into both unused vertex and both unused index
-  // slots (Mdl.cs:3930-3942), as does our port (src/mdl/model/serialize.ts). Consequence worth
+  // slots (Mdl.cs:3926-3938), as does our port (src/mdl/model/serialize.ts). Consequence worth
   // knowing: a .mdl authored outside TexTools (a raw game file / Penumbra export stores 0) is
   // normalized on decode, so decode(encode(x)) rewrites those four fields. The corpus self
   // round-trip confirms that normalization against the oracle — it hands ConsoleTools /unwrap the
@@ -139,7 +139,7 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   // Match Dat.ReadSqPackType3 (Dat.cs:801): `new byte[baseHeaderLength + decompressedSize]`. This is
   // a benign TexTools DECODER quirk — a double-count of the 68-byte header — that we reproduce
   // deliberately. `decompressedSize` (entry offset 8) is ALREADY the true model size *including* the
-  // 68-byte header: encode writes exactly `68 + content` (Mdl.cs:2259, our encodeType3), which is
+  // 68-byte header: encode writes exactly `68 + content` (Mdl.cs:2255, our encodeType3), which is
   // correct. The decoder then adds `baseHeaderLength` (68) a SECOND time, over-allocating by one
   // header and leaving 68 trailing ZERO bytes that no header field points at.
   //
@@ -162,7 +162,7 @@ export function decodeType3(entry: Uint8Array): Uint8Array {
   return out;
 }
 
-/** Compress a runtime MDL file into a Type 3 SQPack entry. Mirrors Mdl.CompressMdlFile (Mdl.cs:2148). */
+/** Compress a runtime MDL file into a Type 3 SQPack entry. Mirrors Mdl.CompressMdlFile (Mdl.cs:2144). */
 export function encodeType3(data: Uint8Array): Uint8Array {
   const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const signature = dv.getUint32(0, true);

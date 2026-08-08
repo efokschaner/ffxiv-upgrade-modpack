@@ -24,7 +24,7 @@ export type DiffKind =
 // an option's file set for a pack ConsoleTools /upgrade left alone (it wrote no output at all), so
 // there is no TexTools artifact on the other side of it -- see
 // docs/superpowers/specs/2026-07-19-upgrade-noop-branch-oracle-design.md §3.2. It mirrors the exact
-// predicate the oracle itself branches on (ModpackUpgrader.cs · AnyChanges · 25-49).
+// predicate the oracle itself branches on (ModpackUpgrader.cs · AnyChanges · 28-52).
 // "diagnostic" is the THIRD non-oracle kind, alongside "roundtrip" and "transform": it records OUR
 // upgrade reporting that it skipped or failed something, with no TexTools artifact on the other
 // side. Only ok:true runs reach it — a pack the oracle refuses returns early on the error branch,

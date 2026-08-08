@@ -163,7 +163,91 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+1. [**TexTools re-pin Part B — port the one upstream commit that still owes a port**](backlog/2026-08-08-textools-repin-part-b.md)
+   — the other half of the v3.1.1.4 re-pin, whose exit condition was deliberately *not* a zero
+   baseline. Smaller than the name suggests: of the 11 ledger rows in the re-pin spec §10, only **row 1
+   (`1993bf6`)** still owes a port — rows 6/8/9/10/11 shipped in the PMP v4 detour, row 2 shipped in
+   Part A, and rows 3/4/5/7 are `no port impact` with recorded rationales. One commit, three hunks, all
+   in `Tex.cs`: delete `assertTexHeaderWritable` (upstream's `ToBytes` lost **all four** checks, not
+   just the `LoDMips` ordering guard #19 is named for, and is now a pure serializer), change
+   `buildCanonicalTexHeader`'s LoD2 to `mipCount > 2 ? 2 : mipCount - 1`, and add the ascending clamp
+   to `fixUpBrokenMipOffsets` — inverting the tests that currently pin the throw, retiring the three
+   `*pre-fix*` markers, and updating register #19's status. `docs/TEXTOOLS_BUGS.md` #19's "What Part B
+   owes" is the authoritative statement of the work. **This one moves corpus bytes** via
+   `encodeUncompressedTex`, which is exactly why Part A recorded the opening total (166 packs / 5809
+   diffs, `roundtrip` 0) — re-bless deliberately and attribute what moved. Ranked first because it is
+   the only work in the repo that is purely execution: the analysis is complete, the C# read and cited,
+   the register entry written, and the reference measurement already in place. Operator call,
+   2026-08-08.
+
+2. [**In-game verification of the bug #23 divergence (AGENTS.md evidence bar 3)**](backlog/2026-08-08-bug23-in-game-verification.md)
+   — **operator-only; no agent can discharge it.** `docs/TEXTOOLS_BUGS.md` #23 is the repo's one
+   deliberate divergence *from* TexTools rather than a faithful reproduction, and AGENTS.md's third
+   evidence bar — someone verified in the real game that our output is better — has **not** been met.
+   Bars 1 and 2 are (registered defect; confirmed corpus-side by `makeV4ExtraFileDuplicateConfirmation`
+   over the purpose-built `test/corpus/synthetic/pmp-v4-extrafiles.pmp`), so this is the sole gap, and
+   the divergence currently ships on the 2026-08-06 operator ruling instead of on evidence. The work is
+   one manual test: `/resave` that pack through both our port and ConsoleTools, install both in
+   Penumbra, confirm both load, the in-game result is identical, and ours is roughly half the size.
+   **Plan for a negative result** — if the duplication turns out to be load-bearing in-game, the
+   divergence has to be withdrawn and our reader goes back to reproducing the bug, with the
+   confirmation rule and the synthetic re-pointed at the reproduction. Ranked first not by size but
+   because it is the only thing in the repo shipping on a ruling rather than on evidence, against one
+   of the project's three founding principles — and everything built on top of it inherits that.
+   Operator call, 2026-08-08.
+
+3. [**TTMP load fix does not handle `.rgsp`; it passes through unchanged**](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
+   — a **rubric class 1 candidate** (silent wrong output) whose size is genuinely unknown. TexTools
+   diverts a `.rgsp` into `data.Manipulations` at load and re-materializes it on write from the game's
+   *clean default* parameter plus those manipulations (`PMP.cs · ManipulationsToMetadata · 1335,1347`);
+   we pass the file through verbatim. The two agree only if `RgspToManipulations` emits a manipulation
+   for **every** field of the struct — any field it misses is silently reset to the game default by
+   TexTools while we preserve the pack's value, i.e. a modpack that behaves differently and a user who
+   never finds out. **Nobody has read that C# yet**, which is what makes this unbounded rather than
+   merely open. Filed 2026-07-21 behind "no corpus pack carrying `.rgsp` has been found"; that blocker
+   is **gone** — `Milktruck Bust Scaling Tweaks v1.0.0.ttmp2` is 12 `.rgsp` entries and nothing else,
+   and it had no `/resave` golden for its entire life only because v3.1.0.2 could not resave it (the
+   patch-7.5 `human.cmp` breakage). The v3.1.1.4 re-pin produced one, and our bytes match it — which
+   bounds the risk but does not discharge it: one pack, one game version, against an implementation
+   that is structurally different rather than equivalent. First step is cheap and settles the whole
+   item: read `RgspToManipulations` (`PmpExtensions.cs`) and establish struct coverage. Total coverage
+   makes this a behaviour-preserving refactor pinnable against Milktruck's golden; anything less is a
+   live divergence waiting on the right input. Ranked above the site per this list's own note that
+   small, unbounded correctness holes outrank a large, well-understood build — the same reasoning that
+   placed the empty-group item there in the 2026-08-03 pass. Operator call, 2026-08-07.
+
+4. [**Re-measure the ±1 BCn decoder divergence, and decide whether to reconverge on `DxtUtil`**](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
+   — upstream **rewrote** `DxtUtil.cs` in `371f74b` (found while verdicting it for the v3.1.1.4
+   re-pin), and that moved both of this item's load-bearing premises. (a) The file is now **GPL-3.0**,
+   not FNA's Ms-PL, so the clean-room constraint is lifted and a **direct port is legally available**
+   — DXT1/3/5 and BC4 are a fresh in-house implementation (`DxtUtil.cs:154,166,203,241`), while BC5/BC7
+   still delegate to `JeremyAnsel.BcnSharp` (`:44`, `:52`), confirming only the `DxtUtil` formats were
+   ever drift candidates. (b) More importantly, **our measurement is now stale**: the ±1 figures in the
+   item (9099/65536 on `eye01_base`) were taken against the old FNA decoder that no longer exists at
+   our pin, so the current divergence is *unmeasured*. Ranked here — above the site — because of what
+   that implies rather than the port effort: we carry a `DIVERGENCE_RULES` ±1 tolerance over **every**
+   generated A8R8G8B8 `.tex`, and if the rewrite happens to round the way we do, that tolerance is now
+   unnecessary and is silently absorbing any future ±1 regression across the whole texture path. A
+   tolerance resting on a false premise is a class-1 risk (silent wrong output), not a cosmetic one.
+   The deciding step is cheap and needs no new code: re-run the existing two-texture repro against the
+   v3.1.1.4 oracle and see which of three worlds we are in — gap closed (retire the tolerance), gap
+   unchanged (port it, now directly), or gap changed shape (re-characterize). Do that before writing
+   any decoder code. Operator call, 2026-08-07.
+
+5. [**Reconsider line numbers in TexTools citations**](backlog/2026-08-08-citation-line-numbers-maintenance.md)
+   — `file · symbol · lines` costs ~1,374 line-number citations across 173 files, all of which have to
+   be re-pointed at every re-pin. Not a correctness item; a recurring tax with a bad failure mode. A
+   stale line number points *confidently at unrelated code* rather than at nothing (live example: three
+   sites still cite `Tex.cs:138` for a guard `1993bf6` deleted, and `Tex.cs:138` is now a real line with
+   unrelated content), it cannot be checked mechanically the way a file, symbol or quoted fragment can,
+   and re-pointing it is dangerous — the v3.1.1.4 sweep took two fix rounds and produced a
+   wrong-but-confident rewrite in *each* automated pass. Sketch: keep `file · symbol`, replace line
+   numbers with a quoted code fragment where sub-symbol precision genuinely matters, then add a checker
+   that verifies file + symbol + fragment. Changes a rule AGENTS.md states, so the decision is recorded
+   there too. Ranked above the site because it is cheap and the tax compounds with every re-pin, below
+   the two items above it because nothing is actually wrong today. Operator call, 2026-08-08.
+
+6. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -172,13 +256,18 @@ unchanged by deployment; only probability moves.
    eagerly-evaluated generated tables, `imc-table.ts` alone 2.34 MB constructing a `Map` at module
    load); and surfacing the fail-loud guards and the `diagnostics` channel (shipped 2026-08-02) as
    user-facing "this modpack isn't supported because…" / "these files were skipped" messages. One
-   hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI must **not**
-   offer an output-format picker. Leads the list now that the empty-group item — the only item
-   ranked above it — shipped 2026-08-04; nothing blocks *starting* it, and its one real dependency
-   (a diagnostics channel, so the page cannot report success on a partial upgrade) cleared
-   2026-08-02.
+   hard constraint: cross-format conversion is not supported, so the UI must **not** offer an
+   output-format picker. Read the enforcement carefully, though — `writeModpack`'s guard
+   (`src/index.ts:87-98`) is a **per-file** storage scan, not a format check, so a pack carrying zero
+   files crosses formats without tripping it (`docs/backlog/2026-08-08-writemodpack-per-file-format-guard.md`,
+   filed 2026-08-08). The UI constraint is unaffected — there is still no picker to offer — but the
+   site must not treat that throw as its only line of defence. Nothing blocks *starting* it, and its one real dependency (a
+   diagnostics channel, so the page cannot report success on a partial upgrade) cleared 2026-08-02 —
+   so its position here is the rubric's doing, not a dependency's: items 3-4 above it are class-1
+   correctness unknowns and this is class 3, while items 1-2 are ranked on completed analysis and an
+   unmet evidence bar respectively, and item 5 on cheapness rather than on the rubric.
 
-2. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+7. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
@@ -191,7 +280,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-3. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+8. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -205,7 +294,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-4. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+9. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -309,14 +398,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   size (not the known ±1 BC-decode tolerance). Pre-existing writer/codec gap, unrelated to this
   branch; the pack is scoped to the `upgrade` expected-failure check only (`upgrade-error` corpus
   root), so `/resave` is UNVERIFIED for it.
-- [Deepen / re-evaluate the known ±1 BCn decoder divergence vs TexTools](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
-  — the ±1 BCn value-rounding gap (our bc7enc_rdo port vs TexTools' FNA `DxtUtil`) is already
-  documented (`decodeBc5`) and already absorbed by the `.tex` ±1 `DIVERGENCE_RULES` tolerance, so it
-  does not fail the suite. New here: a measurement vs TexTools' actual decoder (9099/65536 bytes on
-  `eye01_base`, all ±1) confirming it extends to **DXT1**, and the re-evaluation — the tex-codec spec
-  §7 justified the bc7enc choice on "any spec-conformant decoder matches byte-for-byte," which this
-  falsifies. Decide: keep accepting the tolerance, or eliminate it via a clean-room match of
-  `DxtUtil`'s rounding (validated against its output, not transcribed — it is Ms-PL).
 - [T2 — full `FixOldTexData` load-time round](backlog/2026-07-10-fixoldtexdata-load-round.md) — we
   ported only the drop-malformed slice. Unported: the NPOT resize (needs T3's resampler) and the
   mip-offset-table fixup, which `/resave` now empirically forces (same format, same length, differing
@@ -340,16 +421,15 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 - [EQDP reconstruction drops mod rows for non-playable races](backlog/2026-07-10-eqdp-non-playable-races.md)
   — C# keeps every race the mod carries and backfills; we emit exactly the 18 playable ones.
   Unreachable today (game EQDP files are playable-race-scoped).
-- [TTMP load fix does not handle `.rgsp`; it passes through unchanged](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
-  — `makeTtmpLoadFix` ports the `.meta` half of `WizardData.cs:685-698`'s combined `.meta`/`.rgsp`
-  load branch (the 2026-07-21 housing-meta drop) but not the `.rgsp` half; an `.rgsp` file survives
-  our load unchanged instead of being diverted into manipulations like TexTools does. Read-side
-  sibling of the write-side [`2026-07-13-pmp-write-meta-rgsp-manipulations.md`](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)
-  item, but reachable (no format-conversion gate protects it). Not yet confirmed as a real
-  divergence — no corpus pack carrying `.rgsp` has been found.
 
 ### Other ported code
 
+- [`writeModpack`'s cross-format guard is per-FILE, not per-format](backlog/2026-08-08-writemodpack-per-file-format-guard.md)
+  — it infers the format from each file's `storage` and never reads `data.sourceFormat`, so a model
+  carrying **no files** crosses formats silently. Measured 2026-08-08: a PMP whose only group is a
+  Penumbra `Combining` group with empty containers wrote a 605-byte `.ttmp2`. The wrong-output hole
+  that exposed it is closed loudly at the seam (`src/container/ttmp2.ts`, `UnportedGapError`); this
+  is the underlying guard, whose fix has to audit every hand-built `ModpackData` fixture.
 - [Port IBM437 (CP437) zip entry-name decoding](backlog/2026-07-12-cp437-zip-entry-names.md) —
   `readZip` throws on a non-UTF-8-flagged high-byte entry name rather than guessing; `Ionic.Zip`
   falls back to CP437, empirically confirmed via a hand-assembled zip run through ConsoleTools. No

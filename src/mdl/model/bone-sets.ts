@@ -1,5 +1,5 @@
 // v6 bone-set block assembly, ported from the v6 branch of
-// xivModdingFramework's MakeUncompressedMdlFile (Mdl.cs:3372-3452).
+// xivModdingFramework's MakeUncompressedMdlFile (Mdl.cs:3368-3448).
 // Split, don't blend: per-group packing lives in getV6BoneSet (tt-model.ts);
 // this module only assembles the header table + padded data region around it.
 //
@@ -21,7 +21,7 @@ export interface V6BoneSetBlock {
 
 const V6_SET_DATA_BYTES = 128; // 64 shorts per set (the v5 static bone-array size)
 
-/** Assemble the v6 bone-set block (Mdl.cs:3378-3416 compact packing + the ConsoleTools
+/** Assemble the v6 bone-set block (Mdl.cs:3374-3412 compact packing + the ConsoleTools
  *  zero-extension — see the file header). A 4-byte [i16 offset][i16 count] header per mesh
  *  group at the front (offset = dwords from the group's header to its compactly-packed data;
  *  count = real bone count), then each group's packed LE-i16 indices (from getV6BoneSet)

@@ -115,7 +115,7 @@ function isConsoleToolsProcessError(
 }
 
 /** Source extension drives BOTH sides: WriteModpack dispatches on the DESTINATION extension
- *  (WizardData.cs:1312-1326), so resaving to the same extension is what exercises the writer we are
+ *  (WizardData.cs:1331-1345), so resaving to the same extension is what exercises the writer we are
  *  testing. A legacy `.ttmp` resaves to `.ttmp2` — TexTools has no legacy writer, and our
  *  writeModpack targets ttmp2 for the whole TTMP family. */
 function resaveExt(name: string): "pmp" | "ttmp2" {

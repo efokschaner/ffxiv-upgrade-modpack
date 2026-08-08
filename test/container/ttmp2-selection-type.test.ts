@@ -7,6 +7,7 @@ import {
   type ModpackData,
   ModpackFormat,
 } from "../../src/model/modpack";
+import { UnportedGapError } from "../../src/util/errors";
 import { readZip, writeZip } from "../../src/zip/zip";
 import { filesMap } from "../helpers/make-packs";
 
@@ -17,7 +18,7 @@ const PATH = "chara/human/c0101/obj/body/b0001/model/c0101b0001.mdl";
 const BLOB = new Uint8Array([0xaa, 0x01, 0x02, 0x03]);
 
 /** A group JSON authored as a raw object, not the typed TtmpModGroupJson: only a raw object can
- *  OMIT SelectionType, which is one of the cases WizardData.cs:652 has to answer for. */
+ *  OMIT SelectionType, which is one of the cases WizardData.cs:658 has to answer for. */
 function groupJson(selectionType?: string): Record<string, unknown> {
   const sel =
     selectionType === undefined ? {} : { SelectionType: selectionType };
@@ -119,10 +120,10 @@ function writtenMpl(data: ModpackData): ModPackJson {
   return JSON.parse(dec.decode(entries.get("TTMPL.mpl")!)) as ModPackJson;
 }
 
-// WizardData.cs:652 — `tGroup.SelectionType == "Single" ? Single : Multi`. The comparison is against
+// WizardData.cs:658 — `tGroup.SelectionType == "Single" ? Single : Multi`. The comparison is against
 // "Single" only, so every other value — an unrecognized string, an absent key — lands on Multi.
 // ConsoleTools confirms each row: test/corpus/synthetic/selection-type{,-absent}.ttmp2.
-describe("readTtmp2 SelectionType (WizardData.cs:652)", () => {
+describe("readTtmp2 SelectionType (WizardData.cs:658)", () => {
   it.each([
     ["Single", "Single"],
     ["Multi", "Multi"],
@@ -139,16 +140,26 @@ describe("readTtmp2 SelectionType (WizardData.cs:652)", () => {
   });
 });
 
-// WizardData.cs:877 (group) / :419 (option) — `SelectionType = OptionType.ToString()`, where
-// OptionType is the two-valued EOptionType (:25-29) both readers collapse into (:652 TTMP, :769 PMP),
-// and an option delegates to its group (:335-341).
-describe("writeTtmp2 SelectionType (WizardData.cs:877/:419)", () => {
+// WizardData.cs:883 (group) / :421 (option) — `SelectionType = OptionType.ToString()`, where
+// OptionType is the two-valued EOptionType (:26-30) both readers collapse into (:658 TTMP, :775 PMP),
+// and an option delegates to its group (:337-343).
+describe("writeTtmp2 SelectionType (WizardData.cs:883/:421)", () => {
   it.each([
     ["Single", "Single"],
     ["Multi", "Multi"],
-    // A PMP group type reaching the TTMP writer: not "Single", so it collapses to Multi, exactly as
-    // FromPMPGroup (:769) collapses it on the way in.
-    ["Combining", "Multi"],
+    // Any value that is not literally "Single" collapses to Multi, exactly as FromPMPGroup (:775)
+    // and FromWizardGroup (:658) collapse it on the way in.
+    //
+    // This row used to be `["Combining", "Multi"]`, and that was pinning a BUG. `EGroupType`
+    // (WizardData.cs:32-37) gained a `Combining` member in the v3.1.1.4 re-pin, and TexTools refuses
+    // such a group on this path rather than collapsing it — `ToModGroup` passes it (:874-877 guards
+    // only `ImcData`) and `WizardOptionEntry.ToModOption` throws at :425-428. Our writer now refuses
+    // it too (see the two refusal cases below), so asserting the collapse here would assert the
+    // silent-wrong-output this branch removed. An arbitrary string keeps the collapse itself pinned:
+    // `groupType` classifies it Standard, matching the C# (`ImcData == null` and `ModOption` is not a
+    // `PMPCombiningGroupJson`, WizardData.cs:611-625), so it reaches the collapse the way it always
+    // did.
+    ["Anything Else", "Multi"],
   ])("writes %j as %j at group and option level", (input, expected) => {
     const mpl = writtenMpl(dataWith(input));
     const g = mpl.ModPackPages![0]!.ModGroups[0]!;
@@ -165,11 +176,22 @@ describe("writeTtmp2 SelectionType (WizardData.cs:877/:419)", () => {
     expect(raw).toContain('"SelectionType":"Multi"');
   });
 
-  // ToModGroup throws InvalidDataException at its first statement (WizardData.cs:868-871),
+  // ToModGroup throws InvalidDataException at its first statement (WizardData.cs:874-877),
   // before it builds the ModGroup or visits any option.
-  it("throws on an Imc group (ToModGroup, WizardData.cs:868-871)", () => {
+  it("throws on an Imc group (ToModGroup, WizardData.cs:874-877)", () => {
     expect(() => writeTtmp2(dataWith("Imc"))).toThrow(
       /TTMP Does not support IMC Groups/,
     );
+  });
+
+  // The Combining sibling, which the C# refuses one level DOWN and with a different message:
+  // `WizardOptionEntry.ToModOption`'s `if (StandardData == null)` throw (WizardData.cs:425-428),
+  // reached because `StandardData`'s getter returns null off-Standard (:376-388). We do not
+  // reproduce that option-level seam, so ours is an `UnportedGapError` — asserted by TYPE, since the
+  // point is the port-gap signal (which any ported catch must re-throw), not the wording. The
+  // structural pin lives in ttmp2-write.test.ts; this one is here because this file is where the
+  // "Combining writes as Multi" expectation used to live.
+  it("throws UnportedGapError on a Combining group (ToModOption, WizardData.cs:425-428)", () => {
+    expect(() => writeTtmp2(dataWith("Combining"))).toThrow(UnportedGapError);
   });
 });

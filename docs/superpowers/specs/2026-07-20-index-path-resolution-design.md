@@ -237,5 +237,6 @@ Per AGENTS.md "a found divergence is a test-coverage gap too":
   above. It did not end up reusing this enumeration pattern; it bundles the complete `040000` index
   instead (`docs/superpowers/specs/2026-07-31-game-file-exists-oracle-design.md` §3, weighing and
   rejecting a filtered-by-type-4 subset in favor of zero assumptions).
-- Cross-format (TTMP↔PMP) conversion is out of scope (`src/index.ts:80-84` rejects it).
+- Cross-format (TTMP↔PMP) conversion is out of scope (`src/index.ts:87-98` rejects it, per-file —
+  see `docs/backlog/2026-08-08-writemodpack-per-file-format-guard.md` for the fileless hole).
 ```

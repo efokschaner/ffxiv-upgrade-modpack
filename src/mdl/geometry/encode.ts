@@ -4,7 +4,7 @@
 // canonical declaration, and is byte-exact by construction for any decodable source.
 
 // TexTools' vertex writer packs Half4/Half2 via SharpDX `new Half()`, which truncates
-// toward zero (Mdl.cs:4121-4154 WriteVectorData); use floatToHalfTruncate, not the RTNE
+// toward zero (Mdl.cs:4117-4150 WriteVectorData); use floatToHalfTruncate, not the RTNE
 // floatToHalf.
 import { floatToHalfTruncate } from "../../util/float16";
 import type { VertexElement } from "./declaration";
@@ -26,7 +26,7 @@ function pushF32(out: number[], v: number): void {
   );
 }
 
-/** ConvertVectorBinormalToBytes (Mdl.cs:4032-4079). handednessInt = handedness ? -1 : 1. */
+/** ConvertVectorBinormalToBytes (Mdl.cs:4028-4075). handednessInt = handedness ? -1 : 1. */
 function pushBinormalBytes(
   out: number[],
   v: Vec3,
@@ -38,7 +38,7 @@ function pushBinormalBytes(
   out.push(handednessInt > 0 ? 0 : 255);
 }
 
-/** WriteVectorData (Mdl.cs:4121-4154) for Position/Normal/Binormal/Flow. */
+/** WriteVectorData (Mdl.cs:4117-4150) for Position/Normal/Binormal/Flow. */
 function pushVectorData(
   out: number[],
   type: VertexDataType,
@@ -56,7 +56,7 @@ function pushVectorData(
     pushF32(out, data[1]);
     pushF32(out, data[2]);
   } else if (type === VertexDataType.Ubyte4n) {
-    // Ubyte4n-only is deliberate fidelity to a reference typo (Mdl.cs:4147: `Ubyte4n ||
+    // Ubyte4n-only is deliberate fidelity to a reference typo (Mdl.cs:4143: `Ubyte4n ||
     // Ubyte4n`, meant to be `Ubyte4`); a Ubyte4 binormal/flow would fail loud below (stream
     // size mismatch), not silently.
     pushBinormalBytes(out, data, handedness ? -1 : 1);
@@ -72,7 +72,7 @@ function pushUv(out: number[], type: VertexDataType, a: Vec2, b: Vec2): void {
       pushF32(out, b[1]);
     }
   } else if (type === VertexDataType.Half2 || type === VertexDataType.Half4) {
-    // UV components go through a `(Half)` cast in C# (Mdl.cs:4251-4256 UV1/UV2, :4271-4272 UV3),
+    // UV components go through a `(Half)` cast in C# (Mdl.cs:4247-4252 UV1/UV2, :4267-4268 UV3),
     // which routes through the same SharpDX HalfUtils.Pack truncation as WriteVectorData above, so
     // floatToHalfTruncate is correct here too.
     pushU16(out, floatToHalfTruncate(a[0]));
@@ -126,7 +126,7 @@ function encodeElement(out: number[], e: VertexElement, v: TtVertex): void {
     case VertexUsageType.TextureCoordinate:
       if (e.count === 0) pushUv(out, e.type, v.uv1, v.uv2);
       // Intentionally more permissive than the reference writer here, which only ever
-      // emits Float2/Half2 for the count!=0 texcoord (Mdl.cs:4260-4273); harmless since
+      // emits Float2/Half2 for the count!=0 texcoord (Mdl.cs:4256-4269); harmless since
       // decode now guards the unmodeled non-zero second pair a Half4/Float4 would imply.
       else pushUv(out, e.type, v.uv3, [0, 0]);
       break;

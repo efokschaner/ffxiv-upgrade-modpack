@@ -317,6 +317,12 @@ Not every guard is tagged yet; the remaining sweep is tracked in
 - **`reference/` is off-limits to edits.** It is the vendored third-party C#
   (xivModdingFramework / TexTools) we port from — the map referenced throughout this
   guide. Read it freely; never edit, lint, or format it (it is gitignored).
+- **`reference/oracle/` is tool-managed, and equally hands-off.** It holds the pinned
+  ConsoleTools builds the golden harness runs — the *compiled* form of the source vendored
+  beside it, kept together so read-source and oracle cannot drift. Written **only** by
+  `scripts/setup-oracle.ts`; never hand-edited, and never committed (gitignored with the
+  rest of `reference/`). See
+  `docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md` §5.
 - **Design lives in `docs/superpowers/`.** Specs in `specs/`, implementation plans in
   `plans/`. Follow spec-then-plan discipline for non-trivial work.
   - **Start here:** `docs/superpowers/specs/2026-06-30-dawntrail-modpack-upgrader-design.md`

@@ -66,7 +66,7 @@ describe("resolveRedirects", () => {
       { "common/1/a.tex": bytes(1, 2, 3) },
     );
     expect([...resolveRedirects(m)]).toEqual([
-      [redirectKey("group_001_g.json", 0, "chara/a.tex"), bytes(1, 2, 3)],
+      [redirectKey("group_001_g.json", "0", "chara/a.tex"), bytes(1, 2, 3)],
     ]);
   });
 
@@ -85,7 +85,7 @@ describe("resolveRedirects", () => {
     );
     expect(
       resolveRedirects(m).get(
-        redirectKey("group_001_g.json", 0, "chara/a.tex"),
+        redirectKey("group_001_g.json", "0", "chara/a.tex"),
       ),
     ).toEqual(bytes(4));
   });
@@ -105,7 +105,7 @@ describe("resolveRedirects", () => {
     );
     expect(
       resolveRedirects(m).has(
-        redirectKey("group_001_g.json", 0, "chara/a.tex"),
+        redirectKey("group_001_g.json", "0", "chara/a.tex"),
       ),
     ).toBe(false);
   });
@@ -155,8 +155,8 @@ describe("resolveRedirects", () => {
       const left = resolveRedirects(membersLeft);
       const right = resolveRedirects(membersRight);
 
-      const keyA = redirectKey("group_001_g.json", 0, "chara/a.tex");
-      const keyB = redirectKey("group_001_g.json", 1, "chara/a.tex");
+      const keyA = redirectKey("group_001_g.json", "0", "chara/a.tex");
+      const keyB = redirectKey("group_001_g.json", "1", "chara/a.tex");
 
       // Option A (index 0) is untouched by the divergence and must still compare equal.
       expect(left.get(keyA)).toEqual(right.get(keyA));
@@ -179,5 +179,153 @@ describe("payloadMemberNames", () => {
       "common/1/b.tex",
       "g/on/a.tex",
     ]);
+  });
+});
+
+const encJson = (v: unknown): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(v));
+
+/** A v4 archive: meta.json carrying Groups + DefaultData inline, plus payload members.
+ *  Mirrors what PMP.WritePmp (PMP.cs:908-962) emits — no default_mod.json, no group_NNN.json. */
+function v4Members(): Map<string, Uint8Array> {
+  const m = new Map<string, Uint8Array>();
+  m.set(
+    "meta.json",
+    encJson({
+      FileVersion: 4,
+      Name: "t",
+      Identifier: "5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3",
+      LastWrite: "2026-08-06T04:41:11.0160172-07:00",
+      ModTags: [],
+      Groups: [
+        {
+          Name: "G0",
+          Type: "Single",
+          Options: [
+            { Name: "A", Files: { "chara/a.tex": "g0a\\chara\\a.tex" } },
+            { Name: "B", Files: { "chara/a.tex": "g0b\\chara\\a.tex" } },
+          ],
+        },
+        {
+          Name: "G1",
+          Type: "Single",
+          Options: [
+            {
+              Name: "A",
+              Files: { "chara/a.tex": "g1a\\chara\\a.tex" },
+              FileSwaps: { "chara/x.tex": "chara/y.tex" },
+            },
+          ],
+        },
+      ],
+      DefaultData: {
+        Version: 0,
+        Files: { "chara/d.tex": "def\\chara\\d.tex" },
+      },
+    }),
+  );
+  m.set("g0a/chara/a.tex", new Uint8Array([1]));
+  m.set("g0b/chara/a.tex", new Uint8Array([2]));
+  m.set("g1a/chara/a.tex", new Uint8Array([3]));
+  m.set("def/chara/d.tex", new Uint8Array([4]));
+  return m;
+}
+
+describe("archive-redirects v4 (PMP.cs · PMPMetaJson · 1484/1487)", () => {
+  it("resolves every inline group option and DefaultData", () => {
+    const r = resolveRedirects(v4Members());
+    expect(r.get(redirectKey("meta.json", "0/0", "chara/a.tex"))).toEqual(
+      new Uint8Array([1]),
+    );
+    expect(r.get(redirectKey("meta.json", "0/1", "chara/a.tex"))).toEqual(
+      new Uint8Array([2]),
+    );
+    expect(r.get(redirectKey("meta.json", "1/0", "chara/a.tex"))).toEqual(
+      new Uint8Array([3]),
+    );
+    expect(r.get(redirectKey("meta.json", "default", "chara/d.tex"))).toEqual(
+      new Uint8Array([4]),
+    );
+  });
+
+  it("does not collide two groups' options onto one key — under v4 every option lives in meta.json, so a bare option index would merge G0[0] and G1[0]", () => {
+    expect(resolveRedirects(v4Members()).size).toBe(4);
+  });
+
+  it("sees a FileSwap on an inline group option", () => {
+    expect(packHasFileSwaps(v4Members())).toBe(true);
+  });
+
+  it("FAILS LOUD on a meta.json with no recognizable option container, instead of comparing empty maps", () => {
+    const m = new Map<string, Uint8Array>();
+    m.set("meta.json", encJson({ FileVersion: 4, Name: "t" }));
+    m.set("payload/a.tex", new Uint8Array([1]));
+    expect(() => resolveRedirects(m)).toThrow(
+      /no recognizable option container/,
+    );
+  });
+});
+
+// The guard above discriminates "I did not recognize this archive's shape" (fail-open risk) from
+// "this archive genuinely has no options" (legal, and an empty redirect map is the right answer).
+// The discriminator is payload members no option container explains. See archive-redirects.ts.
+describe("archive-redirects: optionless vs unrecognized (PMP.cs · LoadPMP · 181-189)", () => {
+  /** A legal, genuinely optionless Penumbra pack: meta.json and nothing else. `File.Exists` guards
+   *  the default_mod.json read (PMP.cs · LoadPMP · 182) and the group scan (:191-208) finds nothing,
+   *  so TexTools loads this with zero options — and so do we. Built for real as a corpus pack by
+   *  scripts/generate-synthetics/build-synthetic-pmp-absent-manifests.ts. */
+  const metaOnly = (fileVersion: number): Map<string, Uint8Array> =>
+    new Map([
+      ["meta.json", encJson({ FileVersion: fileVersion, Name: "t" })],
+    ]) as Map<string, Uint8Array>;
+
+  it.each([
+    3, 4,
+  ])("does NOT throw on a v%i meta.json-only pack — no payload, so nothing can pass vacuously", (fileVersion) => {
+    const m = metaOnly(fileVersion);
+    expect(() => resolveRedirects(m)).not.toThrow();
+    expect(resolveRedirects(m).size).toBe(0);
+    // packHasFileSwaps runs on EVERY PMP /resave input (corpus-resave.ts); this is the call that
+    // used to throw and turn the suite red on a legal empty pack.
+    expect(() => packHasFileSwaps(m)).not.toThrow();
+    expect(packHasFileSwaps(m)).toBe(false);
+  });
+
+  it(
+    "STILL throws on the original fail-open: an unrecognized-shape meta.json over payload — " +
+      "REGRESSION guard, the v4 archive that motivated the throw differs from an empty pack " +
+      "ONLY by carrying payload members",
+    () => {
+      // Same meta.json as the passing case above, plus one payload member. If narrowing the guard
+      // had made this pass, the bug it exists for would be back and no corpus pack would catch it.
+      const m = metaOnly(4);
+      m.set("v4 payload/chara/a.tex", new Uint8Array([1]));
+      expect(() => resolveRedirects(m)).toThrow(
+        /no recognizable option container/,
+      );
+      expect(() => resolveRedirects(m)).toThrow(
+        /payload member\(s\) nothing accounts for/,
+      );
+      expect(() => packHasFileSwaps(m)).toThrow();
+    },
+  );
+
+  it("a v3 pack with a group but NO default_mod.json is recognized (File.Exists, PMP.cs · LoadPMP · 182)", () => {
+    const m = new Map<string, Uint8Array>();
+    m.set("meta.json", encJson({ FileVersion: 3, Name: "t" }));
+    m.set(
+      "group_001_g.json",
+      encJson({
+        Name: "G",
+        Type: "Single",
+        Options: [{ Name: "On", Files: { "chara/a.tex": "g\\on\\a.tex" } }],
+      }),
+    );
+    m.set("g/on/a.tex", new Uint8Array([7]));
+    expect(
+      resolveRedirects(m).get(
+        redirectKey("group_001_g.json", "0", "chara/a.tex"),
+      ),
+    ).toEqual(new Uint8Array([7]));
   });
 });

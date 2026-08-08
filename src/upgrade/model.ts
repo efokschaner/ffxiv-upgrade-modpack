@@ -1,5 +1,5 @@
 // Model-normalizer gate + entry (upgrade layer). Mirrors EndwalkerUpgrade/TTMP
-// DoesModpackNeedFix (TTMP.cs:916): FixOldModel runs on .mdl when TTMP major < 2.
+// DoesModpackNeedFix (TTMP.cs:918): FixOldModel runs on .mdl when TTMP major < 2.
 // The normalizer itself is EndwalkerUpgrade.FixOldModel (EndwalkerUpgrade.cs:190):
 // GetXivMdl -> TTModel.FromRaw -> MakeUncompressedMdlFile, emitting a v6 model.
 import { parseMdl } from "../mdl/mdl";
@@ -19,7 +19,7 @@ function ttmpMajor(v: string | undefined): number {
  * Pure version gate: true when a TTMP pack of TTMPVersion `version` gets FixOldModel at load —
  * major < 2 (an absent version is legacy .ttmp, which predates 2.x → needs the fix). This is the
  * TTMP-only half of `needsMdlFix` (PMP is gated out by the caller), so a reader that only has the
- * parsed version string can call it directly. Mirrors DoesModpackNeedFix (TTMP.cs:916).
+ * parsed version string can call it directly. Mirrors DoesModpackNeedFix (TTMP.cs:918).
  */
 export function ttmpNeedsMdlFix(version: string | undefined): boolean {
   return ttmpMajor(version) < 2;

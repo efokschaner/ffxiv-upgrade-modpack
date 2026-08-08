@@ -36,7 +36,8 @@ import { syntheticMeta, writePmp } from "./pmp-builder";
 // members into `common/1/`, which erases the `default/` prefix this fixture exists to pin: the pack
 // then reproduces the dedup path instead of the option-folder path, and passes for the wrong reason.
 //
-// Penumbra writes a Files VALUE as the backslashed zip path (PMP.cs:1107-1109), and lays payload out
+// Penumbra writes a Files VALUE as the backslashed zip path
+// (`PMP.cs · PopulatePmpStandardOption · 1005-1007`), and lays payload out
 // at the bare gamePath with no option folder — exactly the layout TexTools' writer will NOT
 // reproduce, which is the point of the fixture.
 const FILES: Record<string, Uint8Array> = {

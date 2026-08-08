@@ -1,4 +1,4 @@
-// Port of Mdl.MakeUncompressedMdlFile (Mdl.cs:2488-3964). LoD0 only, weighted or
+// Port of Mdl.MakeUncompressedMdlFile (Mdl.cs:2484-3960). LoD0 only, weighted or
 // unweighted (including the unweighted multi-part "furniture"/boneless-part shape with
 // its per-part bounding boxes). Extra meshes, neck-morph tables, and Shadow+Fog mesh
 // ordering still fail loud (throw) rather than emit a wrong file. Byte-parity against a
@@ -70,7 +70,7 @@ function padTo(out: number[], n: number): void {
   }
 }
 
-/** Port of MakeUncompressedMdlFile (Mdl.cs:2488-3964). `model.mdlVersion` must already be
+/** Port of MakeUncompressedMdlFile (Mdl.cs:2484-3960). `model.mdlVersion` must already be
  *  6 (the caller's job); `rm` is the ReadMdl this model was built from (for opaque
  *  section copies + scalar flags this stage does not model). */
 export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
@@ -95,7 +95,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   // combination of present types EXCEPT when both Shadow (bucket 2) and Fog (bucket 3) groups
   // exist: EMeshType orders Fog before Shadow, our bucket orders Shadow first, which flips the
   // serialized mesh order (and the meshTypeCounts offsets). Fail loud rather than emit a
-  // mis-ordered model. (Mdl.cs:2548 / TTModel.cs:806-816; see meshTypeCounts above.)
+  // mis-ordered model. (Mdl.cs:2544 / TTModel.cs:806-816; see meshTypeCounts above.)
   const hasShadow = model.meshGroups.some((g) => g.meshType === 2);
   const hasFog = model.meshGroups.some((g) => g.meshType === 3);
   if (hasShadow && hasFog) {
@@ -104,7 +104,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     );
   }
 
-  // TTModel.OrderMeshGroupsForImport (Mdl.cs:2548, TTModel.cs:806-816): stable sort by
+  // TTModel.OrderMeshGroupsForImport (Mdl.cs:2544, TTModel.cs:806-816): stable sort by
   // mesh type. Array.prototype.sort is stable per spec. Must run before every helper
   // below that iterates model.meshGroups (declarations/bonesets/bbox/geometry all key off
   // the post-sort order, exactly as the reference mutates ttModel.MeshGroups up front).
@@ -113,7 +113,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   );
 
   const weighted = hasWeights(model);
-  // Mdl.cs:2551-2553: parts are written for any weighted or multi-part model; a model that
+  // Mdl.cs:2547-2549: parts are written for any weighted or multi-part model; a model that
   // is unweighted AND uses parts carries the boneless "furniture-part" bounding boxes
   // (bgcommon/hou/.../bgparts/*.mdl), whose per-part box count feeds furniturePartBoundingBoxCount.
   const useParts = weighted || model.meshGroups.some((g) => g.parts.length > 1);
@@ -127,8 +127,8 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     decl[0]!.find((e) => e.usage === VertexUsageType.BoneWeight)?.type ===
     VertexDataType.UByte8;
 
-  // ---- Phase 1: geometry (vertex + index data blocks), per mesh (Mdl.cs:2795-2820,
-  // GetBasicGeometryData Mdl.cs:3982-4021, TTMeshGroup.TriangleIndices TTModel.cs:723-737).
+  // ---- Phase 1: geometry (vertex + index data blocks), per mesh (Mdl.cs:2791-2816,
+  // GetBasicGeometryData Mdl.cs:3978-4017, TTMeshGroup.TriangleIndices TTModel.cs:723-737).
   // Built as a chunk list + running length (not a flat number[]) because
   // `arr.push(...bigTypedArray)` blows the call stack once a stream exceeds V8's
   // argument-count limit -- real corpus meshes routinely do.
@@ -163,12 +163,12 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
       for (const v of part.vertices) meshVertices.push(v);
       vOffset += part.vertices.length;
     }
-    padTo(indexDataBlock, 16); // 8-index inter-mesh padding (Mdl.cs:2819)
+    padTo(indexDataBlock, 16); // 8-index inter-mesh padding (Mdl.cs:2815)
 
     meshIndexOffsets.push(meshIndexOffset);
     meshIndexCount.push(meshIndices.length);
 
-    // Mdl.cs:2778-2793: shape vertices are orphaned (index-less) vertices appended after
+    // Mdl.cs:2774-2789: shape vertices are orphaned (index-less) vertices appended after
     // the mesh's real geometry -- written into the SAME vertex stream buffers, encoded
     // together with the base vertices below. Index data (computed above) is unchanged.
     if (rawShapeParts !== undefined) {
@@ -198,7 +198,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   }
   const vertexDataBlock = concatBytes(vertexChunks);
 
-  // Mdl.cs:2822-2825: even after the Half-precision fallback, refuse a vertex buffer that
+  // Mdl.cs:2818-2821: even after the Half-precision fallback, refuse a vertex buffer that
   // exceeds _MaxVertexBufferSize -- a genuine failure, not something to clamp or truncate.
   if (vertexDataBlock.length > MAX_VERTEX_BUFFER_SIZE) {
     throw new Error(
@@ -209,7 +209,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   // ---- Phase 2: vertexInfoBlock.
   const vertexInfoBlock = serializeVertexDeclarations(decl);
 
-  // ---- Phase 3.1: pathInfoBlock (Mdl.cs:2830-2925).
+  // ---- Phase 3.1: pathInfoBlock (Mdl.cs:2826-2921).
   const pathBytes: number[] = [];
   const attributeOffsets: number[] = [];
   for (const s of model.attributes) {
@@ -226,7 +226,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     materialOffsets.push(pathBytes.length);
     pushCString(pathBytes, s);
   }
-  // Mdl.cs:2886-2901: shape names, gated on HasShapeData -- written after materials,
+  // Mdl.cs:2882-2897: shape names, gated on HasShapeData -- written after materials,
   // before extra paths. Record each name's path-block offset (shapeOffsetList) for the
   // FullShapeDataBlock's shapeInfo sub-block below.
   const shapeOffsetList: number[] = [];
@@ -239,7 +239,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   for (const s of rm.pathData.extraPathList) pushCString(pathBytes, s);
   padTo(pathBytes, 4);
 
-  // Mdl.cs:2833-2917: pathCount increments once per path written, INCLUDING the extra
+  // Mdl.cs:2829-2913: pathCount increments once per path written, INCLUDING the extra
   // paths loop (`pathCount++` at line 2916) -- it is NOT limited to
   // attributes+bones+materials+shapes, despite that being a natural first read of the
   // count's purpose. Confirmed by direct reading of the reference; flagged for the ratchet.
@@ -255,7 +255,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     new Uint8Array(pathBytes),
   ]);
 
-  // ---- Phase 3.2: basicModelBlock (the 56-byte MdlModelData; Mdl.cs:2931-3053).
+  // ---- Phase 3.2: basicModelBlock (the 56-byte MdlModelData; Mdl.cs:2927-3049).
   const ext = computeExtents(model);
   const radius = computeRadius(ext.abs);
 
@@ -274,12 +274,12 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
 
   let flags2 = ogMd.flags2;
   flags2 &= ~HAS_EXTRA_MESHES; // ttModel.HasExtraMeshes is always false in this scope
-  // Mdl.cs:2978-2984: HasBonelessParts follows the RECOMPUTED useFurnitureBBs (an unweighted
+  // Mdl.cs:2974-2980: HasBonelessParts follows the RECOMPUTED useFurnitureBBs (an unweighted
   // multi-part model), independent of the source flag the meshPartDataBlock gates on below.
   if (useFurnitureBBs) flags2 |= HAS_BONELESS_PARTS;
   else flags2 &= ~HAS_BONELESS_PARTS;
 
-  // Mdl.cs:3000-3018: CrestChange/MaterialChange flags follow whether any mesh group has
+  // Mdl.cs:2996-3014: CrestChange/MaterialChange flags follow whether any mesh group has
   // that MeshType. Our internal tag (0-3) can never equal those types (see the const doc
   // comment above), so both are always cleared here.
   const flags3 = ogMd.flags3 & ~(USE_MATERIAL_CHANGE | USE_CREST_CHANGE);
@@ -319,10 +319,10 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   };
   const basicModelBlock = serializeMdlModelData(md);
 
-  // ---- Phase 3.3: unknownDataBlock0 (opaque; Mdl.cs:3061).
+  // ---- Phase 3.3: unknownDataBlock0 (opaque; Mdl.cs:3057).
   const unknownDataBlock0 = rm.og.sections.elementIds;
 
-  // ---- Phase 3.6: meshDataBlock (36 B/mesh; Mdl.cs:3070-3193).
+  // ---- Phase 3.6: meshDataBlock (36 B/mesh; Mdl.cs:3066-3189).
   const meshDataBuilder = new ByteBuilder();
   let totalParts = 0;
   for (let mi = 0; mi < meshCount; mi++) {
@@ -333,7 +333,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     const partCount = useParts ? group.parts.length : 0;
     const boneSetIndex = weighted ? mi : 255;
 
-    // Mdl.cs:3104-3128: base = source mesh header's own byte @35 (VertexStreamCountUnknown,
+    // Mdl.cs:3100-3124: base = source mesh header's own byte @35 (VertexStreamCountUnknown,
     // MeshDataInfo.cs:104), high bits (& 0xF8) preserved, low bits replaced with the
     // stream count, bit 0x04 set iff the BoneWeight element is the 8-weight UByte8 format.
     const srcByte35 =
@@ -367,17 +367,17 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   for (const off of attributeOffsets) attributePathBuilder.i32(off);
   const attributePathDataBlock = attributePathBuilder.toUint8Array();
 
-  // ---- Phase 3.8: unknownDataBlock1 (opaque; Mdl.cs:3216).
+  // ---- Phase 3.8: unknownDataBlock1 (opaque; Mdl.cs:3212).
   const unknownDataBlock1 = rm.og.sections.terrainShadowMeshHeaders;
 
-  // ---- Phase 3.9: meshPartDataBlock (16 B/part; Mdl.cs:3223-3335).
+  // ---- Phase 3.9: meshPartDataBlock (16 B/part; Mdl.cs:3219-3331).
   let meshPartDataBlock = new Uint8Array(0);
   if (useParts) {
     const b = new ByteBuilder();
     let currentBoneOffset = 0;
     let boundingBoxIdx = 0;
     let globalPartIdx = 0;
-    // Mdl.cs:3314-3318: the part attribute-mask slot is overwritten with a sequential
+    // Mdl.cs:3310-3314: the part attribute-mask slot is overwritten with a sequential
     // bounding-box index gated on the SOURCE model's HasBonelessParts flag (the reference
     // reads the pre-modification `ogMdl.ModelData`), NOT the recomputed useFurnitureBBs that
     // drives flags2/furniturePartBoundingBoxCount/the BB block above. Keeping the two gates
@@ -409,7 +409,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     meshPartDataBlock = b.toUint8Array();
   }
 
-  // ---- Phase 3.10: unknownDataBlock2 (opaque; Mdl.cs:3339).
+  // ---- Phase 3.10: unknownDataBlock2 (opaque; Mdl.cs:3335).
   const unknownDataBlock2 = rm.og.sections.terrainShadowParts;
 
   // ---- Phase 3.11 / 3.12: matPathOffsetDataBlock / bonePathOffsetDataBlock.
@@ -423,7 +423,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
 
   // ---- Phase 3.13: boneSetsBlock (already built above, alongside boneSetSize).
 
-  // ---- Phase 3.14: fullShapeDataBlock (Mdl.cs:3459-3555): three concatenated
+  // ---- Phase 3.14: fullShapeDataBlock (Mdl.cs:3455-3551): three concatenated
   // sub-blocks -- per-shape-name info, per-shapeList-entry part descriptors, and the raw
   // (baseIndex, shapeVertex) replacement pairs -- empty when the model carries no shapes.
   let fullShapeDataBlock = new Uint8Array(0);
@@ -482,7 +482,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     ]);
   }
 
-  // ---- Phase 3.15: partBoneSetsBlock (Mdl.cs:3564-3585).
+  // ---- Phase 3.15: partBoneSetsBlock (Mdl.cs:3560-3581).
   const partBoneSetsData: number[] = [];
   if (weighted) {
     for (const group of model.meshGroups) {
@@ -501,10 +501,10 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
   const unknownPatch72DataBlock = new Uint8Array(0);
 
   // ---- Phase 3.18: paddingDataBlock (opaque; already includes the leading PaddingSize
-  // byte, Mdl.cs:3665-3666).
+  // byte, Mdl.cs:3661-3662).
   const paddingDataBlock = rm.og.sections.padding;
 
-  // ---- Phase 3.19: boundingBoxDataBlock (Mdl.cs:3673-3746; includes the per-bone cubes).
+  // ---- Phase 3.19: boundingBoxDataBlock (Mdl.cs:3669-3742; includes the per-bone cubes).
   const boundingBoxDataBlock = buildBoundingBoxBlock(
     model,
     radius,
@@ -513,7 +513,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     useFurnitureBBs,
   );
 
-  // ---- Phase 4: LoD0 header (60 B) + LoD1/2 padding (120 B) (Mdl.cs:3817-3875).
+  // ---- Phase 4: LoD0 header (60 B) + LoD1/2 padding (120 B) (Mdl.cs:3813-3871).
   const { offset: typeOffset, count: typeCount } = meshTypeCounts(
     model.meshGroups,
   );
@@ -532,7 +532,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     pathInfoBlock.length +
     basicModelBlock.length +
     unknownDataBlock0.length +
-    3 * LOD_HEADER_SIZE + // Mdl.cs:3813: `60 * ogMdl.LoDList.Count`, always 3 LoDs
+    3 * LOD_HEADER_SIZE + // Mdl.cs:3809: `60 * ogMdl.LoDList.Count`, always 3 LoDs
     0 + // extraMeshesBlock: always empty (fail-loud gate above)
     meshDataBlock.length +
     attributePathDataBlock.length +
@@ -578,10 +578,10 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     .i32(lodIndexDataOffset);
   const lodDataBlock = concatBytes([
     lod0Builder.toUint8Array(),
-    new Uint8Array(120), // LoD1/2, blank (Mdl.cs:3875)
+    new Uint8Array(120), // LoD1/2, blank (Mdl.cs:3871)
   ]);
 
-  // ---- Phase 5: final modelDataBlock concatenation (Mdl.cs:3883-3906) + self-check.
+  // ---- Phase 5: final modelDataBlock concatenation (Mdl.cs:3879-3902) + self-check.
   const modelDataBlock = concatBytes([
     pathInfoBlock,
     basicModelBlock,
@@ -611,7 +611,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     throw new Error("mdl: model-data block offset calculation invalid");
   }
 
-  // ---- Phase 6: 68-byte file header (Mdl.cs:3916-3961).
+  // ---- Phase 6: 68-byte file header (Mdl.cs:3912-3957).
   const vBuffer0Offset =
     MDL_HEADER_SIZE + vertexInfoBlock.length + modelDataBlock.length;
   const iBuffer0Offset = vBuffer0Offset + vertexDataBlock.length;
@@ -646,7 +646,7 @@ export function makeUncompressedMdl(model: TTModel, rm: ReadMdl): Uint8Array {
     .u8(0)
     .toUint8Array();
 
-  // ---- Final assembly (Mdl.cs:3964).
+  // ---- Final assembly (Mdl.cs:3960).
   return concatBytes([
     header,
     vertexInfoBlock,

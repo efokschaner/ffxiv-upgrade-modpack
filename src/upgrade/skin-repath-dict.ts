@@ -2,7 +2,7 @@
  * Port of EndwalkerUpgrade.SkinRepathDict · EndwalkerUpgrade.cs:2197-2246 (active entries only).
  *
  * Maps an old Endwalker skin/body/tail *diffuse* texture game path to its Dawntrail-renamed
- * path. Consumed only by `updateSkinPaths` (round-6 partials, ModpackUpgrader.cs:484), which
+ * path. Consumed only by `updateSkinPaths` (round-6 partials, ModpackUpgrader.cs:512), which
  * aliases a file present at the old path to the new path.
  *
  * The large commented-out "Norms" block that follows the active entries upstream

@@ -2,6 +2,8 @@ import { readZip } from "../../src/zip/zip";
 import { payloadMemberNames, resolveRedirects } from "./archive-redirects";
 import { bytesEqual } from "./compare";
 import { jsonPointerDiff } from "./json-diff";
+import type { GoldenOnlyMemberConfirmation } from "./pmp-v4-extrafile-divergence";
+import { confirmNondeterministicMetaFields } from "./pmp-v4-nondeterminism";
 import type { FileDiff } from "./upgrade-diff";
 
 const dec = new TextDecoder();
@@ -73,7 +75,7 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
 
 /** CONFIRMATION (not a tolerance) of the ONE manifest difference we intend: TexTools' writer drops
  *  a file whose payload does not exist from both the zip and the option's `Files` map
- *  (PopulatePmpStandardOption, PMP.cs:883-888), and our writer now does too. So: a `Files` key
+ *  (PopulatePmpStandardOption, PMP.cs:976-981), and our writer now does too. So: a `Files` key
  *  missing from OURS is allowed iff the golden's value for it names a zip path that does not resolve
  *  as a member of the GOLDEN's own archive.
  *
@@ -135,12 +137,19 @@ export function memberKeys(members: Map<string, Uint8Array>): Set<string> {
  *   - it is a re-keying, not a content check: `diffPayloadSemantic`'s redirect-table comparison has
  *     already proven the gamePath resolves to identical bytes on both sides, so this only suppresses
  *     the redundant name-shaped report of that same fact, never substitutes for it. Callers must gate
- *     `layoutEquivalent` on `packHasFileSwaps` of the INPUT pack, same as `diffArchives` requires. */
+ *     `layoutEquivalent` on `packHasFileSwaps` of the INPUT pack, same as `diffArchives` requires.
+ *
+ *  `referenceIsOurs` is forwarded verbatim to `confirmNondeterministicMetaFields` (see its doc
+ *  comment): it declares that `golden` is a second archive OUR writer produced rather than a
+ *  ConsoleTools one, so the v4 `meta.json` GUID fields are held to our producer's shape on BOTH
+ *  sides. Nothing else in this function reads it — the absent-key drop and the FileSwaps carve-out
+ *  are producer-agnostic. */
 export function dropConfirmedAbsentKeys(
   ours: unknown,
   golden: unknown,
   goldenMembers: Map<string, Uint8Array>,
   layoutEquivalent = false,
+  referenceIsOurs = false,
 ): unknown {
   const present = memberKeys(goldenMembers);
   // Deliberately `toLowerCase()`, NOT `looseKey`: this is an EXEMPTION test, not a resolution test.
@@ -163,7 +172,7 @@ export function dropConfirmedAbsentKeys(
       const isStringValue = typeof value === "string";
       const zipPath = isStringValue ? value.replace(/\\/g, "/") : "";
       const absent = isStringValue && !present.has(looseKey(zipPath));
-      if (missingFromOurs && absent) continue; // the PMP.cs:883 drop — confirmed
+      if (missingFromOurs && absent) continue; // the PMP.cs:976 drop — confirmed
       if (
         layoutEquivalent &&
         !missingFromOurs &&
@@ -179,14 +188,19 @@ export function dropConfirmedAbsentKeys(
   };
 
   const option = (oursOpt: unknown, goldenOpt: unknown): unknown => {
-    if (!isObj(goldenOpt) || !isObj(oursOpt) || !isObj(goldenOpt.Files))
-      return goldenOpt;
-    const out: Record<string, unknown> = {
-      ...goldenOpt,
-      Files: confirmedFiles(oursOpt.Files, goldenOpt.Files),
-    };
+    if (!isObj(goldenOpt) || !isObj(oursOpt)) return goldenOpt;
+    const out: Record<string, unknown> = { ...goldenOpt };
+    // `ShouldSerializeFiles` (PMP.cs:1679) is LIVE at this pin — it was block-commented at the old
+    // one — so an EMPTY Files map is an ABSENT key, not `{}`. Two consequences:
+    //  - only prune when the golden actually carries a Files object (nothing to prune otherwise);
+    //  - this must NOT early-return on an absent Files, the way it used to. That early return is
+    //    what disarmed the FileSwaps carve-out the moment the golden stopped writing `{}`.
+    if (isObj(goldenOpt.Files)) {
+      out.Files = confirmedFiles(oursOpt.Files, goldenOpt.Files);
+    }
+
     // INTENTIONAL DIVERGENCE (spec §5.1). PopulatePmpStandardOption sets `opt.FileSwaps = new()`
-    // and never repopulates it (PMP.cs:873-875), silently destroying every swap the pack carried --
+    // and never repopulates it (PMP.cs:966-968), silently destroying every swap the pack carried --
     // docs/TEXTOOLS_BUGS.md #10, adjudicated a genuine defect. We preserve them instead, because a
     // swap is a live redirection in Penumbra (SubMod.AddContainerTo, Penumbra repo
     // Mods/SubMods/SubMod.cs:23-32 -- a separate repo from this project's reference/). So: an EMPTY
@@ -237,7 +251,30 @@ export function dropConfirmedAbsentKeys(
     // `/upgrade` performs. What this does NOT establish is how often a real user reaches that path
     // via `/upgrade`; that is a reachability question answered by the call path, not by this
     // evidence. See the spec §7 -- do not cite this as more than it is.
-    const gSwaps = isObj(goldenOpt.FileSwaps) ? goldenOpt.FileSwaps : undefined;
+    //
+    // Absent == empty, for the same ShouldSerialize reason (ShouldSerializeFileSwaps, PMP.cs:1680):
+    // the golden now OMITS FileSwaps rather than writing `{}`, so requiring the key to be present
+    // would make this confirmation never fire and turn every swap-carrying pack into a hard
+    // manifest diff. A key that IS present but is not an object is malformed, not empty, and stays
+    // unconfirmed.
+    //
+    // ONE SHAPE THIS READS WRONG, scoped and unreachable. `PmpImcOptionJson` (PMP.cs:1709-1716)
+    // declares no `FileSwaps` AT ALL, so an Imc option's absent key means "this option type has no
+    // such field", not "this option's swaps are empty" — for that shape the absent-as-empty reading
+    // is a category error rather than a ShouldSerialize inference, and the "deliberately tight, and
+    // NOT symmetric" claim above does not hold of it. It cannot fire today: the carve-out also
+    // requires OURS to carry a NON-EMPTY FileSwaps for the same option, and `optionToJson`
+    // (src/container/pmp.ts) emits no Files/FileSwaps/Manipulations for an Imc option either
+    // (`hasStandardFields === false`), so `oSwaps` is `undefined` and the condition short-circuits.
+    // Left as-is rather than scoped to standard options: a narrowing predicate here would have to
+    // re-derive "is this an Imc option" from the JSON, which is a second, untested copy of the
+    // reader's discriminator. If ours ever starts emitting FileSwaps on an Imc option, that is a
+    // writer bug and this comment is the record that this rule would bless it.
+    const gSwaps = Object.hasOwn(goldenOpt, "FileSwaps")
+      ? isObj(goldenOpt.FileSwaps)
+        ? goldenOpt.FileSwaps
+        : undefined
+      : {};
     const oSwaps = isObj(oursOpt.FileSwaps) ? oursOpt.FileSwaps : undefined;
     if (
       gSwaps !== undefined &&
@@ -250,16 +287,48 @@ export function dropConfirmedAbsentKeys(
     return out;
   };
 
-  if (!isObj(golden) || !isObj(ours)) return golden;
-  // group_NNN.json: prune inside each option, pairing by index (order is part of the compare).
-  if (Array.isArray(golden.Options) && Array.isArray(ours.Options)) {
-    const oursOptions = ours.Options as unknown[];
+  /** A group document — a v3 `group_NNN*.json`, or one element of a v4 `meta.Groups`: prune inside
+   *  each option, pairing by index (order is part of the compare). */
+  const group = (oursGroup: unknown, goldenGroup: unknown): unknown => {
+    if (!isObj(goldenGroup)) return goldenGroup;
+    if (
+      !isObj(oursGroup) ||
+      !Array.isArray(goldenGroup.Options) ||
+      !Array.isArray(oursGroup.Options)
+    ) {
+      return goldenGroup;
+    }
+    const oursOptions = oursGroup.Options as unknown[];
     return {
-      ...golden,
-      Options: golden.Options.map((g, i) => option(oursOptions[i], g)),
+      ...goldenGroup,
+      Options: goldenGroup.Options.map((g, i) => option(oursOptions[i], g)),
     };
+  };
+
+  if (!isObj(golden) || !isObj(ours)) return golden;
+
+  // v4 meta.json (PMP.cs · PMPMetaJson · 1484/1487 -> PMP.WritePmp:928-939): every group and the
+  // default option live INLINE here. Detected by shape, not by FileVersion, mirroring LoadPMP's own
+  // content discriminator (PMP.cs:217). Without this arm a v4 meta.json has neither `Options` nor
+  // `Files`, so the whole confirmation went inert and every absent-file drop reported as a diff.
+  if (Array.isArray(golden.Groups) || isObj(golden.DefaultData)) {
+    const out: Record<string, unknown> = { ...golden };
+    if (Array.isArray(golden.Groups) && Array.isArray(ours.Groups)) {
+      const oursGroups = ours.Groups as unknown[];
+      out.Groups = golden.Groups.map((g, i) => group(oursGroups[i], g));
+    }
+    if (isObj(golden.DefaultData)) {
+      out.DefaultData = option(ours.DefaultData, golden.DefaultData);
+    }
+    // The three v4 meta fields TexTools regenerates on every write, and that therefore can never
+    // match — confirmed narrowly, never merely tolerated. See pmp-v4-nondeterminism.ts.
+    return confirmNondeterministicMetaFields(ours, out, referenceIsOurs);
   }
-  // default_mod.json: the document IS the option.
+  // v3 group_NNN.json.
+  if (Array.isArray(golden.Options) && Array.isArray(ours.Options)) {
+    return group(ours, golden);
+  }
+  // v3 default_mod.json: the document IS the option.
   return option(ours, golden);
 }
 
@@ -275,7 +344,7 @@ function payloadNames(members: Map<string, Uint8Array>): string[] {
  *  orphan-payload-member guard that used to live here unnecessary: that guard existed because the
  *  drop confirmation above only ever looks at `Files` keys, so a member the WRITER silently dropped
  *  for any OTHER reason (e.g. a writer bug dropping an `ExtraFile` no `Files`/`Image` field ever
- *  referenced — PMP.cs:213-215) was invisible to it. Comparing the member-name sets directly catches
+ *  referenced — PMP.cs:278-280) was invisible to it. Comparing the member-name sets directly catches
  *  a member missing on one side, per member — see the regression test in
  *  upgrade-archive-diff.test.ts pinning the "silently lost an unreferenced member" hole this
  *  replaces. It does NOT catch every way a member could be wrong: an entry name fflate would decode
@@ -306,6 +375,7 @@ function diffPayloadMembers(
     ours: Uint8Array,
     golden: Uint8Array,
   ) => boolean,
+  confirmGoldenOnlyMember?: GoldenOnlyMemberConfirmation,
 ): FileDiff[] {
   const bucket = (names: string[]): Map<string, string[]> => {
     const m = new Map<string, string[]>();
@@ -345,6 +415,11 @@ function diffPayloadMembers(
     // past the shared count are ones ours has that the golden doesn't. Orientation matches the
     // manifest-name diff above: golden-only => "added", ours-only => "removed".
     for (let i = n; i < gs.length; i++) {
+      // Pass the FULL `golden` map, not just `golden.get(gs[i]!)`: `confirmGoldenOnlyMember`'s only
+      // current consumer (the v4 ExtraFile-duplication rule) needs more than the one member's bytes
+      // to confirm safely — see GoldenOnlyMemberConfirmation's doc comment,
+      // pmp-v4-extrafile-divergence.ts.
+      if (confirmGoldenOnlyMember?.(gs[i]!, golden, ours)) continue;
       diffs.push({
         kind: "structure",
         gamePath: gs[i]!,
@@ -396,7 +471,15 @@ function diffPayloadMembers(
  * silently absorb genuine writer regressions in every pack. See the spec, §5.2.
  *
  * `layoutEquivalent` REQUIRES `checkPayloadMembers` — see the guard at the top of the function body
- * for why the two are coupled. */
+ * for why the two are coupled.
+ *
+ * `referenceIsOurs` says the `golden` argument is NOT a ConsoleTools golden but a second archive OUR
+ * OWN writer produced — the ours-vs-ours comparison `confirmOracleErrorDivergence`
+ * (corpus-upgrade.ts) performs. Its only effect is to hold the v4 `meta.json` GUID fields to OUR
+ * producer's shape on both sides instead of TexTools'; see
+ * `confirmNondeterministicMetaFields`'s doc comment (pmp-v4-nondeterminism.ts). Leave it `false` for
+ * every real golden — passing `true` there would confirm a cached golden whose identifiers did not
+ * come from `Guid.NewGuid()`. */
 export function diffArchives(
   ours: Uint8Array,
   golden: Uint8Array,
@@ -407,6 +490,12 @@ export function diffArchives(
     golden: Uint8Array,
   ) => boolean,
   layoutEquivalent = false,
+  /** Consulted before a payload member present only in the GOLDEN is reported. Supplied by the
+   *  caller (which alone holds the input pack) so this module stays ignorant of PMP-v4 specifics,
+   *  the same injection shape `confirmDivergence` already uses. See
+   *  test/helpers/pmp-v4-extrafile-divergence.ts. */
+  confirmGoldenOnlyMember?: GoldenOnlyMemberConfirmation,
+  referenceIsOurs = false,
 ): FileDiff[] {
   if (layoutEquivalent && !checkPayloadMembers) {
     // Fail loud (AGENTS.md), not silently diverge: dropConfirmedAbsentKeys' Files-VALUE
@@ -457,7 +546,7 @@ export function diffArchives(
       // comment for why the old document-granular `mismatch` was a ratchet hazard.
       for (const d of jsonPointerDiff(
         o,
-        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent),
+        dropConfirmedAbsentKeys(o, g, gm, layoutEquivalent, referenceIsOurs),
       )) {
         diffs.push({
           kind: "manifest",
@@ -472,8 +561,18 @@ export function diffArchives(
   if (checkPayloadMembers)
     diffs.push(
       ...(layoutEquivalent
-        ? diffPayloadSemantic(om, gm, confirmDivergence)
-        : diffPayloadMembers(om, gm, confirmDivergence)),
+        ? diffPayloadSemantic(
+            om,
+            gm,
+            confirmDivergence,
+            confirmGoldenOnlyMember,
+          )
+        : diffPayloadMembers(
+            om,
+            gm,
+            confirmDivergence,
+            confirmGoldenOnlyMember,
+          )),
     );
   return diffs;
 }
@@ -483,7 +582,7 @@ export function diffArchives(
  *  see `resolveRedirects`'s doc comment, archive-redirects.ts — Penumbra SubMod.AddContainerTo,
  *  Penumbra repo Mods/SubMods/SubMod.cs:23-32, a separate repo from this project's reference/)
  *  instead of the member-name multiset, because a preserved FileSwap means
- *  TexTools burned a dedup `idx` we did not (PMP.cs · UnpackPmpOption · 1104-1137 ->
+ *  TexTools burned a dedup `idx` we did not (PMP.cs · UnpackPmpOption · 1202-1235 ->
  *  PmpExtensions.cs · ResolveDuplicates · 500,543 — `var idx = 1` then `idx++` on a repeat hit),
  *  shifting every later `common/N`.
  *
@@ -500,7 +599,7 @@ export function diffArchives(
  *  `ExtraFiles` entry) never gets its bytes compared at all, even as a matched pair.
  *
  *  `FileDiff.gamePath` here is `resolveRedirects`' composite key
- *  (`redirectKey`: `${manifestName}#${optionIndex}|${gamePath}`), not a bare gamePath — that key IS
+ *  (`redirectKey`: `${manifestName}#${optionId}|${gamePath}`), not a bare gamePath — that key IS
  *  the identity a divergence in this comparison is keyed by (see `resolveRedirects`' doc comment
  *  for why an archive-wide merge would silently hide a cross-option divergence), and it stays
  *  human-legible (names both the option and the gamePath) for a failing assertion. Because the
@@ -515,6 +614,7 @@ export function diffPayloadSemantic(
     ours: Uint8Array,
     golden: Uint8Array,
   ) => boolean,
+  confirmGoldenOnlyMember?: GoldenOnlyMemberConfirmation,
 ): FileDiff[] {
   const diffs: FileDiff[] = [];
 
@@ -605,6 +705,8 @@ export function diffPayloadSemantic(
     const gs = (gb.get(bucketKey) ?? []).slice().sort();
     const n = Math.min(os.length, gs.length);
     for (let i = n; i < gs.length; i++) {
+      // Full `golden` map, same reason as diffPayloadMembers' identical guard above.
+      if (confirmGoldenOnlyMember?.(gs[i]!, golden, ours)) continue;
       diffs.push({
         kind: "structure",
         gamePath: gs[i]!,

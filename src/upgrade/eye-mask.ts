@@ -153,7 +153,7 @@ export function raceCodeFromPath(path: string): string {
 }
 
 /** Port of UpdateEyeMask (EndwalkerUpgrade.cs:2007-2079), single-path (called per `contained` entry,
- *  ModpackUpgrader.cs:174-177). Reproduces every skip guard, then converts the mask to a diffuse
+ *  ModpackUpgrader.cs:180-183). Reproduces every skip guard, then converts the mask to a diffuse
  *  (ConvertEyeMaskToDiffuse, :2064) and writes it. `rTx.FileExists(irisPath)` (:2049) is answered by
  *  the bundled game index (`fileExists`) -> faithful skip on a miss; `table` answers the separate
  *  g_SamplerDiffuse read that follows it (:2056-2059) -> a miss on an index-confirmed path is a
@@ -188,7 +188,7 @@ export function updateEyeMask(
     );
   }
   const tex = parseTex(resolved.bytes); // FromUncompressedTex (:2032) — throws on a truncated header
-  // :2024 — _ConvertedTextures dedup. The caller passes it as null (ModpackUpgrader.cs:176), so C#
+  // :2024 — _ConvertedTextures dedup. The caller passes it as null (ModpackUpgrader.cs:182), so C#
   // allocates a fresh empty set per call; with one path per call the guard can never fire. Not modeled.
   // :2034-2039 — face id from the filename.
   const base = maskPath.slice(maskPath.lastIndexOf("/") + 1);

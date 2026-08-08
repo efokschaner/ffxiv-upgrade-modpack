@@ -247,7 +247,7 @@ export function getAttributeBitmask(model: TTModel, part: TTMeshPart): number {
 /** Port of TTMeshPart.GetBoundingBox (TTModel.cs:304-328): the per-axis min/max over the
  *  part's own vertex positions. Seeds are the reference's literal 9999/-9999 (NOT ±Infinity),
  *  so a part with no vertices yields the inverted seed box verbatim -- reproduced faithfully
- *  because the furniture-BB write path (Mdl.cs:3751-3772) serializes whatever this returns. */
+ *  because the furniture-BB write path (Mdl.cs:3747-3768) serializes whatever this returns. */
 export function partBoundingBox(part: TTMeshPart): { min: Vec3; max: Vec3 } {
   const min: Vec3 = [9999, 9999, 9999];
   const max: Vec3 = [-9999, -9999, -9999];

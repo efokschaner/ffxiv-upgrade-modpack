@@ -7,6 +7,7 @@ import {
   FileStorageType,
   type ModpackData,
   type ModpackFile,
+  ModpackFormat,
   type ModpackGroup,
   type ModpackOption,
   type RawUncompressedFile,
@@ -228,7 +229,7 @@ const IS_META = /\.meta$/;
  * docs/superpowers/specs/2026-07-10-metadata-round-design.md.
  *
  * A `.meta` that yields no manipulations never reaches here at all — it is dropped at the LOAD
- * seam (`makeTtmpLoadFix`, src/upgrade/load-fixes.ts), mirroring WizardData.cs:685-691 where
+ * seam (`makeTtmpLoadFix`, src/upgrade/load-fixes.ts), mirroring WizardData.cs:691-697 where
  * TexTools deserializes such a meta straight into `data.Manipulations` and never adds it to
  * `data.Files` in the first place.
  */
@@ -236,9 +237,9 @@ function metadataRound(option: ModpackOption): void {
   function fixOne(path: string, f: ModpackFile): ModpackFile {
     if (!IS_META.test(path)) return f;
     // No absent-file analogue: PMP .meta files are materialized from manipulations
-    // (PMP.cs:1141-1164), never read from a zip member, so a .meta with no bytes is unreachable.
+    // (PMP.cs:1239-1262), never read from a zip member, so a .meta with no bytes is unreachable.
     // Write-side confirmation: TexTools' PMP writer turns any `.meta` into `Manipulations` rather
-    // than a zip member (PMP.cs:891-895), so a PMP `Files` entry naming a `.meta` is not something
+    // than a zip member (PMP.cs:984-988), so a PMP `Files` entry naming a `.meta` is not something
     // TexTools or Penumbra produce. Fail loud.
     const { bytes, type } = requireBytes(f, path);
     const meta = deserializeMeta(bytes); // ItemMetadata.Deserialize, ItemMetadata.cs:869-921
@@ -251,14 +252,14 @@ function metadataRound(option: ModpackOption): void {
 }
 
 /**
- * Round 6 partials, slice 1: UpdateSkinPaths (ModpackUpgrader.cs:484-500). For each file whose
+ * Round 6 partials, slice 1: UpdateSkinPaths (ModpackUpgrader.cs:512-528). For each file whose
  * game path is a key in SKIN_REPATH_DICT, add a byte-identical alias at the target path unless the
  * option already contains it — pure pointer duplication, no content change. Mutates option.files.
  *
  * C# iterates a snapshot (`clone`) of the option's files but checks the LIVE dict for the target,
  * so a target added earlier in this same pass is seen; we mirror that by snapshotting the source
  * list and checking `option.files.has(target)` directly against the growing, live Map.
- * UpdateUnclaimedHairTextures (the rest of the includePartials block, ModpackUpgrader.cs:158-182) is
+ * UpdateUnclaimedHairTextures (the rest of the includePartials block, ModpackUpgrader.cs:164-188) is
  * ported in `partials`; UpdateEyeMask (`src/upgrade/eye-mask.ts`) ports the full control flow
  * including the ImageSharp pixel conversion (`convertEyeMaskToDiffuse`).
  */
@@ -267,20 +268,20 @@ export function updateSkinPaths(option: ModpackOption): void {
   for (const [path, f] of snapshot) {
     const target = SKIN_REPATH_DICT.get(path);
     if (target === undefined) continue;
-    if (option.files.has(target)) continue; // C# files.ContainsKey (ModpackUpgrader.cs:487)
+    if (option.files.has(target)) continue; // C# files.ContainsKey (ModpackUpgrader.cs:515)
     // Duplicate the pointer: shares f.data, carries storage + any ttmp metadata.
-    option.files.set(target, { ...f }); // C# files.Add (ModpackUpgrader.cs:497)
+    option.files.set(target, { ...f }); // C# files.Add (ModpackUpgrader.cs:525)
   }
 }
 
 /**
- * Round 6 partials (ModpackUpgrader.cs:148-183, the includePartials block). Runs UpdateSkinPaths
- * over every option first (ForAllOptions, :158), then the third round (:162-182): per option,
+ * Round 6 partials (ModpackUpgrader.cs:154-189, the includePartials block). Runs UpdateSkinPaths
+ * over every option first (ForAllOptions, :164), then the third round (:168-188): per option,
  * `contained` = `unused` (globally-unreferenced textures, {@link computeUnusedTextures}) intersected
- * with that option's own files (:171, `o.StandardData.Files.ContainsKey(x)`), fed to the
+ * with that option's own files (:177, `o.StandardData.Files.ContainsKey(x)`), fed to the
  * hair/tail/ear rescue and the accessory rescue (both `EndwalkerUpgrade.UpdateUnclaimedHairTextures`
- * calls fused into the C#'s single wrapper, :172/:1324-1330 — see src/upgrade/unclaimed-hair.ts), then
- * `UpdateEyeMask` (:174-177), which ports the full control flow including the ImageSharp pixel
+ * calls fused into the C#'s single wrapper, :178/:1324-1330 — see src/upgrade/unclaimed-hair.ts), then
+ * `UpdateEyeMask` (:180-183), which ports the full control flow including the ImageSharp pixel
  * conversion (`src/upgrade/eye-mask.ts`, `convertEyeMaskToDiffuse`).
  */
 function partials(
@@ -293,13 +294,13 @@ function partials(
 ): void {
   for (const group of allGroups(data)) {
     for (const option of group.options) {
-      updateSkinPaths(option); // ForAllOptions (ModpackUpgrader.cs:158)
+      updateSkinPaths(option); // ForAllOptions (ModpackUpgrader.cs:164)
     }
   }
   for (const group of allGroups(data)) {
     for (const option of group.options) {
-      // ModpackUpgrader.cs:171: `unusedTextures.Where(x => o.StandardData.Files.ContainsKey(x))`.
-      // Snapshotted here (== the C# `.ToList()` at :172) for the hair/accessory calls.
+      // ModpackUpgrader.cs:177: `unusedTextures.Where(x => o.StandardData.Files.ContainsKey(x))`.
+      // Snapshotted here (== the C# `.ToList()` at :178) for the hair/accessory calls.
       const contained = new Set([...unused].filter((t) => option.files.has(t)));
       updateUnclaimedHairTextures(
         option,
@@ -308,7 +309,7 @@ function partials(
         diagnostics,
       );
       updateUnclaimedHairAccessory(option, contained, HAIR_MATERIALS);
-      // ModpackUpgrader.cs:174-177: the eye loop re-enumerates the LAZY `contained` query, so it
+      // ModpackUpgrader.cs:180-183: the eye loop re-enumerates the LAZY `contained` query, so it
       // sees any file the hair pass just added/removed — re-filter `unused` against live files here.
       for (const maskPath of unused) {
         if (!option.files.has(maskPath)) continue;
@@ -320,7 +321,7 @@ function partials(
 
 /**
  * A texture is "unused" (a candidate for the round-6 jank-upgrade rescue) iff it is not any VALUE
- * of any texture-upgrade target's `files` (ModpackUpgrader.cs:151-155:
+ * of any texture-upgrade target's `files` (ModpackUpgrader.cs:157-161:
  * `!textureUpgradeTargets.Any(x => x.Value.Files.ContainsValue(t))`). `UpgradeInfo.files` mirrors
  * C#'s `Dictionary<string,string>` (`normal`/`mask`/`index`/`mask_old`/`mask_new` keys) as a
  * `Record<string,string>` (src/upgrade/upgrade-info.ts), so "any value" is `Object.values`.
@@ -379,12 +380,12 @@ function toDiagnostic(err: unknown): Diagnostic {
 }
 
 /**
- * Upgrade a pre-Dawntrail modpack to Dawntrail (ModpackUpgrader.cs:88-144).
+ * Upgrade a pre-Dawntrail modpack to Dawntrail (ModpackUpgrader.cs:94-150).
  *
  * TexTools' LOAD-time fixes (FixOldTexData on `.tex`, FixOldModel on `.mdl`, for an old pack per
- * DoesModpackNeedFix, TTMP.cs:916-930) are NOT run here: they are fused into the read seam and so
+ * DoesModpackNeedFix, TTMP.cs:918-932) are NOT run here: they are fused into the read seam and so
  * ran already inside `loadModpack`, exactly as `WizardData.FromModpack`/`FromWizardGroup` hands the
- * caller already-fixed data (WizardData.cs:700-737). Both `/upgrade` (ModpackUpgrader.cs:58) and
+ * caller already-fixed data (WizardData.cs:706-743). Both `/upgrade` (ModpackUpgrader.cs:63) and
  * `/resave` (Program.cs:204) take that same fixed load path, so `data` reaching here is already
  * load-fixed — see src/upgrade/load-fixes.ts. (PMP has its own, separate, still-unported load-time
  * `.tex` fixup, FastValidateTexFile — docs/backlog/2026-07-13-pmp-load-time-tex-fixup.md.)
@@ -401,14 +402,61 @@ function toDiagnostic(err: unknown): Diagnostic {
 export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
   const diagnostics: Diagnostic[] = [];
   try {
+    // ModpackUpgrader.cs · UpgradeModpack(path, newPath, …) · 218-241 — the CLI's 4-arg overload,
+    // which is what ConsoleTools /upgrade calls (Program.cs · HandleUpgrade · 179). It pre-checks
+    // the PMP manifest version BEFORE loading for upgrade and refuses v4+ outright:
+    //
+    //     if (pmp.pmp.Meta.FileVersion > 3) {
+    //         if (newPath.EndsWith(".ttmp2") || newPath.EndsWith(".pmp"))
+    //             throw new NotImplementedException("Cannot convert v4+ Penumbra modpack to ttmp/pmp.");
+    //         await PMP.CopyPmpFiles(path, newPath); return false;   // :237
+    //     }
+    //
+    // The `CopyPmpFiles` folder-destination arm is NOT ported and needs no guard: `writeModpack`'s
+    // target type is `"ttmp2" | "pmp"` (src/index.ts), so this port has no folder destination for
+    // that branch to describe — we are unconditionally on the throwing arm.
+    //
+    // NOTE the asymmetry with readPmp's own `enforceCompatibility` throw (PMP.cs:176-179): that one
+    // is GUI-only (ModpackUpgraderWrapper.cs -> the 2-arg overload) and is unreachable from
+    // ConsoleTools, because this pre-check fires first. The message a v4-input /upgrade actually
+    // emits is THIS one — which is what assertMatchedUpgradeFailure substring-matches against the
+    // oracle's captured trace (exercised end to end by test/corpus/synthetic/pmp-v4-extrafiles.pmp).
+    //
+    // Thrown, not returned: upgradeModpack's own catch (below) is the single conversion point that
+    // turns a C#-reproducible throw into `{ ok: false }` with DiagnosticCode.UpgradeFailed and the
+    // message verbatim (diagnostics-channel spec §4.1).
+    const rawMeta = data.meta.raw as { FileVersion?: unknown } | undefined;
+    // An absent or non-numeric FileVersion reads as 0, matching the C# field's own `int` default
+    // (PMP.cs:1469) after a NullValueHandling.Ignore deserialize (:170-173).
+    const fileVersion =
+      typeof rawMeta?.FileVersion === "number" ? rawMeta.FileVersion : 0;
+    // `data.sourceFormat === Pmp` stands in for `modpackType == TTMP.EModpackType.Pmp` (line 220's
+    // guard on this method's own `GetModpackType(path)` result, cited above). Widened to include
+    // `PmpFolder`: TTMP.cs's `GetModpackType` · 122-127 classifies a `.pmp`, a `meta.json` path, AND
+    // a bare directory all as the SAME `EModpackType.Pmp` —
+    //     if (path.EndsWith(".pmp") || path.EndsWith(".json") || Directory.Exists(path))
+    //         return EModpackType.Pmp;
+    // — so a folder-sourced pack hits this exact guard in TexTools too. Nothing in this port assigns
+    // `sourceFormat: PmpFolder` today (only `readPmp`, src/container/pmp.ts, ever sets `sourceFormat`,
+    // and it always writes `Pmp`), so this arm is currently unreachable — but `needsMdlFix`
+    // (src/upgrade/model.ts:31-32) and `texfix.ts:40-41` already treat `Pmp`/`PmpFolder` as the same
+    // source classification for the same reason; matching that convention here keeps this guard from
+    // going quiet if a folder-sourced reader is ever added.
+    if (
+      (data.sourceFormat === ModpackFormat.Pmp ||
+        data.sourceFormat === ModpackFormat.PmpFolder) &&
+      fileVersion > 3
+    ) {
+      throw new Error("Cannot convert v4+ Penumbra modpack to ttmp/pmp.");
+    }
     const out = cloneModpack(data);
-    // Pre-round (ModpackUpgrader.cs:83): resolve split Hair-shader highlight/visibility options
+    // Pre-round (ModpackUpgrader.cs:89): resolve split Hair-shader highlight/visibility options
     // BEFORE round 1, ungated by includePartials. Its throws propagate out of upgradeModpack — the
-    // C# pre-round sits outside the per-option try/catch that wraps round 1 (:97-116).
+    // C# pre-round sits outside the per-option try/catch that wraps round 1 (:103-122).
     resolveHighlightOptionsAndMashupHair(out);
-    // Pass 1 (ModpackUpgrader.cs:88-120): material + metadata per option; collect
+    // Pass 1 (ModpackUpgrader.cs:94-126): material + metadata per option; collect
     // texture-upgrade targets into a single first-wins-deduped map, and every option's `.tex`
-    // keys into `allTextures` (:108-109).
+    // keys into `allTextures` (:114-115).
     const targets = new Map<string, UpgradeInfo>();
     const allTextures = new Set<string>();
     for (const group of allGroups(out)) {
@@ -434,7 +482,7 @@ export function upgradeModpack(data: ModpackData): UpgradeResult<ModpackData> {
         }
       }
     }
-    // Pass 2 (ModpackUpgrader.cs:124-144): apply the global targets to every option.
+    // Pass 2 (ModpackUpgrader.cs:130-150): apply the global targets to every option.
     for (const group of allGroups(out)) {
       for (const option of group.options) {
         upgradeRemainingTextures(option, targets);

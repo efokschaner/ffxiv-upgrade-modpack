@@ -79,3 +79,53 @@ decoder, not that specific bundling.
 Reference: `src/tex/decode.ts`, `src/tex/bc7.ts`; `reference/.../Textures/FileTypes/DDS.cs`
 (`ConvertPixelData`), `reference/.../Textures/DataContainers/XivTex.cs:161` (`GetRawPixels`); FNA
 `DxtUtil` (the decoder TexTools delegates block decoding to).
+
+## Update 2026-08-07 — upstream replaced `DxtUtil` outright, and both premises above moved
+
+Found while verdicting `371f74b` ("Fix Racial Deforms and Replace GPL violating `DxtUtil.cs`") during
+the v3.1.1.4 re-pin. **Two of this item's load-bearing premises are now out of date, in opposite
+directions**, which is why it is being promoted rather than just annotated.
+
+**1. The licensing obstacle is gone.** `DxtUtil.cs` is no longer FNA's Ms-PL code. At this pin
+(`reference/.../Helpers/DxtUtil.cs:1-15`) it carries the **GPL-3.0** header, the same licence as this
+repo. The "clean-room reimplementation, validate against output, never transcribe" constraint in
+*What to investigate* step 3 — and the tex-codec spec §3 licensing note it rests on — **no longer
+applies to this file**. A direct port is now legally available to us, which changes the cost of
+closing this item substantially.
+
+**2. More importantly, the decoder itself was rewritten, so our measurement is stale.** The new file
+is a fresh in-house implementation, not a relicensed copy of the old one:
+
+- `DecodeDxt1Block` (`:154`), `DecodeDxt3Block` (`:166`), `DecodeDxt5Block` (`:203`) and
+  `DecodeBc4Block` (`:241`), driven by a shared `DecodeBlocks` walker (`:69`).
+- BC5 and BC7 still delegate to `JeremyAnsel.BcnSharp` — `Bc5Sharp.Decode` (`:44`), `Bc7Sharp.Decode`
+  (`:52`) — confirming this item's existing structural guess (step 1) exactly: only the
+  `DxtUtil`-decoded formats (DXT1/3/5, BC4) were ever candidates for the drift, and BC5/BC7 route
+  through the same `bc7enc_rdo` lineage we ported.
+
+The consequence is the sharp part: **the ±1 divergence characterized in the Repro table above was
+measured on 2026-07-16 against the OLD FNA-derived decoder, which no longer exists at our pin.** The
+9099/65536 and 1094/65536 figures describe a decoder TexTools no longer runs. The current
+divergence — if any — is unmeasured. Three outcomes are possible and we do not yet know which holds:
+
+- the rewrite happens to round the way we do, and the gap is **already closed**, making our
+  `DIVERGENCE_RULES` ±1 `.tex` tolerance unnecessary — a tolerance that is no longer needed is not
+  harmless, because it silently absorbs *any* future ±1 regression across every generated
+  A8R8G8B8 `.tex`, not just this one;
+- the gap persists at the same magnitude, and the item proceeds as originally written but with a
+  direct port now permitted instead of a clean-room one;
+- the gap **changed shape**, in which case our accepted tolerance is currently confirming a
+  divergence whose stated cause is wrong.
+
+**Revised first step, replacing step 3's framing.** Before deciding anything about a fix, **re-run
+the Repro measurement against the v3.1.1.4 oracle** — the same two base-game DXT1 eye textures,
+ours (`decodeToRgba(parseTex(.tex))`) vs `ConsoleTools /extract … .tga`, normalized to top-down RGBA.
+That measurement is cheap, needs no new code, and decides which of the three outcomes above we are in
+— and therefore whether this item is a port, a tolerance retirement, or a re-characterization. Do not
+skip it and port from the new source on the assumption the drift is still there; the whole reason
+this item is ranked where it is, is that the accepted tolerance may now be resting on a false premise.
+
+Steps 1 and 2 of *What to investigate* stand unchanged (step 1 is now largely answered — record the
+`DDS.ConvertPixelData` trace to close it formally). The §7 correction owed to the tex-codec spec also
+stands: the "any spec-conformant decoder matches byte-for-byte" claim was falsified by the original
+measurement regardless of which implementation TexTools ships today.

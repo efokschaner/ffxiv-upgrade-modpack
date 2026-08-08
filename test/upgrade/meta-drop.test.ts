@@ -157,8 +157,8 @@ describe("makeTtmpLoadFix: manipulation-less .meta files are dropped at load", (
   });
 
   it("drops a manipulation-less .meta even when the tex/mdl gates are on -- the branch is ungated", () => {
-    // WizardData.cs:685's `if` has no needsTexFix/needsMdlFix equivalent and is a separate branch
-    // from the tex/mdl `else` at :699-738, which a .meta can never reach. This would fail if the
+    // WizardData.cs:691's `if` has no needsTexFix/needsMdlFix equivalent and is a separate branch
+    // from the tex/mdl `else` at :705-744, which a .meta can never reach. This would fail if the
     // .meta branch were accidentally placed behind either gate.
     const path = "bgcommon/hou/indoor/general/0613/i0613.meta";
     const fix = makeTtmpLoadFix({ needsTexFix: true, needsMdlFix: true });

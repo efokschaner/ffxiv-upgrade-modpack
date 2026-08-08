@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parsePmpGroup } from "../../src/container/manifest-types";
+import {
+  type PmpMetaJsonRaw,
+  parsePmpGroup,
+  parsePmpMeta,
+} from "../../src/container/manifest-types";
 import {
   makeLegacyTtmp,
   makePmpZip,
@@ -16,26 +20,61 @@ describe("parsePmpGroup group Type resolution", () => {
     Options: [],
   });
 
-  it("accepts every Type JsonSubtypes resolves to a subtype (PMP.cs:1384-1386)", () => {
-    for (const type of ["Single", "Multi", "Imc"]) {
+  it("accepts every Type JsonSubtypes resolves to a subtype (PMP.cs:1491-1494)", () => {
+    for (const type of ["Single", "Multi", "Imc", "Combining"]) {
       expect(parsePmpGroup(group(type)).Type).toBe(type);
     }
   });
 
+  // "Combining" is in that list only as of the v3.1.1.4 re-pin. Upstream `76535f4` registered
+  // PMPCombiningGroupJson (PMP.cs:1494) with its own `Options` override (:1565), so the base
+  // virtual's throw (:1517) is no longer reached and the pack LOADS — it is refused one stage later,
+  // at the write seam (see pmp-write.test.ts's Combining case). Called out separately from the loop
+  // above so deleting it from KNOWN_PMP_GROUP_TYPES fails with a legible reason.
+  it("accepts Combining at READ, where the pre-repin port threw (PMP.cs:1494/:1565)", () => {
+    expect(() => parsePmpGroup(group("Combining"))).not.toThrow();
+  });
+
   // Matches C#'s message exactly: assertMatchedUpgradeFailure substring-matches our thrown message
   // against the oracle's trace, so any drift here breaks the corpus check above.
-  it("throws PMPGroupJson.Options' message for an unrecognized Type (PMP.cs:1407)", () => {
+  it("throws PMPGroupJson.Options' message for an unrecognized Type (PMP.cs:1517)", () => {
     expect(() => parsePmpGroup(group("Not A Real Type"))).toThrow(
       "Unimplemented PMP group type: Not A Real Type",
     );
   });
 
-  // Not a separate branch in the C#: the field initializes to `""` (PMP.cs:1397) and an absent key
+  // Not a separate branch in the C#: the field initializes to `""` (PMP.cs:1505) and an absent key
   // never overwrites it, so the same interpolation yields the trailing-colon-and-nothing message.
   it("throws the same, with an empty Type, when the key is absent", () => {
     expect(() => parsePmpGroup(group())).toThrow(
       "Unimplemented PMP group type: ",
     );
+  });
+});
+
+describe("parsePmpMeta v4 fields (PMP.cs · PMPMetaJson · 1467-1488)", () => {
+  it("defaults the four v4 fields when the document omits them (a v3 meta.json)", () => {
+    const parsed = parsePmpMeta({ FileVersion: 3, Name: "V3" });
+    expect(parsed.Identifier).toBe("");
+    expect(parsed.LastWrite).toBe("");
+    expect(parsed.Groups).toBeNull();
+    expect(parsed.DefaultData).toBeNull();
+  });
+
+  it("carries a v4 document's Identifier/LastWrite/Groups/DefaultData through verbatim", () => {
+    const raw: PmpMetaJsonRaw = {
+      FileVersion: 4,
+      Name: "V4",
+      Identifier: "5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3",
+      LastWrite: "2026-08-06T04:41:11.0160172-07:00",
+      Groups: [{ Type: "Single", Name: "G", Options: [{ Name: "On" }] }],
+      DefaultData: { Version: 0 },
+    };
+    const parsed = parsePmpMeta(raw);
+    expect(parsed.Identifier).toBe("5ffd6e85-ae4c-4446-8ed3-ca556ad6bcf3");
+    expect(parsed.LastWrite).toBe("2026-08-06T04:41:11.0160172-07:00");
+    expect(parsed.Groups).toHaveLength(1);
+    expect(parsed.DefaultData).toEqual({ Version: 0 });
   });
 });
 

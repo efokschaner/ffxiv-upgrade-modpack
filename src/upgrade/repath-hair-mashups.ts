@@ -1,4 +1,4 @@
-// Port of ModpackUpgrader.RepathHairMashups (ModpackUpgrader.cs:379-482): the material-only
+// Port of ModpackUpgrader.RepathHairMashups (ModpackUpgrader.cs:407-510): the material-only
 // "mashup hair" half of the ResolveHighlightOptionsAndMashupHair pre-round. For each option's
 // hair/zear/tail .mtrl, retargets a Hair/Character material's normal/mask/diffuse sampler suffix to
 // its Dawntrail name when the old texture is gone from the game and the renamed one exists
@@ -13,7 +13,7 @@ import { findSamplerUnguarded } from "./resolve-highlight";
 import { writeGeneratedMtrl } from "./texture";
 import { requireBytes } from "./upgrade";
 
-// The three material regexes RepathHairMashups runs, in order (:381-383).
+// The three material regexes RepathHairMashups runs, in order (:409-411).
 const MTRL_REGEXES = [
   /chara\/human\/c[0-9]{4}\/obj\/hair.*\.mtrl/,
   /chara\/human\/c[0-9]{4}\/obj\/zear.*\.mtrl/,
@@ -27,28 +27,28 @@ export function repathHairMashups(data: ModpackData): void {
 function repathOne(data: ModpackData, regex: RegExp): void {
   for (const group of allGroups(data)) {
     for (const option of group.options) {
-      // Snapshot: C# copies o.Files then writes back into the live dict (:392, :479).
+      // Snapshot: C# copies o.Files then writes back into the live dict (:420, :507).
       for (const [m, ref] of [...option.files]) {
         if (!regex.test(m)) continue;
 
         // No try/catch in C# here (unlike the highlight half): a decode/parse failure throws.
         const mtrl = parseMtrl(requireBytes(ref, m).bytes, m);
 
-        // Shader gate: Hair OR Character (NOT CharacterLegacy) (:401).
+        // Shader gate: Hair OR Character (NOT CharacterLegacy) (:429).
         if (
           mtrl.shaderPackRaw !== SHPK_HAIR &&
           mtrl.shaderPackRaw !== SHPK_CHARACTER
         )
           continue;
 
-        // Unguarded x.Sampler.SamplerId (:406-408) — findSamplerUnguarded throws on a null sampler,
+        // Unguarded x.Sampler.SamplerId (:434-436) — findSamplerUnguarded throws on a null sampler,
         // which propagates here (no catch), matching the C# NRE.
         const norm = findSamplerUnguarded(mtrl, ESamplerId.g_SamplerNormal);
         const mask = findSamplerUnguarded(mtrl, ESamplerId.g_SamplerMask);
         const diff = findSamplerUnguarded(mtrl, ESamplerId.g_SamplerDiffuse);
-        if (!norm || !mask) continue; // (:410)
+        if (!norm || !mask) continue; // (:438)
 
-        // Normal: _n -> _norm, strip "--", gated on old-absent + new-present (:414-421).
+        // Normal: _n -> _norm, strip "--", gated on old-absent + new-present (:442-449).
         const nPath = dx11Path(norm);
         if (!fileExists(nPath)) {
           const newPath = nPath
@@ -61,7 +61,7 @@ function repathOne(data: ModpackData, regex: RegExp): void {
           }
         }
 
-        // Mask: first match of _m->_mask, _m->_mult, _s->_mask, _s->_mult wins (:423-453).
+        // Mask: first match of _m->_mask, _m->_mult, _s->_mask, _s->_mult wins (:451-481).
         const mPath = dx11Path(mask);
         if (!fileExists(mPath)) {
           let found = false;
@@ -80,8 +80,8 @@ function repathOne(data: ModpackData, regex: RegExp): void {
           tryMask("_s.tex", "_mult.tex");
         }
 
-        // Diffuse: _d -> _base (:455-463). NB C# uses the 1-arg FileExists here (no forceOriginal)
-        // while norm/mask use the 2-arg forceOriginal:true form (:414, :423) — our bundled oracle
+        // Diffuse: _d -> _base (:483-491). NB C# uses the 1-arg FileExists here (no forceOriginal)
+        // while norm/mask use the 2-arg forceOriginal:true form (:442, :451) — our bundled oracle
         // (fileExists) is base-game only either way, so both map to the same call here.
         if (diff && !fileExists(dx11Path(diff))) {
           const newPath = dx11Path(diff)
@@ -94,7 +94,7 @@ function repathOne(data: ModpackData, regex: RegExp): void {
           }
         }
 
-        // Unconditional re-serialize + write-back (:466-479), storage-mirrored to the source file.
+        // Unconditional re-serialize + write-back (:494-507), storage-mirrored to the source file.
         writeGeneratedMtrl(option, m, serializeMtrl(mtrl), ref);
       }
     }

@@ -1,4 +1,4 @@
-// Tests for RepathHairMashups (ModpackUpgrader.cs:379-482), see
+// Tests for RepathHairMashups (ModpackUpgrader.cs:407-510), see
 // src/upgrade/repath-hair-mashups.ts for provenance. Fixture shapes mirror
 // test/upgrade/resolve-highlight.test.ts.
 import { describe, expect, it, vi } from "vitest";
@@ -182,7 +182,7 @@ describe("repathHairMashups", () => {
     expect(out.data).toBe(bytes); // untouched -- `continue`d before the write
   });
 
-  it("re-serializes and writes back even when no suffix changed (unconditional write, :466-479)", () => {
+  it("re-serializes and writes back even when no suffix changed (unconditional write, :494-507)", () => {
     const data = pack([option("On", [[MTRL_PATH, raw(SAMPLE_BYTES)]])]);
     repathHairMashups(data);
     const out = allGroups(data)[0]!.options[0]!.files.get(MTRL_PATH)!;

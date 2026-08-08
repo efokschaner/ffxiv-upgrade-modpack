@@ -51,7 +51,8 @@ const swapHolderZipPath = "Swaps/On/files/file_swaps_holder.bin";
 // Real base-game paths (verified in the 040000 index) -> TexTools resolves them and creates a
 // placeholder for each. TWO of them, so the zero-hash class reaches the 2-member threshold that
 // burns an idx. The keys are the gamePaths being overridden; the values are the base-game files
-// served instead, backslashed as Penumbra writes them (PMP.cs:1107-1109).
+// served instead, backslashed as Penumbra writes them (`PMP.cs · UnpackPmpOption · 1205-1207`:
+// "For some reason the destination value is backslashed instead of forward-slashed.").
 const fileSwaps = {
   "chara/dummy/file_swap_dest_1.tex":
     "chara\\equipment\\e6120\\texture\\v01_c0101e6120_top_n.tex",

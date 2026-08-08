@@ -14,12 +14,12 @@ export interface TtmpModOptionJson {
   // NULLABLE all the way to serialization. `ModOptionJson.Description` (ModPackJson.cs ·
   // ModOptionJson · 159-198) is an uninitialized C# `string`, so an absent key deserializes to
   // `null`; nothing coalesces it thereafter — load copies it verbatim (`wizOp.Description =
-  // o.Description`, WizardData.cs · FromWizardGroup · 663), TTMP export copies it verbatim
-  // (`Description = Description`, · WizardOptionEntry.ToModOption · 414) and TTMPWriter copies it
+  // o.Description`, WizardData.cs · FromWizardGroup · 669), TTMP export copies it verbatim
+  // (`Description = Description`, · WizardOptionEntry.ToModOption · 416) and TTMPWriter copies it
   // verbatim again (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144). With
   // Newtonsoft's default NullValueHandling.Include (see the write-view note below) that `null`
   // reaches the output `.mpl` as an explicit `null`. Only the PMP path coalesces, and it does so at
-  // its own seam (`op.Description = Description ?? ""`, WizardData.cs · ToPmpOption · 543-544).
+  // its own seam (`op.Description = Description ?? ""`, WizardData.cs · ToPmpOption · 545-546).
   Description: string | null;
   ImagePath: string;
   ModsJsons: TtmpModsJson[];
@@ -28,7 +28,7 @@ export interface TtmpModOptionJson {
   // ModOptionJson.IsChecked (ModPackJson.cs:189-198) — a plain C# `bool` behind a
   // NotifyPropertyChanged setter, so an absent key deserializes to `false`. Optional here to
   // model that absence; FromWizardGroup copies it to WizardOptionEntry.Selected verbatim
-  // (WizardData.cs:668).
+  // (WizardData.cs:674).
   IsChecked?: boolean;
 }
 export interface TtmpModGroupJson {
@@ -45,16 +45,16 @@ export interface ModPackJson {
   // Name/Author/Description/Url are NULLABLE for the same reason as ModOptionJson.Description
   // above: uninitialized C# `string` members of `ModPackJson` (ModPackJson.cs · ModPackJson ·
   // 24-118), read verbatim into WizardMetaEntry (WizardData.cs · WizardMetaEntry.FromTtmp ·
-  // 1052-1069 — the `= ""` field initializers at :1015-1020 are OVERWRITTEN by those assignments,
-  // so they offer no protection), written back verbatim (· WriteWizardPack · 1332-1346; the
-  // `ClearNulls()` at :1334 prunes empty pages/groups/options and touches no string but
-  // `FolderPath`, :1239/:1254), and
+  // 1063-1080 — the `= ""` field initializers at :1026-1031 are OVERWRITTEN by those assignments,
+  // so they offer no protection), written back verbatim (· WriteWizardPack · 1351-1365; the
+  // `ClearNulls()` at :1353 prunes empty pages/groups/options and touches no string but
+  // `FolderPath`, :1258/:1273), and
   // emitted as explicit `null` by Newtonsoft's default NullValueHandling.Include.
   Name: string | null;
   Author: string | null;
   // `Version` is the ONE exception — never null. WriteWizardPack forces it non-null with
   // `Version.TryParse(MetaPage.Version, out var ver); ver ??= new Version("1.0")`
-  // (WizardData.cs:1335-1337) and the TTMPWriter ctor re-guards it
+  // (WizardData.cs:1354-1356) and the TTMPWriter ctor re-guards it
   // (`modPackData.Version ?? new Version(1, 0, 0, 0)`, TTMPWriter.cs · TTMPWriter · 61).
   Version: string;
   Description: string | null;
@@ -110,7 +110,7 @@ export type TtmpModsJsonWrite = TtmpModsJson & {
 export type TtmpModOptionJsonWrite = TtmpModOptionJson & {
   ModsJsons: TtmpModsJsonWrite[];
   // TTMPWriter.cs · AddOption · 141-150 — `IsChecked = modOption.IsChecked`, a verbatim copy with
-  // no write-time derivation, mirroring the verbatim read at WizardData.cs:668.
+  // no write-time derivation, mirroring the verbatim read at WizardData.cs:674.
   IsChecked: boolean;
 };
 
@@ -144,13 +144,13 @@ export interface OriginalModPackJson {
   DatFile: string;
 }
 
-// Mirrors reference/.../Mods/FileTypes/PMP.cs:1369-1543
+// Mirrors reference/.../Mods/FileTypes/PMP.cs:1467-1716
 //
 // TWO LAYERS, mirroring what Newtonsoft gives C#:
 //
 //   `Pmp*Json`     — the object AFTER deserialization: what C# code actually holds. Every field of
-//                    PMPMetaJson (:1372-1377), PMPGroupJson (:1390-1404) and PMPOptionJson
-//                    (:1490-1494) carries an initializer, so these fields are always present.
+//                    PMPMetaJson (:1469-1487), PMPGroupJson (:1497-1517) and PMPOptionJson
+//                    (:1649-1654) carries an initializer, so these fields are always present.
 //   `Pmp*JsonRaw`  — the JSON DOCUMENT on disk. Any key may be absent: Newtonsoft simply leaves the
 //                    field at its initialized default, and Penumbra-authored packs really do omit
 //                    keys (`Image` in particular).
@@ -161,13 +161,13 @@ export interface OriginalModPackJson {
 // Writing goes the other way and deals in Raw, deliberately: writePmp REGENERATES every typed field
 // from the domain model (Files/FileSwaps/Manipulations from the option's own files, Name/Description/
 // Image trimmed and copied over, DefaultSettings recomputed, ...) rather than re-emitting the source
-// document verbatim — TexTools' own writer does the same (PopulatePmpStandardOption, PMP.cs:871-928;
-// WizardGroupEntry.ToPmpGroup, WizardData.cs:889-956), so a foreign key or a value the typed model
+// document verbatim — TexTools' own writer does the same (PopulatePmpStandardOption, PMP.cs:964-1021;
+// WizardGroupEntry.ToPmpGroup, WizardData.cs:895-967), so a foreign key or a value the typed model
 // doesn't own cannot survive a round-trip (see optionToJson's doc comment, pmp.ts). `o.raw`/`g.raw`
 // are consulted ONLY for the genuinely untyped extras those typed classes still carry via
 // [JsonExtensionData]-equivalent fields (Imc's Identifier/DefaultEntry/AllVariants/OnlyAttributes,
 // an Imc option's IsDisableSubMod/AttributeMask) — never for a field the base classes already type.
-// C#'s ShouldSerialize* (:1499-1501) omits Name/Description/Image entirely for default_mod.json,
+// C#'s ShouldSerialize* (:1659-1661) omits Name/Description/Image entirely for default_mod.json,
 // which `includeMeta=false` reproduces. A document built from the model with no `raw` at all (e.g. a
 // TTMP source) carries the full set the same way, since both paths build a parsed-type object.
 
@@ -179,7 +179,21 @@ export interface PmpMetaJson {
   Version: string;
   Website: string;
   Image: string;
+  // PMP.cs · PMPMetaJson · 1476-1477 — both are C# FIELD INITIALIZERS that GENERATE a value
+  // (`Guid.NewGuid()`, `DateTime.Now.ToString("O", …)`), not constants. A read-only parse cannot
+  // and should not reproduce that: nothing downstream of `readPmp` consumes either (the writer
+  // regenerates both — see writePmp), so `?? ""` is the honest default for an absent key.
+  Identifier: string;
+  LastWrite: string;
   ModTags: string[] | null; // C# `List<string> ModTags;` — uninitialized, so absent -> null
+  // PMP.cs · PMPMetaJson · 1484/1487 — "Added in Penumbra JSON 4.0 scheme": a v4 pack stores its
+  // groups and its default option INLINE here instead of in group_NNN.json / default_mod.json.
+  // Uninitialized C# members, so an absent key is null — which is exactly what LoadPMP's content
+  // discriminator tests (`(meta.Groups != null && meta.Groups.Count > 0) || meta.DefaultData != null`,
+  // PMP.cs:217). Left as RAW documents for the same reason PMPGroupJson.Options is: readPmp parses
+  // each group/option individually and carries the untouched JSON through.
+  Groups: PmpGroupJsonRaw[] | null;
+  DefaultData: PmpOptionJsonRaw | null;
 }
 export type PmpMetaJsonRaw = Partial<PmpMetaJson>;
 
@@ -188,16 +202,24 @@ export type PmpMetaJsonRaw = Partial<PmpMetaJson>;
  * `PmpMetaJson` describes the document as READ, where `parsePmpMeta`'s `?? ""` has already applied
  * the C# field initializers — so nothing downstream of a read ever sees a null. The WRITE path can:
  * `WizardData.WritePmp` assigns `pmp.Meta.Name/Author/Website/Description` VERBATIM from the
- * WizardMetaEntry (WizardData.cs · WritePmp · 1490-1493) with no `?? ""` — unlike the per-OPTION and
- * per-GROUP seams, which do coalesce (`op.Description = Description ?? ""` · ToPmpOption · 543-544;
- * `pg.Name = (Name ?? "").Trim()` · ToPmpGroup · 946-947) — and `SavePMP` serializes meta.json with a
- * bare `JsonConvert.SerializeObject(pmp.Meta, Formatting.Indented)` (PMP.cs · SavePMP · 850), i.e.
+ * WizardMetaEntry (WizardData.cs · WritePmp · 1509-1512) with no `?? ""` — unlike the per-OPTION and
+ * per-GROUP seams, which do coalesce (`op.Description = Description ?? ""` · ToPmpOption · 545-546;
+ * `pg.Name = (Name ?? "").Trim()` · ToPmpGroup · 957-958) — and `WritePmp` serializes meta.json with a
+ * bare `JsonConvert.SerializeObject(pmp.Meta, Formatting.Indented)` (PMP.cs · WritePmp · 943), i.e.
  * Newtonsoft defaults, so NullValueHandling.Include. A null therefore reaches meta.json as an
  * explicit `null` rather than being omitted or flattened to `""`.
  *
  * Only a TTMP-sourced model can carry those nulls in the first place: LoadPMP deserializes meta.json
- * with `NullValueHandling.Ignore` (PMP.cs:137-139), which leaves an explicit null at the field
- * initializer's `""`, exactly as `parsePmpMeta` models. */
+ * with `NullValueHandling.Ignore` (PMP.cs:170-173), which leaves an explicit null at the field
+ * initializer's `""`, exactly as `parsePmpMeta` models.
+ *
+ * `Identifier`/`LastWrite`/`Groups`/`DefaultData` (PMP.cs · PMPMetaJson · 1476-1487) are always
+ * physically present in a written meta.json: `PMP.WritePmp` moves `pmp.Groups` and `pmp.DefaultMod`
+ * into the meta (:928-939) and re-stamps `LastWrite` (:941) before serializing, and
+ * `WizardData.WritePmp` builds both non-null (WizardData.cs:1481-1487). They are REQUIRED here
+ * (inherited unchanged from `PmpMetaJson`) so `writePmp` cannot silently drop one — they were
+ * temporarily optional while the writer still emitted the pre-v4 8-key shape; it emits all four for
+ * real now (see the `meta` literal in pmp.ts). */
 export type PmpMetaJsonWrite = Omit<
   PmpMetaJson,
   "Name" | "Author" | "Description" | "Website"
@@ -208,7 +230,7 @@ export type PmpMetaJsonWrite = Omit<
   Website: string | null;
 };
 
-/** Applies PMPMetaJson's field initializers (PMP.cs:1369-1381). */
+/** Applies PMPMetaJson's field initializers (PMP.cs · PMPMetaJson · 1467-1488). */
 export function parsePmpMeta(raw: PmpMetaJsonRaw): PmpMetaJson {
   return {
     FileVersion: raw.FileVersion ?? 0,
@@ -218,11 +240,15 @@ export function parsePmpMeta(raw: PmpMetaJsonRaw): PmpMetaJson {
     Version: raw.Version ?? "",
     Website: raw.Website ?? "",
     Image: raw.Image ?? "",
+    Identifier: raw.Identifier ?? "",
+    LastWrite: raw.LastWrite ?? "",
     ModTags: raw.ModTags ?? null,
+    Groups: raw.Groups ?? null,
+    DefaultData: raw.DefaultData ?? null,
   };
 }
 
-// NOTE ON SUBTYPES: C# resolves groups/options polymorphically off `Type` (JsonSubtypes, :1383-1386)
+// NOTE ON SUBTYPES: C# resolves groups/options polymorphically off `Type` (JsonSubtypes, :1490-1494)
 // into Single/Multi/Imc classes; we flatten those into one interface each. So only the fields the
 // COMMON base initializes are required below — subtype-only fields (Imc's Identifier/DefaultEntry/…,
 // a multi-option's Priority, default_mod's Version) stay optional and ride through the index
@@ -231,22 +257,26 @@ export interface PmpOptionJson {
   Name: string;
   Description: string;
   Image: string;
-  // PmpStandardOptionJson initializes these (`= new()`, :1507-1511). PmpImcOptionJson has no such
-  // fields at all — for an Imc option parse yields the empty defaults, which is precisely what it
-  // contributes to the domain model anyway.
+  // PmpStandardOptionJson initializes these (`= new()`, PMP.cs:1667-1671). PmpImcOptionJson has no
+  // such fields at all — for an Imc option parse yields the empty defaults, which is precisely what
+  // it contributes to the domain model anyway.
   Files: Record<string, string>; // game path -> zip path (backslashes on disk)
   FileSwaps: Record<string, string>;
   Manipulations: unknown[];
   Priority?: number; // multi-option only
-  Version?: number; // default_mod.json only
-  // PmpImcOptionJson-only (PMP.cs:1544-1551), ShouldSerialize-gated on write — see optionToJson
-  // (src/container/pmp.ts): IsDisableSubMod only when true; AttributeMask only when !IsDisableSubMod.
+  // The DEFAULT option only (`PmpDefaultMod.Version`, PMP.cs:1687) — its own `default_mod.json`
+  // member under v3, `meta.DefaultData` under v4 (the push-forward at PMP.cs:935-939, with the
+  // `default_mod.json` write commented out at :946-947). Never present on a group's option.
+  Version?: number;
+  // PmpImcOptionJson-only (PMP.cs · PmpImcOptionJson · 1709-1716), ShouldSerialize-gated on write —
+  // see optionToJson (src/container/pmp.ts): IsDisableSubMod only when true; AttributeMask only when
+  // !IsDisableSubMod.
   IsDisableSubMod?: boolean;
   AttributeMask?: number;
 }
 export type PmpOptionJsonRaw = Partial<PmpOptionJson>;
 
-/** Applies PMPOptionJson (:1485-1502) + PmpStandardOptionJson (:1504-1511) field initializers. */
+/** Applies PMPOptionJson (PMP.cs:1645-1662) + PmpStandardOptionJson (:1664-1682) field initializers. */
 export function parsePmpOption(raw: PmpOptionJsonRaw): PmpOptionJson {
   return {
     ...raw, // keep subtype-only extras (AttributeMask, IsDisableSubMod, Priority, …)
@@ -275,20 +305,40 @@ export interface PmpGroupJson {
 }
 export type PmpGroupJsonRaw = Partial<PmpGroupJson>;
 
-/** The three `Type` discriminators JsonSubtypes resolves to a real subtype (PMP.cs:1384-1386).
- * Anything else — including an absent key — leaves the BASE `PMPGroupJson`, whose `Options` throws. */
-const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc"]);
+/** The four `Type` discriminators JsonSubtypes resolves to a real subtype (PMP.cs:1491-1494).
+ * Anything else — including an absent key — leaves the BASE `PMPGroupJson`, whose `Options` throws.
+ *
+ * `"Combining"` (PMPCombiningGroupJson, PMP.cs:1494 + :1555-1603) is in this set as of the
+ * v3.1.1.4 re-pin. Upstream commit `76535f4` ("Add PMP Combining group import support") registered
+ * the subtype and gave it an `Options` override (`=> OptionData`, :1565), so the base virtual's
+ * `Unimplemented PMP group type: {Type}` (:1517) is no longer reached for it and a Combining pack
+ * LOADS. TexTools still refuses to WRITE one, one stage later and with a different message:
+ * `WizardGroupEntry.ToPmpGroup`'s first statement throws
+ * `InvalidDataException("Editing or exporting PMP Combining groups is not supported.")`
+ * (WizardData.cs:897-900), reached from `WizardData.WritePmp`'s group-assembly loop (:1613). Our port
+ * reproduces that at the same seam — see `writePmp` (src/container/pmp.ts). Measured against
+ * ConsoleTools /upgrade v3.1.1.4 (2026-08-08): the trace is that exact InvalidDataException, thrown
+ * from `WizardGroupEntry.<ToPmpGroup>` via `WizardData.<WritePmp>`, with no output file written.
+ *
+ * Accepting the type here is deliberately the MINIMUM that lets the group reach the writer: the
+ * subtype's own payload (`Containers`, PMP.cs:1562-1563) rides along untyped in `PmpGroupJson`'s
+ * `[extra: string]: unknown` index signature and is never interpreted. Supporting Combining groups
+ * is NOT ported. */
+const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc", "Combining"]);
 
-/** Applies PMPGroupJson's field initializers (:1387-1404). `Options` defaults to `[]`: each subtype
- * initializes `OptionData = new()` (:1413/:1421/:1434).
+/** Applies PMPGroupJson's field initializers (PMP.cs:1495-1518). `Options` defaults to `[]`: each
+ * subtype initializes `OptionData = new()` (:1523/:1531/:1544/:1560).
  *
  * An unrecognized `Type` is a LOAD FAILURE, not an empty group. JsonSubtypes has no
  * `FallBackSubType` here (contrast PmpManipulation.cs:21), so an unknown or absent discriminator
  * deserializes into the base class rather than throwing at deserialization — and the base's virtual
- * `Options` throws `NotImplementedException($"Unimplemented PMP group type: {Type}")` (:1407) at the
+ * `Options` throws `NotImplementedException($"Unimplemented PMP group type: {Type}")` (:1517) at the
  * first access. Two unconditional accesses follow inside `LoadPMP` itself — `GetHeaderImage`'s group
- * loop (:1351-1357, short-circuits on an earlier Image, so not always the reporting frame) and the
- * `allPmpFiles` scan (:185-187, no short-circuit) — so the load ALWAYS fails, before any transform.
+ * loop (:1449-1462, short-circuits on an earlier Image, so not always the reporting frame) and the
+ * `allPmpFiles` scan (:234-265, no short-circuit; its Combining branch `continue`s at :236-250
+ * BEFORE touching `g.Options`, but that arm is unreachable for a base-class group — a `Type` that
+ * resolves to no subtype cannot cast to `PMPCombiningGroupJson` either) — so the load ALWAYS fails,
+ * before any transform.
  * Empirically confirmed against ConsoleTools /upgrade for both an unknown and an absent `Type`; the
  * synthetic packs that pin it are `pmp-group-type-{unknown,absent}.pmp` (test/corpus/upgrade-error).
  *
@@ -297,8 +347,8 @@ const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc"]);
  * this for every group — same outcome (load refuses the pack), one frame earlier. The message is
  * byte-identical to the C# one, which `assertMatchedUpgradeFailure` requires: it substring-matches
  * our thrown message against the oracle's captured trace. An absent `Type` yields the trailing-colon
- * message because the C# field initializes to `""` (:1397) — and `LoadPMP` deserializes groups with
- * `NullValueHandling.Ignore` (:160-163), so an explicitly-null `Type` is skipped and keeps that `""`
+ * message because the C# field initializes to `""` (:1505) — and `LoadPMP` deserializes groups with
+ * `NullValueHandling.Ignore` (:199-202), so an explicitly-null `Type` is skipped and keeps that `""`
  * too. Our `?? ""` reproduces both. */
 export function parsePmpGroup(raw: PmpGroupJsonRaw): PmpGroupJson {
   const type = raw.Type ?? "";
@@ -317,12 +367,4 @@ export function parsePmpGroup(raw: PmpGroupJsonRaw): PmpGroupJson {
     DefaultSettings: raw.DefaultSettings ?? 0,
     Options: raw.Options ?? [],
   };
-}
-/** In-memory PMP bundle: parsed JSON + raw file bytes keyed by zip path (forward slashes). */
-export interface PmpJson {
-  meta: PmpMetaJson;
-  defaultMod: PmpOptionJson;
-  groups: PmpGroupJson[];
-  groupFileNames: string[]; // e.g. "group_001_Foo.json", index-aligned with groups
-  files: Map<string, Uint8Array>; // zip path -> raw bytes
 }

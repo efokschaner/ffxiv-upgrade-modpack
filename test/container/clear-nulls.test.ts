@@ -21,15 +21,15 @@ const group = (name: string, optionCount: number): ModpackGroup => ({
   })),
 });
 
-describe("clearNulls (WizardData.cs:1234-1266)", () => {
-  it("removes a null group but keeps the page (:1249)", () => {
+describe("clearNulls (WizardData.cs:1253-1285)", () => {
+  it("removes a null group but keeps the page (:1268)", () => {
     const pages: ModpackPage[] = [{ groups: [group("Real", 1), null] }];
     clearNulls(pages);
     expect(pages).toHaveLength(1);
     expect(pages[0]!.groups.map((g) => g?.name)).toEqual(["Real"]);
   });
 
-  it("removes a page left with no data (:1240-1244)", () => {
+  it("removes a page left with no data (:1259-1263)", () => {
     const pages: ModpackPage[] = [
       { groups: [null] },
       { groups: [group("Real", 1)] },

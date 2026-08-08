@@ -1,6 +1,6 @@
 // Model bounding-box extents/radius/block, ported from xivModdingFramework
-// Models/FileTypes/Mdl.cs MakeUncompressedMdlFile: extents/radius (Mdl.cs:2559-2587),
-// bounding-box data block (Mdl.cs:3681-3772, including the boneless "furniture-part"
+// Models/FileTypes/Mdl.cs MakeUncompressedMdlFile: extents/radius (Mdl.cs:2555-2583),
+// bounding-box data block (Mdl.cs:3677-3768, including the boneless "furniture-part"
 // boxes at 3751-3772). The per-bone cube helper re-derives reference commit b185e1e's
 // buildRadiusBoundingBox. Split, don't blend: the per-part min/max scan itself is
 // TTMeshPart.GetBoundingBox (partBoundingBox in tt-model.ts), reused here.
@@ -15,7 +15,7 @@ export interface ModelExtents {
   abs: Vec3;
 }
 
-/** Port of the extents/abs scan (Mdl.cs:2559-2583). */
+/** Port of the extents/abs scan (Mdl.cs:2555-2579). */
 export function computeExtents(m: TTModel): ModelExtents {
   const min: Vec3 = [9999, 9999, 9999];
   const max: Vec3 = [-9999, -9999, -9999];
@@ -37,7 +37,7 @@ export function computeExtents(m: TTModel): ModelExtents {
   return { min, max, abs };
 }
 
-/** Port of `absVect.Length()` (Mdl.cs:2585-2587), float32 left-to-right
+/** Port of `absVect.Length()` (Mdl.cs:2581-2583), float32 left-to-right
  *  accumulation to match C#/SharpDX single-precision Vector3.Length(). */
 export function computeRadius(abs: Vec3): number {
   const sq = (x: number) => Math.fround(x * x);
@@ -45,7 +45,7 @@ export function computeRadius(abs: Vec3): number {
   return Math.fround(Math.sqrt(s));
 }
 
-/** Port of the per-bone cube (Mdl.cs:3729-3746 / ref b185e1e's
+/** Port of the per-bone cube (Mdl.cs:3725-3742 / ref b185e1e's
  *  buildRadiusBoundingBox): 32 bytes, d = radius/20, [-d,-d,-d,1, d,d,d,1] f32 LE. */
 export function buildRadiusBoundingBox(radius: number): Uint8Array {
   const d = radius / 20;
@@ -61,11 +61,11 @@ export function buildRadiusBoundingBox(radius: number): Uint8Array {
     .toUint8Array();
 }
 
-/** Port of the bounding-box data block (Mdl.cs:3681-3772): box[0] BoundingBox
+/** Port of the bounding-box data block (Mdl.cs:3677-3768): box[0] BoundingBox
  *  (origin-clamped), box[1] ModelBoundingBox (real extent), box[2] Water
  *  (zero), box[3] Fog (zero), then one per-bone radius cube per model bone, then --
- *  when `useFurnitureBBs` (unweighted multi-part / boneless-part model, Mdl.cs:2552) --
- *  one box per part in mesh-group/part order (Mdl.cs:3751-3772), each the part's own
+ *  when `useFurnitureBBs` (unweighted multi-part / boneless-part model, Mdl.cs:2548) --
+ *  one box per part in mesh-group/part order (Mdl.cs:3747-3768), each the part's own
  *  min/max from partBoundingBox with w=1. */
 export function buildBoundingBoxBlock(
   m: TTModel,
@@ -96,7 +96,7 @@ export function buildBoundingBoxBlock(
   for (let i = 0; i < m.bones.length; i++) {
     parts.push(buildRadiusBoundingBox(radius));
   }
-  // Mdl.cs:3751-3772: boneless "furniture-part" culling boxes, one per part in mesh-group
+  // Mdl.cs:3747-3768: boneless "furniture-part" culling boxes, one per part in mesh-group
   // then part order, each 32 B: min.xyz + 1.0f, max.xyz + 1.0f.
   if (useFurnitureBBs) {
     const fb = new ByteBuilder();

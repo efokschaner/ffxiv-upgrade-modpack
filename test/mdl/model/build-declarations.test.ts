@@ -102,7 +102,7 @@ describe("buildDeclarations", () => {
   });
 
   it("falls back to a Half-precision declaration (Flow omitted) when the estimate reaches 8MB", () => {
-    // upgradePrecision=false path (Mdl.cs:2540-2543 / :2614-2711 / :2655). A shared vertex
+    // upgradePrecision=false path (Mdl.cs:2536-2539 / :2610-2707 / :2651). A shared vertex
     // object filled across a large array reports a big part.vertices.length without allocating
     // ~150k distinct vertices. maxUv=2 (uv2 set) + flow on -> perVertex ~60B; 200k verts
     // (~12MB) trips the >=8MB gate, so Position/Normal become Half4, texcoord Half4, and the
@@ -128,9 +128,9 @@ describe("buildDeclarations", () => {
   });
 
   it("emits a Half2 texcoord in the Half-precision fallback when maxUv==1", () => {
-    // Same 8MB gate as above (Mdl.cs:2513-2543), but with uv2/uv3 both zero so maxUv stays 1
+    // Same 8MB gate as above (Mdl.cs:2509-2539), but with uv2/uv3 both zero so maxUv stays 1
     // (TTModel.GetUsageInfo, TTModel.cs:1308-1367) and the primary texcoord element narrows to
-    // Half2 instead of Half4 (Mdl.cs:2614-2711 / build-declarations.ts maxUv===1 branch).
+    // Half2 instead of Half4 (Mdl.cs:2610-2707 / build-declarations.ts maxUv===1 branch).
     const m = oneVertModel({ uv2: [0, 0], uv3: [0, 0] });
     const v = m.meshGroups[0]!.parts[0]!.vertices[0]!;
     m.meshGroups[0]!.parts[0]!.vertices = new Array(200_000).fill(v);
@@ -142,7 +142,7 @@ describe("buildDeclarations", () => {
 
   it("emits a Half4 primary + Half2 secondary texcoord in the Half-precision fallback when maxUv>2", () => {
     // uv2 default [0.5,0] takes maxUv to 2, uv3 nonzero pushes it to 3, exercising the maxUv>2
-    // second-texcoord branch (Mdl.cs:2614-2711 / build-declarations.ts maxUv>2 branch) under the
+    // second-texcoord branch (Mdl.cs:2610-2707 / build-declarations.ts maxUv>2 branch) under the
     // same 8MB Half-precision gate.
     const m = oneVertModel({ uv3: [0, 0.2] });
     const v = m.meshGroups[0]!.parts[0]!.vertices[0]!;
@@ -157,7 +157,7 @@ describe("buildDeclarations", () => {
   });
 
   it("counts shape-part vertices (excluding 'original') toward the 8MB gate", () => {
-    // Mdl.cs:2536-2538: totalVertexCount = shapeVertCount + VertexCount, where shapeVertCount
+    // Mdl.cs:2532-2534: totalVertexCount = shapeVertCount + VertexCount, where shapeVertCount
     // sums every shapePart EXCEPT the "original" key. perVertex here (maxUv=2, no flow) = 56B.
     const under = oneVertModel(); // base 100k verts -> 5.6MB, below the 8MB gate
     const v = under.meshGroups[0]!.parts[0]!.vertices[0]!;

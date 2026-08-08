@@ -173,7 +173,7 @@ describe("buildBoundingBoxBlock with furniture (boneless-part) boxes", () => {
     } as unknown as TTModel;
   }
 
-  it("appends one 32-byte box per part after the model boxes, each part's own min/max (Mdl.cs:3751-3772)", () => {
+  it("appends one 32-byte box per part after the model boxes, each part's own min/max (Mdl.cs:3747-3768)", () => {
     const m = twoPartModel();
     const block = buildBoundingBoxBlock(m, 10, [-4, -2, -6], [2, 5, 3], true);
     const dv = new DataView(block.buffer, block.byteOffset, block.byteLength);

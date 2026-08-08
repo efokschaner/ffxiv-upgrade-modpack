@@ -38,7 +38,7 @@ import { buildMinimalMtrl } from "../mtrl/make-mtrl";
 import { buildMinimalTex, buildMinimalTexSized } from "../tex/make-tex";
 
 describe("computeUnusedTextures", () => {
-  it("drops textures that are any target VALUE (ModpackUpgrader.cs:151-155)", () => {
+  it("drops textures that are any target VALUE (ModpackUpgrader.cs:157-161)", () => {
     const all = new Set(["a/x_n.tex", "a/x_id.tex", "a/y_d.tex"]);
     const targets = new Map<string, UpgradeInfo>([
       [

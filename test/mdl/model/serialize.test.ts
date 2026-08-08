@@ -171,7 +171,7 @@ describe("makeUncompressedMdl", () => {
     };
   }
   /** MdlModelData for the source model. HasBonelessParts (0x01) set so the meshPart attribute
-   *  slot takes the sequential bounding-box index (Mdl.cs:3314-3318). All count-bearing sections
+   *  slot takes the sequential bounding-box index (Mdl.cs:3310-3314). All count-bearing sections
    *  the writer copies verbatim are zeroed to keep the emitted file self-consistent on re-parse. */
   function furnitureSourceModelData(): MdlModelData {
     return {
@@ -224,7 +224,7 @@ describe("makeUncompressedMdl", () => {
     } as unknown as ReadMdl;
   }
 
-  it("emits a furniture (boneless-part) model: HasBonelessParts + per-part boxes + sequential mask (Mdl.cs:2978-2984,3314-3318,3751-3772)", () => {
+  it("emits a furniture (boneless-part) model: HasBonelessParts + per-part boxes + sequential mask (Mdl.cs:2974-2980,3314-3318,3751-3772)", () => {
     const m = furnitureModel();
     const out = makeUncompressedMdl(m, furnitureRm(m));
     const re = parseMdl(out);
@@ -255,7 +255,7 @@ describe("makeUncompressedMdl", () => {
     });
 
     // The part attribute-mask slots carry the sequential bounding-box index (0, 1), not a
-    // real attribute bitmask (Mdl.cs:3314-3318).
+    // real attribute bitmask (Mdl.cs:3310-3314).
     const rm2 = readEditableModel(out, re);
     const masks = rm2.meshes.flatMap((mesh) =>
       mesh.parts.map((p) => p.attributeMask),
@@ -263,7 +263,7 @@ describe("makeUncompressedMdl", () => {
     expect(masks).toEqual([0, 1]);
   });
 
-  it("keeps the two HasBonelessParts gates independent: source-flag mask override fires on a weighted model where useFurnitureBBs is false (Mdl.cs:2978-2984 vs 3314-3318)", () => {
+  it("keeps the two HasBonelessParts gates independent: source-flag mask override fires on a weighted model where useFurnitureBBs is false (Mdl.cs:2974-2980 vs 3314-3318)", () => {
     // A WEIGHTED model (has bones) makes useFurnitureBBs (= useParts && !weighted) false, so flags2
     // clears HasBonelessParts and no furniture-box block is written. But the SOURCE model's
     // HasBonelessParts flag is set (furnitureRm's og.modelData.flags2 = 0x01), which the meshPart
@@ -329,7 +329,7 @@ describe("makeUncompressedMdl", () => {
     expect(masks).toEqual([0, 1]);
   });
 
-  it("fails loud when the assembled vertex buffer exceeds 8MB even after Half fallback (Mdl.cs:2822)", () => {
+  it("fails loud when the assembled vertex buffer exceeds 8MB even after Half fallback (Mdl.cs:2818)", () => {
     // No practical corpus pack reaches this: the estimate forces Half precision at ~150k verts,
     // and Half is smaller than the Float estimate, so the actual buffer only exceeds 8MB well
     // above that. Inflate a real (valid) corpus model's first part until the Half-encoded buffer

@@ -68,8 +68,8 @@ describe("validateTexFileData", () => {
 
   it("Branch B: a POT tex with a broken first offset is rewritten, not resized", () => {
     // 16x16 (not 4x4/mipCount=2): a canonical mipCount=2 A8R8G8B8 header has LoDMips=[0,1,0]
-    // (CreateTexFileHeader, Tex.cs:1125-1127 — LoD2 stays 0 unless mipCount>2), which is
-    // non-monotonic and trips assertTexHeaderWritable's ordering guard (Tex.cs:138) the moment this
+    // (CreateTexFileHeader, Tex.cs:1124-1126 — LoD2 stays 0 unless mipCount>2), which is
+    // non-monotonic and trips assertTexHeaderWritable's ordering guard (Tex.cs:138 *pre-fix*, deleted by 1993bf6) the moment this
     // path needs to rewrite the header — a genuine TexTools defect, not a fixture mistake; see
     // docs/TEXTOOLS_BUGS.md #19. 16x16 (mipCount=4) keeps LoDMips=[0,1,2], avoiding the crash while
     // still exercising the same offset-rewrite behaviour.
@@ -95,12 +95,12 @@ describe("validateTexFileData", () => {
     // reaches assertTexHeaderWritable without throwing and lands on the new overrun guard. Truncate
     // the file to 580 bytes: well past the 80-byte header but short of 80 + mip0's 1024-byte size
     // (16*16*4). fixUpBrokenMipOffsets ALWAYS accounts mip0's full computed size into
-    // calculatedTexSize (Tex.cs:168-235 / header.ts:120-122) even though it doesn't fit the
+    // calculatedTexSize (Tex.cs:159-234 / header.ts:120-122) even though it doesn't fit the
     // truncated file — mip1 then fails the `mipOffset + mipSize > texSizeIncludingHeader` check
     // immediately, so recomputed mipCount(1) != original(4) and headerChanged is forced true, taking
     // the rewrite path. calculatedTexSize (1104) > file length (580): the C# Array.Copy this ports
     // (EndwalkerUpgrade.cs:2122) throws ArgumentException on that source overrun, which
-    // WizardData.FromWizardGroup's surrounding try/catch (WizardData.cs:703-712) swallows and
+    // WizardData.FromWizardGroup's surrounding try/catch (WizardData.cs:709-718) swallows and
     // `continue`s past — the corrupt/truncated file is silently DROPPED from the upgraded pack, not
     // kept zero-padded. We reproduce the throw so callers at the load seam can drop it the same way.
     const src = encodeUncompressedTex(solidRgba(16, 16), 16, 16, {

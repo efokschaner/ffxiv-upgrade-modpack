@@ -50,7 +50,7 @@ export function serializeTexHeader(tex: XivTex): Uint8Array {
   return b.toUint8Array();
 }
 
-/** Canonical header for a regenerated texture. Port of Tex.CreateTexFileHeader (Tex.cs:1103). */
+/** Canonical header for a regenerated texture. Port of Tex.CreateTexFileHeader (Tex.cs:1102). */
 export function buildCanonicalTexHeader(
   format: number,
   width: number,
@@ -92,7 +92,7 @@ type MipOffsetFixable = Pick<
   "format" | "width" | "height" | "mipCount" | "lodMips" | "mipMapOffsets"
 >;
 
-/** Port of Tex.TexHeader.FixUpBrokenMipOffsets (Tex.cs:168-235). Rebuilds a broken mip-offset
+/** Port of Tex.TexHeader.FixUpBrokenMipOffsets (Tex.cs:159-234). Rebuilds a broken mip-offset
  *  table using total file size as a heuristic, returning whether anything changed and the size the
  *  .tex SHOULD be.
  *
@@ -112,7 +112,7 @@ export function fixUpBrokenMipOffsets(
   let mipOffset = 80; // Tex._TexHeaderSize
   if (originalMipCount > 13) originalMipCount = 13;
 
-  // Throws for unknown formats, exactly like DDS.CalculateMipMapSizes (Tex.cs:179 comment).
+  // Throws for unknown formats, exactly like DDS.CalculateMipMapSizes (Tex.cs:170 comment).
   const mipSizes = texMipSizes(header.format, header.width, header.height);
 
   // Local mip count == the C# copy's header.MipCount; deliberately NOT written back to `header`.
@@ -152,7 +152,8 @@ export function fixUpBrokenMipOffsets(
 }
 
 /** The write-time validation Tex.TexHeader.ToBytes performs before emitting header bytes
- *  (Tex.cs:138-145), messages verbatim. Kept SEPARATE from serializeTexHeader (which writes retained
+ *  (Tex.cs:138-145 *pre-fix* — the block `1993bf6` deleted; see docs/TEXTOOLS_BUGS.md #19),
+ *  messages verbatim. Kept SEPARATE from serializeTexHeader (which writes retained
  *  headers verbatim and must not throw on them); called only where ToBytes' guard is part of the
  *  ported behaviour (validateTexFileData Branch B), where a throw drops the file at the load seam. */
 export function assertTexHeaderWritable(

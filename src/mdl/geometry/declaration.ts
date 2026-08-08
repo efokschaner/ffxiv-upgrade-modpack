@@ -1,5 +1,5 @@
 // Vertex declaration codec: the 136-byte-per-mesh vertex-info block <-> structured
-// elements. Ported from xivModdingFramework Mdl.cs (parse :562-600, serialize :2735-2763).
+// elements. Ported from xivModdingFramework Mdl.cs (parse :562-600, serialize :2731-2759).
 
 import type { VertexDataType, VertexUsageType } from "./format";
 

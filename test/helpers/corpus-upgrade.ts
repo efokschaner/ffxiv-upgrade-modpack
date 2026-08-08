@@ -179,11 +179,24 @@ export function confirmOracleErrorDivergence(
   const siblingArchive = writeModpack(siblingUpgrade.data, target, {
     store: true,
   });
+  // BOTH SIDES ARE OURS here — that is the point of the check (see the paragraph above), and it is
+  // load-bearing for the v4 `meta.json` GUID confirmation, hence the explicit `referenceIsOurs`
+  // below. `confirmNondeterministicMetaFields` pins each side to its OWN producer's shape, and the
+  // reference here is `writeModpack`, not ConsoleTools: held to the default (`GOLDEN_GUID_RE`, which
+  // demands a version-4 nibble `Guid.NewGuid()` alone can mint) the reference's v5 identifier would
+  // never shape-confirm, `confirmedString` would return `undefined`, and the whole Identifier
+  // confirmation would be INERT at this call site — passing only for as long as the two sides happen
+  // to derive the same value. `layoutEquivalent`/`confirmGoldenOnlyMember` stay at their defaults:
+  // no ORACLE_ERROR_DIVERGENCE_RULES sibling carries FileSwaps, and there is no golden here whose
+  // extra members would need the docs/TEXTOOLS_BUGS.md #23 confirmation.
   const structure = diffArchives(
     oursArchive,
     siblingArchive,
     target === "pmp",
     confirmDivergence,
+    /* layoutEquivalent */ false,
+    /* confirmGoldenOnlyMember */ undefined,
+    /* referenceIsOurs */ true,
   );
   if (structure.length > 0) {
     expect.fail(
@@ -227,6 +240,8 @@ export function assertMatchedUpgradeFailure(
   //     deliberately called inside this assertion (see registerUpgradeCheck) because a pack the
   //     oracle refuses at LOAD is refused just as legitimately by our loader.
   //   - `upgradeModpack` no longer throws; it returns ok:false.
+  //   - `writeModpack`, when the caller's closure includes it (see registerUpgradeCheck), THROWS
+  //     like `loadModpack` — the write seam has no diagnostics channel either.
   let ourMessage: string | undefined;
   let ourData: ModpackData | undefined;
   try {
@@ -411,7 +426,7 @@ export const EXPECTED_PACK_DIAGNOSTICS: ReadonlyMap<
     // scripts/generate-synthetics/build-synthetic-hair-transform-failure.ts — one loose hair
     // normal/specular pair whose normal is a well-formed 40x40 A8R8G8B8 texture. The NPOT pre-resize
     // (EndwalkerUpgrade.cs:1195-1198) rounds 40 down to 32 (IOUtil.cs:905-911), so MergePixelData's
-    // post-resize `< 64` size guard (Tex.cs:656-660) throws and EndwalkerUpgrade.cs:1498-1501's
+    // post-resize `< 64` size guard (Tex.cs:655-659) throws and EndwalkerUpgrade.cs:1498-1501's
     // swallow fires exactly once. (NOT a truncated .tex — see that builder's header.) ConsoleTools
     // /upgrade swallows identically (verified 2026-08-02), so the pack's BYTES match the golden and
     // this diagnostic is its only recorded diff.
@@ -488,9 +503,36 @@ export function registerUpgradeCheck(pack: string): void {
       // outside this branch made such a throw escape the assertion and fail the test as an error
       // instead of passing as the matched failure it is.
       if (golden.kind === "error") {
-        assertMatchedUpgradeFailure(name, golden.message, () =>
-          upgradeModpack(loadModpack(name, bytes)),
-        );
+        // A v4 PMP input lands here every time (ModpackUpgrader.cs:226-232 refuses it, and so do
+        // we — see src/upgrade/upgrade.ts), so `diffArchives` below is never reached for one; no
+        // `confirmGoldenOnlyMember` wiring belongs in this file for docs/TEXTOOLS_BUGS.md #23 (that
+        // divergence is /resave-only — see corpus-resave.ts, pmp-v4-extrafile-divergence.ts).
+        //
+        // The closure spans load + transform + WRITE, because ConsoleTools' /upgrade does:
+        // `ModpackUpgrader.UpgradeModpack` loads (:63), transforms, and then writes when anything
+        // changed (`if (data.AnyChanges || rewriteOnNoChanges) await data.Data.WriteModpack(...)`,
+        // ModpackUpgrader.cs:244-247). A refusal at the WRITE seam is therefore one of the errors the
+        // oracle's trace can carry, and load+transform alone cannot match it — our upgrade would
+        // "succeed" and this branch would report a phantom divergence. Live case:
+        // `pmp-combining-group.pmp`, whose Combining group loads fine at the v3.1.1.4 pin and is
+        // refused by `WizardGroupEntry.ToPmpGroup` (WizardData.cs:897-900) inside `WritePmp` (:1613)
+        // — see src/container/pmp.ts's group-assembly loop for our side of it.
+        //
+        // Inert for a pack that fails earlier (the writer is never reached), and for the
+        // ORACLE_ERROR_DIVERGENCE_RULES packs it re-runs a write that
+        // `confirmOracleErrorDivergence` performs anyway on the same model — `writePmp`'s only
+        // mutation is `clearNulls`, which is idempotent.
+        assertMatchedUpgradeFailure(name, golden.message, () => {
+          const result = upgradeModpack(loadModpack(name, bytes));
+          if (result.ok) {
+            writeModpack(
+              result.data,
+              name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2",
+              { store: true },
+            );
+          }
+          return result;
+        });
         // This branch returns BEFORE `assertExpectedDiagnostics` runs, so a pack with a committed
         // expectation landing here would silently stop being pinned — and nothing else would notice:
         // corpus-guard.test.ts only checks the pack is PRESENT, and it is; it is just no longer
@@ -566,12 +608,12 @@ export function registerUpgradeCheck(pack: string): void {
       //  - CONTENT is still compared, by `diffUpgrade` above, keyed by gamePath — the assertion the
       //    harness spec designed for this branch (2026-07-04-upgrade-golden-harness-design.md §4.3).
       //  - The TRANSFORM is asserted directly below, mirroring the very predicate the oracle
-      //    branches on when it declines to write (ModpackUpgrader.cs · AnyChanges · 25-49). This is
+      //    branches on when it declines to write (ModpackUpgrader.cs · AnyChanges · 28-52). This is
       //    STRICTER than diffUpgrade in one way that matters: it is keyed per OPTION, so a file
       //    moving between options is caught where diffUpgrade's whole-pack multiset flattens it away.
       //  - WRITER PARITY is covered by registerResaveCheck (corpus-resave.ts) against a real
       //    ConsoleTools /resave golden. /upgrade and /resave are the same call minus the transform
-      //    (Program.cs:204-211 vs ModpackUpgrader.cs:58 + :212-219), so when /upgrade no-ops the
+      //    (Program.cs:204-211 vs ModpackUpgrader.cs:63 + :218-247), so when /upgrade no-ops the
       //    /resave golden IS what /upgrade would have written. The two harnesses stay INDEPENDENT:
       //    this branch deliberately does not consult /resave's cache or its error markers.
       //
@@ -593,7 +635,7 @@ export function registerUpgradeCheck(pack: string): void {
       // biggest corpus pack) is only computed on THIS branch, because it is only ever consumed by
       // the `diffArchives` call below: on the no-op branch `diffArchives` does not run at all (see
       // the comment above), so there is nothing here for it to gate. Gated on the INPUT pack
-      // carrying FileSwaps, not on `ours` or the golden — PopulatePmpStandardOption (PMP.cs:873-875)
+      // carrying FileSwaps, not on `ours` or the golden — PopulatePmpStandardOption (PMP.cs:966-968)
       // has already destroyed the golden's swaps by the time we'd read it here, so gating on the
       // golden would never fire. See the FileSwap-preservation spec, §5.2.
       let archive: FileDiff[] = [];

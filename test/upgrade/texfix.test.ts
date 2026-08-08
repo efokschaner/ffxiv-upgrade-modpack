@@ -132,7 +132,7 @@ describe("needsTexFix", () => {
 });
 
 // The per-.tex decode-and-fix that used to be `texFixRound` now lives in makeTtmpLoadFix's `.tex`
-// branch (FromWizardGroup fix-before-collapse, WizardData.cs:701-712), running the full
+// branch (FromWizardGroup fix-before-collapse, WizardData.cs:707-718), running the full
 // validateTexFileData (see test/upgrade/load-fixes.test.ts for the repair-path coverage). Drive it
 // directly here for the decode-drop / ui-carve-out / gating behaviour.
 describe("makeTtmpLoadFix (.tex decode-and-fix)", () => {
@@ -151,7 +151,7 @@ describe("makeTtmpLoadFix (.tex decode-and-fix)", () => {
     expect(Array.from(kept!.data)).toEqual(Array.from(valid));
   });
 
-  it("keeps a malformed ui/ .tex (ui/ excluded, MakeFileStorageInformationDictionary TTMP.cs:1367)", () => {
+  it("keeps a malformed ui/ .tex (ui/ excluded, MakeFileStorageInformationDictionary TTMP.cs:1369)", () => {
     const malformed = malformedTexEntry();
     const kept = fix("ui/uld/malformed.tex", sqpackFile(malformed));
     expect(kept).not.toBeNull();

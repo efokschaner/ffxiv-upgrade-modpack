@@ -54,7 +54,7 @@ export function roundToPowerOfTwo(x: number): number {
   return max - x < x - min ? max : min;
 }
 
-// Tex.GetCompressionFormat (Tex.cs:718-747): the only XivTexFormats MergePixelData can re-encode.
+// Tex.GetCompressionFormat (Tex.cs:717-746): the only XivTexFormats MergePixelData can re-encode.
 // Anything else hits its `default:` and throws InvalidDataException. Our decodeToRgba
 // (src/tex/decode.ts) accepts strictly more than this (DXT3, A4R4G4B4, A1R5G5B5, L8, A8,
 // A16B16G16R16F), so this set is load-bearing rather than incidental.
@@ -68,7 +68,7 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
 ]);
 
 /**
- * Port of Tex.ResizeXivTx (Tex.cs:413-420) as used by all THREE of its NPOT pre-step call sites:
+ * Port of Tex.ResizeXivTx (Tex.cs:412-419) as used by all THREE of its NPOT pre-step call sites:
  * EndwalkerUpgrade.cs:1096-1099 (CreateIndexFromNormal), :2086-2089 (UpgradeMaskTex), and
  * :1195-1202 (UpdateEndwalkerHairTextures, both the normal and the mask).
  * Already-pow2 input is returned untouched — C# only calls ResizeXivTx inside the NPOT branch,
@@ -82,7 +82,7 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  *     now routes through this helper's extracted core `resizeForMerge` from src/upgrade/validate-tex.ts
  *     (see docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md).
  *
- * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:637-706), which
+ * ELIDED, DELIBERATELY: step 3 of ResizeXivTx is Tex.MergePixelData (Tex.cs:636-705), which
  * re-encodes the resized pixels into the source's own BC format via TexImpNet/nvtt. The caller
  * then immediately decodes them again (GetRawPixels) and writes the result as UNCOMPRESSED
  * A8R8G8B8 (DefaultTextureFormat, XivCache.cs:68; final encode at EndwalkerUpgrade.cs:1105-1112 /
@@ -101,7 +101,7 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * entirely on whether MergePixelData's re-encode is lossy for the SOURCE format, and on whether
  * the consumer quantizes the result:
  *
- *   - Lossless source (A8R8G8B8 -> CompressionFormat.BGRA, Tex.cs:739-741): EXACT. The
+ *   - Lossless source (A8R8G8B8 -> CompressionFormat.BGRA, Tex.cs:738-740): EXACT. The
  *     `npot-mask-a8.ttmp2` synthetic (400x400 A8R8G8B8 mask) is byte-identical to its golden,
  *     0 of 1398176 bytes differing.
  *   - Lossy source, quantizing consumer (the index path): EXACT. `Club Cyberia Motorbike.ttmp2`
@@ -156,7 +156,7 @@ const MERGE_SUPPORTED_FORMATS = new Set<number>([
  * bound, so a shared threshold would either false-fail realistic content or confirm anything.
  *
  * NOT elided: the two ways MergePixelData FAILS. Both abort the whole upgrade in C#
- * (EndwalkerUpgrade.cs:1842 has no try/catch; ModpackUpgrader.cs:133-141 rethrows wrapped), so
+ * (EndwalkerUpgrade.cs:1842 has no try/catch; ModpackUpgrader.cs:139-147 rethrows wrapped), so
  * both are plain Errors here. They are checked before the resize rather than after purely to
  * avoid wasted work — either way the call throws.
  */
@@ -168,7 +168,7 @@ export function resizeForMerge(
   dstH: number,
   format: number,
 ): { rgba: Uint8Array; width: number; height: number } {
-  // Message is Tex.GetCompressionFormat's `default:` arm, verbatim (Tex.cs:743 —
+  // Message is Tex.GetCompressionFormat's `default:` arm, verbatim (Tex.cs:742 —
   // `"Format is currently unsupported: " + format.ToString()`), not decorated: the expected-failure
   // harness (assertMatchedUpgradeFailure, test/helpers/corpus-upgrade.ts) asserts our thrown message
   // is a literal substring of ConsoleTools' captured trace, so it must match the C# text exactly
@@ -179,10 +179,10 @@ export function resizeForMerge(
       `Format is currently unsupported: ${texFormatName(format)}`,
     );
   }
-  // Tex.cs:656-660, gated to the non-BC7 arm: BC7 takes the DDS.TexConvRawPixels path
-  // (Tex.cs:650-653), which carries no size guard. The dims tested are the POST-resize ones —
-  // ResizeXivTx overwrites tex.Width/Height (Tex.cs:417-418) before calling MergePixelData.
-  // Message is Tex.cs:659's InvalidDataException text, verbatim, for the same substring-match
+  // Tex.cs:655-659, gated to the non-BC7 arm: BC7 takes the DDS.TexConvRawPixels path
+  // (Tex.cs:649-652), which carries no size guard. The dims tested are the POST-resize ones —
+  // ResizeXivTx overwrites tex.Width/Height (Tex.cs:416-417) before calling MergePixelData.
+  // Message is Tex.cs:658's InvalidDataException text, verbatim, for the same substring-match
   // reason as the format guard above (resize context: ${srcW}x${srcH} -> ${dstW}x${dstH}). Pinned
   // by test/corpus/upgrade-error/npot-tiny-mask.ttmp2.
   if (format !== BC7 && (dstW < 64 || dstH < 64)) {
@@ -399,7 +399,7 @@ export function upgradeRemainingTextures(
   targets: Map<string, UpgradeInfo>,
 ): void {
   // No try/catch here, matching EndwalkerUpgrade.cs:1842 — UpgradeRemainingTextures does not
-  // guard its CreateIndexFromNormal call, so a failure propagates to ModpackUpgrader.cs:133-141
+  // guard its CreateIndexFromNormal call, so a failure propagates to ModpackUpgrader.cs:139-147
   // and aborts the whole upgrade. (The swallow-and-Trace catch at EndwalkerUpgrade.cs:637-645 is
   // a DIFFERENT call site, gated behind `files == null` at :627 — unreachable on this path.)
   for (const info of targets.values()) {

@@ -68,7 +68,7 @@ describe("rawImcFilePath (XivDependencyRoot.cs · GetRawImcFilePath · 1093-1126
     ).toBe("chara/equipment/e6137/e6137.imc");
   });
 
-  // Imc.ImcSharingWeaponTypes (Imc.cs:53-59) + XivItemType.cs:184-253 GetWeaponType.
+  // Imc.ImcSharingWeaponTypes (Imc.cs:54-60) + XivItemType.cs:184-253 GetWeaponType.
   // An offhand weapon reads the MAINHAND's .imc: PrimaryId -= 50.
   it("redirects an ImcSharing offhand weapon to PrimaryId - 50", () => {
     expect(
@@ -103,7 +103,7 @@ describe("imcEntryOffsets (XivDependencyRoot.cs · GetImcEntryPaths · 1184-1199
   });
 
   it("strides by 30 for Set and offsets by the slot column", () => {
-    // SlotOffsetDictionary top == 1, so subOffset == 6 (Imc.cs:547-559).
+    // SlotOffsetDictionary top == 1, so subOffset == 6 (Imc.cs:558-570).
     expect(
       imcEntryOffsets({ subsetCount: 2, identifier: IMC_TYPE_SET }, "top"),
     ).toEqual([10, 40, 70]);
@@ -116,7 +116,7 @@ describe("imcEntryOffsets (XivDependencyRoot.cs · GetImcEntryPaths · 1184-1199
   });
 });
 
-describe("readImcEntries (Imc.cs · GetEntries · 189-238)", () => {
+describe("readImcEntries (Imc.cs · GetEntries · 200-249)", () => {
   it("reads default + every subset for a NonSet file", () => {
     const entries = readImcEntries(buildImc(IMC_TYPE_NONSET, 1, 1), null);
     expect(entries).toEqual([
@@ -143,7 +143,7 @@ describe("readImcEntries (Imc.cs · GetEntries · 189-238)", () => {
     expect(entries[3]).toEqual([3, 4, 0, 0, 0, 0]);
   });
 
-  // The guard (Imc.cs:217 `if (offset > imcByteData.Length - entrySize) continue;`)
+  // The guard (Imc.cs:228 `if (offset > imcByteData.Length - entrySize) continue;`)
   // fires only on a malformed/truncated file, and yields a SHORT list, not a throw.
   it("drops entries that would run past the end of a truncated file", () => {
     const full = buildImc(IMC_TYPE_NONSET, 3, 1); // 4 + 6*4 == 28 bytes

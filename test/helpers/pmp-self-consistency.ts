@@ -46,6 +46,25 @@ function referenced(
     if (typeof doc.Image === "string" && doc.Image !== "") {
       out.push({ zipPath: doc.Image.replace(/\\/g, "/"), gamePath: "" });
     }
+    // v4 meta.json (PMP.cs · PMPMetaJson · 1484/1487 -> PMP.WritePmp:928-939): every group and the
+    // default option live inline here, so this walks them exactly as the v3 arms below walk a
+    // group_NNN.json's `Options` and a default_mod.json's own body. Without it a v4 archive names
+    // nothing, and EVERY payload member reports as `self:orphan:` — loud, but entirely wrong.
+    //
+    // The `else addFiles(doc)` below still runs for a v4 meta.json (it has no `Options` array). That
+    // is harmless: `addFiles` finds no `Files` on a meta doc, and it re-pushes the meta `Image`
+    // already pushed just above — a duplicate that changes nothing, since `dangling` filters on
+    // `gamePath !== ""` and `refKeys` is a Set.
+    if (Array.isArray(doc.Groups)) {
+      for (const g of doc.Groups) {
+        if (!isObj(g)) continue;
+        if (typeof g.Image === "string" && g.Image !== "") {
+          out.push({ zipPath: g.Image.replace(/\\/g, "/"), gamePath: "" });
+        }
+        if (Array.isArray(g.Options)) for (const o of g.Options) addFiles(o);
+      }
+    }
+    if (isObj(doc.DefaultData)) addFiles(doc.DefaultData);
     if (Array.isArray(doc.Options)) for (const o of doc.Options) addFiles(o);
     else addFiles(doc); // default_mod.json: the document IS the option
   }
@@ -58,7 +77,7 @@ function referenced(
  * Two failures, both of which shipped silently before the writer regeneration:
  *  - DANGLING: an option's `Files` value names a zip path with no member. Penumbra cannot load it.
  *  - ORPHAN:   a payload member that no `Files`/`Image` field names, and that was not already an
- *              unreferenced extra of the SOURCE pack (PMP.cs:213-215 preserves those verbatim, so
+ *              unreferenced extra of the SOURCE pack (PMP.cs:278-280 preserves those verbatim, so
  *              they are legitimately unreferenced on the way out too).
  *
  * `sourceExtras` is the source pack's `data.extraFiles` key set. Pass an empty set for a pack with

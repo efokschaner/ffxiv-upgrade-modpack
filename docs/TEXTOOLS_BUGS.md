@@ -3,11 +3,18 @@
 Bugs and mistakes in **TexTools / xivModdingFramework / ConsoleTools** that this port meets and
 must decide what to do about.
 
-We do **not** fix them here. `AGENTS.md` is explicit: TexTools is the spec, byte-parity with its
-`/upgrade` output is the definition of correct, and a "fix" is a divergence from the golden. So the
-port reproduces the buggy behaviour faithfully and records the bug here — this file is the register
-of every place we knowingly did that, and the shortlist we could take upstream as patches or issues
-if we ever choose to.
+**Most entries here are defects we knowingly reproduce.** `AGENTS.md` is explicit: TexTools is the
+spec, byte-parity with its `/upgrade` output is the definition of correct, and a "fix" is a
+divergence from the golden. So the default is to reproduce the buggy behaviour faithfully and record
+the bug here — this file is the register of every place we knowingly did that, and the shortlist we
+could take upstream as patches or issues if we ever choose to.
+
+**A small number are defects we deliberately do _not_ reproduce**, because reproducing them would
+hand the user a worse modpack (`AGENTS.md`'s user-benefit-divergence rule) or because TexTools emits
+nothing at all to be byte-parity with. Those carry the `diverged` status below, say so in their own
+text, and name the confirmation site that proves the divergence is exactly the one we meant (a
+suppressing ratchet baseline is *not* such a site). **The complete list is #10, #18, #22 and #23** —
+keep it accurate; this is the inventory `AGENTS.md`'s divergence rule leans on.
 
 **Add an entry when** you port (or deliberately decline to port) behaviour that is a defect rather
 than a design choice: a null dereference, an unreachable guard, a comparison that can never match, a
@@ -48,7 +55,7 @@ cleanly. The asymmetry is plainly unintended: `ResolveFile` returns null wheneve
 `Files` map names a payload the archive never contained. `UpgradeMaskTex` then calls
 `XivTex.FromUncompressedTex(null)` (`:2084`), which throws an `ArgumentNullException` — not an
 NRE — from `new MemoryStream(texData)` (`XivTex.cs:96`), which `ModpackUpgrader` catches and
-rethrows as a wrapped failure (`ModpackUpgrader.cs:137-141`), killing the whole `/upgrade`.
+rethrows as a wrapped failure (`ModpackUpgrader.cs:143-147`), killing the whole `/upgrade`.
 
 **Us:** an absent file must therefore make our `GearMaskNew` path throw, while `GearMaskLegacy`
 skips. Fail-loud is faithful here — TexTools fails the pack too.
@@ -125,13 +132,13 @@ by luck: it maps to 0 either way.)
 
 ## 6. Group-folder collision loop cannot terminate
 
-**Status:** **gap** — we throw rather than hang · **Where:** `WizardData.cs:1406-1409` (see
+**Status:** **gap** — we throw rather than hang · **Where:** `WizardData.cs:1425-1428` (see
 `src/container/option-prefix.ts`, `makeGroupPrefix`)
 
 The loop that de-collides duplicate group folder names never increments its counter `i`, so two
 groups whose names sanitize to the same folder AND whose first retry (`" (1)/"`) also collides
 would spin forever recomputing the same candidate. (The sibling loop in `MakeOptionPrefix`,
-`:1448-1453`, increments correctly — see below.)
+`:1467-1472`, increments correctly — see below.)
 
 **Us:** ported the loop condition as written (a single retry at `" (1)/"` succeeds silently, matching
 the C#), but if resolving the collision would need a second retry we throw, citing this entry,
@@ -144,7 +151,7 @@ called by `writePmp` (`src/container/pmp.ts`) to regenerate every zip path from 
 
 ## 7. `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page
 
-**Status:** reproduced · **Where:** `WizardData.cs:1118-1158` construction + `:1234-1244`
+**Status:** reproduced · **Where:** `WizardData.cs:1137-1177` construction + `:1253-1263`
 (`ClearNulls`' page-level pruning) — see `src/container/pmp.ts:325-333` (construction) and
 `src/container/clear-nulls.ts` (pruning)
 
@@ -155,8 +162,8 @@ number — so a group meant for page 0 lands on `DataPages[0]`, which is now the
 page just created for it; the page created for page 0 is left with zero groups.
 
 That would inflate `DataPages.Count` and switch on the `pN/` prefix for the whole pack — except
-`ClearNulls` (WizardData.cs:1234-1244) runs immediately afterward (`:1159`, inside `FromPmp` itself,
-and again — redundantly — at `:1462` inside `WritePmp`) and drops any page with zero
+`ClearNulls` (WizardData.cs:1253-1263) runs immediately afterward (`:1178`, inside `FromPmp` itself,
+and again — redundantly — at `:1481` inside `WritePmp`) and drops any page with zero
 data-carrying groups. For the common case (a single real page, `pageMax === 0`), that prunes the
 now-empty created page right back out, so `DataPages.Count` ends up **unchanged** (still 1) and NO
 `pN/` prefix appears. The bug's only surviving, observable effect is that the misrouted group's
@@ -165,7 +172,7 @@ sit at the top level with no page prefix) instead of the group getting a page �
 sense — of its own. A naive reading of the C# (assuming `ClearNulls` merely nulls fields and never
 removes pages) would predict `DataPages.Count === 2` and a `p1/`/`p2/` split instead; that reading is
 wrong — `ClearNulls`' page-removal step (`if (!p.HasData) { DataPages.Remove(p); continue; }`,
-`WizardData.cs:1240-1244`) is unconditional, not GUI-only (that distinction belongs to
+`WizardData.cs:1259-1263`) is unconditional, not GUI-only (that distinction belongs to
 `ClearEmpties`, which additionally preserves one empty *option* per single-select group for the
 import wizard UI — `ImportWizardWindow.xaml.cs:143` — and is not on the headless `/upgrade`/`/resave`
 path).
@@ -191,7 +198,7 @@ bumped into the slot meant for page 0 — is pinned separately by case 9.
 "duplicates": on the second (and any later) absent file, the dedup loop sees the zero hash already in
 `seenFiles`, relocates the *first* absent file's path into `common/{idx}/…`, and increments the shared
 `idx` counter (`:537-543`) — all of this happens in `ResolveDuplicates`, entirely before
-`PopulatePmpStandardOption`'s write-time `!File.Exists` guard (`PMP.cs:883-888`) ever runs.
+`PopulatePmpStandardOption`'s write-time `!File.Exists` guard (`PMP.cs:976-981`) ever runs.
 
 That write-time guard drops the absent files' own `Files` entries and payload bytes, but it does
 **not** undo the `idx` increment their collision already consumed — `idx` is a local counter in a
@@ -206,7 +213,7 @@ paragraph below).
 `idx` values exactly as the C# does; a later genuine duplicate's `common/N` numbering shifts to
 match. Pinned by `test/container/resolve-duplicates.test.ts` case 6. Absent files are still excluded
 from the function's returned map — that is `PopulatePmpStandardOption`'s separate `!File.Exists`
-guard (`PMP.cs:883-888`), which does not undo the `idx` this bug already spent.
+guard (`PMP.cs:976-981`), which does not undo the `idx` this bug already spent.
 
 **Upstream fix:** exclude missing files from the dedup set instead of hashing them to a shared
 sentinel.
@@ -215,7 +222,7 @@ sentinel.
 
 ## 9. `/upgrade` reports success and a destination path it never wrote
 
-**Status:** **worked around** · **Where:** `ConsoleTools/Program.cs:181,188` + `ModpackUpgrader.cs:216`
+**Status:** **worked around** · **Where:** `ConsoleTools/Program.cs:181,188` + `ModpackUpgrader.cs:244`
 
 When the upgrade produces no changes, `rewriteOnNoChanges` is `false`, so **no output file is
 written** — but the CLI still prints `"Upgraded Modpack saved to: {dest}"` and returns exit code
@@ -232,12 +239,20 @@ no-op distinctly.
 
 ## 10. `PopulatePmpStandardOption` silently destroys a pack's FileSwaps on write
 
-**Status:** **worked around** · **Where:** `PMP.cs:873-875` (see
+**Status:** diverged · **Where:** `PMP.cs:966-968` (see
 `src/container/resolve-duplicates.ts`, `src/container/pmp.ts`)
 
-`PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:874`) alongside `opt.Files` and
+> Status corrected 2026-08-07 (was `worked around`). The legend's `worked around` is for a symptom
+> the harness *hides* while our output still matches the golden — entry #9's `.noop` marker is the
+> real example. Here our output genuinely **differs** from the golden (our `FileSwaps` populated
+> where the golden's is always `{}`), and the harness carve-out **confirms** that specific difference
+> rather than hiding it, which is precisely the `diverged` definition. The body below already called
+> it "the first divergence justified under `AGENTS.md`'s user-benefit principle"; only the tag was
+> out of step.
+
+`PopulatePmpStandardOption` initializes `opt.FileSwaps = new()` (`:967`) alongside `opt.Files` and
 `opt.Manipulations`, but unlike those two, nothing ever adds to it afterward — the function's body
-(`:876-928`) only populates `opt.Files` (from `files`) and `opt.Manipulations` (from the metadata/
+(`:969-1021`) only populates `opt.Files` (from `files`) and `opt.Manipulations` (from the metadata/
 rgsp conversion and `otherManipulations`). This is the **only** writer of `PmpStandardOptionJson`
 (`WizardData.WritePmp` → `PopulatePmpStandardOption` is the sole call site that builds an option's
 JSON for the zip), so any option that came in with file swaps — a Penumbra mod that swaps one game
@@ -251,7 +266,7 @@ finishes the job for one of its three members.
 **Us:** `resolveDuplicates` does **not** reproduce this bug, and does **not** fail loud on it either
 — we deliberately preserve every FileSwap the source pack carries (`src/container/pmp.ts:437-445`,
 `base.FileSwaps = o.fileSwaps`) rather than modelling TexTools' *read-side* placeholder mechanism
-(`UnpackPmpOption`, `PMP.cs:1104-1137`, which needs a live game index we don't bundle) or reproducing
+(`UnpackPmpOption`, `PMP.cs:1202-1235`, which needs a live game index we don't bundle) or reproducing
 the write-side drop. This is the first divergence justified under AGENTS.md's user-benefit principle
 rather than plain TexTools byte-parity: a FileSwap is a live redirection in Penumbra's runtime model
 (`SubMod.AddContainerTo`, Penumbra repo `Mods/SubMods/SubMod.cs:23-32` — a separate repo from this
@@ -292,14 +307,14 @@ version) — log or surface that loss to the user instead of doing it silently.
 
 ## 11. `ReadSqPackType3` over-allocates the model buffer by one header, appending 68 stray zero bytes
 
-**Status:** reproduced · **Where:** `Dat.cs:801` (and `:699`) vs `Mdl.cs:2259` (see
+**Status:** reproduced · **Where:** `Dat.cs:801` (and `:699`) vs `Mdl.cs:2255` (see
 `src/sqpack/type3.ts`, `decodeType3`)
 
 `ReadSqPackType3` sizes its output buffer as `new byte[baseHeaderLength + decompressedSize]`
 (`Dat.cs:801`, `baseHeaderLength = 68` at `:699`). But `decompressedSize` — the entry-header field at
 offset 8 — is **already** the model's true decompressed size *including* the 68-byte runtime header.
 The encoder proves it: `CompressMdlFile` writes `uncompressedSize = _MdlHeaderSize + vertexInfoBlock +
-modelDataBlock + vertexDataSizes + indexDataSizes` (`Mdl.cs:2259`, `_MdlHeaderSize = 68`), i.e. exactly
+modelDataBlock + vertexDataSizes + indexDataSizes` (`Mdl.cs:2255`, `_MdlHeaderSize = 68`), i.e. exactly
 `68 + content`, which is correct. The decoder then adds `baseHeaderLength` (68) a **second** time,
 over-allocating by one header and leaving 68 trailing zero bytes that no offset or size in the header
 points at. This is a defect in TexTools' own decoder, not transcribed SE/format weirdness — the encoder
@@ -346,7 +361,7 @@ input: the modeled NPOT-resize gap this used to also swallow is gone, the resize
 its sentinel deleted (see `docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`).
 
 **Upstream fix:** catch only the specific expected conditions — the two `MergePixelData` failures
-(`Tex.cs:656-660`, `:718-747`) are the ones a resize can legitimately raise here — and either
+(`Tex.cs:655-659`, `:717-746`) are the ones a resize can legitimately raise here — and either
 log-and-skip explicitly for those or let a genuinely unexpected exception (a corrupt input) surface
 instead of silently swallowing it.
 
@@ -398,15 +413,15 @@ material or surface a clearer error naming the missing sampler.
 
 ## 15. `RepathHairMashups`' sampler scan dereferences `x.Sampler.SamplerId` unguarded
 
-**Status:** reproduced · **Where:** `ModpackUpgrader.cs:406-408` (and the sibling highlight-half scan
-at `:294-295`) — see `src/upgrade/repath-hair-mashups.ts` / `src/upgrade/resolve-highlight.ts`,
+**Status:** reproduced · **Where:** `ModpackUpgrader.cs:434-436` (and the sibling highlight-half scan
+at `:322-323`) — see `src/upgrade/repath-hair-mashups.ts` / `src/upgrade/resolve-highlight.ts`,
 `findSamplerUnguarded`
 
 `RepathHairMashups` finds its normal/mask/diffuse textures with
-`Textures.FirstOrDefault(x => x.Sampler.SamplerId == ...)` (`:406-408`), reading `x.Sampler.SamplerId`
+`Textures.FirstOrDefault(x => x.Sampler.SamplerId == ...)` (`:434-436`), reading `x.Sampler.SamplerId`
 with no null guard — the same defect class as entry 3, at a different call site. A texture that bound
 no sampler NREs mid-scan. `ResolveHighlightOptionsAndMashupHair`'s highlight half does the identical
-unguarded scan (`:294-295`), but there the enclosing `try/catch` (`:301-304`) folds the NRE into "skip
+unguarded scan (`:322-323`), but there the enclosing `try/catch` (`:329-332`) folds the NRE into "skip
 this .mtrl"; `RepathHairMashups` has **no** try/catch, so the NRE propagates and aborts the whole
 `/upgrade`.
 
@@ -424,17 +439,17 @@ than abort the run.
 
 ## 16. `GetFullImcInfo`'s NonSet default subset reads `Vfx` from the material-set byte
 
-**Status:** **not reached** — the buggy symbol is not on our path · **Where:** `Imc.cs:384` (vs
-`:401` and the `Set` branch's `:414`/`:431`)
+**Status:** **not reached** — the buggy symbol is not on our path · **Where:** `Imc.cs:395` (vs
+`:412` and the `Set` branch's `:425`/`:442`)
 
 `Imc.GetFullImcInfo`'s `ImcType.NonSet` branch reads the default subset's six bytes into named
-locals and then builds the entry with **`Vfx = variant`** (`Imc.cs:379-386`):
+locals and then builds the entry with **`Vfx = variant`** (`Imc.cs:390-397`):
 
 ```csharp
 byte variant = br.ReadByte();
 byte unknown = br.ReadByte();
 ushort mask   = br.ReadUInt16();
-byte vfx      = br.ReadByte();   // :376 — read, then discarded
+byte vfx      = br.ReadByte();   // :387 — read, then discarded
 byte anim     = br.ReadByte();
 
 imcData.DefaultSubset.Add(new XivImc
@@ -442,32 +457,32 @@ imcData.DefaultSubset.Add(new XivImc
     MaterialSet = variant,
     Decal = unknown,
     Mask = mask,
-    Vfx = variant,               // :384 — should be `vfx`
+    Vfx = variant,               // :395 — should be `vfx`
     Animation = anim
 });
 ```
 
 The `vfx` local is read off the stream and then never used, so the default entry's `Vfx` is silently
 a copy of its material-set byte. Every *other* entry the function builds reads its own `vfx` byte:
-the NonSet variant-subset loop immediately below (`:393`, assigned at `:401`) and both the default
-and variant subsets of the `Set` branch (`:414-422` and `:431-439`, each reading `Vfx =
+the NonSet variant-subset loop immediately below (`:404`, assigned at `:412`) and both the default
+and variant subsets of the `Set` branch (`:425-433` and `:442-450`, each reading `Vfx =
 br.ReadByte()` inline). The asymmetry is confined to one field of
 one entry in one branch — a plain transcription defect, not a format rule: nothing about the NonSet
 layout makes the default subset's fifth byte mean something different from the same byte in the very
 next entry. The surrounding comment ("This type uses the first short for both Variant and VFX",
-`:372`) explains the `variant`/`unknown` pair, not this assignment.
+`:383`) explains the `variant`/`unknown` pair, not this assignment.
 
 **Us:** we do not reproduce it, because we never execute this function. The `.meta` IMC base seed
 runs through an entirely different reader: `ItemMetadata.CreateFromRaw` (`ItemMetadata.cs:238-241`)
 → `XivDependencyRoot.GetImcEntryPaths` (`XivDependencyRoot.cs:1133-1202`) → `Imc.GetEntries`
-(`Imc.cs:189-238`), which computes a byte offset per entry and reads six **raw** bytes there
-(`:226-233`) without constructing an `XivImc` field-by-field at all. Our port
+(`Imc.cs:200-249`), which computes a byte offset per entry and reads six **raw** bytes there
+(`:237-244`) without constructing an `XivImc` field-by-field at all. Our port
 (`scripts/lib/imc-entries.ts`, extraction tooling) mirrors that path and records the raw six bytes,
 so the correct `vfx` byte lands in the table. This entry is registered as an upstream defect
 **observed while porting**, not one we knowingly reproduce — the `not reached` status.
 
 **Also recorded here so it is not re-litigated:** the sibling *near*-bug in `Imc.GetEntries` is not a
-bug. Its EOF guard, `if (offset > imcByteData.Length - entrySize) continue;` (`Imc.cs:217`), looks
+bug. Its EOF guard, `if (offset > imcByteData.Length - entrySize) continue;` (`Imc.cs:228`), looks
 like it should silently drop the last entry of a high-numbered slot, because `GetImcEntryPaths` adds
 a non-zero `subOffset` inside an **inclusive** `i <= subsetCount` loop
 (`XivDependencyRoot.cs:1188-1199`). It never fires on a well-formed `.imc` of either type, and the
@@ -481,7 +496,7 @@ are pinned by `test/scripts/imc-entries.test.ts` (exact-length boundary: nothing
 dropped), and the arithmetic is confirmed against real ConsoleTools output by the
 `imc-weapon` / `imc-demihuman` synthetic packs.
 
-**Upstream fix:** `Vfx = vfx` at `Imc.cs:384`. Note this *changes* the values `GetFullImcInfo`
+**Upstream fix:** `Vfx = vfx` at `Imc.cs:395`. Note this *changes* the values `GetFullImcInfo`
 returns for any NonSet item whose default entry has a non-zero vfx byte differing from its material
 set, so it is a behavioural fix for that function's own consumers, not a cosmetic one.
 
@@ -489,14 +504,14 @@ set, so it is a behavioural fix for that function's own consumers, not a cosmeti
 
 ## 17. `FromPMPGroup`'s Multi bitmask aliases option 64 onto option 0 (unmasked shift count)
 
-**Status:** reproduced · **Where:** `WizardData.cs:811-812` (and the mirror-image getter,
-`WizardData.cs:598`) — see `src/container/pmp.ts`, `readPmp`'s Multi branch
+**Status:** reproduced · **Where:** `WizardData.cs:817-818` (and the mirror-image getter,
+`WizardData.cs:600`) — see `src/container/pmp.ts`, `readPmp`'s Multi branch
 
 `FromPMPGroup` derives a Multi-type group's per-option `Selected` from `DefaultSettings` by testing
 one bit per option index:
 
 ```csharp
-var bit = 1UL << idx;                              // :811
+var bit = 1UL << idx;                              // :817
 wizOp.Selected = (pGroup.DefaultSettings & bit) != 0;
 ```
 
@@ -509,10 +524,10 @@ wraps: option 64 tests `1UL << 0`, option 65 tests `1UL << 1`, and so on. Those 
 mirrors of options 0..N — their selection state is not read from any bit of their own (there is
 none; the field is only 64 bits wide) but silently aliased onto an earlier option's.
 
-Nothing about the PMP format caps a group at 64 options: `PMPGroupJson.Options` (`PMP.cs:1405`) is
-an unbounded list, and `DefaultSettings` is a fixed-width `ulong` (`:1404`). So the format admits
+Nothing about the PMP format caps a group at 64 options: `PMPGroupJson.Options` (`PMP.cs:1515`) is
+an unbounded list, and `DefaultSettings` is a fixed-width `ulong` (`:1512`). So the format admits
 groups the selection encoding cannot represent, and the C# neither rejects them nor truncates them
-— it wraps, which is the defect. The write-side getter `WizardGroupEntry.Selection` (`:594-601`)
+— it wraps, which is the defect. The write-side getter `WizardGroupEntry.Selection` (`WizardData.cs:596-603`)
 has the identical unmasked `1UL << i`, so a round-trip folds the aliased options' state back down
 onto the low bits as well.
 
@@ -541,7 +556,7 @@ silently aliasing is the worst of the three options.
 
 ## 18. `ResizeXivTx` needlessly BC-recompresses a resized texture that is decoded again and stored uncompressed
 
-**Status:** diverged · **Where:** `Tex.cs:413-420` (`ResizeXivTx`) → `Tex.cs:637-706`
+**Status:** diverged · **Where:** `Tex.cs:412-419` (`ResizeXivTx`) → `Tex.cs:636-705`
 (`MergePixelData`), as called by the three NPOT pre-steps `EndwalkerUpgrade.cs:1096-1099`
 (`CreateIndexFromNormal`), `:2086-2089` (`UpgradeMaskTex`), `:1195-1202`
 (`UpdateEndwalkerHairTextures`). See `src/upgrade/texture.ts` · `resizeToPow2ForMerge`.
@@ -587,7 +602,7 @@ reproduce anyway.
 **Upstream fix:** in the three NPOT pre-steps, resize with `TextureHelpers.ResizeImage` (raw pixels)
 instead of `Tex.ResizeXivTx`, dropping the `MergePixelData` round-trip — matching what `:1205` already
 does. Note the same round-trip incidentally owns the `<64` and unsupported-format aborts
-(`Tex.cs:656-660`, `:718-747`, the TexImpNet compressor guards); removing it also removes those
+(`Tex.cs:655-659`, `:717-746`, the TexImpNet compressor guards); removing it also removes those
 aborts, which is itself an improvement (TexTools currently refuses some tiny/odd-format NPOT sources
 it has no real need to).
 
@@ -595,11 +610,19 @@ it has no real need to).
 
 ## 19. A canonical `MipCount==2` header's `LoDMips=[0,1,0]` trips `TexHeader.ToBytes`'s own ordering guard
 
-**Status:** reproduced · **Where:** `Tex.cs:1125-1127` (`CreateTexFileHeader`) vs `Tex.cs:138-139`
-(`TexHeader.ToBytes`) — see `src/tex/header.ts`, `buildCanonicalTexHeader` / `assertTexHeaderWritable`
+**Status:** reproduced · **FIXED UPSTREAM in `1993bf6` ("Be less strict about texture mip data, and
+fix non-ascending lodmips", v3.1.1.4). Our port has NOT yet been changed, so our faithful
+reproduction is now a *divergence from the new oracle*, to be closed in Part B.** See the "Upstream
+fix, as landed" section at the end of this entry.
 
-`CreateTexFileHeader` sets `LoD1Mip = newMipCount > 1 ? 1 : 0` and `LoD2Mip = newMipCount > 2 ? 2 : 0`
-(`:1126-1127`). For a texture with **exactly two** generated mips this yields `LoDMips = [0, 1, 0]` —
+**Where** (line numbers below are the **v3.1.1.4** pin unless marked *pre-fix*):
+`Tex.cs:1124-1126` (`CreateTexFileHeader`) vs the ordering guard that `1993bf6` **deleted** from
+`TexHeader.ToBytes` (`Tex.cs:138-139` *pre-fix*, inside the `:138-145` guard block) — see
+`src/tex/header.ts`, `buildCanonicalTexHeader` / `assertTexHeaderWritable`
+
+`CreateTexFileHeader` set `LoD1Mip = newMipCount > 1 ? 1 : 0` and `LoD2Mip = newMipCount > 2 ? 2 : 0`
+(`:1126-1127` *pre-fix*; the second of those is the line the fix changed, now `:1126`). For a texture
+with **exactly two** generated mips this yields `LoDMips = [0, 1, 0]` —
 LoD2 stays at its zero default because the `>2` guard doesn't fire, leaving it *below* LoD1. Every
 other mip count is self-consistent (`MipCount==1` gives `[0,0,0]`; `MipCount>=3` gives `[0,1,2]`), so
 this is confined to the boundary the two independent `>1`/`>2` comparisons don't agree on — a plain
@@ -607,19 +630,22 @@ off-by-one in the second guard, not a format rule (nothing requires LoD2 to stay
 `MipCount==2`; the natural completion is `min(2, newMipCount-1)`, matching what the `>1` guard already
 does for LoD1).
 
-`ToBytes()`'s ordering guard (`:138`, ported as `assertTexHeaderWritable`) is a **pure function of the
-stored `LoDMips`** — it doesn't care how the header got that way. So this is not a "corrupted header
-only" crash: any canonical `MipCount==2` header hits it, corrupted or not. `CompressTexFile`
-(`Tex.cs:1300-1330`), TexTools' ordinary DDS-import path, reads back a header built moments earlier by
-this same `CreateTexFileHeader` (via `DDSHeaderToTexHeader`, `:1203`, called from `DDSToUncompressedTex`
-at the top-level import entry point `:503`) and immediately calls `header.ToBytes()` on it (`:1325`) —
-with no `FixUpBrokenMipOffsets` anywhere in that path. A **freshly imported, never-corrupted** two-mip
-texture crashes there exactly as a broken-offset one does in `ValidateTexFileData`'s Branch B; the two
-call sites just differ in *when* they reach `ToBytes()`. `TexHeader.FixUpBrokenMipOffsets` (`Tex.cs:206-
-211`, ported as the `fixUpBrokenMipOffsets` loop) is a separate, unrelated reader — it never rewrites
-`LoDMips` unless an entry is `>= MipCount`, so it passes a `MipCount==2` header's `[0,1,0]` through
-untouched — but its absence isn't what causes the crash; `ToBytes()` would throw on that header whether
-or not a fixup pass ever ran. `ValidateTexFileData`'s Branch B (`EndwalkerUpgrade.cs:2116-2124`) is
+`ToBytes()`'s ordering guard (`:138` *pre-fix*, ported as `assertTexHeaderWritable`) was a **pure
+function of the stored `LoDMips`** — it didn't care how the header got that way. So this was not a
+"corrupted header only" crash: any canonical `MipCount==2` header hit it, corrupted or not.
+`CompressTexFile` (`Tex.cs:1299-1329`), TexTools' ordinary DDS-import path, reads back a header built
+moments earlier by this same `CreateTexFileHeader` (via `DDSHeaderToTexHeader`, `:1202`, called from
+`DDSToUncompressedTex` at the top-level import entry point `:502`) and immediately calls
+`header.ToBytes()` on it (`:1324`) — with no `FixUpBrokenMipOffsets` anywhere in that path. A
+**freshly imported, never-corrupted** two-mip texture crashed there exactly as a broken-offset one
+does in `ValidateTexFileData`'s Branch B; the two call sites just differ in *when* they reach
+`ToBytes()`. `TexHeader.FixUpBrokenMipOffsets`' LoDMips loop (`Tex.cs:203-219`, ported as the
+`fixUpBrokenMipOffsets` loop) is a separate, unrelated reader — *pre-fix* it never rewrote `LoDMips`
+unless an entry was `>= MipCount`, so it passed a `MipCount==2` header's `[0,1,0]` through untouched —
+but its absence isn't what caused the crash; `ToBytes()` would throw on that header whether or not a
+fixup pass ever ran. (`1993bf6` also added an ascending-order clamp to that same loop, `:213-218`, so
+at the new pin it *would* normalize `[0,1,0]` to `[0,1,1]` — a second, independent leg of the fix.)
+`ValidateTexFileData`'s Branch B (`EndwalkerUpgrade.cs:2116-2124`) is
 simply the first place *our port* currently reaches this shared defect, because a broken-offset old
 two-mip `.tex` is the case our load seam constructs; the crash itself is reachable anywhere TexTools
 serializes a canonical `MipCount==2` header, broken offsets or not.
@@ -633,15 +659,37 @@ where TexTools would. Found while writing this task's synthetic Branch-B test: a
 ordering guard"); the *rewrite-path* test uses 16x16 (`mipCount==4`, `LoDMips=[0,1,2]`) instead, to
 exercise the intended repair without tripping this defect. No corpus pack is known to reach it yet.
 
-**Upstream fix:** `LoD2Mip = newMipCount > 2 ? 2 : (newMipCount > 1 ? 1 : 0)` (i.e. `Math.Min(2,
-newMipCount - 1)` clamped at 0) in `CreateTexFileHeader`, matching the completion the `>1` guard
-already applies to LoD1.
+**Upstream fix, as landed** (`1993bf6`, 2025-11-02 — verified against `git show`, three hunks, all in
+`Tex.cs`):
+
+1. **`TexHeader.ToBytes` loses its entire validation block** (`Tex.cs:138-145` *pre-fix*, +0/−9) — not
+   just the ordering guard this entry is about, but all four: the `LoDMips` non-descending check, the
+   `LoDMips[2] >= MipCount` check, `MipFlag > 15`, and `MipCount > 13`. `ToBytes` is now a pure
+   serializer. This is the commit's "be less strict about texture mip data" half.
+2. **`CreateTexFileHeader`'s LoD2 line** becomes
+   `BitConverter.GetBytes(newMipCount > 2 ? 2 : (newMipCount - 1))` (`Tex.cs:1126`). Behaviourally
+   identical to the completion proposed above for every reachable `newMipCount >= 1`; it differs only
+   at `newMipCount == 0`, where it would emit `-1` (unreachable — `CreateTexFileHeader` is only
+   called with a real mip chain).
+3. **`FixUpBrokenMipOffsets` gains an ascending-order clamp** in its LoDMips loop (`Tex.cs:203-219`):
+   a running `maxLodMip` raises any entry that falls below its predecessor, setting `modified`. This
+   is the commit's "fix non-ascending lodmips" half.
+
+**What Part B owes** (spec `docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md` §10
+row 1): delete `assertTexHeaderWritable` and its Branch-B call site (`src/upgrade/validate-tex.ts`),
+change `buildCanonicalTexHeader`'s LoD2 to `mipCount > 2 ? 2 : mipCount - 1`, and add the ascending
+clamp to `fixUpBrokenMipOffsets` — with tests, including replacing the two `test/upgrade/validate-tex.test.ts`
+and `test/tex/tex-header.test.ts` cases that currently assert the throw.
 
 ---
 
 ## 20. `ValidateTexFileData` resizes NPOT textures using `Width` for both dimensions
 
-**Status:** reproduced · **Where:** `EndwalkerUpgrade.cs:2110` (`ValidateTexFileData`) — see
+**Status:** reproduced · **Audited against the v3.1.1.4 re-pin (2026-08-07): UNAFFECTED.** The
+`1993bf6` mip work (entry 19) touches `Tex.cs` only; `EndwalkerUpgrade.cs` is untouched across the
+whole `e20179a0..8e2a2603` range (`git diff --stat` returns nothing for it), so the swapped argument
+at `:2110` is still there verbatim and both line numbers below are still current. · **Where:**
+`EndwalkerUpgrade.cs:2110` (`ValidateTexFileData`) — see
 `src/upgrade/validate-tex.ts`, `validateTexFileData`
 
 Branch A of `ValidateTexFileData` resizes a texture whose width or height is not a power of two and
@@ -675,20 +723,26 @@ other three `ResizeXivTx` call sites already do.
 
 ## 21. `FixUpBrokenMipOffsets`'s `MipCount` reduction is lost to the struct-copy, so `ValidateTexFileData` serializes a stale `MipCount`
 
-**Status:** reproduced · **Where:** `Tex.TexHeader.FixUpBrokenMipOffsets` (`Tex.cs:168-235`) vs its
+**Status:** reproduced · **Audited against the v3.1.1.4 re-pin (2026-08-07): NOT fixed upstream.**
+`1993bf6` rewrites the LoDMips loop *inside* this same function (entry 19), but leaves every
+ingredient of this defect exactly as it was: `TexHeader` is still a `struct` (`Tex.cs:71`),
+`FixUpBrokenMipOffsets` still takes it **by value** (`:159`), both `header.MipCount` writes are still
+to the local copy (`:173`, `:200`), and `ValidateTexFileData` still serializes the caller's untouched
+header (`EndwalkerUpgrade.cs:2121`, in a file untouched across the whole range). Line numbers below
+are the v3.1.1.4 pin. · **Where:** `Tex.TexHeader.FixUpBrokenMipOffsets` (`Tex.cs:159-234`) vs its
 caller `EndwalkerUpgrade.ValidateTexFileData` (`EndwalkerUpgrade.cs:2116-2124`) — see
 `src/tex/header.ts`, `fixUpBrokenMipOffsets`
 
 `TexHeader` is a **struct** (`public struct TexHeader`, `Tex.cs:71`), and `FixUpBrokenMipOffsets`
 takes it **by value** (`internal static (bool HeaderChanged, long CalculatedTexSize)
-FixUpBrokenMipOffsets(TexHeader header, long texSizeIncludingHeader)`, `:168`). When the file's
+FixUpBrokenMipOffsets(TexHeader header, long texSizeIncludingHeader)`, `:159`). When the file's
 claimed mip count extends past what the function can actually verify against the file's true size, it
 clamps the count by writing the **local** copy's scalar field:
 
 ```csharp
-header.MipCount = 1;                                    // :182 — local copy only
+header.MipCount = 1;                                    // :173 — local copy only
 ...
-header.MipCount = (byte)(mipLevel + 1);                  // :209 — local copy only
+header.MipCount = (byte)(mipLevel + 1);                  // :200 — local copy only
 ```
 
 Those writes never escape the function — `MipCount` is a `byte` field on a value type passed by
@@ -708,9 +762,10 @@ Array.Copy(header.ToBytes(), newData, Tex._TexHeaderSize);   // :2121 — header
 So when a fixup trims mips (a file whose claimed mip table extends past EOF), the rewritten `.tex`
 carries the **original, too-high** `MipCount` alongside the **fixed, fewer** offset/LoD entries — a
 header that claims more mips than it has valid offsets for. `ToBytes()`'s own ordering guard
-(`Tex.cs:138-145`, entry 19 above) does not catch this shape: a trimmed table's offsets and `LoDMips`
-stay internally consistent with each other (`LoDMips` is separately clamped below the reduced local
-mip count, `:212-220`); only `MipCount` itself goes stale.
+(`Tex.cs:138-145` *at the v3.1.0.2 pin*; **deleted by `1993bf6`** — entry 19 above) did not catch this
+shape either: a trimmed table's offsets and `LoDMips` stay internally consistent with each other
+(`LoDMips` is separately clamped below the reduced local mip count, `Tex.cs:206-212`); only
+`MipCount` itself goes stale. Removing that guard therefore neither fixes nor worsens this entry.
 
 **Us:** `fixUpBrokenMipOffsets` (`src/tex/header.ts`) reproduces the split deliberately: it mutates
 `header.mipMapOffsets`/`header.lodMips` in place (mirroring the shared-array escape) and tracks the
@@ -729,22 +784,22 @@ returns a tuple) and have the caller apply it to `header` before calling `ToByte
 
 ## 22. `ClearNulls` reads `WizardPageEntry.HasData` over a list it is about to remove nulls from
 
-**Status:** diverged · **Where:** `WizardData.ClearNulls` (`WizardData.cs:1234-1266`) reading
-`WizardPageEntry.HasData` (`:969-975`), over nulls admitted by `WizardData.FromPmp` (`:1136`, `:1156`)
-from `WizardGroupEntry.FromPMPGroup`'s empty-group early return (`:851-855`). See
+**Status:** diverged · **Where:** `WizardData.ClearNulls` (`WizardData.cs:1253-1285`) reading
+`WizardPageEntry.HasData` (`:980-986`), over nulls admitted by `WizardData.FromPmp` (`:1155`, `:1175`)
+from `WizardGroupEntry.FromPMPGroup`'s empty-group early return (`:857-861`). See
 `src/container/clear-nulls.ts` and
 `docs/superpowers/specs/2026-08-04-datapages-model-and-empty-group-design.md`.
 
 `FromPMPGroup` returns `null` for a group with no options, and `FromPmp` adds the result to
-`page.Groups` **unconditionally** at both its call sites — the synthesized Default group (`:1136`)
-and the real ones (`:1156`). So a zero-option PMP group puts a literal `null` into a
-`List<WizardGroupEntry>`. `FromPmp` then calls `ClearNulls()` (`:1159`) to prune exactly that:
+`page.Groups` **unconditionally** at both its call sites — the synthesized Default group (`:1155`)
+and the real ones (`:1175`). So a zero-option PMP group puts a literal `null` into a
+`List<WizardGroupEntry>`. `FromPmp` then calls `ClearNulls()` (`:1178`) to prune exactly that:
 
 ```csharp
 foreach (var p in pages)
 {
     p.FolderPath = null;
-    if (!p.HasData)          // :1240 — evaluated BEFORE the null-removing loop below
+    if (!p.HasData)          // :1259 — evaluated BEFORE the null-removing loop below
     {
         DataPages.Remove(p);
         continue;
@@ -753,14 +808,14 @@ foreach (var p in pages)
     var groups = p.Groups.ToList();
     foreach (var g in groups)
     {
-        if (g == null || !g.HasData) { p.Groups.Remove(g); continue; }   // :1249 — null-SAFE
+        if (g == null || !g.HasData) { p.Groups.Remove(g); continue; }   // :1268 — null-SAFE
 ```
 
-The group-level check at `:1249` is correctly null-guarded. The page-level check one statement
+The group-level check at `:1268` is correctly null-guarded. The page-level check one statement
 earlier is not:
 
 ```csharp
-public bool HasData { get { return Groups.Any(x => x.HasData); } }   // :969-975
+public bool HasData { get { return Groups.Any(x => x.HasData); } }   // :980-986
 ```
 
 `Any` dereferences `x` to read the instance property, so it throws `NullReferenceException` the
@@ -768,8 +823,8 @@ moment it reaches a null element. The method crashes on the list it exists to cl
 
 It is **order-dependent**, because `Any` short-circuits on the first `true`. Every non-null group on
 the paths a modpack load reaches is `HasData == true` (`WizardGroupEntry.HasData` is
-`Options.Any(x => x.HasData)`, `:621-627`, and `WizardOptionEntry.HasData` returns `true` on its
-first line whenever `ModOption != null`, `:257-278` — which both group constructors always set). So
+`Options.Any(x => x.HasData)`, `:627-633`, and `WizardOptionEntry.HasData` returns `true` on its
+first line whenever `ModOption != null`, `:259-280` — which both group constructors always set). So
 any data-carrying group *preceding* the null shields it, and the NRE fires **iff the zero-option
 group is the first group added to its page**.
 
@@ -789,13 +844,13 @@ System.NullReferenceException: Object reference not set to an instance of an obj
 ```
 
 Row 4 is the mechanism confirming itself twice: a `Page: 0` group is shielded only because
-`FromPmp:1136` puts the synthesized Default group in front of it, and row 5 shows the shield is
+`FromPmp:1155` puts the synthesized Default group in front of it, and row 5 shows the shield is
 positional rather than page-numbered — the same empty group one page over still crashes.
 `HandleUpgrade` catches the exception (`ConsoleTools/Program.cs:183-186`), `Trace.WriteLine`s it and
 returns -1, so the user gets **no output file at all** and no message on stdout.
 
 The TTMP wizard path is unaffected: `WizardPageEntry.FromWizardModpackPage` discards the null at the
-call site (`if (g == null) continue;`, `:986`), so no null ever enters `page.Groups` there.
+call site (`if (g == null) continue;`, `:997`), so no null ever enters `page.Groups` there.
 
 **Us:** we deliberately do **not** reproduce it. `pageHasData` in `src/container/clear-nulls.ts` is
 null-safe (`p.groups.some((g) => g !== null && groupHasData(g))`), so the pack upgrades instead of
@@ -803,7 +858,7 @@ failing. This is the rare case where AGENTS.md's user-benefit bar is satisfied w
 comparison, because there is nothing to compare against: TexTools emits no file, so any correct pack
 is strictly better than none, and the risk that rule guards against — shipping something TexTools
 does differently and better — cannot arise. Everything around the divergence stays faithful: the
-group-level prune at `:1249` is ported verbatim, and the `FromPmp` page off-by-one (entry 7) is
+group-level prune at `:1268` is ported verbatim, and the `FromPmp` page off-by-one (entry 7) is
 reproduced untouched. Confirmed by an `ORACLE_ERROR_DIVERGENCE_RULES` entry keyed on the trace
 signature above, not by a ratchet baseline — its `confirm` (`confirmOracleErrorDivergence`,
 `test/helpers/corpus-upgrade.ts`) checks both that our output byte-matches the CONTENT of a sibling
@@ -814,5 +869,82 @@ the content check alone is a payload multiset keyed by gamePath and cannot see a
 
 **Upstream fix:** null-guard the page predicate the same way the group loop already is —
 `Groups.Any(x => x != null && x.HasData)` — or, better, have `FromPmp` skip the add when
-`FromPMPGroup` returns null, as `FromWizardModpackPage:986` already does, so `ClearNulls` never has
+`FromPMPGroup` returns null, as `FromWizardModpackPage:997` already does, so `ClearNulls` never has
 a null to survive in the first place.
+
+---
+
+## 23. `LoadPMP`'s ExtraFiles scan iterates the stale v3 `groups` list, duplicating a v4 pack's whole payload on save
+
+**Status:** diverged — we deliberately do **not** reproduce this. Operator ruling, 2026-08-06
+(*"it's a pretty gross bug"*). Reproducing it would hand the user a modpack roughly twice its
+necessary size on the one path that reaches it (`/resave` — see *Reachability*). · **Where:** `PMP.cs · LoadPMP · 191-208` (builds the list) vs `· 217-225` (assigns
+a different one) vs `· 234` (iterates the stale one) vs `· 279-280` (misclassifies). See
+`src/container/pmp.ts` (`readPmp`'s `referencedKeys` block).
+
+**What happens:** `:217-225` pulls Penumbra v4's inline data back into the v3 in-memory shape —
+`pmp.Groups = meta.Groups`, `pmp.DefaultMod = meta.DefaultData` — but never touches the local
+`groups` variable built from `group_*.json` at `:191-208`. The `allPmpFiles` scan at `:234` iterates
+**`groups`**, not `pmp.Groups`. For a v4 pack that list is empty, so no inline group contributes a
+single `Files` value; only `pmp.DefaultMod` does, via the separate (and correct) block at
+`:267-276`.
+
+**Consequence:** every payload member referenced solely by an inline group fails the
+`!allPmpFiles.Contains(x)` test at `:279` and is recorded as an ExtraFile. `WizardData.WritePmp`
+copies every ExtraFile into the output verbatim, at its **original** relative name
+(`WizardData.cs:1496-1507`, `Path.Combine(tempFolder, file.Key)` — `file.Key` being the load-time
+relative path stashed at `:1124-1126`), *and* the group loop (`:1602-1619` →
+`PopulatePmpStandardOption`, `PMP.cs:1001-1003`) writes the same bytes again at their **regenerated
+dedup** name. Two different names, so neither overwrites the other: a v4 → v4 `/resave` emits the
+entire payload **twice**.
+
+The same stale read has a second, opposite arm: for a *hybrid* pack (inline `meta.Groups` **and**
+on-disk `group_*.json`), the discarded disk groups' `Files` values still count as referenced, so a
+member only they name is wrongly kept *out* of ExtraFiles — and, its group having been discarded, is
+then written by nothing at all and is lost.
+
+**Reachability — and it is gated, so the symptom is not uniform.** Two independent gates:
+
+1. **`/upgrade` cannot reach it at all.** `ModpackUpgrader.cs · UpgradeModpack · 218-241` either
+   refuses a v4 input (`.pmp`/`.ttmp2` destination, `:232`) or raw-copies it (folder destination,
+   `:237`) before `LoadPMP` ever ingests a v4 file for upgrade.
+2. **`WizardData.ExtraFiles` is *only ever read* by the copy at `WizardData.cs:1496`, and that copy
+   is gated on `saveExtraFiles`, which defaults `false`** (`WritePmp`, `:1479`; `WriteModpack`,
+   `:1331`). Grepping the field confirms it has no other reader (`:1094` declares, `:1124-1126`
+   populates, `:1496`/`:1498` consume). So:
+   - **`saveExtraFiles == true` → the bug bites.** Only three call sites pass it:
+     `ConsoleTools/Program.cs:211` (`/resave` — and note `:204`'s `WizardData.FromModpack(src)` takes
+     the **default** `enforceCompatibility = false`, which is exactly why `/resave` ingests a v4 pack
+     at all), `ModpackUpgrader.cs:246` and `FFXIV_TexTools/Helpers/ModpackUpgraderWrapper.cs:99` (both
+     on the upgrade path, which gate 1 already keeps a v4 pack away from). **`/resave` is therefore
+     the one live path**, and there the payload doubles.
+   - **`saveExtraFiles == false` → the misclassification is inert.** The GUI exporters
+     (`FileListExporter.xaml.cs:279`, `StandardModpackCreator.xaml.cs:424`,
+     `ExportWizardWindow.xaml.cs:471`, all bare `WritePmp(path)`) and the import wizard's save
+     (`ImportOnlyWindow.xaml.cs:251`, bare `WriteModpack(path)`) never read `ExtraFiles`, so a
+     misclassified member is neither duplicated **nor dropped** — the group loop still writes it once,
+     correctly, from `pmp.Groups`. Nothing observable happens on those paths.
+
+   The hybrid arm follows the same gate: the member it loses would only ever have been preserved by
+   the `saveExtraFiles == true` copy, so it too is a `/resave`-only loss.
+
+**Us:** `readPmp` fills `referencedKeys` from the groups it **actually loaded** — the one-variable
+swap that constitutes the upstream fix. Two arms, both intended: an inline group's `Files` now count
+as referenced (so its member is emitted once, not twice), and a hybrid pack's *discarded*
+`group_*.json` values no longer do. The divergence is called out in full at the site
+(`src/container/pmp.ts`, the boxed `INTENTIONAL DIVERGENCE` comment in `readPmp`).
+
+**Evidence status (`AGENTS.md`'s three bars for a user-benefit divergence):**
+
+| bar | state |
+| --- | --- |
+| 1. registered defect, adjudicated a genuine bug | **met** — this entry, operator ruling 2026-08-06 |
+| 2. exercised over the corpus, every moved byte confirmed by a rule | **met** — `test/corpus/synthetic/pmp-v4-extrafiles.pmp` (Task 4) exercises the bug over the real oracle, and `test/helpers/pmp-v4-extrafile-divergence.ts` (Task 10) confirms the resulting golden-only payload member narrowly |
+| 3. verified in the real game that our output is better | **outstanding** — manual, not yet performed, and not implied by anything above |
+
+Shape-pinned meanwhile by `test/container/pmp-v4.test.ts` (both arms). An upstream bug report is a
+later task of the same plan (Task 5).
+
+**Upstream fix:** iterate `pmp.Groups` at `:234` instead of the local `groups` — i.e. move the scan
+below the pull-back and read the field the pull-back actually assigns. Equivalently, have `:220`
+assign the local `groups` list as well, so the two can no longer disagree.

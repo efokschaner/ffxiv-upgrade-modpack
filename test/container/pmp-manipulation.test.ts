@@ -126,7 +126,7 @@ describe("normalizeManipulations", () => {
 });
 
 describe("normalizeImcEntry", () => {
-  // PMPImcGroupJson.DefaultEntry (PMP.cs:1429) is the SAME PMPImcEntry struct as a manipulation's
+  // PMPImcGroupJson.DefaultEntry (PMP.cs:1539) is the SAME PMPImcEntry struct as a manipulation's
   // own `Entry` (PmpManipulation.cs:311-321) -- src/container/pmp.ts reuses this function to
   // normalize it at the group level too.
   it("drops AttributeAndSound and keeps every other field", () => {

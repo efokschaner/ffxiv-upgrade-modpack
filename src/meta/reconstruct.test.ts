@@ -422,7 +422,7 @@ describe("reconstructMeta IMC reconstruction", () => {
   });
 
   // NonSet roots (weapon/monster/demihuman) are seeded from IMC_TABLE exactly like Set roots:
-  // Imc.UsesImc accepts them (Imc.cs · UsesImc · 74-85) and the table is keyed on the .meta root
+  // Imc.UsesImc accepts them (Imc.cs · UsesImc · 80-91) and the table is keyed on the .meta root
   // path, so they grow to the base entry count rather than passing through.
   it("grows a weapon's IMC segment from the base seed (NonSet root, keyed on the .meta path)", () => {
     const key = "chara/weapon/w2021/obj/body/b0001/w2021b0001.meta";

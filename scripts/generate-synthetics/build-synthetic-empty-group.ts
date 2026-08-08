@@ -42,6 +42,17 @@
 // | `empty-group-default-shielded.pmp`| non-empty `default_mod`; empty group alone, Page 0   | no-op  |
 // | `empty-group-page1.pmp`           | non-empty `default_mod`; empty group alone, Page 1   | NRE    |
 //
+// Each NRE-ing pack SHARES one `syntheticMeta` object with its sibling (`firstMeta`, `page1Meta`
+// below) so the two differ only in the dropped group — that is what makes the pairing a fair
+// comparison. It used to also be, accidentally, the only reason the v4 `meta.json#/Identifier`
+// comparison passed in `confirmOracleErrorDivergence`: the identifier is derived from the pack's
+// content (src/container/pmp-identifier.ts), and a shared meta made both sides derive the same
+// value while the confirmation rule itself sat inert (it demanded a `Guid.NewGuid()`-shaped value on
+// a side our own writer produces). That is fixed at the harness, not here — `diffArchives`' new
+// `referenceIsOurs` flag holds BOTH sides to our producer's shape, so the confirmation now fires on
+// its own terms. Sharing the meta object stays correct for the reasons above; it is no longer
+// load-bearing for the identifier comparison.
+//
 // The two NRE-ing packs' declared siblings, `empty-group-first-sibling.pmp` and
 // `empty-group-page1-sibling.pmp`, are BYTE-IDENTICAL to their partner except the crashing group's
 // own `group_NNN_*.json` zip member is absent entirely (same meta/default_mod/other-group content) —

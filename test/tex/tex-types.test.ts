@@ -50,10 +50,10 @@ describe("tex format helpers", () => {
   });
 
   // texFormatName exists ONLY to reproduce the name C#'s `format.ToString()` interpolates into
-  // Tex.GetCompressionFormat's error (Tex.cs:743), which the expected-failure corpus packs
+  // Tex.GetCompressionFormat's error (Tex.cs:742), which the expected-failure corpus packs
   // substring-match against ConsoleTools' trace. The corpus is gitignored, so this is the only
   // committed thing pinning the rendering.
-  it("renders XivTexFormat names as C#'s enum.ToString() does (Tex.cs:743)", () => {
+  it("renders XivTexFormat names as C#'s enum.ToString() does (Tex.cs:742)", () => {
     expect(texFormatName(DXT3)).toBe("DXT3");
     expect(texFormatName(A8R8G8B8)).toBe("A8R8G8B8");
     expect(texFormatName(BC7)).toBe("BC7");

@@ -108,7 +108,7 @@ export function registerSqpackChecks(ctx: PackContext): void {
           // rewrites the per-LoD buffer offsets to Dat.ReadSqPackType3's running cursor, which is
           // assigned unconditionally so an unused LoD takes the end-of-geometry value rather than
           // keeping a stored 0 (Dat.cs:825/835; TexTools' own serializer writes the same value,
-          // Mdl.cs:3930-3942). A game .mdl stored uncompressed in a PMP carries neither, so
+          // Mdl.cs:3926-3938). A game .mdl stored uncompressed in a PMP carries neither, so
           // decode(encode(x)) differs from x on both counts — a benign non-idempotency, like Type 4.
           // A decoded TTMP model is already canonical, stays byte-exact and never reaches here.
           //

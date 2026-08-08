@@ -131,6 +131,27 @@ seemed safe.
 > behaviour that felt right instead of porting the behaviour that exists — committed one section
 > after diagnosing it. Fail-loud does not license a throw the C# does not have.
 
+> **AMENDMENT, 2026-08-08 (v3.1.1.4 re-pin).** The `"Combining"` half of the two bullets above no
+> longer describes TexTools. It was correct at the old pin (`e20179a0`), where `EGroupType` had only
+> `{Standard, Imc}` — a Combining group's `GroupType` was `Standard`, `StandardData` was non-null,
+> and `ToModOption` did collapse it to `"Multi"`. Upstream `76535f4` added `EGroupType.Combining`
+> (`WizardData.cs:32-37`) and made `WizardGroupEntry.GroupType` return it for a
+> `PMPCombiningGroupJson` (`:611-625`), so `StandardData`'s off-Standard getter now yields null
+> (`:376-388`) and `WizardOptionEntry.ToModOption` throws
+> `NotImplementedException("TTMP Export does not support one or more of the selected Option types.")`
+> (`:425-428`) on the first option. `ToModGroup` still passes it — it guards only `ImcData`
+> (`:874-877`) — so the refusal really is one level down, at the option, not at the group.
+>
+> **This does not retract the lesson.** The retracted guard was still wrong: it would have thrown for
+> the wrong reason, at the wrong level, with an invented message, at a pin where the C# did not throw
+> at all. What we ship now is a *port-gap* guard (`UnportedGapError`, `src/container/ttmp2.ts`) that
+> says exactly that — we do not reproduce the option-level seam — rather than a guard pretending to be
+> the C#'s. The reachability sentence just below ("only a PMP→TTMP conversion could get there") also
+> turned out to be load-bearing and wrong in its own way: `writeModpack`'s cross-format check is
+> per-FILE, so a fileless PMP model reaches `writeTtmp2` unchallenged
+> (`docs/backlog/2026-08-08-writemodpack-per-file-format-guard.md`). See the re-pin design's §10
+> row 2.
+
 ## 5. Scrubbing the phantom
 
 The invented spelling has taken root in four places. Removing it is a deliverable, not a
@@ -225,8 +246,11 @@ omit; `Name`/`Category` re-derivation), so its baselines will carry those entrie
 
 - Reader: the four-way mapping of §6.2's table, citing `WizardData.cs:652`.
 - Writer: bare `"Single"`/`"Multi"` at group **and** option level.
-- Writer collapse: a `"Combining"` group writes as `"Multi"` — the case the retracted guard would
-  have wrongly thrown on, so it is pinned deliberately.
+- Writer collapse: a non-`"Single"` group writes as `"Multi"` — the case the retracted guard would
+  have wrongly thrown on, so it is pinned deliberately. (Originally spelled with a `"Combining"`
+  group; re-spelled with an arbitrary string on 2026-08-08 — see the amendment in §4 — because
+  `"Combining"` is now refused on this path rather than collapsed, and pinning the collapse for it
+  would have pinned silently-wrong output.)
 - Writer Imc throw: an `Imc` group throws, reproducing `ToModOption` (`WizardData.cs:423-426`).
 
 ## 7. Risks and sequencing

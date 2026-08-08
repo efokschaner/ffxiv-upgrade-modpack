@@ -8,6 +8,7 @@ import {
   type ModpackFile,
   ModpackFormat,
 } from "../../src/model/modpack";
+import { UnportedGapError } from "../../src/util/errors";
 import { readZip, writeZip } from "../../src/zip/zip";
 import {
   filesMap,
@@ -114,7 +115,7 @@ describe("writeTtmp2 round-trip", () => {
 });
 
 describe("writeTtmp2 page renumbering", () => {
-  it("renumbers PageIndex densely over surviving pages (WriteWizardPack:1348-1357)", () => {
+  it("renumbers PageIndex densely over surviving pages (WriteWizardPack:1367-1376)", () => {
     // Measured against ConsoleTools /resave 2026-08-04: a source page whose only group is
     // option-less is dropped, and the survivor is emitted as PageIndex 0, not 1.
     const data = readTtmp2(
@@ -128,7 +129,7 @@ describe("writeTtmp2 page renumbering", () => {
     expect(mplDoc.ModPackPages![0]!.PageIndex).toBe(0);
   });
 
-  it("emits pages in source array order, not sorted by PageIndex (:1349)", () => {
+  it("emits pages in source array order, not sorted by PageIndex (:1368)", () => {
     const data = readTtmp2(
       buildWizardTtmp2Pages([
         { pageIndex: 1, groups: [{ name: "Second", options: ["On"] }] },
@@ -143,7 +144,7 @@ describe("writeTtmp2 page renumbering", () => {
     expect(mplDoc.ModPackPages!.map((p) => p.PageIndex)).toEqual([0, 1]);
   });
 
-  it("keeps two source pages sharing a PageIndex separate (:1349)", () => {
+  it("keeps two source pages sharing a PageIndex separate (:1368)", () => {
     const data = readTtmp2(
       buildWizardTtmp2Pages([
         { pageIndex: 0, groups: [{ name: "Alpha", options: ["On"] }] },
@@ -268,7 +269,7 @@ function withMpl(
 // normalize everything to `""`, which diverged from the golden on exactly those packs.
 describe("writeTtmp2 null fidelity", () => {
   // Load copies verbatim (`wizOp.Description = o.Description`, WizardData.cs · FromWizardGroup ·
-  // 663), export copies verbatim (`Description = Description`, · ToModOption · 414), and the writer
+  // 669), export copies verbatim (`Description = Description`, · ToModOption · 416), and the writer
   // copies verbatim again (`Description = modOption.Description`, TTMPWriter.cs · AddOption · 144).
   // So a null in, a null out — no `?? ""` anywhere along that chain.
   it("round-trips a null option Description as null, and '' as ''", () => {
@@ -301,10 +302,10 @@ describe("writeTtmp2 null fidelity", () => {
     ).toBeNull();
   });
 
-  // WizardMetaEntry.FromTtmp (WizardData.cs · FromTtmp · 1052-1069) assigns all five verbatim with
-  // no `?? ""`; WriteWizardPack (· WriteWizardPack · 1332-1346) passes Name/Author/Url/Description
-  // straight through. `ClearNulls()` at :1334 touches only pages/groups/options, never a string, and
-  // the `= ""` field initializers (:1015-1020) are overwritten by the load assignments.
+  // WizardMetaEntry.FromTtmp (WizardData.cs · FromTtmp · 1063-1080) assigns all five verbatim with
+  // no `?? ""`; WriteWizardPack (· WriteWizardPack · 1351-1365) passes Name/Author/Url/Description
+  // straight through. `ClearNulls()` at :1353 touches only pages/groups/options, never a string, and
+  // the `= ""` field initializers (:1026-1031) are overwritten by the load assignments.
   it("round-trips null top-level Name/Author/Description/Url", () => {
     const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
       doc.Name = null;
@@ -320,7 +321,7 @@ describe("writeTtmp2 null fidelity", () => {
   });
 
   // `Version` is the exception: WriteWizardPack forces it non-null via `Version.TryParse(...)` +
-  // `ver ??= new Version("1.0")` (WizardData.cs:1335-1337), re-guarded in the TTMPWriter ctor
+  // `ver ??= new Version("1.0")` (WizardData.cs:1354-1356), re-guarded in the TTMPWriter ctor
   // (TTMPWriter.cs · TTMPWriter · 61). It must never come out null.
   it("never writes a null Version", () => {
     const src = withMpl(makeTtmp2Wizard().bytes, (doc) => {
@@ -332,7 +333,7 @@ describe("writeTtmp2 null fidelity", () => {
 
   // The .NET Version round-trip is not a null guard only: WriteWizardPack RE-RENDERS the version
   // through `Version.TryParse` + `ver ??= new Version("1.0")` + `ToString()` (WizardData.cs ·
-  // WriteWizardPack · 1335-1337, stringified at TTMPWriter.cs · TTMPWriter · 61-69). A bare "1" has
+  // WriteWizardPack · 1354-1356, stringified at TTMPWriter.cs · TTMPWriter · 61-69). A bare "1" has
   // too few components for TryParse, so the fallback applies and the .mpl says "1.0"; "01.2"
   // normalizes to "1.2". Pinned end-to-end because ttmp2.ts writing `data.meta.version` raw would
   // otherwise pass every other test here — the PMP side has its own pin in pmp-manifest.test.ts.
@@ -346,5 +347,83 @@ describe("writeTtmp2 null fidelity", () => {
       doc.Version = "01.2";
     });
     expect(mpl(writeTtmp2(readTtmp2(padded))).Version).toBe("1.2");
+  });
+});
+
+describe("writeTtmp2 Combining port gap (WizardData.cs · ToModOption · 425-428)", () => {
+  // REGRESSION PIN for a hole this repo's Combining work opened and then closed. Teaching
+  // `parsePmpGroup` to ACCEPT a Combining group (src/container/manifest-types.ts) made a
+  // Combining-carrying model constructible for the first time — and `writeTtmp2` would happily emit
+  // one as an ordinary `"Multi"` group with no data, because the SelectionType collapse maps every
+  // non-"Single" value to "Multi". TexTools instead refuses it per-OPTION: `ToModGroup` guards only
+  // `ImcData != null` (WizardData.cs:874-877), so the group passes and the first
+  // `WizardOptionEntry.ToModOption` throws `NotImplementedException("TTMP Export does not support
+  // one or more of the selected Option types.")` (:425-428) because `StandardData` is null for a
+  // non-Standard group (:376-388).
+  //
+  // We do not reproduce that seam, so the guard is an `UnportedGapError`, asserted BY TYPE rather
+  // than by message: the point of the pin is that it is a port-gap signal (which a ported catch must
+  // re-throw), not that it carries any particular wording.
+  //
+  // FILELESS on purpose. That is what made the hole reachable: `writeModpack`'s cross-format guard
+  // (src/index.ts) scans `allFiles(data)` for a storage mismatch, so a model with zero files has
+  // nothing to mismatch and reaches `writeTtmp2` even from a PMP source. Measured 2026-08-08: this
+  // exact shape wrote a 605-byte .ttmp2 before the guard. See
+  // docs/backlog/2026-08-08-writemodpack-per-file-format-guard.md.
+  const filelessCombining = (): ModpackData => ({
+    sourceFormat: ModpackFormat.Pmp,
+    isSimple: false,
+    meta: {
+      name: "Combining TTMP Gap",
+      author: "",
+      version: "1.0",
+      description: "",
+      url: "",
+      image: "",
+      tags: [],
+      minimumFrameworkVersion: "1.0.0.0",
+    },
+    pages: [
+      {
+        groups: [
+          {
+            name: "Combining",
+            description: "",
+            image: "",
+            priority: 0,
+            selectionType: "Combining",
+            defaultSettings: 0,
+            options: [
+              {
+                name: "Alpha",
+                description: "",
+                image: "",
+                priority: 0,
+                selected: true,
+                files: filesMap([]),
+                fileSwaps: {},
+                manipulations: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+
+  it("throws UnportedGapError rather than emitting the group as Multi", () => {
+    expect(() => writeTtmp2(filelessCombining())).toThrow(UnportedGapError);
+  });
+
+  // The negative half: without it the test above would still pass if the guard were replaced by any
+  // other throw, including a future one that happens to fire earlier for an unrelated reason.
+  it("does not write a pack at all for a Combining group", () => {
+    let wrote: Uint8Array | null = null;
+    try {
+      wrote = writeTtmp2(filelessCombining());
+    } catch {
+      // expected — asserted by type above
+    }
+    expect(wrote).toBeNull();
   });
 });
