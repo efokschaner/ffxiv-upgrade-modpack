@@ -88,8 +88,10 @@ open it.
 
 - [**#7 · `FromPmp`'s page-index off-by-one merges page-0 groups onto the Default page**](textools-bugs/07-frompmp-page-index-off-by-one.md)
   — **reproduced** · `WizardData.cs:1137-1177` + `:1253-1263`. Groups are assigned by their raw page
-  number *after* a synthesized Default page is unshifted onto the front. `ClearNulls`' page pruning
-  hides the count change, leaving a folder merge as the only observable effect.
+  number *after* a synthesized Default page is unshifted onto the front, so a page-0 group lands on
+  the Default page. `ClearNulls` then prunes the stranded empty page: with one real page that leaves
+  a folder merge as the only effect (no `pN/`); with more, `pN/` still appears and later groups shift
+  a slot.
 
 - [**#8 · Missing files all share the zero hash, perturbing dedup paths**](textools-bugs/08-missing-files-zero-hash-dedup.md)
   — **reproduced** · `PmpExtensions.cs:509-514` + `:537-551`. An absent file is given a default
@@ -118,8 +120,9 @@ open it.
   pair.
 
 - [**#13 · `UpdateEyeMask` passes a possibly-null `ResolveFile` result straight into `FromUncompressedTex`**](textools-bugs/13-updateeyemask-null-resolvefile.md)
-  — **reproduced** · `EndwalkerUpgrade.cs:2030-2032`. #1's defect class at a different call site, with
-  a different exception type (`ArgumentNullException`, not NRE).
+  — **reproduced** · `EndwalkerUpgrade.cs:2030-2032`. `ResolveFile` can return null and
+  `FromUncompressedTex` takes it unchecked, throwing `ArgumentNullException` at `XivTex.cs:96` —
+  #1's defect class at a different call site.
 
 - [**#14 · `UpdateEyeMask` dereferences a `FirstOrDefault` that can return null for `TexturePath`**](textools-bugs/14-updateeyemask-firstordefault-deref.md)
   — **reproduced** · `EndwalkerUpgrade.cs:2056-2059`. An iris material that binds no diffuse sampler
@@ -166,8 +169,9 @@ open it.
 - [**#22 · `ClearNulls` reads `WizardPageEntry.HasData` over a list it is about to remove nulls from**](textools-bugs/22-clearnulls-page-hasdata-null-deref.md)
   — **diverged** · `WizardData.cs:1253-1285` reading `:980-986`. A zero-option PMP group puts a literal
   `null` into `page.Groups`; the group-level prune is null-safe but the page-level predicate one
-  statement earlier is not, so ConsoleTools exits `-1` with **no output file and no message**. We are
-  null-safe, so the pack upgrades — the one case where the user-benefit bar needs no in-game
+  statement earlier is not, so a page whose **first** group is that null makes ConsoleTools exit `-1`
+  with **no output file and no message** (`Any` short-circuits, so an earlier real group shields it).
+  We are null-safe, so the pack upgrades — the one case where the user-benefit bar needs no in-game
   comparison, because there is no TexTools output to compare against.
 
 - [**#23 · `LoadPMP`'s ExtraFiles scan iterates the stale v3 `groups` list, duplicating a v4 pack's whole payload on save**](textools-bugs/23-loadpmp-extrafiles-stale-groups-list.md)
