@@ -163,7 +163,23 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. [**TTMP load fix does not handle `.rgsp`; it passes through unchanged**](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
+1. [**In-game verification of the bug #23 divergence (AGENTS.md evidence bar 3)**](backlog/2026-08-08-bug23-in-game-verification.md)
+   — **operator-only; no agent can discharge it.** `docs/TEXTOOLS_BUGS.md` #23 is the repo's one
+   deliberate divergence *from* TexTools rather than a faithful reproduction, and AGENTS.md's third
+   evidence bar — someone verified in the real game that our output is better — has **not** been met.
+   Bars 1 and 2 are (registered defect; confirmed corpus-side by `makeV4ExtraFileDuplicateConfirmation`
+   over the purpose-built `test/corpus/synthetic/pmp-v4-extrafiles.pmp`), so this is the sole gap, and
+   the divergence currently ships on the 2026-08-06 operator ruling instead of on evidence. The work is
+   one manual test: `/resave` that pack through both our port and ConsoleTools, install both in
+   Penumbra, confirm both load, the in-game result is identical, and ours is roughly half the size.
+   **Plan for a negative result** — if the duplication turns out to be load-bearing in-game, the
+   divergence has to be withdrawn and our reader goes back to reproducing the bug, with the
+   confirmation rule and the synthetic re-pointed at the reproduction. Ranked first not by size but
+   because it is the only thing in the repo shipping on a ruling rather than on evidence, against one
+   of the project's three founding principles — and everything built on top of it inherits that.
+   Operator call, 2026-08-08.
+
+2. [**TTMP load fix does not handle `.rgsp`; it passes through unchanged**](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
    — a **rubric class 1 candidate** (silent wrong output) whose size is genuinely unknown. TexTools
    diverts a `.rgsp` into `data.Manipulations` at load and re-materializes it on write from the game's
    *clean default* parameter plus those manipulations (`PMP.cs · ManipulationsToMetadata · 1335,1347`);
@@ -183,7 +199,7 @@ unchanged by deployment; only probability moves.
    small, unbounded correctness holes outrank a large, well-understood build — the same reasoning that
    placed the empty-group item there in the 2026-08-03 pass. Operator call, 2026-08-07.
 
-2. [**Re-measure the ±1 BCn decoder divergence, and decide whether to reconverge on `DxtUtil`**](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
+3. [**Re-measure the ±1 BCn decoder divergence, and decide whether to reconverge on `DxtUtil`**](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
    — upstream **rewrote** `DxtUtil.cs` in `371f74b` (found while verdicting it for the v3.1.1.4
    re-pin), and that moved both of this item's load-bearing premises. (a) The file is now **GPL-3.0**,
    not FNA's Ms-PL, so the clean-room constraint is lifted and a **direct port is legally available**
@@ -201,7 +217,7 @@ unchanged by deployment; only probability moves.
    unchanged (port it, now directly), or gap changed shape (re-characterize). Do that before writing
    any decoder code. Operator call, 2026-08-07.
 
-3. [**Reconsider line numbers in TexTools citations**](backlog/2026-08-08-citation-line-numbers-maintenance.md)
+4. [**Reconsider line numbers in TexTools citations**](backlog/2026-08-08-citation-line-numbers-maintenance.md)
    — `file · symbol · lines` costs ~1,374 line-number citations across 173 files, all of which have to
    be re-pointed at every re-pin. Not a correctness item; a recurring tax with a bad failure mode. A
    stale line number points *confidently at unrelated code* rather than at nothing (live example: three
@@ -214,7 +230,7 @@ unchanged by deployment; only probability moves.
    there too. Ranked above the site because it is cheap and the tax compounds with every re-pin, below
    the two items above it because nothing is actually wrong today. Operator call, 2026-08-08.
 
-4. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+5. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -230,11 +246,11 @@ unchanged by deployment; only probability moves.
    filed 2026-08-08). The UI constraint is unaffected — there is still no picker to offer — but the
    site must not treat that throw as its only line of defence. Nothing blocks *starting* it, and its one real dependency (a
    diagnostics channel, so the page cannot report success on a partial upgrade) cleared 2026-08-02 —
-   so its position here is the rubric's doing, not a dependency's: items 1-2 above it are class-1
-   correctness unknowns and this is class 3, while item 3 is ranked above it on cheapness rather than
-   on the rubric.
+   so its position here is the rubric's doing, not a dependency's: items 2-3 above it are class-1
+   correctness unknowns and this is class 3, while item 1 is ranked on an unmet evidence bar and item
+   4 on cheapness rather than on the rubric.
 
-5. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+6. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
@@ -247,7 +263,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-6. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -261,7 +277,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-7. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+8. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
