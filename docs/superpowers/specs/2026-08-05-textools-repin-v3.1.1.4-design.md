@@ -307,6 +307,12 @@ Expected at this point:
   contradicting itself, with no TexTools output involved. A movement there is a signal that
   something else changed and must be investigated, not blessed.
 
+**Confirmed, 2026-08-07.** The Milktruck skip disappeared exactly as predicted above: the suite's
+skip count went to zero, and `Milktruck Bust Scaling Tweaks v1.0.0.ttmp2` now produces a real
+`/resave` golden (3 diffs, all manifest-level — `TTMPL.mpl#/ModPackPages`, `#/SimpleModsList`,
+`#/TTMPVersion`) in place of the `ctx.skip`. See the closing note on
+`docs/backlog/2026-07-11-expected-failure-golden.md` for the full detail.
+
 **Guard the roundtrip ratchet across the bless.** `UPDATE_UPGRADE_BASELINE=1` re-blesses all three
 baselines (AGENTS.md: "same key, same bless env var"), so a `roundtrip` regression would be silently
 absorbed by the very step meant to record oracle drift — and the baselines are gitignored, so `git`
@@ -420,7 +426,7 @@ Baseline totals, recorded via `npm run baseline:report`:
 
 | Point | upgrade | resave | roundtrip | total |
 |---|---|---|---|---|
-| after opening bless (§7.2) | _pending_ | _pending_ | _pending_ | _pending_ |
+| after opening bless (§7.2) *(identical to the row below by construction — see the prose immediately following this table; not a copy-paste error)* | 3352 | 2457 | 0 | 5809 |
 | after PMP v4 (rows 6, 8, 9, 10, 11 above) | 3352 | 2457 | 0 | 5809 |
 
 One row is appended per ported commit as the total falls. The PMP-v4 row above is a **re-keying**

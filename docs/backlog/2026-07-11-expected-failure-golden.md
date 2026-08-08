@@ -76,7 +76,22 @@ error text, then calls `ctx.skip(message)` so the test reports as **skipped with
 a focused unit test (`test/helpers/resave-golden.test.ts`) exercising the `opts.produce` injection
 seam (no real ConsoleTools spawn).
 
-## The `/upgrade` half is still NOT done
+## The `/upgrade` half is done too (correcting the section below)
+
+**This section is now stale and is corrected here rather than left asserting something false.**
+`upgradeGoldenCached` / `GoldenResult` (`test/helpers/upgrade-golden.ts`) gained the third outcome
+during the PMP v4 work: `GoldenResult` is now `{ kind: "pack" } | { kind: "noop" } | { kind: "error";
+message: string }` (`test/helpers/upgrade-golden.ts:31-33`), backed by a content-addressed `<sha>.error`
+marker, exactly as this document originally called for. `corpus-upgrade.ts`'s golden check branches on
+`golden.kind === "error"` (`test/helpers/corpus-upgrade.ts:503`) and asserts a **matched** failure —
+our port must throw the same way ConsoleTools' oracle did — via `assertMatchedUpgradeFailure`, rather
+than treating an oracle error as a skip the way the `/resave` side does (see the "still NOT done"
+section immediately below, which is the original, now-superseded text, kept for history rather than
+silently deleted).
+
+The original text follows unmodified for context:
+
+## The `/upgrade` half is still NOT done *(superseded — see the section above)*
 
 `upgradeGoldenCached` / `GoldenResult` (`test/helpers/upgrade-golden.ts`) remains two-outcome
 (`pack` | `noop`) with no `error` kind, so an `/upgrade` input on which ConsoleTools itself errors
@@ -85,3 +100,31 @@ forces this on the `/upgrade` side (Milktruck's `/upgrade` is a no-op, so it nev
 `WriteModpack` there), so it remains deferred until one does — extend `upgrade-golden.ts` the same
 way (`{ kind: "error" }` + `<sha>.error` marker + loud skip in `corpus-upgrade.ts`) if/when it's
 needed.
+
+## Closing note (2026-08-07) — the Milktruck `/resave` failure is resolved
+
+The `/resave` oracle error this document analyses (the "CMP Format Changed" throw on
+`Milktruck Bust Scaling Tweaks v1.0.0.ttmp2`) was **environmental**, not a property of the pack: it
+was the patch-7.5 `human.cmp` breakage in the pinned TexTools `v3.1.0.2` build — a hardcoded
+`MetadataStart` offset that a later game patch's colour-region growth invalidated — described in full
+in `docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md` §1.1.
+
+It is **resolved by the re-pin to TexTools `v3.1.1.4`**, which carries upstream's back-anchored CMP
+fix (`d731d744`, "Fix CMP RSP offset for patch 7.5" — spec §1.2). The pack now produces a real
+`/resave` golden instead of throwing, and the suite's skip count is zero — `Milktruck Bust Scaling
+Tweaks v1.0.0.ttmp2` was the suite's only `ctx.skip` site.
+
+Milktruck's `/resave` writer is now compared against that real golden and records **3 diffs**, all
+manifest-level: `TTMPL.mpl#/ModPackPages`, `#/SimpleModsList`, `#/TTMPVersion`. Notably, **none is
+`.rgsp` payload**: our load path passes `.rgsp` files through verbatim, where TexTools decodes them
+to manipulations on load and re-materializes them on write from the game's clean default parameter
+plus those manipulations — a different code path that happens to land on the same bytes here. This is
+**evidence the risk is low, not proof the gap is closed** — a byte match on one pack on one game
+version does not establish that the two implementations are equivalent for every field. The gap
+itself remains tracked separately, and does not overstate as "confirmed correct":
+`docs/backlog/2026-07-21-ttmp-load-rgsp-passthrough.md` (now `docs/BACKLOG.md` priority 1).
+
+This document is **kept, not deleted**: its analysis of why `/upgrade` can never see a whole class of
+write-side oracle failures (the "real, general reason" paragraph above) remains the durable reference
+the harness code and other specs cite. This is a closing note on one finding, not a retirement of the
+file.
