@@ -1526,4 +1526,95 @@ describe("writePmp Combining refusal (WizardData.cs · ToPmpGroup · 897-900)", 
     expect(allGroups(data).map((g) => g.selectionType)).toEqual(["Single"]);
     expect(() => writePmp(data)).not.toThrow();
   });
+
+  // ==== The two COLLATERAL sites, each pinned by the input that discriminates it ====
+  //
+  // These exist because the cases above do NOT cover them: they are named "Combining"/"Alpha" (the
+  // corpus pack) and "G"/"O0" (makePmpWithGroup), and both collateral bugs need a specific NAME to
+  // fire. Reverting either `groupType(...)` test in pmp.ts to the old `selectionType === "Imc"`
+  // spelling left the whole suite green before these were added.
+  //
+  // A model-built pack, not a zip: the shapes below are about NAMES, and building them by hand is
+  // shorter than authoring two more manifests. `sourceFormat` is nominal here (as in the other
+  // modeled fixtures in this file) — writePmp never reads it.
+  function modeledCombining(
+    groupName: string,
+    optionName: string,
+  ): ModpackData {
+    return {
+      sourceFormat: ModpackFormat.Pmp,
+      isSimple: false,
+      meta: {
+        name: "Combining Collateral",
+        author: "",
+        version: "1.0",
+        description: "",
+        url: "",
+        image: "",
+        tags: [],
+        minimumFrameworkVersion: "1.0.0.0",
+      },
+      pages: [
+        {
+          groups: [
+            {
+              name: groupName,
+              description: "",
+              image: "",
+              priority: 0,
+              selectionType: "Combining",
+              defaultSettings: 0,
+              options: [
+                {
+                  name: optionName,
+                  description: "",
+                  image: "",
+                  priority: 0,
+                  selected: true,
+                  files: filesMap([
+                    [
+                      "chara/dummy/combining_collateral.bin",
+                      {
+                        data: new Uint8Array([1, 2, 3]),
+                        storage: FileStorageType.RawUncompressed,
+                      },
+                    ],
+                  ]),
+                  fileSwaps: {},
+                  manipulations: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  // COLLATERAL 1 — the default-mod absorption search (WizardData.cs:1576). Its C# predicate is
+  // `g.GroupType == EGroupType.Standard`, which excludes Combining as well as Imc. Spelled
+  // `!== "Imc"` it would ABSORB this group into default_mod, the assembly loop would `continue` past
+  // it (`g === defaultModGroup`), and the pack would write with NO REFUSAL AT ALL — silently wrong
+  // output, the worst of the three collateral failures. "Default"/"Default" is the exact shape the
+  // search matches (:1577-1579).
+  it("refuses a Combining group named Default rather than absorbing it into default_mod (WizardData.cs:1576)", () => {
+    expect(() => writePmp(modeledCombining("Default", "Default"))).toThrow(
+      "Editing or exporting PMP Combining groups is not supported.",
+    );
+  });
+
+  // COLLATERAL 2 — the blank-name guard (WizardData.cs:1539-1542), which the C# only reaches for a
+  // Standard-type option (`:1532-1535` continues past the rest first, and an option's GroupType is
+  // its group's, :344-350). Spelled `=== "Imc"` this group's blank name would trip the blank-name
+  // throw instead: wrong message, which `assertMatchedUpgradeFailure` compares against the oracle's
+  // trace. Asserted BOTH ways round — the right message present AND the wrong one absent — because
+  // `toThrow` alone would pass on any throw at all.
+  it("refuses a blank-named Combining group with the Combining message, not the blank-name one (WizardData.cs:1532-1535)", () => {
+    expect(() => writePmp(modeledCombining("   ", "  "))).toThrow(
+      "Editing or exporting PMP Combining groups is not supported.",
+    );
+    expect(() => writePmp(modeledCombining("   ", "  "))).not.toThrow(
+      /PMP Files must have valid group and option names/,
+    );
+  });
 });

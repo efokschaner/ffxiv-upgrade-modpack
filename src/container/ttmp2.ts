@@ -17,6 +17,7 @@ import { ttmpNeedsMdlFix } from "../upgrade/model";
 import { ttmpNeedsTexFix } from "../upgrade/texfix";
 import { concatBytes, fnv1aKey } from "../util/binary";
 import { reformatDotnetVersion } from "../util/dotnet-version";
+import { UnportedGapError } from "../util/errors";
 import { readZip, writeZip } from "../zip/zip";
 import { clearNulls, pageHasData } from "./clear-nulls";
 import { EGroupType, groupType } from "./group-type";
@@ -358,17 +359,44 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
         // 611-625; src/container/group-type.ts). Only a PMP source carries an Imc group, and
         // /upgrade never converts formats, so this is unreachable today.
         //
-        // The sibling refusal for a COMBINING group on this path is NOT ported, and is unreachable
-        // for the same reason. In the C# it lands one level down and with its own message:
-        // `ToModGroup` only guards `ImcData != null` (:874-877), so a Combining group passes it and
-        // is refused per-option by `WizardOptionEntry.ToModOption` (:425-428,
-        // `NotImplementedException("TTMP Export does not support one or more of the selected Option
-        // types.")`) — because `StandardData` is null for a non-Standard group (:376-388). Porting it
-        // faithfully means an OPTION-level guard with a different message, which no flow in this
-        // project can reach: a PMP-sourced model can only get here through `writeModpack(data,
-        // "ttmp2")`, which rejects cross-format writes (src/index.ts).
         if (groupType(g) === EGroupType.Imc) {
           throw new Error("ttmp2: TTMP Does not support IMC Groups.");
+        }
+        // PORT GAP — the sibling refusal for a COMBINING group, which the C# performs one level down
+        // and with a different message. `ToModGroup` (WizardData.cs · ToModGroup · 872-893) guards
+        // ONLY `ImcData != null` (:874-877), so a Combining group passes it, `mg` is built (:879-884)
+        // and the per-option loop (:886-890) calls `WizardOptionEntry.ToModOption`
+        // (WizardData.cs · ToModOption · 406-…), whose `if (StandardData == null) throw new
+        // NotImplementedException("TTMP Export does not support one or more of the selected Option
+        // types.");` (:425-428) fires on the FIRST option — `StandardData`'s getter returns null for
+        // any non-Standard group (:376-388).
+        //
+        // We do NOT reproduce that: it is an OPTION-level guard keyed on a `StandardData` concept
+        // this flattened port does not carry, and its message would have to be right at a seam no
+        // oracle run exercises. So this is `UnportedGapError`, not the C# string — the opposite call
+        // from `writePmp`'s Combining refusal (src/container/pmp.ts), which IS a faithful
+        // reproduction of a throw the C# performs at the seam we port.
+        //
+        // It must be LOUD rather than a comment, even though nothing reaches it today. Falling
+        // through emits the group as an ordinary `"Multi"` (see the SelectionType collapse just
+        // below) with its options' empty file lists — silently wrong output, the exact class the
+        // fail-loud principle exists to prevent. And it only became reachable at all when this branch
+        // taught `parsePmpGroup` to ACCEPT a Combining group: before that the pack could not load.
+        //
+        // The reachability argument that used to sit here — "`writeModpack` rejects cross-format
+        // writes" — is WRONG, and is why this guard exists. That check (src/index.ts:87-98) is
+        // PER-FILE: it scans `allFiles(data)` for a storage mismatch, so a pack carrying NO files
+        // (a Combining group with empty containers, an empty default_mod) has nothing to mismatch and
+        // sails straight through into `writeTtmp2`. Measured, 2026-08-08: such a PMP wrote a 605-byte
+        // .ttmp2 before this guard. Filed as docs/backlog/2026-08-08-writemodpack-per-file-format-guard.md.
+        if (groupType(g) === EGroupType.Combining) {
+          throw new UnportedGapError(
+            `ttmp2: writing a Combining group ("${g.name}") into a TTMP is unported — the C# refuses ` +
+              "it per-option in WizardOptionEntry.ToModOption (WizardData.cs:425-428, " +
+              '"TTMP Export does not support one or more of the selected Option types."), a seam ' +
+              "this port does not reproduce. Emitting it as a Multi group would silently drop the " +
+              "group's data.",
+          );
         }
         // WizardData.cs:883 (group) / :421 (option) — `SelectionType = OptionType.ToString()` over
         // EOptionType { Single, Multi } (:26-30), the enum both readers collapse the raw string into

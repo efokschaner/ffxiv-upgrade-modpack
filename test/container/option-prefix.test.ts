@@ -250,6 +250,30 @@ describe("optionPrefixes", () => {
     expect(prefixes.get(imcGroup.options[0]!)).toBe("same (1)/");
   });
 
+  it("11b. the same holds for a COMBINING group: EGroupType has three members, and :1532-1535 skips both non-Standard ones", () => {
+    // Identical to case 11, with `selectionType: "Combining"`. It is a SEPARATE case because the
+    // predicate at WizardData.cs:1532-1535 is `o.GroupType != EGroupType.Standard`, and `EGroupType`
+    // gained a third member (`Combining`, WizardData.cs:32-37) in the v3.1.1.4 re-pin — so a port
+    // spelled `selectionType === "Imc"` satisfies case 11 while silently letting a Combining group
+    // steal the clean slot here.
+    //
+    // This is the one collateral site whose failure is invisible to the PMP WRITER: `writePmp`
+    // refuses a Combining group outright (porting ToPmpGroup's guard, WizardData.cs:897-900), so no
+    // member name derived from these prefixes is ever emitted. `optionPrefixes` is exported and is
+    // the only place the ordering is observable, which is why the pin lives here rather than in
+    // test/container/pmp-write.test.ts alongside the other two.
+    const combiningGroup: ModpackGroup = {
+      ...group("Same", [option("Only")]),
+      selectionType: "Combining",
+    };
+    const standardGroup = group("Same", [option("Only")]);
+    const d = data([page([combiningGroup, standardGroup])]);
+    const prefixes = optionPrefixes(d);
+
+    expect(prefixes.get(standardGroup.options[0]!)).toBe("same/");
+    expect(prefixes.get(combiningGroup.options[0]!)).toBe("same (1)/");
+  });
+
   it("MakeGroupPrefix's non-incrementing collision loop throws rather than hanging on a 3-way collision", () => {
     // Three groups that all sanitize to the same folder name: the first claims "same/", the second
     // claims "same (1)/" (one retry succeeds), and the third would ALSO need "same (1)/" since the

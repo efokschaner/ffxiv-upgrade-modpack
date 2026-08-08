@@ -25,7 +25,11 @@
 //     caller loop rather than in the prefix builders, and these functions are correct ports of their
 //     own C# symbols regardless of what calls them. Note the loop only reaches :1539 for
 //     `EGroupType.Standard` options (`:1532-1535` continues past the others first), so a blank name
-//     on an Imc group never trips that throw.
+//     on an Imc- OR Combining-type group never trips that throw — `EGroupType` has three members
+//     (WizardData.cs:32-37) and that `continue` skips both non-Standard ones. For a Combining group
+//     the substitution is doubly unreachable: `writePmp`'s group-assembly loop refuses it outright
+//     (src/container/pmp.ts, porting ToPmpGroup's guard at WizardData.cs:897-900) before any prefix
+//     it claimed here is put to use.
 
 import {
   allPages,

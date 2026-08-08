@@ -344,8 +344,12 @@ export function readPmp(
   //  2. `LoadPMP`'s ExtraFiles scan gained a Combining branch that seeds `allPmpFiles` from
   //     `Containers[].Files` instead of `Options[].Files` (PMP.cs:236-250). Not ported for the same
   //     reason — it would require modelling the container structure — so a Combining group's payload
-  //     members are classified as ExtraFiles here. `extraFiles` is read only by `writePmp`'s
-  //     re-emit loop, which is downstream of the refusal.
+  //     members are classified as ExtraFiles here. `extraFiles` has exactly two readers and NEITHER
+  //     can turn the misclassification into output: `writePmp`'s verbatim re-emit loop runs after the
+  //     group-assembly loop that refuses the group, and `writeTtmp2` (src/container/ttmp2.ts) throws
+  //     on ANY non-empty `extraFiles` before it reaches its own Combining port-gap guard — so on that
+  //     path a Combining pack carrying extras is refused for the extras rather than for the group,
+  //     which is a different message but never wrong output.
   // Both are recorded rather than silently absorbed; supporting Combining groups is not ported.
   for (const { raw: gRaw, parsed: g } of groups) {
     // WizardData.cs:811-819 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a

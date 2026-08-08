@@ -387,6 +387,12 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Other ported code
 
+- [`writeModpack`'s cross-format guard is per-FILE, not per-format](backlog/2026-08-08-writemodpack-per-file-format-guard.md)
+  — it infers the format from each file's `storage` and never reads `data.sourceFormat`, so a model
+  carrying **no files** crosses formats silently. Measured 2026-08-08: a PMP whose only group is a
+  Penumbra `Combining` group with empty containers wrote a 605-byte `.ttmp2`. The wrong-output hole
+  that exposed it is closed loudly at the seam (`src/container/ttmp2.ts`, `UnportedGapError`); this
+  is the underlying guard, whose fix has to audit every hand-built `ModpackData` fixture.
 - [Port IBM437 (CP437) zip entry-name decoding](backlog/2026-07-12-cp437-zip-entry-names.md) —
   `readZip` throws on a non-UTF-8-flagged high-byte entry name rather than guessing; `Ionic.Zip`
   falls back to CP437, empirically confirmed via a hand-assembled zip run through ConsoleTools. No
