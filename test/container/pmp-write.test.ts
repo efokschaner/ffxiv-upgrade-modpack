@@ -13,7 +13,7 @@ import {
   ModpackFormat,
 } from "../../src/model/modpack";
 import { readZip, writeZip } from "../../src/zip/zip";
-import { filesMap, makePmpZip } from "../helpers/make-packs";
+import { filesMap, makePmpWithGroup, makePmpZip } from "../helpers/make-packs";
 import { pmpSelfConsistency } from "../helpers/pmp-self-consistency";
 
 const dec = new TextDecoder();
@@ -1479,5 +1479,51 @@ describe("writePmp .meta/.rgsp write guard (PMP.cs:984-993)", () => {
     expect(() => writePmp(modeledData("chara/foo.rgsp"))).toThrow(
       /unported \(PMP\.cs:984-993 converts it to Manipulations\): chara\/foo\.rgsp/,
     );
+  });
+});
+
+describe("writePmp Combining refusal (WizardData.cs · ToPmpGroup · 897-900)", () => {
+  // The corpus pins this end to end (test/corpus/upgrade-error/pmp-combining-group.pmp, whose
+  // ConsoleTools /upgrade trace carries the identical InvalidDataException), but the corpus is
+  // gitignored — these keep the behaviour covered on a fresh clone and fail at the seam.
+  //
+  // The pack LOADS: since upstream `76535f4` the "Combining" discriminator resolves to a real
+  // subtype (PMP.cs:1494) with its own `Options` override (:1565), so the base virtual's
+  // `Unimplemented PMP group type` (:1517) is never reached. The refusal moved to the write seam.
+  const combiningPack = () =>
+    makePmpWithGroup({ Type: "Combining", DefaultSettings: 0, optionCount: 1 });
+
+  it("loads a Combining group without throwing (the read half of the move)", () => {
+    const data = readPmp(combiningPack());
+    // groups[0] is readPmp's synthesized Default group (default_mod.json is non-empty here).
+    expect(allGroups(data).map((g) => g.selectionType)).toEqual([
+      "Single",
+      "Combining",
+    ]);
+  });
+
+  // Asserted with `toThrow(<string>)`, i.e. a SUBSTRING match against a message that IS the whole
+  // string: no `pmp:` prefix, no citation spliced in. `assertMatchedUpgradeFailure`
+  // (test/helpers/corpus-upgrade.ts) requires our thrown text to appear verbatim inside
+  // ConsoleTools' captured trace, so any decoration here would break the corpus check.
+  it("throws the C#'s exact InvalidDataException message at the write seam", () => {
+    expect(() => writePmp(readPmp(combiningPack()))).toThrow(
+      "Editing or exporting PMP Combining groups is not supported.",
+    );
+  });
+
+  // WizardGroupEntry.FromPMPGroup returns null for a group with no options at all
+  // (WizardData.cs:857-861), so ClearNulls drops it before any writer sees it — TexTools upgrades
+  // such a pack rather than refusing it, and so must we. This is the boundary of the guard above.
+  it("does NOT throw for a zero-option Combining group (dropped at load, WizardData.cs:857-861)", () => {
+    const data = readPmp(
+      makePmpWithGroup({
+        Type: "Combining",
+        DefaultSettings: 0,
+        optionCount: 0,
+      }),
+    );
+    expect(allGroups(data).map((g) => g.selectionType)).toEqual(["Single"]);
+    expect(() => writePmp(data)).not.toThrow();
   });
 });

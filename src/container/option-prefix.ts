@@ -34,6 +34,7 @@ import {
   type ModpackOption,
   type ModpackPage,
 } from "../model/modpack";
+import { EGroupType, groupType } from "./group-type";
 import { folderSafeName } from "./pmp";
 
 // Port of MakePagePrefix (WizardData.cs:1381-1401). `WizardPageEntry.FolderPath` (:978) is the C#'s
@@ -179,11 +180,12 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   //   MakeOptionPrefix (:1532-1535/:1545) — and MakeOptionPrefix's 3-arg overload calls
   //   MakeGroupPrefix as a side effect (:1433-1437, `MakeGroupPrefix(page, group);`). So every
   //   Standard-type group across the WHOLE pack claims its MakeGroupPrefix slot (and its options'
-  //   MakeOptionPrefix slots) here — an Imc-type group's FolderPath is untouched by this pass.
+  //   MakeOptionPrefix slots) here — an Imc- or Combining-type group's FolderPath is untouched by
+  //   this pass.
   //
   //   PASS 2 (WizardData.cs:1602-1619, the group_NNN.json emission loop): calls MakeGroupPrefix(p, g)
-  //   directly for EVERY surviving group, Standard or Imc alike, with no type check — a no-op for a
-  //   group PASS 1 already resolved (MakeGroupPrefix/MakePagePrefix both memoize via a
+  //   directly for EVERY surviving group, whatever its type, with no type check (:1612) — a no-op for
+  //   a group PASS 1 already resolved (MakeGroupPrefix/MakePagePrefix both memoize via a
   //   present/absent FolderPath), but the FIRST resolution for an Imc-type group.
   //
   // Net effect: every Standard-type group claims its folder slot before any Imc-type group does, so
@@ -192,9 +194,23 @@ export function optionPrefixes(data: ModpackData): Map<ModpackOption, string> {
   // page's group order. A single loop over page.groups (as this used to be) would let an Imc group
   // steal the clean slot when it happens to come first, changing a Standard group's payload member
   // names.
+  //
+  // PASS 2 AND A COMBINING GROUP. The C# reaches `MakeGroupPrefix(p, g)` (:1612) for a Combining
+  // group too — it is the statement BEFORE the `ToPmpGroup` call whose guard refuses it (:1613 ->
+  // :897-900) — so claiming a group slot for one here is faithful. What the C# does NOT reach is
+  // MakeOptionPrefix for its options: that lives inside ToPmpGroup's own loop (:937-955), past the
+  // guard. This pass calls it anyway, for every group's options alike. Harmless and deliberately not
+  // special-cased: `writePmp` throws the moment its group-assembly loop reaches the same group
+  // (src/container/pmp.ts), so nothing built from these extra entries is ever written, and
+  // MakeOptionPrefix's own collision loop increments properly (unlike MakeGroupPrefix's) and cannot
+  // spin. Keeping the two passes type-symmetric here is worth more than modelling a distinction that
+  // no output can observe.
   for (const page of pages) {
     for (const group of page.groups) {
-      if (group.selectionType === "Imc") continue; // WizardData.cs:1532-1535
+      // WizardData.cs:1532-1535 — `if (o.GroupType != EGroupType.Standard) continue;`. An option's
+      // GroupType is its owning group's (WizardData.cs:344-350), so this is a group-level test; it
+      // skips a Combining-type group as well as an Imc-type one.
+      if (groupType(group) !== EGroupType.Standard) continue;
       const groupFolderPath = makeGroupPrefix(
         pages,
         page,

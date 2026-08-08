@@ -17,6 +17,7 @@ import { dotnetRoundTripLocal } from "../util/dotnet-datetime";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
 import { clearNulls } from "./clear-nulls";
+import { EGroupType, groupType } from "./group-type";
 import {
   type PmpGroupJsonRaw,
   type PmpMetaJsonRaw,
@@ -323,6 +324,29 @@ export function readPmp(
   // below) purely to route the group into `pages` construction further down; it is not a model
   // field (`WizardGroupEntry` carries no page of its own).
   const realGroups: { page: number; group: ModpackGroup | null }[] = [];
+  //
+  // A COMBINING-TYPE GROUP LOADS THROUGH THIS LOOP LIKE ANY OTHER, and that is the whole of what the
+  // port does with one — it exists so the group survives to `writePmp`'s group-assembly loop, which
+  // refuses it exactly where `WizardGroupEntry.ToPmpGroup` does (WizardData.cs:897-900). Its
+  // `Options` are the `PmpCombiningOptionJson` list (`OptionData`, PMP.cs:1559-1560, surfaced by the
+  // `Options` override at :1565), which is what `FromPMPGroup` iterates (:804) — so the option
+  // COUNT/names/`Selected` bits below are the C#'s own, including the zero-option `return null`
+  // (:857-861) that drops the group entirely.
+  //
+  // TWO load-time details of upstream's Combining support are deliberately NOT ported, both provably
+  // unobservable because every write path refuses the group first:
+  //  1. `FromPMPGroup` populates NEITHER `StandardData` NOR `ImcData` for a Combining group (:822-843
+  //     test `GroupType`, which is neither), so its options carry no files in the C#. `optionFromJson`
+  //     below reads `Files` off the raw option document regardless — a no-op in practice, since
+  //     `PmpCombiningOptionJson` (PMP.cs:1701-1703) declares no `Files` at all and a real Penumbra
+  //     Combining option has no such key. The per-container file lists live in `Containers`
+  //     (PMP.cs:1562-1563), which this port carries opaquely and never interprets.
+  //  2. `LoadPMP`'s ExtraFiles scan gained a Combining branch that seeds `allPmpFiles` from
+  //     `Containers[].Files` instead of `Options[].Files` (PMP.cs:236-250). Not ported for the same
+  //     reason — it would require modelling the container structure — so a Combining group's payload
+  //     members are classified as ExtraFiles here. `extraFiles` is read only by `writePmp`'s
+  //     re-emit loop, which is downstream of the refusal.
+  // Both are recorded rather than silently absorbed; supporting Combining groups is not ported.
   for (const { raw: gRaw, parsed: g } of groups) {
     // WizardData.cs:811-819 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a
     // Single group, a BITMASK otherwise. `group.OptionType = pGroup.Type == "Single" ? Single :
@@ -726,7 +750,9 @@ export function writePmp(
   const prefixes = optionPrefixes(data);
 
   // Port of the blank-name guard in WritePmp's assembly loop (WizardData.cs:1539-1542): a
-  // Standard-type option (an Imc-type group's options are skipped first, WizardData.cs:1532-1535)
+  // Standard-type option (an Imc- or Combining-type group's options are skipped first,
+  // WizardData.cs:1532-1535 — `o.GroupType != EGroupType.Standard`, and an option's GroupType is its
+  // owning group's, WizardData.cs:344-350)
   // whose name, or whose owning group's name, is blank throws BEFORE any prefix is put to use. Only
   // options that SURVIVED pruning are checked (`prefixes.has(o)`) — the C# loop only ever visits
   // `DataPages`, so a blank name on an option pruned for carrying no data is never reached at all.
@@ -737,7 +763,7 @@ export function writePmp(
   // from default_mod.json's (virtually always absent) Name field. Walking `allGroups(data)` (which
   // reads `data.pages`) therefore can never trip this check on the Default group.
   for (const g of allGroups(data)) {
-    if (g.selectionType === "Imc") continue; // WizardData.cs:1532-1535
+    if (groupType(g) !== EGroupType.Standard) continue; // WizardData.cs:1532-1535
     for (const o of g.options) {
       if (!prefixes.has(o)) continue; // pruned — WritePmp's own loop never reaches it either
       if (o.name.trim() === "" || g.name.trim() === "") {
@@ -844,9 +870,15 @@ export function writePmp(
   // already succeeded or failed (:1581, `g.ToPmpGroup(...)`) — so the search itself never sees a
   // trimmed option name. Trimming it here would falsely absorb a group whose sole option is named
   // e.g. " Default" (leading space), which the real C# does NOT absorb.
+  //
+  // The type test is `g.GroupType == EGroupType.Standard` (WizardData.cs:1576), which excludes an
+  // Imc-type group AND a Combining-type one — so a Combining group named "Default" is never absorbed
+  // into default_mod, and always reaches the group-assembly loop below, where ToPmpGroup's own guard
+  // refuses it (:1613 -> :897-900). That ordering is why this search can be written without any
+  // Combining handling of its own.
   const defaultModGroup = orderedGroups.find(
     (g) =>
-      g.selectionType !== "Imc" &&
+      groupType(g) === EGroupType.Standard &&
       (g.name.trim() === "Default" || g.name.trim() === "Default Group") &&
       g.options.length === 1 &&
       (g.options[0]!.name === "Default" ||
@@ -897,6 +929,47 @@ export function writePmp(
       // member; the v4 push-forward (PMP.cs:935-939) carries it into `meta.DefaultData` instead, and
       // the `default_mod.json` write is commented out (:946-947) — either way it is not a group.
       if (g === defaultModGroup) continue;
+
+      // ==== The Combining refusal — WizardData.cs · WizardGroupEntry.ToPmpGroup · 897-900 ====
+      // Everything below in this loop body is the inlined body of `ToPmpGroup` (:895-967), which the
+      // C# calls right here (`var pg = await g.ToPmpGroup(tempFolder, identifiers, page);`, :1613).
+      // This guard is that method's FIRST statement, so it sits first here too, before any other work
+      // on the group:
+      //
+      //     if (GroupType == EGroupType.Combining)
+      //         throw new InvalidDataException("Editing or exporting PMP Combining groups is not supported.");
+      //
+      // Added upstream by commit `76535f4` together with Combining IMPORT support, which is what makes
+      // this the seam: before that commit a Combining pack could not even LOAD (the base
+      // `PMPGroupJson.Options` virtual threw `Unimplemented PMP group type: Combining`, PMP.cs:1517),
+      // and our port refused it at parse for the same reason. At the v3.1.1.4 pin the subtype is
+      // registered (PMP.cs:1494) with its own `Options` override (:1565), so the pack loads and is
+      // refused here instead — one stage later, with a different message. See
+      // `KNOWN_PMP_GROUP_TYPES` (src/container/manifest-types.ts) for the read half.
+      //
+      // The message is BYTE-IDENTICAL to the C# string, with no `pmp:` prefix and no citation spliced
+      // in (unlike the fail-loud port-gap throws further up this function): the /upgrade harness
+      // substring-matches our thrown text against ConsoleTools' captured trace
+      // (`assertMatchedUpgradeFailure`, test/helpers/corpus-upgrade.ts), so any decoration would break
+      // the match. Measured against ConsoleTools /upgrade v3.1.1.4 on
+      // test/corpus/upgrade-error/pmp-combining-group.pmp (2026-08-08): exit -1, no output file, and a
+      // trace reading `System.IO.InvalidDataException: Editing or exporting PMP Combining groups is
+      // not supported.` thrown from `WizardGroupEntry.<ToPmpGroup>` via `WizardData.<WritePmp>`.
+      //
+      // A plain `Error`, NOT `UnportedGapError`: this is not our port failing to reproduce something,
+      // it is a faithful reproduction of a throw TexTools itself performs — exactly the "failure the
+      // C# oracle can also produce" that `UnportedGapError`'s doc comment (src/util/errors.ts)
+      // excludes. Tagging it would also be actively wrong for any ported catch-all, which must SWALLOW
+      // C#-reachable failures and RE-THROW port-gap signals.
+      //
+      // NOT REACHED for a zero-option Combining group: `FromPMPGroup` returns null for any group with
+      // no options at all (WizardData.cs:857-861), so `clearNulls` prunes it and it never gets here —
+      // TexTools upgrades such a pack successfully, dropping the group, and so do we.
+      if (groupType(g) === EGroupType.Combining) {
+        throw new Error(
+          "Editing or exporting PMP Combining groups is not supported.",
+        );
+      }
 
       // PmpImcOptionJson has no Files/FileSwaps/Manipulations (PMP.cs:1709-1716) — see optionToJson.
       const hasStandardFields = g.selectionType !== "Imc";

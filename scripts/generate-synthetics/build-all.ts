@@ -23,6 +23,7 @@ import "./build-synthetic-default-only";
 import "./build-synthetic-imc-weapon";
 import "./build-synthetic-imc-demihuman";
 import "./build-synthetic-pmp-group-type";
+import "./build-synthetic-pmp-combining";
 import "./build-synthetic-index-fallback";
 import "./build-synthetic-npot-mask";
 import "./build-synthetic-npot-guards";

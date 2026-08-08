@@ -240,6 +240,8 @@ export function assertMatchedUpgradeFailure(
   //     deliberately called inside this assertion (see registerUpgradeCheck) because a pack the
   //     oracle refuses at LOAD is refused just as legitimately by our loader.
   //   - `upgradeModpack` no longer throws; it returns ok:false.
+  //   - `writeModpack`, when the caller's closure includes it (see registerUpgradeCheck), THROWS
+  //     like `loadModpack` — the write seam has no diagnostics channel either.
   let ourMessage: string | undefined;
   let ourData: ModpackData | undefined;
   try {
@@ -505,9 +507,32 @@ export function registerUpgradeCheck(pack: string): void {
         // we — see src/upgrade/upgrade.ts), so `diffArchives` below is never reached for one; no
         // `confirmGoldenOnlyMember` wiring belongs in this file for docs/TEXTOOLS_BUGS.md #23 (that
         // divergence is /resave-only — see corpus-resave.ts, pmp-v4-extrafile-divergence.ts).
-        assertMatchedUpgradeFailure(name, golden.message, () =>
-          upgradeModpack(loadModpack(name, bytes)),
-        );
+        //
+        // The closure spans load + transform + WRITE, because ConsoleTools' /upgrade does:
+        // `ModpackUpgrader.UpgradeModpack` loads (:63), transforms, and then writes when anything
+        // changed (`if (data.AnyChanges || rewriteOnNoChanges) await data.Data.WriteModpack(...)`,
+        // ModpackUpgrader.cs:244-247). A refusal at the WRITE seam is therefore one of the errors the
+        // oracle's trace can carry, and load+transform alone cannot match it — our upgrade would
+        // "succeed" and this branch would report a phantom divergence. Live case:
+        // `pmp-combining-group.pmp`, whose Combining group loads fine at the v3.1.1.4 pin and is
+        // refused by `WizardGroupEntry.ToPmpGroup` (WizardData.cs:897-900) inside `WritePmp` (:1613)
+        // — see src/container/pmp.ts's group-assembly loop for our side of it.
+        //
+        // Inert for a pack that fails earlier (the writer is never reached), and for the
+        // ORACLE_ERROR_DIVERGENCE_RULES packs it re-runs a write that
+        // `confirmOracleErrorDivergence` performs anyway on the same model — `writePmp`'s only
+        // mutation is `clearNulls`, which is idempotent.
+        assertMatchedUpgradeFailure(name, golden.message, () => {
+          const result = upgradeModpack(loadModpack(name, bytes));
+          if (result.ok) {
+            writeModpack(
+              result.data,
+              name.toLowerCase().endsWith(".pmp") ? "pmp" : "ttmp2",
+              { store: true },
+            );
+          }
+          return result;
+        });
         // This branch returns BEFORE `assertExpectedDiagnostics` runs, so a pack with a committed
         // expectation landing here would silently stop being pinned — and nothing else would notice:
         // corpus-guard.test.ts only checks the pack is PRESENT, and it is; it is just no longer

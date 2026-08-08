@@ -305,17 +305,29 @@ export interface PmpGroupJson {
 }
 export type PmpGroupJsonRaw = Partial<PmpGroupJson>;
 
-/** The three `Type` discriminators JsonSubtypes resolves to a real subtype (PMP.cs:1490-1494). A
- * fourth JsonSubtypes target, `"Combining"` (PMPCombiningGroupJson, PMP.cs:1555-1603 — added
- * upstream by commit `76535f4`, tracked pending in
- * docs/superpowers/plans/2026-08-05-textools-repin-part-a.md's repin audit), is deliberately absent
- * from this set and out of scope for the port.
- * Anything else — including an absent key or `"Combining"` — leaves the BASE `PMPGroupJson`, whose
- * `Options` throws. */
-const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc"]);
+/** The four `Type` discriminators JsonSubtypes resolves to a real subtype (PMP.cs:1491-1494).
+ * Anything else — including an absent key — leaves the BASE `PMPGroupJson`, whose `Options` throws.
+ *
+ * `"Combining"` (PMPCombiningGroupJson, PMP.cs:1494 + :1555-1603) is in this set as of the
+ * v3.1.1.4 re-pin. Upstream commit `76535f4` ("Add PMP Combining group import support") registered
+ * the subtype and gave it an `Options` override (`=> OptionData`, :1565), so the base virtual's
+ * `Unimplemented PMP group type: {Type}` (:1517) is no longer reached for it and a Combining pack
+ * LOADS. TexTools still refuses to WRITE one, one stage later and with a different message:
+ * `WizardGroupEntry.ToPmpGroup`'s first statement throws
+ * `InvalidDataException("Editing or exporting PMP Combining groups is not supported.")`
+ * (WizardData.cs:897-900), reached from `WizardData.WritePmp`'s group-assembly loop (:1613). Our port
+ * reproduces that at the same seam — see `writePmp` (src/container/pmp.ts). Measured against
+ * ConsoleTools /upgrade v3.1.1.4 (2026-08-08): the trace is that exact InvalidDataException, thrown
+ * from `WizardGroupEntry.<ToPmpGroup>` via `WizardData.<WritePmp>`, with no output file written.
+ *
+ * Accepting the type here is deliberately the MINIMUM that lets the group reach the writer: the
+ * subtype's own payload (`Containers`, PMP.cs:1562-1563) rides along untyped in `PmpGroupJson`'s
+ * `[extra: string]: unknown` index signature and is never interpreted. Supporting Combining groups
+ * is NOT ported. */
+const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc", "Combining"]);
 
 /** Applies PMPGroupJson's field initializers (PMP.cs:1495-1518). `Options` defaults to `[]`: each
- * subtype initializes `OptionData = new()` (:1523/:1531/:1544).
+ * subtype initializes `OptionData = new()` (:1523/:1531/:1544/:1560).
  *
  * An unrecognized `Type` is a LOAD FAILURE, not an empty group. JsonSubtypes has no
  * `FallBackSubType` here (contrast PmpManipulation.cs:21), so an unknown or absent discriminator
@@ -323,7 +335,10 @@ const KNOWN_PMP_GROUP_TYPES = new Set(["Single", "Multi", "Imc"]);
  * `Options` throws `NotImplementedException($"Unimplemented PMP group type: {Type}")` (:1517) at the
  * first access. Two unconditional accesses follow inside `LoadPMP` itself — `GetHeaderImage`'s group
  * loop (:1449-1462, short-circuits on an earlier Image, so not always the reporting frame) and the
- * `allPmpFiles` scan (:234-265, no short-circuit) — so the load ALWAYS fails, before any transform.
+ * `allPmpFiles` scan (:234-265, no short-circuit; its Combining branch `continue`s at :236-250
+ * BEFORE touching `g.Options`, but that arm is unreachable for a base-class group — a `Type` that
+ * resolves to no subtype cannot cast to `PMPCombiningGroupJson` either) — so the load ALWAYS fails,
+ * before any transform.
  * Empirically confirmed against ConsoleTools /upgrade for both an unknown and an absent `Type`; the
  * synthetic packs that pin it are `pmp-group-type-{unknown,absent}.pmp` (test/corpus/upgrade-error).
  *

@@ -20,10 +20,19 @@ describe("parsePmpGroup group Type resolution", () => {
     Options: [],
   });
 
-  it("accepts every Type JsonSubtypes resolves to a subtype (PMP.cs:1491-1493)", () => {
-    for (const type of ["Single", "Multi", "Imc"]) {
+  it("accepts every Type JsonSubtypes resolves to a subtype (PMP.cs:1491-1494)", () => {
+    for (const type of ["Single", "Multi", "Imc", "Combining"]) {
       expect(parsePmpGroup(group(type)).Type).toBe(type);
     }
+  });
+
+  // "Combining" is in that list only as of the v3.1.1.4 re-pin. Upstream `76535f4` registered
+  // PMPCombiningGroupJson (PMP.cs:1494) with its own `Options` override (:1565), so the base
+  // virtual's throw (:1517) is no longer reached and the pack LOADS — it is refused one stage later,
+  // at the write seam (see pmp-write.test.ts's Combining case). Called out separately from the loop
+  // above so deleting it from KNOWN_PMP_GROUP_TYPES fails with a legible reason.
+  it("accepts Combining at READ, where the pre-repin port threw (PMP.cs:1494/:1565)", () => {
+    expect(() => parsePmpGroup(group("Combining"))).not.toThrow();
   });
 
   // Matches C#'s message exactly: assertMatchedUpgradeFailure substring-matches our thrown message

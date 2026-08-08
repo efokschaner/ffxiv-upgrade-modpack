@@ -850,7 +850,7 @@ positional rather than page-numbered — the same empty group one page over stil
 returns -1, so the user gets **no output file at all** and no message on stdout.
 
 The TTMP wizard path is unaffected: `WizardPageEntry.FromWizardModpackPage` discards the null at the
-call site (`if (g == null) continue;`, `:986`), so no null ever enters `page.Groups` there.
+call site (`if (g == null) continue;`, `:997`), so no null ever enters `page.Groups` there.
 
 **Us:** we deliberately do **not** reproduce it. `pageHasData` in `src/container/clear-nulls.ts` is
 null-safe (`p.groups.some((g) => g !== null && groupHasData(g))`), so the pack upgrades instead of
@@ -858,7 +858,7 @@ failing. This is the rare case where AGENTS.md's user-benefit bar is satisfied w
 comparison, because there is nothing to compare against: TexTools emits no file, so any correct pack
 is strictly better than none, and the risk that rule guards against — shipping something TexTools
 does differently and better — cannot arise. Everything around the divergence stays faithful: the
-group-level prune at `:1249` is ported verbatim, and the `FromPmp` page off-by-one (entry 7) is
+group-level prune at `:1268` is ported verbatim, and the `FromPmp` page off-by-one (entry 7) is
 reproduced untouched. Confirmed by an `ORACLE_ERROR_DIVERGENCE_RULES` entry keyed on the trace
 signature above, not by a ratchet baseline — its `confirm` (`confirmOracleErrorDivergence`,
 `test/helpers/corpus-upgrade.ts`) checks both that our output byte-matches the CONTENT of a sibling

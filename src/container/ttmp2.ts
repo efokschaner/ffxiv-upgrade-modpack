@@ -19,6 +19,7 @@ import { concatBytes, fnv1aKey } from "../util/binary";
 import { reformatDotnetVersion } from "../util/dotnet-version";
 import { readZip, writeZip } from "../zip/zip";
 import { clearNulls, pageHasData } from "./clear-nulls";
+import { EGroupType, groupType } from "./group-type";
 import type { LoadFix, LoadFixFactory } from "./load-fix";
 import type {
   ModPackJson,
@@ -353,10 +354,20 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
         if (g === null) continue;
         // WizardData.cs:874-877 — ToModGroup throws InvalidDataException("TTMP Does not support IMC
         // Groups.") as its first statement, before it builds the ModGroup or visits any option.
-        // `selectionType === "Imc"` stands in for GroupType == EGroupType.Imc (:611-624), as at
-        // option-prefix.ts:197 and pmp.ts:625. Only a PMP source carries an Imc group, and /upgrade
-        // never converts formats, so this is unreachable today.
-        if (g.selectionType === "Imc") {
+        // `groupType(g)` is the port of GroupType (WizardData.cs · WizardGroupEntry.GroupType ·
+        // 611-625; src/container/group-type.ts). Only a PMP source carries an Imc group, and
+        // /upgrade never converts formats, so this is unreachable today.
+        //
+        // The sibling refusal for a COMBINING group on this path is NOT ported, and is unreachable
+        // for the same reason. In the C# it lands one level down and with its own message:
+        // `ToModGroup` only guards `ImcData != null` (:874-877), so a Combining group passes it and
+        // is refused per-option by `WizardOptionEntry.ToModOption` (:425-428,
+        // `NotImplementedException("TTMP Export does not support one or more of the selected Option
+        // types.")`) — because `StandardData` is null for a non-Standard group (:376-388). Porting it
+        // faithfully means an OPTION-level guard with a different message, which no flow in this
+        // project can reach: a PMP-sourced model can only get here through `writeModpack(data,
+        // "ttmp2")`, which rejects cross-format writes (src/index.ts).
+        if (groupType(g) === EGroupType.Imc) {
           throw new Error("ttmp2: TTMP Does not support IMC Groups.");
         }
         // WizardData.cs:883 (group) / :421 (option) — `SelectionType = OptionType.ToString()` over
