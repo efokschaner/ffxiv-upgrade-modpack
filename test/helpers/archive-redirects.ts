@@ -92,13 +92,42 @@ function optionEntries(members: Map<string, Uint8Array>): OptionEntry[] {
   // FAIL LOUD (AGENTS.md), do not return []. This helper feeds `resolveRedirects`, whose output
   // `diffPayloadSemantic` compares: two empty maps compare EQUAL, so an unrecognized manifest shape
   // would make the whole redirect-table check pass vacuously — exactly the fail-open a v4 archive
-  // produced before this function learned the v4 shape.
-  if (sawMeta && !sawOptionContainer) {
+  // produced before this function learned the v4 shape. That reasoning stands unchanged; what
+  // follows only narrows WHEN it applies.
+  //
+  // "meta.json with no option container" is NOT by itself that fail-open — the original condition
+  // conflated two different situations:
+  //
+  //   * "empty because I did not recognize the shape" — the real risk. A v4 meta.json whose
+  //     Groups/DefaultData this function cannot read, sitting on top of real payload members: the
+  //     redirect table comes back empty while the archive plainly has content to compare.
+  //   * "empty because the pack genuinely has no options" — a LEGAL Penumbra pack. TexTools reads
+  //     one fine: `PMP.cs · LoadPMP · 181-189` guards the default_mod.json read with
+  //     `File.Exists(defModPath)` (an existence check, not a FileVersion test), and the group scan
+  //     at `PMP.cs · LoadPMP · 191-208` simply finds no `group_*.json` — so a `meta.json`-only pack
+  //     loads with zero options at v3 and v4 alike (src/container/pmp.ts ports both). For that pack
+  //     an empty redirect map is the CORRECT answer, and throwing was a harness bug: `packHasFileSwaps`
+  //     runs on EVERY PMP /resave input (corpus-resave.ts), so one empty pack in the corpus turned
+  //     the suite red for the wrong reason. Pinned by test/corpus/synthetic/pmp-meta-only.pmp
+  //     (scripts/generate-synthetics/build-synthetic-pmp-absent-manifests.ts).
+  //
+  // The discriminator between them is PAYLOAD MEMBERS NO OPTION CONTAINER EXPLAINS. Vacuity can only
+  // hide a divergence in bytes that exist; an archive carrying no payload has nothing to compare
+  // vacuously. Since we only reach here with no option container at all, every payload member is
+  // unexplained. `payloadMemberNames` is reused on purpose — the guard and the diff it protects must
+  // agree on what "payload" means.
+  const unexplainedPayload =
+    sawMeta && !sawOptionContainer ? payloadMemberNames(members) : [];
+  if (unexplainedPayload.length > 0) {
     throw new Error(
       "archive-redirects: PMP archive has a meta.json but no recognizable option container — " +
         "no v4 meta.Groups/meta.DefaultData key (PMP.cs:1484/1487) and no v3 default_mod.json or " +
-        "group_NNN.json member. resolveRedirects would return an empty map and diffPayloadSemantic " +
-        "would pass vacuously, so this fails loud instead.",
+        "group_NNN.json member — yet it carries " +
+        `${unexplainedPayload.length} payload member(s) nothing accounts for ` +
+        `(e.g. ${unexplainedPayload.slice(0, 3).join(", ")}). resolveRedirects would return an ` +
+        "empty map and diffPayloadSemantic would pass vacuously, so this fails loud instead. " +
+        "(A meta.json-only pack with NO payload is legal and optionless — PMP.cs · LoadPMP · " +
+        "181-189 — and is deliberately NOT covered by this guard.)",
     );
   }
   return out;

@@ -599,6 +599,7 @@ model `Containers`, and throw at the write seam.
 7. Ported changes + tests, one commit per upstream commit where it divides cleanly
 8. `docs/TEXTOOLS_BUGS.md` status updates per §9
 9. Closing note on `docs/backlog/2026-07-11-expected-failure-golden.md`
+10. Harness fix + two synthetics for the optionless-PMP gap the v4 work opened (§12.1)
 
 ## 12. Testing
 
@@ -608,6 +609,41 @@ divergence — preferring a real or synthetic golden over a synthetic unit test,
 
 `npm run baseline:report` is reporting-only and is deliberately **not** part of the gate; its job is
 to make the ratchet-down measurable, not to fail builds.
+
+### 12.1 The optionless-PMP harness gap (PR #45 review follow-up, 2026-08-08)
+
+Teaching `test/helpers/archive-redirects.ts` the v4 manifest shape (§9's bug #23 work) added a
+fail-loud guard on `sawMeta && !sawOptionContainer`. The guard is right about the danger — an
+archive whose option container we cannot read yields an empty redirect table, and
+`diffPayloadSemantic` compares two empty maps as EQUAL, so the whole payload check passes vacuously
+— but its condition was too broad. A PMP carrying only a `meta.json` is **legal and genuinely
+optionless**: `PMP.cs · LoadPMP · 181-189` guards the `default_mod.json` read with
+`File.Exists(defModPath)` (an existence check, not a `FileVersion` test) and the group scan at
+`:191-208` simply finds no `group_*.json`. TexTools loads such a pack with zero options, and so does
+our reader — this is **not** a port divergence, and `src/` needed no change. But `packHasFileSwaps`
+runs on every PMP `/resave` input (`test/helpers/corpus-resave.ts`), so one such pack in the corpus
+turned the suite red for a reason unrelated to the port.
+
+The guard now fires on **payload members no option container explains** (reusing
+`payloadMemberNames`, so guard and diff share one notion of "payload") rather than on the absence of
+an option container alone. Vacuity can only hide a divergence in bytes that exist; an archive with
+no payload has nothing to compare vacuously. The v4-shaped archive that motivated the throw still
+throws — it differs from an optionless pack precisely by carrying payload.
+
+Two synthetics pin it (`scripts/generate-synthetics/build-synthetic-pmp-absent-manifests.ts`), both
+defined by an absent manifest member and both v3 so `/upgrade` stays a no-op rather than hitting the
+`ModpackUpgrader.cs · UpgradeModpack · 226-232` v4 refusal:
+
+- `test/corpus/synthetic/pmp-meta-only.pmp` — `meta.json` alone (the regression pack; it must stay
+  payload-free, that emptiness is the fixture).
+- `test/corpus/synthetic/pmp-no-default-mod.pmp` — `meta.json` + one group, no `default_mod.json`;
+  secondary, cheap cover for the `File.Exists` read with actual content behind it.
+
+Observed oracle behaviour (v3.1.1.4): `/upgrade` **no-ops** on both (`ModpackUpgrader.cs ·
+UpgradeModpack · 244-247` writes only when `AnyChanges`), and `/resave` **succeeds** on both,
+emitting a v4 `meta.json` — for the empty pack a single-member archive with `"Groups": []` and
+`"DefaultData": { "Version": 0 }`. Both packs match their goldens fully; neither carries a ratchet
+baseline entry.
 
 ## 13. Risks, accepted
 

@@ -140,8 +140,31 @@ export interface SyntheticPack {
   files: Record<string, Uint8Array>;
 }
 
-function encodeJson(value: unknown): Uint8Array {
+/** JSON exactly as these fixtures spell it: 2-space indent, key order as written by the caller.
+ *  Exported so a builder that assembles its own member map (see `writePmpMembers`) encodes its
+ *  manifests identically to the structured emitters. */
+export function encodeJson(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value, null, 2));
+}
+
+/** Zips an EXPLICIT member map into test/corpus/<root>/<fileName>, implying no manifest members at
+ *  all. Both structured emitters FIX the manifest set — `writePmp` always emits meta.json AND
+ *  default_mod.json, `writePmpV4` always emits exactly meta.json — so neither can express a pack
+ *  whose defining property is which manifest is ABSENT (meta.json alone; meta.json plus a group but
+ *  no default_mod.json, both legal per `PMP.cs · LoadPMP · 181-208`, whose default_mod read is
+ *  guarded by `File.Exists`). The caller owns the insertion order, which is load-bearing for the
+ *  member bytes the harness compares; the pinned `FIXED_MTIME` is shared, so packs stay
+ *  byte-reproducible and keep their cached goldens. */
+export function writePmpMembers(
+  fileName: string,
+  members: Record<string, Uint8Array>,
+  root: SyntheticRoot = "synthetic",
+): void {
+  const outDir = join(CORPUS_DIR, root);
+  mkdirSync(outDir, { recursive: true });
+  const out = join(outDir, fileName);
+  writeFileSync(out, zipSync(members, { mtime: FIXED_MTIME }));
+  console.log("wrote", out);
 }
 
 /** Zips `pack` into test/corpus/<root>/<fileName> (gitignored, like the real corpus). */
@@ -161,11 +184,7 @@ export function writePmp(
     members[zipPath] = bytes;
   }
 
-  const outDir = join(CORPUS_DIR, root);
-  mkdirSync(outDir, { recursive: true });
-  const out = join(outDir, fileName);
-  writeFileSync(out, zipSync(members, { mtime: FIXED_MTIME }));
-  console.log("wrote", out);
+  writePmpMembers(fileName, members, root);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -228,9 +247,5 @@ export function writePmpV4(
   for (const [zipPath, bytes] of Object.entries(pack.files)) {
     members[zipPath] = bytes;
   }
-  const outDir = join(CORPUS_DIR, root);
-  mkdirSync(outDir, { recursive: true });
-  const out = join(outDir, fileName);
-  writeFileSync(out, zipSync(members, { mtime: FIXED_MTIME }));
-  console.log("wrote", out);
+  writePmpMembers(fileName, members, root);
 }

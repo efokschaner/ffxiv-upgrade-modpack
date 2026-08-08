@@ -30,3 +30,4 @@ import "./build-synthetic-npot-guards";
 import "./build-synthetic-mashup-hair-outofns";
 import "./build-synthetic-empty-group";
 import "./build-synthetic-pmp-v4";
+import "./build-synthetic-pmp-absent-manifests";

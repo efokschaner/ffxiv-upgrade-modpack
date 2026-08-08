@@ -265,3 +265,67 @@ describe("archive-redirects v4 (PMP.cs · PMPMetaJson · 1484/1487)", () => {
     );
   });
 });
+
+// The guard above discriminates "I did not recognize this archive's shape" (fail-open risk) from
+// "this archive genuinely has no options" (legal, and an empty redirect map is the right answer).
+// The discriminator is payload members no option container explains. See archive-redirects.ts.
+describe("archive-redirects: optionless vs unrecognized (PMP.cs · LoadPMP · 181-189)", () => {
+  /** A legal, genuinely optionless Penumbra pack: meta.json and nothing else. `File.Exists` guards
+   *  the default_mod.json read (PMP.cs · LoadPMP · 182) and the group scan (:195-208) finds nothing,
+   *  so TexTools loads this with zero options — and so do we. Built for real as a corpus pack by
+   *  scripts/generate-synthetics/build-synthetic-pmp-absent-manifests.ts. */
+  const metaOnly = (fileVersion: number): Map<string, Uint8Array> =>
+    new Map([
+      ["meta.json", encJson({ FileVersion: fileVersion, Name: "t" })],
+    ]) as Map<string, Uint8Array>;
+
+  it.each([
+    3, 4,
+  ])("does NOT throw on a v%i meta.json-only pack — no payload, so nothing can pass vacuously", (fileVersion) => {
+    const m = metaOnly(fileVersion);
+    expect(() => resolveRedirects(m)).not.toThrow();
+    expect(resolveRedirects(m).size).toBe(0);
+    // packHasFileSwaps runs on EVERY PMP /resave input (corpus-resave.ts); this is the call that
+    // used to throw and turn the suite red on a legal empty pack.
+    expect(() => packHasFileSwaps(m)).not.toThrow();
+    expect(packHasFileSwaps(m)).toBe(false);
+  });
+
+  it(
+    "STILL throws on the original fail-open: an unrecognized-shape meta.json over payload — " +
+      "REGRESSION guard, the v4 archive that motivated the throw differs from an empty pack " +
+      "ONLY by carrying payload members",
+    () => {
+      // Same meta.json as the passing case above, plus one payload member. If narrowing the guard
+      // had made this pass, the bug it exists for would be back and no corpus pack would catch it.
+      const m = metaOnly(4);
+      m.set("v4 payload/chara/a.tex", new Uint8Array([1]));
+      expect(() => resolveRedirects(m)).toThrow(
+        /no recognizable option container/,
+      );
+      expect(() => resolveRedirects(m)).toThrow(
+        /payload member\(s\) nothing accounts for/,
+      );
+      expect(() => packHasFileSwaps(m)).toThrow();
+    },
+  );
+
+  it("a v3 pack with a group but NO default_mod.json is recognized (File.Exists, PMP.cs · LoadPMP · 182)", () => {
+    const m = new Map<string, Uint8Array>();
+    m.set("meta.json", encJson({ FileVersion: 3, Name: "t" }));
+    m.set(
+      "group_001_g.json",
+      encJson({
+        Name: "G",
+        Type: "Single",
+        Options: [{ Name: "On", Files: { "chara/a.tex": "g\\on\\a.tex" } }],
+      }),
+    );
+    m.set("g/on/a.tex", new Uint8Array([7]));
+    expect(
+      resolveRedirects(m).get(
+        redirectKey("group_001_g.json", "0", "chara/a.tex"),
+      ),
+    ).toEqual(new Uint8Array([7]));
+  });
+});
