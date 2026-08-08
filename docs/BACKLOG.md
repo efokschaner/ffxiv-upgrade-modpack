@@ -183,7 +183,25 @@ unchanged by deployment; only probability moves.
    small, unbounded correctness holes outrank a large, well-understood build — the same reasoning that
    placed the empty-group item there in the 2026-08-03 pass. Operator call, 2026-08-07.
 
-2. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+2. [**Re-measure the ±1 BCn decoder divergence, and decide whether to reconverge on `DxtUtil`**](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
+   — upstream **rewrote** `DxtUtil.cs` in `371f74b` (found while verdicting it for the v3.1.1.4
+   re-pin), and that moved both of this item's load-bearing premises. (a) The file is now **GPL-3.0**,
+   not FNA's Ms-PL, so the clean-room constraint is lifted and a **direct port is legally available**
+   — DXT1/3/5 and BC4 are a fresh in-house implementation (`DxtUtil.cs:154,166,203,241`), while BC5/BC7
+   still delegate to `JeremyAnsel.BcnSharp` (`:44`, `:52`), confirming only the `DxtUtil` formats were
+   ever drift candidates. (b) More importantly, **our measurement is now stale**: the ±1 figures in the
+   item (9099/65536 on `eye01_base`) were taken against the old FNA decoder that no longer exists at
+   our pin, so the current divergence is *unmeasured*. Ranked here — above the site — because of what
+   that implies rather than the port effort: we carry a `DIVERGENCE_RULES` ±1 tolerance over **every**
+   generated A8R8G8B8 `.tex`, and if the rewrite happens to round the way we do, that tolerance is now
+   unnecessary and is silently absorbing any future ±1 regression across the whole texture path. A
+   tolerance resting on a false premise is a class-1 risk (silent wrong output), not a cosmetic one.
+   The deciding step is cheap and needs no new code: re-run the existing two-texture repro against the
+   v3.1.1.4 oracle and see which of three worlds we are in — gap closed (retire the tolerance), gap
+   unchanged (port it, now directly), or gap changed shape (re-characterize). Do that before writing
+   any decoder code. Operator call, 2026-08-07.
+
+3. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -195,10 +213,10 @@ unchanged by deployment; only probability moves.
    hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI must **not**
    offer an output-format picker. Nothing blocks *starting* it, and its one real dependency (a
    diagnostics channel, so the page cannot report success on a partial upgrade) cleared 2026-08-02 —
-   so its position here is the rubric's doing, not a dependency's: the `.rgsp` item above it is a
-   class-1 correctness unknown, and this is class 3.
+   so its position here is the rubric's doing, not a dependency's: both items above it are class-1
+   correctness unknowns, and this is class 3.
 
-3. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+4. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
@@ -211,7 +229,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-4. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+5. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -225,7 +243,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-5. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+6. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -329,14 +347,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   size (not the known ±1 BC-decode tolerance). Pre-existing writer/codec gap, unrelated to this
   branch; the pack is scoped to the `upgrade` expected-failure check only (`upgrade-error` corpus
   root), so `/resave` is UNVERIFIED for it.
-- [Deepen / re-evaluate the known ±1 BCn decoder divergence vs TexTools](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
-  — the ±1 BCn value-rounding gap (our bc7enc_rdo port vs TexTools' FNA `DxtUtil`) is already
-  documented (`decodeBc5`) and already absorbed by the `.tex` ±1 `DIVERGENCE_RULES` tolerance, so it
-  does not fail the suite. New here: a measurement vs TexTools' actual decoder (9099/65536 bytes on
-  `eye01_base`, all ±1) confirming it extends to **DXT1**, and the re-evaluation — the tex-codec spec
-  §7 justified the bc7enc choice on "any spec-conformant decoder matches byte-for-byte," which this
-  falsifies. Decide: keep accepting the tolerance, or eliminate it via a clean-room match of
-  `DxtUtil`'s rounding (validated against its output, not transcribed — it is Ms-PL).
 - [T2 — full `FixOldTexData` load-time round](backlog/2026-07-10-fixoldtexdata-load-round.md) — we
   ported only the drop-malformed slice. Unported: the NPOT resize (needs T3's resampler) and the
   mip-offset-table fixup, which `/resave` now empirically forces (same format, same length, differing
