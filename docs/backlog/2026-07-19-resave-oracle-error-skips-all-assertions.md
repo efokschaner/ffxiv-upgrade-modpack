@@ -80,14 +80,16 @@ elsewhere (see `test/helpers/corpus-upgrade.ts:115-126`, which throws rather tha
 untested branch), and a fix with no covering test is incomplete under AGENTS.md. The prerequisite is
 therefore the synthetic below, not the fix.
 
-### Prerequisite: a synthetic that keeps this path exercised
+### Prerequisite: keep this path exercised
 
-Operator ask, 2026-08-07: author a pack under `test/corpus/synthetic/` (committed builder under
-`scripts/generate-synthetics/`, per AGENTS.md *Synthetic tests*) that reproduces the `{ kind: "error" }`
-`/resave` outcome, so the branch stops depending on a real-world accident and cannot degrade unnoticed
-a third time.
+Operator ask, 2026-08-07: the branch must stop depending on a real-world accident, so it cannot
+degrade unnoticed a third time. The ask was framed as a synthetic pack under `test/corpus/synthetic/`
+(committed builder, per AGENTS.md *Synthetic tests*); investigating it established that **no pack can
+durably do this** and that the coverage belongs at the harness seam instead. Both halves are recorded
+below — the pack route first, because its requirements are what prove the seam route is the right
+one.
 
-The pack must satisfy a **specific and non-obvious shape** — it is not simply "a pack TexTools
+A pack would have to satisfy a **specific and non-obvious shape** — not simply "a pack TexTools
 rejects":
 
 1. **ConsoleTools `/resave` must fail** — `WizardData.FromModpack` or `WriteModpack` throws
@@ -111,7 +113,8 @@ is easy to miss:
 > a divergence: TexTools reads live game data on write; we treat `.rgsp` as opaque payload, so we are
 > not "diverging", we are simply not executing that step.
 
-**Candidate trigger (identified 2026-08-07, needs empirical confirmation before building).** The
+**Candidate trigger — investigated and REJECTED, 2026-08-07.** Kept here because the reasoning that
+kills it also kills the whole *class*, and re-deriving that would waste the next reader's time. The
 Milktruck failure site is on the *write* path and takes its parameters from the *pack*:
 
 - `PMP.cs · ManipulationsToMetadata · 1318-1349` groups RSP manipulations by race/gender —
@@ -130,9 +133,49 @@ machine, and inside the game-data step our port never executes. Race/gender is p
 integer from the file path (`CMP.cs · GetRaceGenderFromRgspPath · 121-128`, regex → `Int32.Parse` →
 unchecked cast to `XivSubRace`/`XivGender`), so an out-of-range value is straightforward to author.
 
-Before building, confirm empirically that (a) ConsoleTools `/resave` actually throws on such a pack
-rather than silently tolerating it, and (b) our `readPmp`/`writeModpack` round-trip it without
-entering any equivalent path. If (b) turns out false, the trigger is not viable and a different one
-is needed — do not "fix" our port to make it pass.
+**Why it is rejected — and why no real modpack can do this job.** Operator observation, 2026-08-07:
+*our port must eventually do everything TexTools does.* That is the project's actual bar — byte-parity
+with ConsoleTools output — so "our port never executes that code path" is a statement about **today**,
+not an architectural boundary. This repo already has the pattern for porting game-data-dependent
+logic without a live game: pre-extract the minimum surface into a generated constants table via a
+committed `scripts/extract-*` script (AGENTS.md, *Bundle the minimum data surface*). There is no
+reason in principle we would never bundle the CMP defaults and port the RSP write path.
 
-Until the synthetic exists and this path is exercised, no behaviour change should land here.
+So the candidate rots exactly as Milktruck did, only on a different axis: Milktruck stopped
+exercising this branch when **upstream fixed CMP**; the candidate would stop when **we finish the
+port**. Same silent failure mode, longer fuse.
+
+That generalizes into a dilemma which rules out the entire approach:
+
+- A **pack-intrinsic** trigger stops working as the port converges — we end up failing wherever
+  TexTools fails, which is the goal, and then our side throws too (requirement 2 lost).
+- The only **permanently** asymmetric failures are **environmental** — TexTools reads the installed
+  game, we read pinned bundled constants, so it can break on a machine/patch where we cannot. That
+  asymmetry is durable *precisely because* it is a property of the machine, which is what makes it
+  unusable as a fixture (requirement 3 lost).
+
+Requirements 2 and 3 are therefore in tension **by construction**, and no authored modpack satisfies
+both for long. Do not spend more time hunting for one.
+
+### Revised approach: cover it at the harness seam, not with a pack
+
+The thing needing protection here is **harness logic**, not port fidelity: *"when the oracle errors,
+do the oracle-free assertions still run?"* is a question about our test harness, and TexTools has no
+opinion on it. It does not need — and cannot durably get — a real AB test.
+
+`resaveGoldenCached` already exposes the seam: `opts.produce` (`test/helpers/resave-golden.ts:163`),
+which `test/helpers/resave-golden.test.ts` already uses to exercise outcomes without spawning
+ConsoleTools. The obstacle is only that the code in question sits inside `registerResaveCheck`'s
+`it()` callback, so nothing can call it directly.
+
+Shape of the work, when it is picked up:
+
+1. Extract the oracle-free assertions (write → re-read → compare-against-the-in-memory-model, plus
+   `pmpSelfConsistency` for a PMP) out of the `it()` callback into an exported function.
+2. Call it from the `{ kind: "error" }` branch **before** the `ctx.skip`, and from the normal path.
+3. Unit-test it directly against a real authored pack with an injected erroring `produce`.
+
+That covers the branch permanently: it cannot rot when upstream changes, and it cannot rot when our
+port advances. It is a synthetic unit test rather than a golden — a deliberate departure from
+AGENTS.md's usual preference, justified because that preference governs *ported behaviour*, and this
+is harness behaviour with no oracle to appeal to.
