@@ -163,7 +163,27 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+1. [**TTMP load fix does not handle `.rgsp`; it passes through unchanged**](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
+   — a **rubric class 1 candidate** (silent wrong output) whose size is genuinely unknown. TexTools
+   diverts a `.rgsp` into `data.Manipulations` at load and re-materializes it on write from the game's
+   *clean default* parameter plus those manipulations (`PMP.cs · ManipulationsToMetadata · 1335,1347`);
+   we pass the file through verbatim. The two agree only if `RgspToManipulations` emits a manipulation
+   for **every** field of the struct — any field it misses is silently reset to the game default by
+   TexTools while we preserve the pack's value, i.e. a modpack that behaves differently and a user who
+   never finds out. **Nobody has read that C# yet**, which is what makes this unbounded rather than
+   merely open. Filed 2026-07-21 behind "no corpus pack carrying `.rgsp` has been found"; that blocker
+   is **gone** — `Milktruck Bust Scaling Tweaks v1.0.0.ttmp2` is 12 `.rgsp` entries and nothing else,
+   and it had no `/resave` golden for its entire life only because v3.1.0.2 could not resave it (the
+   patch-7.5 `human.cmp` breakage). The v3.1.1.4 re-pin produced one, and our bytes match it — which
+   bounds the risk but does not discharge it: one pack, one game version, against an implementation
+   that is structurally different rather than equivalent. First step is cheap and settles the whole
+   item: read `RgspToManipulations` (`PmpExtensions.cs`) and establish struct coverage. Total coverage
+   makes this a behaviour-preserving refactor pinnable against Milktruck's golden; anything less is a
+   live divergence waiting on the right input. Ranked above the site per this list's own note that
+   small, unbounded correctness holes outrank a large, well-understood build — the same reasoning that
+   placed the empty-group item there in the 2026-08-03 pass. Operator call, 2026-08-07.
+
+2. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -173,12 +193,12 @@ unchanged by deployment; only probability moves.
    load); and surfacing the fail-loud guards and the `diagnostics` channel (shipped 2026-08-02) as
    user-facing "this modpack isn't supported because…" / "these files were skipped" messages. One
    hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI must **not**
-   offer an output-format picker. Leads the list now that the empty-group item — the only item
-   ranked above it — shipped 2026-08-04; nothing blocks *starting* it, and its one real dependency
-   (a diagnostics channel, so the page cannot report success on a partial upgrade) cleared
-   2026-08-02.
+   offer an output-format picker. Nothing blocks *starting* it, and its one real dependency (a
+   diagnostics channel, so the page cannot report success on a partial upgrade) cleared 2026-08-02 —
+   so its position here is the rubric's doing, not a dependency's: the `.rgsp` item above it is a
+   class-1 correctness unknown, and this is class 3.
 
-2. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+3. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
@@ -191,7 +211,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-3. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+4. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -205,7 +225,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-4. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+5. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -340,13 +360,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 - [EQDP reconstruction drops mod rows for non-playable races](backlog/2026-07-10-eqdp-non-playable-races.md)
   — C# keeps every race the mod carries and backfills; we emit exactly the 18 playable ones.
   Unreachable today (game EQDP files are playable-race-scoped).
-- [TTMP load fix does not handle `.rgsp`; it passes through unchanged](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
-  — `makeTtmpLoadFix` ports the `.meta` half of `WizardData.cs:685-698`'s combined `.meta`/`.rgsp`
-  load branch (the 2026-07-21 housing-meta drop) but not the `.rgsp` half; an `.rgsp` file survives
-  our load unchanged instead of being diverted into manipulations like TexTools does. Read-side
-  sibling of the write-side [`2026-07-13-pmp-write-meta-rgsp-manipulations.md`](backlog/2026-07-13-pmp-write-meta-rgsp-manipulations.md)
-  item, but reachable (no format-conversion gate protects it). Not yet confirmed as a real
-  divergence — no corpus pack carrying `.rgsp` has been found.
 
 ### Other ported code
 
