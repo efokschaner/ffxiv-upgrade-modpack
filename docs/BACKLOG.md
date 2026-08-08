@@ -201,7 +201,20 @@ unchanged by deployment; only probability moves.
    unchanged (port it, now directly), or gap changed shape (re-characterize). Do that before writing
    any decoder code. Operator call, 2026-08-07.
 
-3. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+3. [**Reconsider line numbers in TexTools citations**](backlog/2026-08-08-citation-line-numbers-maintenance.md)
+   — `file · symbol · lines` costs ~1,374 line-number citations across 173 files, all of which have to
+   be re-pointed at every re-pin. Not a correctness item; a recurring tax with a bad failure mode. A
+   stale line number points *confidently at unrelated code* rather than at nothing (live example: three
+   sites still cite `Tex.cs:138` for a guard `1993bf6` deleted, and `Tex.cs:138` is now a real line with
+   unrelated content), it cannot be checked mechanically the way a file, symbol or quoted fragment can,
+   and re-pointing it is dangerous — the v3.1.1.4 sweep took two fix rounds and produced a
+   wrong-but-confident rewrite in *each* automated pass. Sketch: keep `file · symbol`, replace line
+   numbers with a quoted code fragment where sub-symbol precision genuinely matters, then add a checker
+   that verifies file + symbol + fragment. Changes a rule AGENTS.md states, so the decision is recorded
+   there too. Ranked above the site because it is cheap and the tax compounds with every re-pin, below
+   the two items above it because nothing is actually wrong today. Operator call, 2026-08-08.
+
+4. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -213,10 +226,11 @@ unchanged by deployment; only probability moves.
    hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI must **not**
    offer an output-format picker. Nothing blocks *starting* it, and its one real dependency (a
    diagnostics channel, so the page cannot report success on a partial upgrade) cleared 2026-08-02 —
-   so its position here is the rubric's doing, not a dependency's: both items above it are class-1
-   correctness unknowns, and this is class 3.
+   so its position here is the rubric's doing, not a dependency's: items 1-2 above it are class-1
+   correctness unknowns and this is class 3, while item 3 is ranked above it on cheapness rather than
+   on the rubric.
 
-4. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+5. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
@@ -229,7 +243,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-5. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+6. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -243,7 +257,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-6. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+7. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
