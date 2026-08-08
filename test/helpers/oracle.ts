@@ -350,10 +350,12 @@ export function assertUpgradeTraceListenerConfigured(): void {
     throw new Error(
       `ConsoleTools trace listener not configured. The /upgrade oracle needs ConsoleTools to write ` +
         `its Trace output to ${UPGRADE_TRACE_LOG} — HandleUpgrade (Program.cs:185) reports /upgrade ` +
-        `errors via Trace.WriteLine, not Console, so they are otherwise invisible. Add a ` +
-        `TextWriterTraceListener with initializeData="${UPGRADE_TRACE_LOG}" to ${cfgPath}. ` +
-        `Provisioning is automated: run \`npm run setup-oracle\` to (re)install the pinned ` +
-        `oracle with this listener configured. See ` +
+        `errors via Trace.WriteLine, not Console, so they are otherwise invisible. Two ways to fix ` +
+        `it: (a) add a TextWriterTraceListener with initializeData="${UPGRADE_TRACE_LOG}" to ` +
+        `${cfgPath} by hand, or (b) reprovision from scratch — note \`npm run setup-oracle\` ` +
+        `REFUSES to write over an existing install ("already exists. Remove it first to ` +
+        `reinstall.", scripts/setup-oracle.ts), so delete the install directory ` +
+        `(${CONSOLE_TOOLS_DIR}) first, then run it. See ` +
         `docs/superpowers/specs/2026-07-17-resolve-highlight-preround-design.md.`,
     );
   }

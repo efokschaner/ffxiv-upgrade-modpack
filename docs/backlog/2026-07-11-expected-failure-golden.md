@@ -121,7 +121,8 @@ to manipulations on load and re-materializes them on write from the game's clean
 plus those manipulations — a different code path that happens to land on the same bytes here. This is
 **evidence the risk is low, not proof the gap is closed** — a byte match on one pack on one game
 version does not establish that the two implementations are equivalent for every field. The gap
-itself remains tracked separately, and does not overstate as "confirmed correct":
+itself therefore stays open and separately tracked, rather than being closed out as "confirmed
+correct" on the strength of this one match:
 `docs/backlog/2026-07-21-ttmp-load-rgsp-passthrough.md` (now `docs/BACKLOG.md` priority 1).
 
 This document is **kept, not deleted**: its analysis of why `/upgrade` can never see a whole class of

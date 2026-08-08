@@ -223,8 +223,12 @@ unchanged by deployment; only probability moves.
    eagerly-evaluated generated tables, `imc-table.ts` alone 2.34 MB constructing a `Map` at module
    load); and surfacing the fail-loud guards and the `diagnostics` channel (shipped 2026-08-02) as
    user-facing "this modpack isn't supported because…" / "these files were skipped" messages. One
-   hard constraint: `src/index.ts:80-84` rejects cross-format conversion, so the UI must **not**
-   offer an output-format picker. Nothing blocks *starting* it, and its one real dependency (a
+   hard constraint: cross-format conversion is not supported, so the UI must **not** offer an
+   output-format picker. Read the enforcement carefully, though — `writeModpack`'s guard
+   (`src/index.ts:87-98`) is a **per-file** storage scan, not a format check, so a pack carrying zero
+   files crosses formats without tripping it (`docs/backlog/2026-08-08-writemodpack-per-file-format-guard.md`,
+   filed 2026-08-08). The UI constraint is unaffected — there is still no picker to offer — but the
+   site must not treat that throw as its only line of defence. Nothing blocks *starting* it, and its one real dependency (a
    diagnostics channel, so the page cannot report success on a partial upgrade) cleared 2026-08-02 —
    so its position here is the rubric's doing, not a dependency's: items 1-2 above it are class-1
    correctness unknowns and this is class 3, while item 3 is ranked above it on cheapness rather than

@@ -23,8 +23,8 @@ function escapeXmlAttr(s: string): string {
  * `cfgXml` with a TextWriterTraceListener writing to `logPath` inserted before `</configuration>`.
  *
  * `logPath` MUST be an absolute, already-expanded path: .NET does not expand `%USERPROFILE%` in
- * `initializeData`, and `traceListenerConfigured` (test/helpers/oracle.ts:302) substring-matches
- * the absolute UPGRADE_TRACE_LOG value that oracle.ts:29 builds from `homedir()`.
+ * `initializeData`, and `traceListenerConfigured` (test/helpers/oracle.ts:326) substring-matches
+ * the absolute UPGRADE_TRACE_LOG value that oracle.ts:53 builds from `homedir()`.
  *
  * Idempotent, so re-provisioning an existing install is safe.
  */

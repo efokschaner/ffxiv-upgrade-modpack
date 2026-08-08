@@ -239,7 +239,7 @@ no-op distinctly.
 
 ## 10. `PopulatePmpStandardOption` silently destroys a pack's FileSwaps on write
 
-**Status:** diverged · **Where:** `PMP.cs:873-875` (see
+**Status:** diverged · **Where:** `PMP.cs:966-968` (see
 `src/container/resolve-duplicates.ts`, `src/container/pmp.ts`)
 
 > Status corrected 2026-08-07 (was `worked around`). The legend's `worked around` is for a symptom

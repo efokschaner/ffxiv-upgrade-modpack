@@ -311,11 +311,17 @@ export function readPmp(
   // DISCARDED group_*.json Files no longer count, since nothing in the loaded pack names them.
   //
   // EVIDENCE STATUS (AGENTS.md's three bars for a user-benefit divergence): bar 1 (registered
-  // defect) is met — docs/TEXTOOLS_BUGS.md #23. Bar 2 (corpus-wide confirmation rule) and bar 3
-  // (in-game verification that our output is better) are BOTH OUTSTANDING at this commit; the
-  // confirmation rule and the synthetic v4 pack that exercises it land in later commits of the v4
-  // port (docs/superpowers/plans/2026-08-06-pmp-v4-port.md, Tasks 4/5/10), and the in-game check is
-  // manual and has not been performed. Shape-pinned meanwhile by test/container/pmp-v4.test.ts.
+  // defect) is MET — docs/TEXTOOLS_BUGS.md #23. Bar 2 (every byte this moves accounted for by a
+  // corpus-wide confirmation rule) is MET: `makeV4ExtraFileDuplicateConfirmation`
+  // (test/helpers/pmp-v4-extrafile-divergence.ts) CONFIRMS each golden-only payload member as the
+  // duplicate we meant and rejects anything else, wired into the /resave diff at
+  // test/helpers/corpus-resave.ts:96-97 (constructed) and :113 (passed), and exercised by the
+  // purpose-built synthetic pack test/corpus/synthetic/pmp-v4-extrafiles.pmp
+  // (scripts/generate-synthetics/build-synthetic-pmp-v4.ts). Bar 3 (in-game verification that our
+  // output is better) is the ONE bar still OUTSTANDING — it is manual, cannot be inferred, and has
+  // not been performed, so the divergence ships on the operator's 2026-08-06 ruling rather than on
+  // fully satisfied evidence. Shape also pinned by test/container/pmp-v4.test.ts. See
+  // docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md §9.
   // ===============================================================================================
   const referencedKeys = new Set<string>();
 
@@ -344,12 +350,14 @@ export function readPmp(
   //  2. `LoadPMP`'s ExtraFiles scan gained a Combining branch that seeds `allPmpFiles` from
   //     `Containers[].Files` instead of `Options[].Files` (PMP.cs:236-250). Not ported for the same
   //     reason — it would require modelling the container structure — so a Combining group's payload
-  //     members are classified as ExtraFiles here. `extraFiles` has exactly two readers and NEITHER
+  //     members are classified as ExtraFiles here. `extraFiles` has exactly three readers and NONE
   //     can turn the misclassification into output: `writePmp`'s verbatim re-emit loop runs after the
-  //     group-assembly loop that refuses the group, and `writeTtmp2` (src/container/ttmp2.ts) throws
+  //     group-assembly loop that refuses the group; `writeTtmp2` (src/container/ttmp2.ts) throws
   //     on ANY non-empty `extraFiles` before it reaches its own Combining port-gap guard — so on that
   //     path a Combining pack carrying extras is refused for the extras rather than for the group,
-  //     which is a different message but never wrong output.
+  //     which is a different message but never wrong output; and `cloneModpack`
+  //     (src/upgrade/upgrade.ts:89) only copies the map into the clone, so it can only carry the
+  //     misclassification forward to one of the other two, never emit it.
   // Both are recorded rather than silently absorbed; supporting Combining groups is not ported.
   for (const { raw: gRaw, parsed: g } of groups) {
     // WizardData.cs:811-819 — FromPMPGroup derives Selected from DefaultSettings: an INDEX for a

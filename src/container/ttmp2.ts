@@ -275,7 +275,8 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
       `ttmp2: cannot write ExtraFiles (${data.extraFiles.size}) — TTMP has no equivalent container member`,
     );
   }
-  // Computed BEFORE `clearNulls` runs below (the wizard branch's, at line 341 of this file), inverting
+  // Computed BEFORE `clearNulls` runs below (the `clearNulls(dataPages)` call in the wizard arm of
+  // the `data.isSimple` split — named rather than line-numbered, since it moves), inverting
   // `WriteWizardPack`'s order (`ClearNulls()` is its first statement, WizardData.cs:1353). Verified inert: every
   // page/group `clearNulls` can remove is, by construction, one with zero surviving options
   // (`groupHasData`/`pageHasData`, src/container/clear-nulls.ts), so it contributes zero entries to
@@ -358,7 +359,6 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
         // `groupType(g)` is the port of GroupType (WizardData.cs · WizardGroupEntry.GroupType ·
         // 611-625; src/container/group-type.ts). Only a PMP source carries an Imc group, and
         // /upgrade never converts formats, so this is unreachable today.
-        //
         if (groupType(g) === EGroupType.Imc) {
           throw new Error("ttmp2: TTMP Does not support IMC Groups.");
         }
@@ -400,9 +400,11 @@ export function writeTtmp2(data: ModpackData): Uint8Array {
         }
         // WizardData.cs:883 (group) / :421 (option) — `SelectionType = OptionType.ToString()` over
         // EOptionType { Single, Multi } (:26-30), the enum both readers collapse the raw string into
-        // at load (:658 TTMP, :775 PMP). So any non-"Single" value — "Combining" included — writes
-        // as "Multi". An option has no type of its own: it delegates to its group (:337-343), so the
-        // same value is written at both levels.
+        // at load (:658 TTMP, :775 PMP). So in the C# any non-"Single" value — "Combining" and "Imc"
+        // included — collapses to "Multi". That describes the C#, NOT this line: both of those types
+        // are refused by the two guards above before reaching here, so the only values this writer
+        // ever collapses are "Single" and "Multi" themselves. An option has no type of its own: it
+        // delegates to its group (:337-343), so the same value is written at both levels.
         const selectionType = g.selectionType === "Single" ? "Single" : "Multi";
         modGroups.push({
           GroupName: g.name,

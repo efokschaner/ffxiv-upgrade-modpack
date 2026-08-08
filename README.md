@@ -69,8 +69,11 @@ required **no ported-code changes**: the core transform (`EndwalkerUpgrade.cs`) 
 codec (`Mdl.cs`/`TTMP`/`Dat`/`DDS`/`Tex`/`ShaderHelpers`/…) were byte-identical between
 `master` and `v3.1.0.2`; the only `master`-side differences in files we cite were unported
 subsystems (item catalogs, install-time auto-assign) and the additive PMP "Combining"
-group feature, which our port carries opaquely via `raw`. The repo has since moved on
-from that `v3.1.0.2` baseline to the `v3.1.1.4` baseline recorded above.
+group feature. The repo has since moved on from that `v3.1.0.2` baseline to the
+`v3.1.1.4` baseline recorded above, which changed the Combining picture: the port now
+**refuses** a Combining group at the write seam, reproducing upstream's own throw
+(design §10 row 2). Carrying the group opaquely via `raw` remains true of everything
+BELOW that refusal — we accept the `Type`, never model `Containers`, and throw on write.
 
 **Incremental upgrade.** To move to a newer TexTools release: add the release to
 `scripts/lib/oracle-releases.ts` (asset URL + a verified sha256) and run
