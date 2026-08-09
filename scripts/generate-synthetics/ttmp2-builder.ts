@@ -205,6 +205,11 @@ export function writeTtmp2Files(
   packName: string,
   files: { gamePath: string; data: Uint8Array }[],
   root: SyntheticRoot = "synthetic",
+  /** Gates TexTools' LOAD-time fixes: `TTMP.cs · DoesModpackNeedFix · 918-932` returns
+   *  NeedsTexFix|NeedsMdlFix for major < 2, NeedsTexFix alone for exactly "2.0", and None for
+   *  anything newer. Defaults to the modern "2.1w" every other fixture uses — do NOT change that
+   *  default, their cached goldens are keyed on sha256(pack bytes). */
+  ttmpVersion = "2.1w",
 ): void {
   const chunks: Uint8Array[] = [];
   let offset = 0;
@@ -230,7 +235,7 @@ export function writeTtmp2Files(
     o += c.length;
   }
   const mpl = {
-    TTMPVersion: "2.1w",
+    TTMPVersion: ttmpVersion,
     Name: packName,
     Author: "synthetic",
     Version: "1.0.0",
