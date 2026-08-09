@@ -396,9 +396,10 @@ caller: `/resave`, `ConsoleTools/Program.cs:211`) writes each one twice. Registe
 payload member once. Confirmed — not merely tolerated — by
 `test/helpers/pmp-v4-extrafile-divergence.ts`'s `makeV4ExtraFileDuplicateConfirmation`, exercised
 by the purpose-built `test/corpus/synthetic/pmp-v4-extrafiles.pmp`
-(`scripts/generate-synthetics/build-synthetic-pmp-v4.ts`). Upstream report:
-`docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md`, written to stand on its own
-for a TexTools maintainer with no knowledge of this repo.
+(`scripts/generate-synthetics/build-synthetic-pmp-v4.ts`). The reproduction and the suggested
+upstream patch are in the register entry itself (`docs/TEXTOOLS_BUGS.md` #23); they were originally
+drafted as a standalone maintainer-facing report, which was folded into that entry on 2026-08-08
+once it had served its purpose.
 
 **OPEN — AGENTS.md evidence bar 3 for the #23 divergence.** In-game verification has NOT been
 performed. Operator action: install our `/resave` output and ConsoleTools' `/resave` output of

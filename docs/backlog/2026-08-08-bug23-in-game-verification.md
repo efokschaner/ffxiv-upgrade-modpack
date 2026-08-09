@@ -24,8 +24,8 @@ referenced-file scan at `:234` sees nothing for a v4 pack's inline groups, miscl
 payload member as "extra", and `WizardData.WritePmp`'s `saveExtraFiles` path writes each one **twice**.
 Our reader feeds the scan from the groups it actually loaded, so it emits each member once.
 
-Upstream report, written to stand alone for a TexTools maintainer:
-`docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md`.
+The reproduction and the suggested upstream patch live in the register entry itself
+(`docs/TEXTOOLS_BUGS.md` #23).
 
 ## What to do
 

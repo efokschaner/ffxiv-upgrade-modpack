@@ -1,6 +1,6 @@
 // Builds test/corpus/synthetic/pmp-v4-extrafiles.pmp — the corpus's ONLY Penumbra v4 INPUT pack,
-// and the reproduction for TexTools bug #23 (docs/TEXTOOLS_BUGS.md; upstream report at
-// docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md).
+// and the reproduction for TexTools bug #23 (docs/TEXTOOLS_BUGS.md, whose Reproduction section
+// describes this same pack shape).
 //
 // SHAPE, and why each part is the way it is:
 //

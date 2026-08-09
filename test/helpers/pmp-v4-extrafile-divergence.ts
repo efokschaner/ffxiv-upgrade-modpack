@@ -94,8 +94,8 @@ function referencedZipPathKeysCached(
 
 /**
  * CONFIRMATION (not a tolerance) of our ONE deliberate divergence from TexTools' PMP v4 read path:
- * docs/TEXTOOLS_BUGS.md #23, operator ruling 2026-08-06, upstream report at
- * docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md.
+ * docs/TEXTOOLS_BUGS.md #23, operator ruling 2026-08-06. That entry carries the reproduction and
+ * the suggested upstream patch.
  *
  * WHAT DIFFERS. `PMP.LoadPMP` builds its "extra files" set by iterating the local `groups` list
  * deserialized from `group_*.json` (PMP.cs:191-208) — a list the v4 pull-back at :220 never assigns,

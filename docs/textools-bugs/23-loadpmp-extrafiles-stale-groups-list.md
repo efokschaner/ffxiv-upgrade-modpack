@@ -1,13 +1,13 @@
 # 23. `LoadPMP`'s ExtraFiles scan iterates the stale v3 `groups` list, duplicating a v4 pack's whole payload on save
 
 > **Raised with upstream, informally (noted 2026-08-08).** The operator has mentioned this bug to the
-> TexTools developers in Discord. That is a conversation, not a tracked issue: no upstream ticket,
-> acknowledgement or fix is recorded here, and the pinned oracle
-> (`8e2a2603`, v3.1.1.4) still contains the defect. The self-contained write-up prepared for the
-> maintainers — reproduction, C# trace, suggested patch — is
-> `docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md`; it remains the thing to send if
-> the conversation turns into a formal report. **This does not move any of the three evidence bars
-> below** — in particular it is not bar 3, which is an in-game observation and nothing else.
+> TexTools developers in Discord, drawing on the standalone write-up this entry has since absorbed
+> (`docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md`, deleted 2026-08-08 once it had
+> served its purpose — its reproduction, observed output and suggested patch are the *Reproduction*
+> and *Upstream fix* sections below). That was a conversation, not a tracked issue: no upstream
+> ticket, acknowledgement or fix is recorded here, and the pinned oracle (`8e2a2603`, v3.1.1.4) still
+> contains the defect. **This does not move any of the three evidence bars below** — in particular it
+> is not bar 3, which is an in-game observation and nothing else.
 
 **Status:** diverged — we deliberately do **not** reproduce this. Operator ruling, 2026-08-06
 (*"it's a pretty gross bug"*). Reproducing it would hand the user a modpack roughly twice its
@@ -61,6 +61,44 @@ then written by nothing at all and is lost.
    The hybrid arm follows the same gate: the member it loses would only ever have been preserved by
    the `saveExtraFiles == true` copy, so it too is a `/resave`-only loss.
 
+**Reproduction** (measured 2026-08-06 against `8e2a2603`; this is the shape
+`scripts/generate-synthetics/build-synthetic-pmp-v4.ts` builds). A minimal v4 `.pmp` — a zip of
+exactly three members, `meta.json` plus `files/v4_group.bin` (`A1 A2 A3 A4`) and `files/v4_default.bin`
+(`B1 B2 B3 B4`) — whose `meta.json` carries `FileVersion: 4`, one inline `Groups` entry with a single
+option mapping `chara/dummy/v4_group.bin` → `files\v4_group.bin`, and a `DefaultData` mapping
+`chara/dummy/v4_default.bin` → `files\v4_default.bin`. Run `ConsoleTools.exe /resave <in> <out>` and
+list the members:
+
+```
+meta.json                                973 bytes
+default/chara/dummy/v4_default.bin         4 bytes
+files/v4_group.bin                         4 bytes   <-- duplicate
+v4 payload/chara/dummy/v4_group.bin        4 bytes
+```
+
+The two `v4_group.bin` members are byte-identical, and nothing in the written `meta.json` points at
+`files/v4_group.bin` — the option entry reads
+`"chara/dummy/v4_group.bin": "v4 payload\\chara\\dummy\\v4_group.bin"` — so Penumbra never reads the
+duplicate. **The asymmetry is the proof:** `files/v4_default.bin` is *absent* from the output,
+because `DefaultData`'s file was classified correctly by the separate `pmp.DefaultMod` scan
+(`:267-276`) and so was written once. Same pack, same save, two outcomes; the only difference is
+which of the two scans saw the file.
+
+Two details of the input are load-bearing, and a repro that omits either shows nothing. The two
+payload files must have **different contents** — identical bytes are collapsed onto one shared path
+by the content-hash pass in `PMPExtensions.ResolveDuplicates` (`PmpExtensions.cs:476`). And the
+archive member names must **differ from the paths TexTools regenerates** (`<option folder>/<game
+path>`), or the duplicate lands on the same name and overwrites invisibly.
+
+**Impact.** A `/resave`d v4 pack carries a redundant copy of every inline-group payload file whose
+archive path differs from the regenerated one — the normal case, since a pack is only laid out that
+way if TexTools itself wrote it. For a typical pack, where the bulk of the payload sits in groups
+rather than `DefaultData`, the output is roughly **twice** the necessary size. It does *not* compound
+across repeated re-saves (the second pass regenerates the same paths and overwrites in place), and by
+code trace the pack still installs and behaves correctly in Penumbra, the duplicated members being
+unreferenced — size and confusion, not breakage. That last point is exactly what bar 3 below has to
+confirm in-game rather than infer.
+
 **Us:** `readPmp` fills `referencedKeys` from the groups it **actually loaded** — the one-variable
 swap that constitutes the upstream fix. Two arms, both intended: an inline group's `Files` now count
 as referenced (so its member is emitted once, not twice), and a hybrid pack's *discarded*
@@ -75,10 +113,25 @@ as referenced (so its member is emitted once, not twice), and a hybrid pack's *d
 | 2. exercised over the corpus, every moved byte confirmed by a rule | **met** — `test/corpus/synthetic/pmp-v4-extrafiles.pmp` exercises the bug over the real oracle, and `test/helpers/pmp-v4-extrafile-divergence.ts` confirms the resulting golden-only payload member narrowly |
 | 3. verified in the real game that our output is better | **outstanding** — manual, not yet performed, and not implied by anything above |
 
-Shape-pinned meanwhile by `test/container/pmp-v4.test.ts` (both arms). The upstream bug report is
-written and lives at `docs/upstream/2026-08-06-textools-pmp-v4-extrafile-duplication.md`; see the note
-at the top of this entry for how far it has actually been taken with the maintainers.
+Shape-pinned meanwhile by `test/container/pmp-v4.test.ts` (both arms). See the note at the top of
+this entry for how far this has been taken with the maintainers.
 
-**Upstream fix:** iterate `pmp.Groups` at `:234` instead of the local `groups` — i.e. move the scan
-below the pull-back and read the field the pull-back actually assigns. Equivalently, have `:220`
-assign the local `groups` list as well, so the two can no longer disagree.
+**Upstream fix:** iterate the list the pull-back actually populates —
+
+```diff
+- foreach (var g in groups)
++ foreach (var g in pmp.Groups)
+```
+
+— at `:234`. Equivalently, have `:220` assign the local `groups` list as well, so the two can no
+longer disagree. **v3 is unaffected:** for a v3 pack `meta.Groups` is empty and `meta.DefaultData` is
+null, so the pull-back at `:217` does not fire and `pmp.Groups` is still the list assigned at `:214`.
+
+One consequence to be aware of, for the mixed input shape (on-disk `group_*.json` members *and* a
+firing pull-back). That guard is wider than "has inline groups": a non-null `meta.DefaultData` fires
+it on its own, and `:220` then assigns `meta.Groups ?? new List<PMPGroupJson>()` — so the on-disk
+groups are dropped from `pmp.Groups` either way, whether replaced by an inline set or by an empty
+list. For such a pack, those discarded groups' files are today counted as referenced by `:234` (which
+is still reading the on-disk list) even though nothing downstream writes them; after the fix they are
+no longer counted, so they become extra files. That is the accurate classification — nothing in the
+written output points at them — but it is a behaviour change for that unusual input shape.
