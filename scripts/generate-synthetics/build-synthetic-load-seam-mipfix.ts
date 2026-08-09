@@ -28,6 +28,24 @@
 // them: the material round only follows the mtrl's own samplers, and the third round's unclaimed
 // scan is gated on hair/eye paths (ModpackUpgrader.cs:154-189). Their whole job is to reach the load
 // seam and come back repaired.
+//
+// ---------------------------------------------------------------------------------------------
+// THIS PACK HAS NO BASELINE YET (as of Task 4) — and will need one
+// ---------------------------------------------------------------------------------------------
+// The thing this pack exists to test passes with no tolerance: the oracle no longer crashes on the
+// two broken .tex fixtures (confirmed empirically — a bare TTMPVersion "2.0" NREs the oracle for an
+// unrelated classification reason, see above; "2.0w" upgrades cleanly), and both repaired payloads
+// are byte-identical to the golden's. But the pack's /upgrade and /resave golden checks are NOT
+// green: every diff (14 fields on /upgrade, 10 on /resave, all ModsJsons[].{Name,Category,DatFile})
+// is the same pre-existing, already-registered writer gap every other real-golden synthetic .ttmp2
+// hits — docs/backlog/2026-07-13-resave-ttmp2-name-category.md: TexTools RE-DERIVES Name/Category
+// from the game path on write (resolving this fixture's chara/equipment/e9998 path to a fictitious
+// but path-shape-valid item) where we round-trip the source's placeholder for untouched files, or
+// emit "" for regenerated ones (the mask upgraded in place, and the created _id.tex). Confirmed by
+// diffing our own upgradeModpack() output against the extracted golden manifest field-by-field — see
+// build-synthetic-imc-weapon.ts's header for the first synthetic pack to hit this same gap. Per this
+// branch's plan, baselining is Task 6's job, done once and deliberately (see the design/plan for this
+// branch), so no baseline entry is added here; this pack's golden tests are left red until then.
 
 import { buildCanonicalTexHeader } from "../../src/tex/header";
 import { A8R8G8B8 } from "../../src/tex/types";
