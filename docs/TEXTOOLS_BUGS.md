@@ -37,8 +37,10 @@ open it.
   and deliberately keeps rank out of its filenames because rank moves. Here nothing moves.)
 - **Entries are never deleted** — again unlike the backlog. A bug that is fixed upstream, or that we
   stop reaching, still has to explain why our port looks the way it does; it gets a status update, not
-  a deletion. #19 is the live example: fixed upstream in `1993bf6`, still registered, because our
-  faithful reproduction is now a divergence from the new oracle until Part B lands.
+  a deletion. #19 is the worked example: fixed upstream in `1993bf6` and our port changed to match
+  (2026-08-09), yet still registered — it is the only thing that explains why every `.tex` our older
+  output touched looks the way it does, and its *Us* section now records both the reproduction we
+  carried and what replaced it.
 - **To file one:** take the next free ID, write `docs/textools-bugs/NN-slug.md` following the shape of
   the existing entries (status line, C# citation, *Us:*, *Upstream fix:*), and add its line to the
   register below.
@@ -158,10 +160,13 @@ open it.
   would copy a needless quality loss into a texture the game samples).
 
 - [**#19 · A canonical `MipCount==2` header's `LoDMips=[0,1,0]` trips `TexHeader.ToBytes`'s own ordering guard**](textools-bugs/19-mipcount2-lodmips-ordering-guard.md)
-  — **reproduced; FIXED UPSTREAM in `1993bf6` (v3.1.1.4)** · `Tex.cs:1124-1126`. Two independent
-  `>1`/`>2` guards disagree at exactly two mips, and `ToBytes`' ordering check then rejects the header
-  its own constructor built. Our faithful reproduction is now a **divergence from the new oracle**;
-  the entry's "What Part B owes" section is the authoritative statement of that outstanding work.
+  — **fixed upstream in `1993bf6` (v3.1.1.4); our port reproduces the fixed behaviour** as of
+  `14e9194` + `1c25308` · `Tex.cs:1124-1126`. Two independent `>1`/`>2` guards disagree at exactly two
+  mips, and `ToBytes`' ordering check then rejected the header its own constructor built. The entry is
+  kept because it is why the old bytes looked as they did; it now also records what replaced the
+  reproduction — a broken-offset non-ascending-`LoDMips` `.tex` is repaired and kept rather than
+  dropped at our load seam, pinned byte-exact against the real oracle by
+  `test/corpus/synthetic/load-seam-mipfix.ttmp2`.
 
 - [**#20 · `ValidateTexFileData` resizes NPOT textures using `Width` for both dimensions**](textools-bugs/20-validatetexfiledata-width-for-both-dims.md)
   — **reproduced** · `EndwalkerUpgrade.cs:2110`. A copy-pasted argument squishes a non-square NPOT

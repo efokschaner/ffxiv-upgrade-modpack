@@ -66,10 +66,13 @@ const IS_META = /\.meta$/;
  *   would be worse for the user than the format divergence. A decode failure, or a faithful
  *   resize-guard throw (an unsupported format, or a <64px non-BC7 source — MergePixelData's own
  *   guards), DROPS the file (`null`), matching FromWizardGroup's `catch { continue }` on a
- *   majorly-broken or unfixable texture. The `Tex.CompressTexFile`
- *   recompress step remains deferred (invisible to the golden: we always store uncompressed .tex
- *   payloads pre-SqPack-compression, so there is no observable byte difference). The `ui/` exclusion
- *   here does NOT come from FromWizardGroup itself — `WizardData.cs:707`'s gate is
+ *   majorly-broken or unfixable texture.
+ *   The `Tex.CompressTexFile` recompress step (TTMP.cs · FixOldTexData · 1438) remains deferred. It
+ *   is invisible to the golden -- we store uncompressed .tex payloads pre-SqPack-compression, so
+ *   there is no observable byte difference -- but only at the v3.1.1.4 pin: before 1993bf6 that call
+ *   re-validated the header through `TexHeader.ToBytes` (Tex.cs:1324), so it could DROP a file
+ *   ValidateTexFileData had already passed. See docs/TEXTOOLS_BUGS.md #19's "Reach re-measured".
+ *   The `ui/` exclusion here does NOT come from FromWizardGroup itself — `WizardData.cs:707`'s gate is
  *   `needsTexFix && path.EndsWith(".tex")`, with no `ui/` check at all. It is carried instead from a
  *   different C# symbol, `MakeFileStorageInformationDictionary` (`TTMP.cs:1369`,
  *   `!FullPath.StartsWith("ui/")`), preserved verbatim from the retired `texFixRound`.

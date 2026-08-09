@@ -3,11 +3,7 @@
 // WizardData.FromWizardGroup:711 (the /upgrade + /resave load path). Given the UNCOMPRESSED tex bytes,
 // returns fixed bytes, or null when nothing changed. See
 // docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md.
-import {
-  assertTexHeaderWritable,
-  fixUpBrokenMipOffsets,
-  serializeTexHeader,
-} from "../tex/header";
+import { fixUpBrokenMipOffsets, serializeTexHeader } from "../tex/header";
 import { decodeToRgba, encodeUncompressedTex, parseTex } from "../tex/tex";
 import { isPowerOfTwo, resizeForMerge, roundToPowerOfTwo } from "./texture";
 
@@ -32,12 +28,17 @@ export function validateTexFileData(
       round,
       tex.format,
     );
-    // Emit the resized image as A8R8G8B8 for EVERY decodable format. A8R8G8B8 source → byte-exact
-    // (MergePixelData maps it to lossless BGRA and ToUncompressedTex stores A8R8G8B8). A BC source →
-    // TexTools re-encodes back to its ORIGINAL BC format via nvtt, which we have no encoder for, so
-    // we diverge: same resized image, uncompressed instead of BC. This is the same MergePixelData
-    // elision the material-round mask/index paths ship, a CONFIRMED divergence (design §3.4;
-    // docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md; real pack KK_Sportcar reaches it).
+    // Emit the resized image as A8R8G8B8 for EVERY decodable format. A8R8G8B8 source → the RESIZE is
+    // byte-exact (MergePixelData maps it to lossless BGRA and ToUncompressedTex stores A8R8G8B8), but
+    // the MIP CHAIN is not: this call site has no later ConvertToDDS, so MergePixelData's own nvtt
+    // pyramid is what TexTools emits, while encodeUncompressedTex's 2px-floor mips below are right at
+    // the other three MergePixelData call sites and wrong at this one (measured: 6 mips vs the
+    // golden's 7 on a 64px result — docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md, "Second
+    // consequence" section). A BC source → TexTools re-encodes back to its ORIGINAL BC format via
+    // nvtt, which we have no encoder for, so we diverge: same resized image, uncompressed instead of
+    // BC. This is the same MergePixelData elision the material-round mask/index paths ship, a
+    // CONFIRMED divergence (design §3.4; docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md; real
+    // pack KK_Sportcar reaches it).
     return encodeUncompressedTex(src.rgba, src.width, src.height, {
       mips: true,
     });
@@ -46,7 +47,9 @@ export function validateTexFileData(
   // Branch B — EndwalkerUpgrade.cs:2116-2124. Fix broken mip offsets; rebuild only if something moved.
   const fix = fixUpBrokenMipOffsets(tex, uncompressedTex.length);
   if (fix.headerChanged || fix.calculatedTexSize !== uncompressedTex.length) {
-    assertTexHeaderWritable(tex); // header.ToBytes() guard (Tex.cs:138-145 *pre-fix*, deleted by 1993bf6); throw → drop at the seam
+    // TexHeader.ToBytes carries NO validation at this pin -- 1993bf6 deleted all four of its checks
+    // (Tex.cs:136-154), so it is a pure serializer and this rewrite cannot be refused. What remains
+    // is the C#'s own Array.Copy overrun:
     // Array.Copy(uncompressedTex, 80, newData, 80, CalculatedTexSize-80) throws on a source overrun
     // (EndwalkerUpgrade.cs:2122) — a truncated/corrupt tex whose computed mip0 exceeds the file. That
     // throw is caught by FromWizardGroup's catch → the file is dropped. Reproduce it (a bare subarray

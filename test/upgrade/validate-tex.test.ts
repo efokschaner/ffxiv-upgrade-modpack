@@ -53,26 +53,32 @@ describe("validateTexFileData", () => {
     );
   });
 
-  it("Branch B: a mipCount==2 tex with a broken offset throws the ToBytes ordering guard (TEXTOOLS_BUGS #19)", () => {
-    // A 4x4 A8R8G8B8 tex has exactly 2 mips (generateMipmaps' 2x2 floor), so buildCanonicalTexHeader
-    // emits the non-monotonic LoDMips=[0,1,0]. Branch B's rewrite calls assertTexHeaderWritable
-    // (= TexHeader.ToBytes' guard), which throws — reproducing the TexTools crash faithfully. At the
-    // load seam this becomes a faithful drop. Pins that we keep reproducing #19.
+  it("Branch B: a legacy non-ascending LoDMips tex is repaired and KEPT (TEXTOOLS_BUGS #19)", () => {
+    // A 4x4 A8R8G8B8 tex has exactly 2 mips (generateMipmaps' 2x2 floor). LoD2 is forced back to 0
+    // here so the fixture is a pre-1993bf6 header regardless of what buildCanonicalTexHeader
+    // currently emits -- that is the shape TexTools wrote for years, and the shape whose ordering
+    // ToBytes used to reject. At the v3.1.1.4 pin the guard is gone (Tex.cs:136-154) and
+    // FixUpBrokenMipOffsets' ascending clamp (Tex.cs:213-218) normalizes it to [0,1,1], so the file
+    // is repaired instead of dropped at the load seam.
     const src = encodeUncompressedTex(solidRgba(4, 4), 4, 4, { mips: true });
     const broken = src.slice();
-    new DataView(broken.buffer, broken.byteOffset).setUint32(28, 999, true);
-    expect(() => validateTexFileData(broken)).toThrow(
-      "LoDMips is not in non-descending order.",
-    );
+    const dv = new DataView(broken.buffer, broken.byteOffset);
+    dv.setUint32(24, 0, true); // legacy LoD2
+    dv.setUint32(28, 999, true); // clobbered mip0 offset
+    const out = validateTexFileData(broken);
+    expect(out).not.toBeNull();
+    const o = new DataView(out!.buffer, out!.byteOffset);
+    expect(o.getUint32(28, true)).toBe(80); // offset repaired
+    expect([
+      o.getUint32(16, true),
+      o.getUint32(20, true),
+      o.getUint32(24, true),
+    ]).toEqual([0, 1, 1]); // LoDMips clamped ascending
   });
 
   it("Branch B: a POT tex with a broken first offset is rewritten, not resized", () => {
-    // 16x16 (not 4x4/mipCount=2): a canonical mipCount=2 A8R8G8B8 header has LoDMips=[0,1,0]
-    // (CreateTexFileHeader, Tex.cs:1124-1126 — LoD2 stays 0 unless mipCount>2), which is
-    // non-monotonic and trips assertTexHeaderWritable's ordering guard (Tex.cs:138 *pre-fix*, deleted by 1993bf6) the moment this
-    // path needs to rewrite the header — a genuine TexTools defect, not a fixture mistake; see
-    // docs/TEXTOOLS_BUGS.md #19. 16x16 (mipCount=4) keeps LoDMips=[0,1,2], avoiding the crash while
-    // still exercising the same offset-rewrite behaviour.
+    // 16x16 (mipCount=4, canonical LoDMips=[0,1,2]) exercises the plain offset-rewrite path with
+    // nothing else in play: no NPOT resize, and no LoDMips clamping to attribute a byte to.
     const src = encodeUncompressedTex(solidRgba(16, 16), 16, 16, {
       mips: true,
     });
@@ -91,9 +97,9 @@ describe("validateTexFileData", () => {
   });
 
   it("Branch B: a tex truncated below its computed mip0 size throws (dropped at the load seam)", () => {
-    // 16x16 A8R8G8B8, mipCount=4, canonical LoDMips=[0,1,2] (monotonic — doesn't trip #19), so this
-    // reaches assertTexHeaderWritable without throwing and lands on the new overrun guard. Truncate
-    // the file to 580 bytes: well past the 80-byte header but short of 80 + mip0's 1024-byte size
+    // 16x16 A8R8G8B8, mipCount=4, canonical LoDMips=[0,1,2] (monotonic — no clamping to attribute a
+    // byte to; see #19), so this lands squarely on the overrun guard below. Truncate the file to
+    // 580 bytes: well past the 80-byte header but short of 80 + mip0's 1024-byte size
     // (16*16*4). fixUpBrokenMipOffsets ALWAYS accounts mip0's full computed size into
     // calculatedTexSize (Tex.cs:159-234 / header.ts:120-122) even though it doesn't fit the
     // truncated file — mip1 then fails the `mipOffset + mipSize > texSizeIncludingHeader` check
