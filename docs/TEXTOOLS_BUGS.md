@@ -42,6 +42,14 @@ open it.
 - **To file one:** take the next free ID, write `docs/textools-bugs/NN-slug.md` following the shape of
   the existing entries (status line, C# citation, *Us:*, *Upstream fix:*), and add its line to the
   register below.
+- **Line numbers are against the `reference/` pin — currently xivModdingFramework
+  `8e2a2603f963ceb38062798c128b7f4efd966e11` (v3.1.1.4)**, per `README.md`'s provenance table. Being
+  precise is worth it *here*, where an entry's whole argument is often "this line says X and that one
+  says Y" — but only because the pin qualifies them; a bare line number is a claim about no
+  particular revision. An entry citing anything else must say so inline, as #19 does with its
+  `*pre-fix*` markers. When the pin moves, re-point by **symbol name**, never by shifting a range: the
+  v3.1.0.2 → v3.1.1.4 move shifted `Imc.cs` by +1 to +11 depending on where in the file you were, and
+  left `ItemMetadata.cs` and `XivDependencyRoot.cs` alone entirely.
 - **To cite one from code or prose, keep writing `` `docs/TEXTOOLS_BUGS.md` #N ``.** That is the
   established form at ~139 sites across `src/`, `test/`, `scripts/` and `docs/`, and it stays correct:
   it points at this index, which links onward. Deliberately *not* the per-file path — the ID is stable

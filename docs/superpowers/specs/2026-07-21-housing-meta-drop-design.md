@@ -78,7 +78,7 @@ Every `/upgrade` round-trips each `.meta` through the Penumbra **manipulation** 
 A housing meta yields **zero** manipulations, so it is dropped. Two independent reasons no segment is
 representable:
 
-1. **IMC:** housing does not use IMC. `Imc.UsesImc` (`Variants/FileTypes/Imc.cs:74-85`) returns `true`
+1. **IMC:** housing does not use IMC. `Imc.UsesImc` (`Variants/FileTypes/Imc.cs:80-91`) returns `true`
    only for equipment/weapon/monster/demihuman/accessory — `false` for `indoor`/`outdoor`.
    Corroborated by `XivDependencyGraph.cs:970-983` (furniture roots validated by an **asset folder**,
    not an `.imc`) and `GetRawImcFilePath` returning `""` when `!UsesImc` (`XivDependencyRoot.cs:1093-1095`).
@@ -262,7 +262,7 @@ scratch decoder was scaffolding only and has since been removed from the tree.
 
 - Drop mechanism: `PmpExtensions.cs:417-467` (`MetadataToManipulations`), `PMP.cs:1271`
   (`ManipulationsToMetadata`), `WizardData.cs:467-479,685-691`.
-- Housing has no IMC: `Variants/FileTypes/Imc.cs:74-85` (`UsesImc`), `XivDependencyRoot.cs:1093-1095`,
+- Housing has no IMC: `Variants/FileTypes/Imc.cs:80-91` (`UsesImc`), `XivDependencyRoot.cs:1093-1095`,
   `XivDependencyGraph.cs:970-983`.
 - Housing has no Penumbra object type: `PmpExtensions.cs:216-223,33`, `PmpManipulation.cs:390-395`.
 - Housing root is parseable (so `GetFirstRoot` doesn't throw): `XivDependencyGraph.cs:257,263,693-702`.

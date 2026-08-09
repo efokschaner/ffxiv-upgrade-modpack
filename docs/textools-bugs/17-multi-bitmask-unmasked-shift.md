@@ -20,7 +20,7 @@ wraps: option 64 tests `1UL << 0`, option 65 tests `1UL << 1`, and so on. Those 
 mirrors of options 0..N — their selection state is not read from any bit of their own (there is
 none; the field is only 64 bits wide) but silently aliased onto an earlier option's.
 
-Nothing about the PMP format caps a group at 64 options: `PMPGroupJson.Options` (`PMP.cs:1515`) is
+Nothing about the PMP format caps a group at 64 options: `PMPGroupJson.Options` (`PMP.cs:1517`) is
 an unbounded list, and `DefaultSettings` is a fixed-width `ulong` (`:1512`). So the format admits
 groups the selection encoding cannot represent, and the C# neither rejects them nor truncates them
 — it wraps, which is the defect. The write-side getter `WizardGroupEntry.Selection` (`WizardData.cs:596-603`)

@@ -1,26 +1,32 @@
 // IMC entry reader — extraction tooling only (NOT shipped port code), same status as
 // scripts/lib/game-index.ts.
 //
+// LINE NUMBERS IN THIS FILE are against xivModdingFramework `8e2a2603` (v3.1.1.4) — the revision
+// pinned in reference/ (see README.md's provenance table). Re-point them, against the symbol names
+// rather than by shifting, whenever that pin moves: the v3.1.0.2 -> v3.1.1.4 re-pin moved Imc.cs's
+// citations by +1 before line ~60 and +11 after it, while ItemMetadata.cs and XivDependencyRoot.cs
+// did not move at all, so there is no uniform offset to apply.
+//
 // Ports the three symbols ConsoleTools actually executes to build a .meta's IMC base seed
 // (ItemMetadata.cs · CreateFromRaw · 233-247 -> GetImcEntryPaths -> GetEntries; CreateFromRaw is the
 // private helper ItemMetadata.GetMetadata(XivDependencyRoot, ...) · 182-210 falls back to at :207
 // when no .meta already exists):
 //   - XivDependencyRoot.cs · GetRawImcFilePath · 1093-1126
 //   - XivDependencyRoot.cs · GetImcEntryPaths  · 1133-1202
-//   - Imc.cs             · GetEntries          · 189-238
+//   - Imc.cs             · GetEntries          · 200-249
 //
-// NOT a port of Imc.GetFullImcInfo (Imc.cs:351-451). That function is never on this path, and it
-// disagrees with it: its NonSet branch writes `Vfx = variant` for the default subset (Imc.cs:384)
-// instead of the entry's own vfx byte. See docs/TEXTOOLS_BUGS.md.
+// NOT a port of Imc.GetFullImcInfo (Imc.cs:362-462). That function is never on this path, and it
+// disagrees with it: its NonSet branch writes `Vfx = variant` for the default subset (Imc.cs:395)
+// instead of the entry's own vfx byte. See docs/TEXTOOLS_BUGS.md #16.
 
-export const IMC_TYPE_UNKNOWN = 0; // ImcType.Unknown, Imc.cs:41
-export const IMC_TYPE_NONSET = 1; // ImcType.NonSet,  Imc.cs:42
-export const IMC_TYPE_SET = 31; // ImcType.Set,     Imc.cs:43
+export const IMC_TYPE_UNKNOWN = 0; // ImcType.Unknown, Imc.cs:42
+export const IMC_TYPE_NONSET = 1; // ImcType.NonSet,  Imc.cs:43
+export const IMC_TYPE_SET = 31; // ImcType.Set,     Imc.cs:44
 
 const ENTRY_SIZE = 6; // subEntrySize, XivDependencyRoot.cs:1185
 const STARTING_OFFSET = 4; // startingOffset, XivDependencyRoot.cs:1184
 
-// Imc.SlotOffsetDictionary (Imc.cs:547-559) as a single field in the C# already covering both
+// Imc.SlotOffsetDictionary (Imc.cs:558-570) as a single field in the C# already covering both
 // equipment slots (met/top/glv/dwn/sho) and accessory slots (ear/nek/wrs/rir/ril) — it is the one
 // dictionary XivDependencyRoot.GetImcEntryPaths reads (:1188), not a merge of two we perform here.
 const SLOT_OFFSET: Record<string, number> = {
@@ -58,7 +64,7 @@ const SYSTEM_PREFIX: Record<string, string> = {
 
 const pad4 = (n: number): string => String(n).padStart(4, "0");
 
-// Imc.ImcSharingWeaponTypes (Imc.cs:53-59) — FistsOff, TwinfangsOff, DaggersOff, GlaivesOff —
+// Imc.ImcSharingWeaponTypes (Imc.cs:54-60) — FistsOff, TwinfangsOff, DaggersOff, GlaivesOff —
 // expressed as the id ranges XivWeaponTypes.GetWeaponType maps to those members
 // (XivItemType.cs:184-253). An offhand in one of these ranges reads the MAINHAND's .imc.
 export function isImcSharingWeapon(primaryId: number): boolean {
@@ -118,8 +124,8 @@ export function imcEntryOffsets(
   return offsets;
 }
 
-/** Port of Imc.GetEntries (Imc.cs:189-238) over the offsets above: six raw bytes per entry,
- *  skipping any that would run past the end of the file (:217). */
+/** Port of Imc.GetEntries (Imc.cs:200-249) over the offsets above: six raw bytes per entry,
+ *  skipping any that would run past the end of the file (:228). */
 export function readImcEntries(
   data: Uint8Array,
   slot: string | null,
@@ -136,7 +142,7 @@ export function readImcEntries(
   };
   const entries: number[][] = [];
   for (const offset of imcEntryOffsets(header, slot)) {
-    // Imc.cs:217 — `if (offset > imcByteData.Length - entrySize) continue;`. On a well-formed
+    // Imc.cs:228 — `if (offset > imcByteData.Length - entrySize) continue;`. On a well-formed
     // file the margin is exactly zero and this never fires (spec §3.4.2); it exists so a
     // truncated file yields a SHORT list, as TexTools does, rather than an out-of-bounds read.
     if (offset > data.byteLength - ENTRY_SIZE) continue;

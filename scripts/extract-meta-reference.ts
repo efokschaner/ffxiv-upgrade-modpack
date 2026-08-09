@@ -1,5 +1,12 @@
 // Generates src/meta/reference/est-table.ts and src/meta/reference/imc-table.ts.
 //
+// LINE NUMBERS IN THIS FILE — including the ones baked into the generated files' header comments
+// below — are against xivModdingFramework `8e2a2603` (v3.1.1.4), the revision pinned in reference/.
+// Keep them in step with the generated output: at the v3.1.1.4 re-pin the checked-in imc-table.ts
+// header was corrected but these emitting strings were not, so regenerating would have silently
+// reverted it. Re-point by symbol name, not by shifting — the same re-pin moved Imc.cs by +6 to +11
+// depending on the symbol while leaving ItemMetadata.cs and XivDependencyRoot.cs untouched.
+//
 // EST reconstruction (Task 7, src/meta/reconstruct.ts) seeds each .meta's EST segment from the
 // base game before applying the mod's own deltas (mirrors Est.GetExtraSkeletonEntry falling back
 // to the base-game entries, Est.cs:345-360). That requires a (race, setId) -> skelId lookup per
@@ -10,7 +17,7 @@
 // supplies fewer entries (PMP.cs:455-480; docs/superpowers/specs/2026-07-10-metadata-round-
 // design.md §3.2-3.3). That requires a `.meta` root path -> ordered base entry table, extracted
 // from base-game .imc files. It is exhaustive over every root in the framework's item_sets.db
-// whose primary type Imc.UsesImc accepts (Imc.cs · UsesImc · 74-85): equipment, accessory,
+// whose primary type Imc.UsesImc accepts (Imc.cs · UsesImc · 80-91): equipment, accessory,
 // weapon, monster, demihuman -- not merely the ones a corpus .meta happens to reference.
 //
 // NOTE (authorized scope change from the round-5 task-6 brief): EQP/GMP extraction was
@@ -289,7 +296,7 @@ const ITEM_SETS_DB = join(
   "item_sets.db",
 );
 // Exhaustive enumeration from the framework's item_sets.db `roots` table over every primary type
-// Imc.UsesImc accepts (Imc.cs · UsesImc · 74-85): equipment, accessory, weapon, monster, demihuman.
+// Imc.UsesImc accepts (Imc.cs · UsesImc · 80-91): equipment, accessory, weapon, monster, demihuman.
 // `root_path` is stored verbatim as the .meta gamePath, which is the table key (spec §3.2).
 interface ImcRootRow extends ImcRootInfo {
   rootPath: string;
@@ -555,7 +562,7 @@ if (!imcParseFailed && !validationFailed) {
     "// (ItemMetadata.cs · CreateFromRaw · 233-247), via ports of the three symbols that path\n" +
     "// executes -- XivDependencyRoot.GetRawImcFilePath (XivDependencyRoot.cs:1093-1126),\n" +
     "// XivDependencyRoot.GetImcEntryPaths (XivDependencyRoot.cs:1133-1202) and Imc.GetEntries\n" +
-    "// (Imc.cs:189-238). Those ports live in scripts/lib/imc-entries.ts; see\n" +
+    "// (Imc.cs:200-249). Those ports live in scripts/lib/imc-entries.ts; see\n" +
     "// scripts/extract-meta-reference.ts for the enumeration, extraction, and the golden\n" +
     "// spot-check that validates them against real ConsoleTools output.\n" +
     "//\n" +
@@ -563,14 +570,14 @@ if (!imcParseFailed && !validationFailed) {
     '// "chara/equipment/e0724/e0724_top.meta").\n' +
     "// VALUE: the ordered 6-byte entries that root's .meta IMC section carries -- one per subset\n" +
     "// (default first, then each variant subset), each (MaterialSet, Decal, Mask lo, Mask hi, Vfx,\n" +
-    "// Animation -- SerializeEntry/DeserializeEntry, Imc.cs:310-342).\n" +
+    "// Animation -- SerializeEntry/DeserializeEntry, Imc.cs:321-353).\n" +
     "// [] means the game has no .imc file for that root at all, which TexTools seeds as no entries\n" +
     "// (ItemMetadata.cs · CreateFromRaw · 236,243-246) -- a real, faithful state, not missing data.\n" +
     "// A MISS means the root is unknown to item_sets.db, which we cannot seed faithfully: it is a\n" +
     "// fail-loud condition for consumers, never a pass-through.\n" +
     "//\n" +
     "// SCOPE: exhaustive over every root in item_sets.db whose primary type Imc.UsesImc accepts\n" +
-    "// (Imc.cs · UsesImc · 74-85) -- equipment, accessory, weapon, monster, demihuman -- covering\n" +
+    "// (Imc.cs · UsesImc · 80-91) -- equipment, accessory, weapon, monster, demihuman -- covering\n" +
     "// both ImcType.Set and ImcType.NonSet files, not just the roots a corpus .meta references.\n" +
     "export const IMC_TABLE: Record<string, number[][]> = {\n" +
     body +

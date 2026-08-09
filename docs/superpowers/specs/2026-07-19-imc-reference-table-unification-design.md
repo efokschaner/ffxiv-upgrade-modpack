@@ -59,7 +59,7 @@ for (int i = 0; i <= subsetCount; i++)
     offset = startingOffset + (i * entrySize) + subOffset;
 ```
 
-`Imc.GetEntries` (`Imc.cs · GetEntries · 189-238`) then reads six raw bytes at each offset, and
+`Imc.GetEntries` (`Imc.cs · GetEntries · 200-249`) then reads six raw bytes at each offset, and
 **silently drops** any entry that would run past the end (`:217`,
 `if (offset > imcByteData.Length - entrySize) continue;`).
 
@@ -74,7 +74,7 @@ where we currently do not.
 
 `GetRawImcFilePath` (`XivDependencyRoot.cs · GetRawImcFilePath · 1093-1126`) resolves the `.imc` from
 the *secondary* type/id when `SecondaryType != null`, and for weapons applies
-`Imc.ImcSharingWeaponTypes` (`Imc.cs:53-59`): offhand fists/twinfangs/daggers/glaives take
+`Imc.ImcSharingWeaponTypes` (`Imc.cs:54-60`): offhand fists/twinfangs/daggers/glaives take
 `PrimaryId -= 50`, redirecting to the mainhand's folder.
 
 Measured against `item_sets.db` and the game index, that redirect fires for exactly **one** root —
@@ -164,7 +164,7 @@ Two candidates, held to `docs/TEXTOOLS_BUGS.md`'s bug-vs-quirk bar rather than r
 reflexively. One is a genuine defect; the second is recorded here because it looks like one and is
 not, so the next reader does not re-open it:
 
-1. **`GetFullImcInfo`'s NonSet default subset sets `Vfx = variant`** (`Imc.cs:384`) where every other
+1. **`GetFullImcInfo`'s NonSet default subset sets `Vfx = variant`** (`Imc.cs:395`) where every other
    entry reads its own `vfx` byte (`:377`, `:401`). A plain defect. **Not on our path** — the seed
    goes through `GetEntries` (§2.2) — so we reproduce nothing here; it is registered as a bug we
    observed, not one we reproduce.
