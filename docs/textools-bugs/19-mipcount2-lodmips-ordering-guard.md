@@ -111,12 +111,19 @@ Three corrections, none of which changed the three edits Part B then owed:
 3. **Hunk (b) moves almost nothing.** `mipCount == 2` out of our regenerator requires a minimum
    dimension of exactly 4 (`src/tex/encode.ts · generateMipmaps` emits `max(1, floor(log2(minDim)))`
    levels), and `resizeForMerge` refuses anything under 64 for non-BC7
-   (`src/upgrade/texture.ts · resizeForMerge`), so Branch A cannot reach it at all; every
-   `buildCanonicalTexHeader` call under `scripts/generate-synthetics/` and `test/` passes
-   `mipCount = 1`, so no synthetic pack's bytes change and no cached golden is invalidated. Corpus
-   byte movement, if any, therefore comes from hunk (c)'s ascending clamp — which newly sets
-   `modified` on a Branch-B texture that previously returned `null` untouched, or threw — and not
-   from (b).
+   (`src/upgrade/texture.ts · resizeForMerge`), so Branch A cannot reach it at all; at the time of this
+   pre-execution fact-check (2026-08-09), every `buildCanonicalTexHeader` call under
+   `scripts/generate-synthetics/` and `test/` passed `mipCount = 1`, so no synthetic pack's bytes
+   changed and no cached golden was invalidated. **That stopped being true within this same branch**:
+   `build-synthetic-load-seam-mipfix.ts` and `build-synthetic-load-seam-npot.ts` both pass
+   `mipCount = 2` (mipfix also passes 4). The mipfix builder immediately overwrites `LoDMips` via
+   `withHeaderFields`, masking the effect, but the npot builder does not, so
+   `load-seam-npot.ttmp2`'s NPOT `.tex` fixture's input header now carries the fixed-formula
+   `LoDMips = [0,1,1]` rather than pre-fix's `[0,1,0]`. Harmless — the pack's golden and baseline were
+   captured against that header — but read the sentence above as scoped to 2026-08-09, not as a
+   standing invariant. Corpus byte movement, if any, therefore comes from hunk (c)'s ascending clamp —
+   which newly sets `modified` on a Branch-B texture that previously returned `null` untouched, or
+   threw — and not from (b).
 
    **Measured afterwards: neither hunk moved a byte.** Under the 2026-08-09 bless, all 166
    pre-existing baseline files were byte-identical before and after — so (c)'s clamp fires on no

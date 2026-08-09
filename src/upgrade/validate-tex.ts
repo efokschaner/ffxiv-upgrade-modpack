@@ -28,12 +28,17 @@ export function validateTexFileData(
       round,
       tex.format,
     );
-    // Emit the resized image as A8R8G8B8 for EVERY decodable format. A8R8G8B8 source → byte-exact
-    // (MergePixelData maps it to lossless BGRA and ToUncompressedTex stores A8R8G8B8). A BC source →
-    // TexTools re-encodes back to its ORIGINAL BC format via nvtt, which we have no encoder for, so
-    // we diverge: same resized image, uncompressed instead of BC. This is the same MergePixelData
-    // elision the material-round mask/index paths ship, a CONFIRMED divergence (design §3.4;
-    // docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md; real pack KK_Sportcar reaches it).
+    // Emit the resized image as A8R8G8B8 for EVERY decodable format. A8R8G8B8 source → the RESIZE is
+    // byte-exact (MergePixelData maps it to lossless BGRA and ToUncompressedTex stores A8R8G8B8), but
+    // the MIP CHAIN is not: this call site has no later ConvertToDDS, so MergePixelData's own nvtt
+    // pyramid is what TexTools emits, while encodeUncompressedTex's 2px-floor mips below are right at
+    // the other three MergePixelData call sites and wrong at this one (measured: 6 mips vs the
+    // golden's 7 on a 64px result — docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md, "Second
+    // consequence" section). A BC source → TexTools re-encodes back to its ORIGINAL BC format via
+    // nvtt, which we have no encoder for, so we diverge: same resized image, uncompressed instead of
+    // BC. This is the same MergePixelData elision the material-round mask/index paths ship, a
+    // CONFIRMED divergence (design §3.4; docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md; real
+    // pack KK_Sportcar reaches it).
     return encodeUncompressedTex(src.rgba, src.width, src.height, {
       mips: true,
     });
