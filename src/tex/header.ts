@@ -132,11 +132,21 @@ export function fixUpBrokenMipOffsets(
     mipCount = mipLevel + 1;
   }
 
+  // Tex.cs:203-219. TWO clamps in ONE loop, and the order is load-bearing: the `>= mipCount` clamp
+  // can itself drop an entry below its predecessor, and the ascending clamp (added by 1993bf6, the
+  // "fix non-ascending lodmips" half) then raises it back. `mipCount` here is the LOCAL struct-copy
+  // value the C# reads as `header.MipCount` -- see this function's struct-copy note.
+  let maxLodMip = 0;
   for (let lodLevel = 0; lodLevel < 3; ++lodLevel) {
     if (header.lodMips[lodLevel]! >= mipCount) {
       modified = true;
       header.lodMips[lodLevel] = mipCount - 1;
     }
+    if (header.lodMips[lodLevel]! < maxLodMip) {
+      modified = true;
+      header.lodMips[lodLevel] = maxLodMip;
+    }
+    maxLodMip = header.lodMips[lodLevel]!;
   }
 
   for (; mipLevel < 13; ++mipLevel) {
@@ -149,22 +159,4 @@ export function fixUpBrokenMipOffsets(
   if (mipCount !== originalMipCount) modified = true;
 
   return { headerChanged: modified, calculatedTexSize: mipOffset };
-}
-
-/** The write-time validation Tex.TexHeader.ToBytes performs before emitting header bytes
- *  (Tex.cs:138-145 *pre-fix* — the block `1993bf6` deleted; see docs/TEXTOOLS_BUGS.md #19),
- *  messages verbatim. Kept SEPARATE from serializeTexHeader (which writes retained
- *  headers verbatim and must not throw on them); called only where ToBytes' guard is part of the
- *  ported behaviour (validateTexFileData Branch B), where a throw drops the file at the load seam. */
-export function assertTexHeaderWritable(
-  tex: Pick<XivTex, "lodMips" | "mipCount" | "mipFlag">,
-): void {
-  if (tex.lodMips[1] < tex.lodMips[0] || tex.lodMips[2] < tex.lodMips[1])
-    throw new Error("LoDMips is not in non-descending order.");
-  if (tex.lodMips[2] >= tex.mipCount)
-    throw new Error("All LoDMips must be strictly lesser than MipCount.");
-  if (tex.mipFlag > 15)
-    throw new Error("MipFlag must be strictly lesser than 16.");
-  if (tex.mipCount > 13)
-    throw new Error("MipCount must be strictly lesser than 14.");
 }

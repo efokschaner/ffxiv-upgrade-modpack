@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  assertTexHeaderWritable,
   buildCanonicalTexHeader,
   fixUpBrokenMipOffsets,
   parseTexHeader,
@@ -102,16 +101,38 @@ describe("fixUpBrokenMipOffsets", () => {
     expect(header.lodMips).toEqual([0, 0, 0]); // clamped to localMipCount(1) - 1 = 0
     expect(res.headerChanged).toBe(true);
   });
-});
 
-describe("assertTexHeaderWritable", () => {
-  it("throws on descending LoDMips", () => {
-    expect(() =>
-      assertTexHeaderWritable({
-        lodMips: [2, 1, 0],
-        mipCount: 5,
-        mipFlag: 0,
-      }),
-    ).toThrow(/LoDMips is not in non-descending order/);
+  it("raises a non-ascending LoDMips entry to its predecessor (Tex.cs:213-218, added by 1993bf6)", () => {
+    // 4x4 A8R8G8B8 mip sizes are [64, 16, 4] -> offsets 80, 144, 160 and a 164-byte file, so all
+    // three mips fit and the local mip count stays 3. That isolates the ascending clamp: the
+    // `>= mipCount` clamp above it cannot fire for any of [0, 2, 1].
+    const header = {
+      format: A8R8G8B8,
+      width: 4,
+      height: 4,
+      mipCount: 3,
+      lodMips: [0, 2, 1] as [number, number, number],
+      mipMapOffsets: [80, 144, 160, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    const res = fixUpBrokenMipOffsets(header, 164);
+    expect(header.lodMips).toEqual([0, 2, 2]);
+    expect(res.headerChanged).toBe(true);
+    expect(res.calculatedTexSize).toBe(164);
+  });
+
+  it("leaves an already-ascending LoDMips table alone", () => {
+    // The negative of the case above: nothing else in the fixture is broken, so if the clamp
+    // over-fires this reports headerChanged and the whole .tex gets needlessly rewritten.
+    const header = {
+      format: A8R8G8B8,
+      width: 4,
+      height: 4,
+      mipCount: 3,
+      lodMips: [0, 1, 2] as [number, number, number],
+      mipMapOffsets: [80, 144, 160, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    const res = fixUpBrokenMipOffsets(header, 164);
+    expect(header.lodMips).toEqual([0, 1, 2]);
+    expect(res.headerChanged).toBe(false);
   });
 });
