@@ -27,6 +27,7 @@ import "./build-synthetic-pmp-combining";
 import "./build-synthetic-index-fallback";
 import "./build-synthetic-npot-mask";
 import "./build-synthetic-npot-guards";
+import "./build-synthetic-load-seam-mipfix";
 import "./build-synthetic-mashup-hair-outofns";
 import "./build-synthetic-empty-group";
 import "./build-synthetic-pmp-v4";
