@@ -208,7 +208,13 @@ export function writeTtmp2Files(
   /** Gates TexTools' LOAD-time fixes: `TTMP.cs · DoesModpackNeedFix · 918-932` returns
    *  NeedsTexFix|NeedsMdlFix for major < 2, NeedsTexFix alone for exactly "2.0", and None for
    *  anything newer. Defaults to the modern "2.1w" every other fixture uses — do NOT change that
-   *  default, their cached goldens are keyed on sha256(pack bytes). */
+   *  default, their cached goldens are keyed on sha256(pack bytes).
+   *
+   *  WARNING: a bare "2.0" (no `w`/`s`/`b` suffix) NREs the real oracle — `TTMP.cs ·
+   *  GetModpackType · 165-172` classifies by suffix alone, falls through to `Invalid` without one,
+   *  and `WizardData.FromModpack` then returns null into `ModpackUpgrader`. Use e.g. "2.0w" to keep
+   *  the NeedsTexFix gate above without hitting that; full citation chain and empirical proof in
+   *  `build-synthetic-load-seam-mipfix.ts`'s header. */
   ttmpVersion = "2.1w",
 ): void {
   const chunks: Uint8Array[] = [];
