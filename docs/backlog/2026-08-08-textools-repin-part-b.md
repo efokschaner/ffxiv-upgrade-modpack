@@ -37,17 +37,38 @@ work and should be read first.
    did.
 6. **Retire the three `*pre-fix*` markers** at `test/upgrade/validate-tex.test.ts`, `src/tex/header.ts`
    and `src/upgrade/validate-tex.ts`. They exist precisely because those sites cite a guard that no
-   longer exists upstream; once ported, they become wrong rather than merely cautionary.
+   longer exists upstream; once ported, they become wrong rather than merely cautionary. Two of the
+   three go away with the code they annotate (the `assertTexHeaderWritable` doc comment and its call
+   site); only the test comment has to be rewritten in place.
+7. **Rewrite the deferred-recompress rationale** in `src/upgrade/load-fixes.ts` (the `.tex` bullet of
+   `makeTtmpLoadFix`'s header comment). It justifies skipping `Tex.CompressTexFile` as "invisible to
+   the golden" — which is true only *after* hunk 1 lands, because that call carried the same deleted
+   guard. Added 2026-08-09; see the widened class-1 section below.
+8. **Build the two load-seam synthetics** that `docs/backlog/2026-07-25-validate-tex-load-seam-synthetics.md`
+   describes, closing that item — operator call, 2026-08-09, taken because hunks 1 and 3 change
+   behaviour no corpus pack exercises, so unit tests alone would leave the fix unpinned against the
+   real oracle. Read that item's *Corrected 2026-08-09* section first: the Type-4 payload writer it
+   asks for is probably unnecessary, and both packs **must** carry a co-resident upgrading `.mtrl` or
+   ConsoleTools no-ops and emits no golden at all.
 
 Registered bugs **#20** (unaffected — `EndwalkerUpgrade.cs` is untouched across the whole range) and
 **#21** (not fixed upstream) were audited in Part A and need nothing here.
 
-## This one moves bytes — plan the re-bless
+## This one may move bytes — plan the re-bless
 
-Unlike most of Part A, hunk 2 reaches real output through `encodeUncompressedTex`, so **corpus bytes
-will move**. That is the point: Part A recorded the opening total (166 packs / 5809 diffs, `roundtrip`
-0) precisely so this reduction is measurable against it. Re-bless deliberately, record the new total in
-§10's table, and attribute what moved — a diff that shrinks for a reason you cannot name is not a win.
+Part A recorded the opening total (166 packs / 5809 diffs, `roundtrip` 0) precisely so any movement
+here is measurable against it. Re-bless deliberately, record the new total in §10's table, and
+attribute what moved — a diff that shrinks for a reason you cannot name is not a win.
+
+**Corrected 2026-08-09 — expect movement from hunk 3, not hunk 2.** This section originally asserted
+that hunk 2 reaches real output through `encodeUncompressedTex` and so bytes *will* move. Technically
+true, practically vacuous: `mipCount == 2` out of `generateMipmaps` (`src/tex/encode.ts`) needs a
+minimum dimension of exactly 4, `resizeForMerge` (`src/upgrade/texture.ts`) refuses anything under 64
+for non-BC7 so Branch A cannot produce one, and every `buildCanonicalTexHeader` call under
+`scripts/generate-synthetics/` and `test/` passes `mipCount = 1` — so no synthetic rebuilds and no
+cached golden is invalidated. Hunk 3's ascending clamp is the plausible mover: it newly sets
+`modified` on a Branch-B texture that previously returned `null` untouched, or threw. A zero-movement
+result is a legitimate outcome here, not evidence the change did nothing.
 
 Guard the `roundtrip` ratchet across any bless, per the spec's §7.2 rule: it records our codec
 contradicting itself with no oracle involved, so it must not move. It is currently at zero, which is
@@ -61,6 +82,17 @@ mip-offset table is **dropped at our load seam** — the load-fix `catch` swallo
 v3.1.1.4 oracle repairs it and keeps it. On `docs/BACKLOG.md`'s own severity ladder that is **class 1,
 silent wrong output** (the user ships a mod missing a texture and never learns), not the class-4
 cosmetic byte divergence "this one moves bytes" suggests.
+
+**Widened 2026-08-09.** The trigger is not only `MipCount == 2`: Branch B's rewrite threw for *any*
+header whose `LoDMips` are non-ascending after the `>= MipCount` clamp — a stored `[2,1,0]` as much as
+a canonical `[0,1,0]` — so the class-1 case is "a `.tex` with a broken mip-offset table **and**
+non-ascending LoDMips", a strictly larger set than the item first described. Separately, and in the
+*opposite* direction, the same deleted guard had a second call site we never ported: `TTMP.cs ·
+FixOldTexData · 1438` calls `Tex.CompressTexFile` unconditionally, whose `.tex` arm calls
+`header.ToBytes()` (`Tex.cs:1324`), so at the OLD pin even a *healthy* two-mip texture in an old pack
+was dropped. We kept those files, which was a divergence from the old oracle and is correct against
+the new one — no port work, but it is what makes step 7 above necessary. Full detail in
+`docs/TEXTOOLS_BUGS.md` #19's *Reach re-measured*.
 
 Nothing is hidden today: **no corpus pack reaches it** (checked), and the case is pinned by
 `test/upgrade/validate-tex.test.ts`'s Branch-B fixture. But "no corpus pack reaches it" is the

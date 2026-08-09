@@ -173,9 +173,12 @@ unchanged by deployment; only probability moves.
    `buildCanonicalTexHeader`'s LoD2 to `mipCount > 2 ? 2 : mipCount - 1`, and add the ascending clamp
    to `fixUpBrokenMipOffsets` — inverting the tests that currently pin the throw, retiring the three
    `*pre-fix*` markers, and updating register #19's status. `docs/TEXTOOLS_BUGS.md` #19's "What Part B
-   owes" is the authoritative statement of the work. **This one moves corpus bytes** via
-   `encodeUncompressedTex`, which is exactly why Part A recorded the opening total (166 packs / 5809
-   diffs, `roundtrip` 0) — re-bless deliberately and attribute what moved. Ranked first because it is
+   owes" is the authoritative statement of the work. **It may move corpus bytes** — re-bless
+   deliberately against the opening total Part A recorded for exactly this purpose (166 packs / 5809
+   diffs, `roundtrip` 0), and attribute what moved. A 2026-08-09 fact-check corrected *which* hunk to
+   expect movement from: the `buildCanonicalTexHeader` change reaches output only for a regenerated
+   texture whose smaller dimension is exactly 4, which nothing in the corpus or the synthetics
+   produces, so watch the **ascending clamp** instead (see register #19's *Reach re-measured*). Ranked first because it is
    the only work in the repo that is purely execution: the analysis is complete, the C# read and cited,
    the register entry written, and the reference measurement already in place. Operator call,
    2026-08-08.
@@ -424,6 +427,15 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Other ported code
 
+- [`ModpackUpgrader.AnyChanges` is unported, so a load-fix-only pack diverges](backlog/2026-08-09-anychanges-load-fix-parity.md)
+  — TexTools snapshots its per-option baseline **after** the load fixes run
+  (`ModpackUpgrader.cs · UpgradeModpack · 70-86`) and writes only `if (data.AnyChanges)` (`:244-247`),
+  so a pack whose sole defect is a broken mip-offset table, an old `.mdl`, or a manipulation-less
+  `.meta` produces no output file at all; we always return a rewritten pack carrying the repair.
+  Seam fidelity, not wrong output — but unrecorded until now and invisible to every ratchet, since a
+  no-op pack is compared against its own input. `load-fixes.ts` already preserves this parity for the
+  manipulation-less `.meta` case alone; the `.tex` and `.mdl` cases were never considered. Filed
+  2026-08-09 from the pre-Part-B fact-check.
 - [`writeModpack`'s cross-format guard is per-FILE, not per-format](backlog/2026-08-08-writemodpack-per-file-format-guard.md)
   — it infers the format from each file's `storage` and never reads `data.sourceFormat`, so a model
   carrying **no files** crosses formats silently. Measured 2026-08-08: a PMP whose only group is a

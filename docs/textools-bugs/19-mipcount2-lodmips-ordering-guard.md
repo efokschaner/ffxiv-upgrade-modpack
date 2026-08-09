@@ -65,8 +65,43 @@ exercise the intended repair without tripping this defect. No corpus pack is kno
    a running `maxLodMip` raises any entry that falls below its predecessor, setting `modified`. This
    is the commit's "fix non-ascending lodmips" half.
 
+**Reach re-measured (2026-08-09, pre-Part-B fact-check).** The entry above, and §10 row 1, both
+understate what the deleted guard reached and overstate what the `CreateTexFileHeader` fix moves.
+Three corrections, none of which change the three edits Part B owes:
+
+1. **The guard fired on more than the canonical `[0,1,0]`.** Branch B's rewrite
+   (`EndwalkerUpgrade.cs · ValidateTexFileData · 2116-2124`) threw for *any* header whose `LoDMips`
+   are non-ascending after the `>= MipCount` clamp — a stored `[2,1,0]` (which the *pre-fix*
+   `FixUpBrokenMipOffsets` leaves untouched, and which the new ascending clamp normalizes to
+   `[2,2,2]`) as much as the two-mip `[0,1,0]` this entry is named for.
+2. **There was a second, independent call site on the same load path — the recompress.**
+   `TTMP.cs · FixOldTexData · 1430-1438` calls `ValidateTexFileData` and *then*, unconditionally,
+   `Tex.CompressTexFile(data)`, whose `.tex` arm re-reads the header and calls `header.ToBytes()`
+   (`Tex.cs · CompressTexFile · 1308,1324`). So at the old pin every compressed `.tex` of an
+   old-version TTMP was validated a **second** time, after `ValidateTexFileData` had already had its
+   say: a *healthy* canonical two-mip texture — offsets fine, `ValidateTexFileData` returns null —
+   still threw there and was dropped by `WizardData.cs · FromWizardGroup · 709-718`'s catch. Every
+   two-mip `.tex` in an old pack was dropped, broken or not. We never ported the recompress
+   (`src/upgrade/load-fixes.ts`), so we **kept** those files: a pre-existing divergence from the OLD
+   oracle in the *opposite* direction to the one this entry records, which `1993bf6` retroactively
+   makes correct. Nothing to port — but it is why the deferred-recompress rationale needs a rewrite
+   (see below).
+3. **Hunk (b) moves almost nothing.** `mipCount == 2` out of our regenerator requires a minimum
+   dimension of exactly 4 (`src/tex/encode.ts · generateMipmaps` emits `max(1, floor(log2(minDim)))`
+   levels), and `resizeForMerge` refuses anything under 64 for non-BC7
+   (`src/upgrade/texture.ts · resizeForMerge`), so Branch A cannot reach it at all; every
+   `buildCanonicalTexHeader` call under `scripts/generate-synthetics/` and `test/` passes
+   `mipCount = 1`, so no synthetic pack's bytes change and no cached golden is invalidated. Corpus
+   byte movement, if any, therefore comes from hunk (c)'s ascending clamp — which newly sets
+   `modified` on a Branch-B texture that previously returned `null` untouched, or threw — and not
+   from (b).
+
 **What Part B owes** (spec `docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md` §10
 row 1): delete `assertTexHeaderWritable` and its Branch-B call site (`src/upgrade/validate-tex.ts`),
 change `buildCanonicalTexHeader`'s LoD2 to `mipCount > 2 ? 2 : mipCount - 1`, and add the ascending
 clamp to `fixUpBrokenMipOffsets` — with tests, including replacing the two `test/upgrade/validate-tex.test.ts`
-and `test/tex/tex-header.test.ts` cases that currently assert the throw.
+and `test/tex/tex-header.test.ts` cases that currently assert the throw. Plus one thing the original
+itemisation missed: **rewrite the deferred-recompress rationale** in `src/upgrade/load-fixes.ts`
+(the `.tex` bullet of `makeTtmpLoadFix`'s header comment). It justifies skipping
+`Tex.CompressTexFile` on the grounds that the step is "invisible to the golden" — true only once
+hunk (a) lands, because until then that call carried the guard described in point 2 above.

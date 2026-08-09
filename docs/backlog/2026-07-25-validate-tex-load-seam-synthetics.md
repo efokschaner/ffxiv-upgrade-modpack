@@ -53,6 +53,28 @@ call, reusing `encodeUncompressedTex`/`buildCanonicalTexHeader` (`src/tex/header
 `src/tex/tex.ts`) for the fixture content and the existing SqPack Type-4 writer
 (`src/sqpack/type4.ts`) for the compressed wrapper.
 
+**Corrected 2026-08-09 (fact-check ahead of picking this up).** Requirement (b) is probably not real,
+and a third requirement was missing outright:
+
+- **(b) looks unnecessary.** `ttmp2-builder.ts`'s `writeTtmp2Files` wraps *every* payload with
+  `encodeSqPackFile(f.data, SqPackType.Standard)` — Type 2, `.tex` included — and the existing
+  `.tex`-bearing synthetics (`npot-mask`, `npot-guards`, `eye-mask`, `unclaimed-hair`, `highlight`)
+  all ship textures that way today. `FixOldTexData` gates only on `!info.IsCompressed`
+  (`TTMP.cs · FixOldTexData · 1417-1421`) — a *storage-type* test, not a SqPack-type one — and then
+  reads through `GetUncompressedFile` (`:1428`), so a Type-2-wrapped `.tex` reaches
+  `ValidateTexFileData` identically. Confirm with a probe pack against the real oracle before
+  writing a Type-4 builder path; if it holds, only (a) remains.
+- **(c) MISSING, and it decides whether a golden exists at all: `AnyChanges` cannot see a load fix.**
+  `ModpackUpgrader.cs · UpgradeModpack · 70-86` snapshots `originals` from the data returned by
+  `WizardData.FromModpack` — i.e. **after** `FixOldTexData` has already run at
+  `WizardData.cs · FromWizardGroup · 711` — and `:244` writes an output pack only when `AnyChanges`.
+  So a pack whose only change is the load-seam repair is a `/upgrade` **no-op**: ConsoleTools emits
+  no file, the harness caches a `<key>.noop` marker and compares our output against the pack's own
+  input, and our output carries the repaired texture. The "golden" would then be a guaranteed
+  mismatch rather than a pin. **Both packs must carry a co-resident genuinely-upgrading file** (an
+  Endwalker `.mtrl` via `scripts/generate-synthetics/synthetic-mtrl.ts`) to force `AnyChanges` — the
+  same device `build-synthetic-pmp-combining.ts` needed for its probe, and for the same reason.
+
 ## Note for whoever picks this up
 
 `test/helpers/upgrade-compare.ts`'s `confirmBcResizedAsA8` rule comment (the `KK_Sportcar`
