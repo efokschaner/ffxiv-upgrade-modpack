@@ -76,7 +76,7 @@ export function buildCanonicalTexHeader(
   b.u16(mipCount); // MipCount as a short (byte14=mipCount, byte15=0)
   b.i32(0); // LoD 0 mip
   b.i32(mipCount > 1 ? 1 : 0); // LoD 1 mip
-  b.i32(mipCount > 2 ? 2 : 0); // LoD 2 mip
+  b.i32(mipCount > 2 ? 2 : mipCount - 1); // LoD 2 mip (Tex.cs:1126, as fixed by 1993bf6)
   let offset = 80;
   for (let i = 0; i < mipCount; i++) {
     b.i32(offset);

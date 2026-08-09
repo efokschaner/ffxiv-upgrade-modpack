@@ -62,6 +62,28 @@ describe("tex header codec", () => {
     expect(dv.getUint32(40, true)).toBe(416); // mip3 offset (400+16)
     expect(dv.getUint32(44, true)).toBe(0); // padding
   });
+
+  it("emits LoD2 = mipCount - 1 below three mips (Tex.cs:1126, as fixed by 1993bf6)", () => {
+    // The pre-1993bf6 line was `newMipCount > 2 ? 2 : 0`, which for exactly two mips produced the
+    // non-ascending [0,1,0] that ToBytes' own ordering guard then rejected (TEXTOOLS_BUGS #19).
+    const lodMips = (h: Uint8Array) => {
+      const dv = new DataView(h.buffer);
+      return [
+        dv.getUint32(16, true),
+        dv.getUint32(20, true),
+        dv.getUint32(24, true),
+      ];
+    };
+    expect(lodMips(buildCanonicalTexHeader(A8R8G8B8, 4, 4, 2))).toEqual([
+      0, 1, 1,
+    ]);
+    expect(lodMips(buildCanonicalTexHeader(A8R8G8B8, 4, 4, 1))).toEqual([
+      0, 0, 0,
+    ]);
+    expect(lodMips(buildCanonicalTexHeader(A8R8G8B8, 8, 8, 4))).toEqual([
+      0, 1, 2,
+    ]);
+  });
 });
 
 describe("fixUpBrokenMipOffsets", () => {
