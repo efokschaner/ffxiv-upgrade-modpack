@@ -110,8 +110,14 @@ export const DIVERGENCE_RULES: DivergenceRule[] = [
   // backlog 2026-07-22-bc-encoder-merge-pixel-data.md, design spec
   // docs/superpowers/specs/2026-07-25-validate-tex-load-seam-design.md §3.4/§6.2) ----
   // `validateTexFileData`'s Branch A (src/upgrade/validate-tex.ts) resizes an NPOT-with-mips .tex to
-  // power-of-two at TTMP LOAD time. For an A8R8G8B8 source this is byte-exact (no rule needed, no
-  // rule covers it — the hard guard). For a BC-compressed source (DXT1/DXT5/BC5/BC7/...) TexTools
+  // power-of-two at TTMP LOAD time. For an A8R8G8B8 source the RESIZE is byte-exact — no rule needed
+  // and none covers it, the hard guard — but the MIP CHAIN around it is not: measured 2026-08-09
+  // against load-seam-npot.ttmp2's real golden, TexTools emits 7 levels / 21924 bytes where we emit
+  // 6 / 21920 (mip0 byte-identical, divergence at exactly the mip0/mip1 boundary). That is a genuine
+  // port gap, deliberately NOT confirmed by any rule here — it is carried by that pack's ratchet
+  // baseline and documented in docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md's "Second
+  // consequence" section. Do not add a rule for it; it is a bug to fix, not a divergence to confirm.
+  // For a BC-compressed source (DXT1/DXT5/BC5/BC7/...) TexTools
   // re-encodes the resized pixels back to the source's BC format via nvtt (`MergePixelData`); we have
   // no matching BC encoder, so we emit the resized image as A8R8G8B8 instead — same
   // `MergePixelData`-elision the material-round mask path above already ships, now also reachable at
@@ -130,9 +136,11 @@ export const DIVERGENCE_RULES: DivergenceRule[] = [
   // rule is STRUCTURE-ONLY: same dims, ours is A8R8G8B8, golden decodes as a recognized BC format,
   // decoded RGBA lengths match. It does not assert the pixels are correct (we cannot, without the
   // encoder); correctness of the resize itself is guarded byte-exactly elsewhere by the A8R8G8B8-source
-  // case (src/upgrade/validate-tex.ts's unit tests, resizeBicubic's ImageSharp-golden fixtures, and
-  // the byte-identical npot-mask-a8 corpus pack; a dedicated NPOT-with-mips A8R8G8B8 synthetic golden
-  // is planned, design spec §6.2), which no rule here covers.
+  // case (src/upgrade/validate-tex.ts's unit tests, resizeBicubic's ImageSharp-golden fixtures, the
+  // byte-identical npot-mask-a8 corpus pack, and — since 2026-08-09 — the dedicated NPOT-with-mips
+  // A8R8G8B8 synthetic golden test/corpus/synthetic/load-seam-npot.ttmp2, which design spec §6.2 had
+  // only planned), which no rule here covers. Note what that synthetic actually established: mip0 is
+  // byte-exact, the mip chain is not (see the top of this comment).
   //
   // PATH-SCOPED (via endsWith, robust to the prefixed member name the caller may pass — see
   // docs/backlog/2026-07-16-archive-diff-prefixed-gamepath.md) to KK_Sportcar's one diverging path, so

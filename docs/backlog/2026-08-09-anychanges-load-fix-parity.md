@@ -57,6 +57,9 @@ Three options, in rough order of size:
    page has to do something sensible when there is no file to hand back).
 
 Whichever is chosen, the observable case needs a synthetic: an old-`TTMPVersion` pack carrying a
-single broken-offset `.tex` and **nothing** upgradable, which is precisely the pack shape that
-`docs/backlog/2026-07-25-validate-tex-load-seam-synthetics.md` has to avoid building for its own
-goldens.
+single broken-offset `.tex` and **nothing** upgradable. Note this is precisely the pack shape the
+load-seam goldens had to *avoid* — `test/corpus/synthetic/load-seam-mipfix.ttmp2` and
+`load-seam-npot.ttmp2` (2026-08-09) each carry a co-resident upgrading `.mtrl` for exactly this
+reason, since without one ConsoleTools no-ops and emits no golden at all. Their builders
+(`scripts/generate-synthetics/build-synthetic-load-seam-*.ts`) are therefore the closest starting
+point: take one and delete the `.mtrl` + its bound textures.

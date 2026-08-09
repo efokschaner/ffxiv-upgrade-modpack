@@ -34,8 +34,8 @@
 // the resized mip0 (the first 16384 bytes of pixel data) is byte-IDENTICAL to the golden's —
 // resizeBicubic's 96x192->64x64 resample is exact. But the header's MipCount differs: ours is 6,
 // the golden's is 7, and pixel data diverges starting exactly at the mip0/mip1 boundary (byte
-// offset 16384 into the payload). The golden is 4 bytes longer than ours — one more 1x1 mip level
-// (64*4/2^12 = 1 byte... concretely 1*1*4 = 4 bytes) that our output lacks entirely.
+// offset 16384 into the payload). The golden is 4 bytes longer than ours — one more mip level, the
+// 1x1 (1*1*4 = 4 bytes), that our output lacks entirely.
 //
 // Root cause, traced through the C# rather than guessed: ValidateTexFileData's Branch A
 // (EndwalkerUpgrade.cs:2109-2112) calls `tex.ToUncompressedTex()` DIRECTLY on the ResizeXivTx
@@ -59,19 +59,24 @@
 // NOT fixed here: fixing it needs either a real nvtt-compatible box/mip filter for this call site
 // (unclear whether `generateMipmaps`'s "top-left texel" decimation happens to already match
 // nvtt's non-BC mip filter for mip1..mip5, since only the mip0/mip1 boundary was probed) or a
-// second, `GetMipCount`-shaped variant of the encode used ONLY by validateTexFileData. Left for a
-// follow-up; this pack's /upgrade and /resave golden checks are deliberately left red pending
-// that fix, and must NOT be baselined over — a baseline entry would permanently launder a real,
-// previously-unknown port bug rather than track a documented, accepted divergence. See
-// docs/superpowers/sdd/2026-08-09-textools-repin-part-b/task-5-report.md for the full
-// investigation (byte offsets, header hex dumps, C# citations).
+// second, `GetMipCount`-shaped variant of the encode used ONLY by validateTexFileData.
 //
-// Per docs/backlog/2026-07-13-resave-ttmp2-name-category.md, this pack's /upgrade and /resave
-// golden checks ALSO come back red on ModsJsons[].{Name,Category,DatFile} — the same pre-existing
-// writer gap every other real-golden .ttmp2 synthetic hits (see build-synthetic-load-seam-mipfix.ts's
-// header and npot-mask-a8's/imc-weapon's baseline entries). That part alone would be an expected,
-// poolable red; the mip-chain divergence above is not, and is why this pack's golden checks stay
-// unblessed.
+// STATUS 2026-08-09: filed and baselined, in that order. The gap is written up — mechanism, C#
+// citations, the 21920/6-vs-21924/7 measurement, and the unanswered mip1..mip5 question — as the
+// "Second consequence" section of docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md (same
+// root cause: MergePixelData's encode is unported), and only THEN were this pack's /upgrade and
+// /resave checks blessed. Baselining it without that write-up would have laundered a real bug into
+// a permanent, accepted-looking entry; baselining it with the write-up is the ordinary ratchet
+// contract — a known-open diff that blocks regressions without blocking the gate. The
+// `chara/.../c9997e9997_top_b_d.tex` entry ("21920 vs 21924 bytes") in each of this pack's two
+// baseline files IS that bug. Do not add a DIVERGENCE_RULES entry for it: a rule would assert we
+// meant it, and we do not.
+//
+// Per docs/backlog/2026-07-13-resave-ttmp2-name-category.md, this pack's remaining baseline entries
+// are ModsJsons[].{Name,Category,DatFile} — the same pre-existing writer gap every other
+// real-golden .ttmp2 synthetic hits (see build-synthetic-load-seam-mipfix.ts's header and
+// npot-mask-a8's/imc-weapon's baseline entries). Those are cosmetic; the one .tex entry above is
+// not. Anyone burning this baseline down needs that distinction.
 
 import { buildCanonicalTexHeader } from "../../src/tex/header";
 import { A8R8G8B8 } from "../../src/tex/types";

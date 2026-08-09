@@ -139,6 +139,23 @@ it says today, and rank arithmetic about items that no longer exist ages into no
   we upgrade a zero-option-group pack that crashes ConsoleTools outright — is `docs/TEXTOOLS_BUGS.md`
   #22. **Round 7 (the site) now leads the list**, the only item that had been ranked above it.
 
+- **2026-08-09** — **the v3.1.1.4 re-pin Part B item shipped**, and the load-seam-synthetics item
+  with it (both were item 1 and a *Textures* bullet respectively; the Prioritized list is renumbered
+  accordingly). Upstream `1993bf6`'s three `Tex.cs` hunks are ported — `ToBytes` is a pure serializer,
+  `buildCanonicalTexHeader`'s LoD2 is `mipCount - 1` below three mips, and `fixUpBrokenMipOffsets`
+  clamps `LoDMips` ascending — closing a **class-1** hole: a `.tex` with a broken mip-offset table and
+  non-ascending `LoDMips` used to be dropped silently at our load seam and is now repaired and kept.
+  The two deferred `ValidateTexFileData` synthetic goldens were built to pin it against the real
+  oracle (`test/corpus/synthetic/load-seam-mipfix.ttmp2`, `load-seam-npot.ttmp2`), which discharged
+  the synthetics item too. Every §10 verdict in
+  [the re-pin spec](superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md) is now
+  implemented. Corpus effect: **zero bytes moved** on all 166 pre-existing baseline files — the
+  predicted outcome (see spec §10.1's totals table); the +46 entries in the new total are the two new
+  packs' own. One of those entries is a **finding**, not noise: `load-seam-npot`'s first real-oracle
+  run exposed a previously-unknown mip-chain gap at the load seam, folded into the existing
+  [`MergePixelData` item](backlog/2026-07-22-bc-encoder-merge-pixel-data.md) (*Unprioritized →
+  Textures*), which now covers two consequences rather than one.
+
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
 ones, so this is one list rather than "port work" and "product work". Items are ordered by
@@ -163,27 +180,7 @@ something a mod author could plausibly author by hand (an empty group, a hand-ed
 non-UTF-8 zip name) rather than something only a specific game-data shape produces. Severity is
 unchanged by deployment; only probability moves.
 
-1. [**TexTools re-pin Part B — port the one upstream commit that still owes a port**](backlog/2026-08-08-textools-repin-part-b.md)
-   — the other half of the v3.1.1.4 re-pin, whose exit condition was deliberately *not* a zero
-   baseline. Smaller than the name suggests: of the 11 ledger rows in the re-pin spec §10, only **row 1
-   (`1993bf6`)** still owes a port — rows 6/8/9/10/11 shipped in the PMP v4 detour, row 2 shipped in
-   Part A, and rows 3/4/5/7 are `no port impact` with recorded rationales. One commit, three hunks, all
-   in `Tex.cs`: delete `assertTexHeaderWritable` (upstream's `ToBytes` lost **all four** checks, not
-   just the `LoDMips` ordering guard #19 is named for, and is now a pure serializer), change
-   `buildCanonicalTexHeader`'s LoD2 to `mipCount > 2 ? 2 : mipCount - 1`, and add the ascending clamp
-   to `fixUpBrokenMipOffsets` — inverting the tests that currently pin the throw, retiring the three
-   `*pre-fix*` markers, and updating register #19's status. `docs/TEXTOOLS_BUGS.md` #19's "What Part B
-   owes" is the authoritative statement of the work. **It may move corpus bytes** — re-bless
-   deliberately against the opening total Part A recorded for exactly this purpose (166 packs / 5809
-   diffs, `roundtrip` 0), and attribute what moved. A 2026-08-09 fact-check corrected *which* hunk to
-   expect movement from: the `buildCanonicalTexHeader` change reaches output only for a regenerated
-   texture whose smaller dimension is exactly 4, which nothing in the corpus or the synthetics
-   produces, so watch the **ascending clamp** instead (see register #19's *Reach re-measured*). Ranked first because it is
-   the only work in the repo that is purely execution: the analysis is complete, the C# read and cited,
-   the register entry written, and the reference measurement already in place. Operator call,
-   2026-08-08.
-
-2. [**In-game verification of the bug #23 divergence (AGENTS.md evidence bar 3)**](backlog/2026-08-08-bug23-in-game-verification.md)
+1. [**In-game verification of the bug #23 divergence (AGENTS.md evidence bar 3)**](backlog/2026-08-08-bug23-in-game-verification.md)
    — **operator-only; no agent can discharge it.** `docs/TEXTOOLS_BUGS.md` #23 is the repo's one
    deliberate divergence *from* TexTools rather than a faithful reproduction, and AGENTS.md's third
    evidence bar — someone verified in the real game that our output is better — has **not** been met.
@@ -199,7 +196,7 @@ unchanged by deployment; only probability moves.
    of the project's three founding principles — and everything built on top of it inherits that.
    Operator call, 2026-08-08.
 
-3. [**TTMP load fix does not handle `.rgsp`; it passes through unchanged**](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
+2. [**TTMP load fix does not handle `.rgsp`; it passes through unchanged**](backlog/2026-07-21-ttmp-load-rgsp-passthrough.md)
    — a **rubric class 1 candidate** (silent wrong output) whose size is genuinely unknown. TexTools
    diverts a `.rgsp` into `data.Manipulations` at load and re-materializes it on write from the game's
    *clean default* parameter plus those manipulations (`PMP.cs · ManipulationsToMetadata · 1335,1347`);
@@ -219,7 +216,7 @@ unchanged by deployment; only probability moves.
    small, unbounded correctness holes outrank a large, well-understood build — the same reasoning that
    placed the empty-group item there in the 2026-08-03 pass. Operator call, 2026-08-07.
 
-4. [**Re-measure the ±1 BCn decoder divergence, and decide whether to reconverge on `DxtUtil`**](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
+3. [**Re-measure the ±1 BCn decoder divergence, and decide whether to reconverge on `DxtUtil`**](backlog/2026-07-16-bcn-decoder-rounding-divergence.md)
    — upstream **rewrote** `DxtUtil.cs` in `371f74b` (found while verdicting it for the v3.1.1.4
    re-pin), and that moved both of this item's load-bearing premises. (a) The file is now **GPL-3.0**,
    not FNA's Ms-PL, so the clean-room constraint is lifted and a **direct port is legally available**
@@ -237,7 +234,7 @@ unchanged by deployment; only probability moves.
    unchanged (port it, now directly), or gap changed shape (re-characterize). Do that before writing
    any decoder code. Operator call, 2026-08-07.
 
-5. [**Reconsider line numbers in TexTools citations**](backlog/2026-08-08-citation-line-numbers-maintenance.md)
+4. [**Reconsider line numbers in TexTools citations**](backlog/2026-08-08-citation-line-numbers-maintenance.md)
    — `file · symbol · lines` costs ~1,374 line-number citations across 173 files, all of which have to
    be re-pointed at every re-pin. Not a correctness item; a recurring tax with a bad failure mode. A
    stale line number points *confidently at unrelated code* rather than at nothing (live example: three
@@ -250,7 +247,7 @@ unchanged by deployment; only probability moves.
    there too. Ranked above the site because it is cheap and the tax compounds with every re-pin, below
    the two items above it because nothing is actually wrong today. Operator call, 2026-08-08.
 
-6. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
+5. **Round 7 — the site itself** (design §8.1 row 7, still unspecced; no UI spec exists among the
    41 in `docs/superpowers/specs/`). The long pole by effort, but the lowest-risk item here: the seam
    is already clean (`Uint8Array → Uint8Array`, `loadModpack`/`upgradeModpack`/`writeModpack`) and
    there are no correctness unknowns. Comprises: an app entry + `vite.config.ts` off `build.lib`
@@ -266,11 +263,12 @@ unchanged by deployment; only probability moves.
    filed 2026-08-08). The UI constraint is unaffected — there is still no picker to offer — but the
    site must not treat that throw as its only line of defence. Nothing blocks *starting* it, and its one real dependency (a
    diagnostics channel, so the page cannot report success on a partial upgrade) cleared 2026-08-02 —
-   so its position here is the rubric's doing, not a dependency's: items 3-4 above it are class-1
-   correctness unknowns and this is class 3, while items 1-2 are ranked on completed analysis and an
-   unmet evidence bar respectively, and item 5 on cheapness rather than on the rubric.
+   so its position here is the rubric's doing, not a dependency's: items 2-3 above it are class-1
+   correctness unknowns and this is class 3, while item 1 is ranked on an unmet evidence bar and
+   item 4 on cheapness, neither on the rubric. (The 2026-08-03 pass placed a sixth entry above
+   these — the re-pin Part B port, ranked on completed analysis — which shipped 2026-08-09.)
 
-7. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+6. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
@@ -283,7 +281,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-8. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -297,7 +295,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-9. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+8. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -383,19 +381,28 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
 
 ### Textures
 
-- [`MergePixelData`'s BC re-encode is unported, and the NPOT mask path diverges because of it](backlog/2026-07-22-bc-encoder-merge-pixel-data.md)
-  — an **accepted, operator-adjudicated divergence** (2026-07-22), not a silent gap: `resizeToPow2ForMerge`
-  elides the nvtt re-encode `Tex.ResizeXivTx` performs (`Tex.cs:637-706`), which is exact for a lossless
-  source (`A8R8G8B8` → `BGRA`, measured byte-identical) and exact on the index path (quantization absorbs
-  it), but reaches the output bytes on the mask path. Bracketed by three synthetic packs: smooth content
-  max delta **9**, adversarial content max delta **116**. **Stays unprioritized on rank (2026-07-25
-  survey: leverage-not-urgency, large standalone effort), but its "zero corpus packs reach it" basis is
-  now corrected** — the `ValidateTexFileData` load-seam port (see the 2026-07-25 dated pass note above)
-  reaches the identical `MergePixelData` BC-reencode gap for real, via
-  `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2` (see the item file's Reachability section). Uniquely on this
-  list it has **no**
-  `DIVERGENCE_RULES` entry — a tolerance was considered and rejected because, unlike the global `.tex` ±1
-  rule, there is no provable bound to pin one to. Closing it means a BC encoder matching TexImpNet/nvtt.
+- [`MergePixelData`'s encode is unported — the NPOT mask/hair paths and the `.tex` load seam diverge because of it](backlog/2026-07-22-bc-encoder-merge-pixel-data.md)
+  — one elision (`resizeToPow2ForMerge` skips the nvtt re-encode `Tex.ResizeXivTx` performs,
+  `Tex.cs:637-706`) with **two distinct consequences**, which do not close together.
+  **(1) The pixels** — an **accepted, operator-adjudicated divergence** (2026-07-22), not a silent gap:
+  exact for a lossless source (`A8R8G8B8` → `BGRA`, measured byte-identical) and exact on the index path
+  (quantization absorbs it), but reaching the output bytes on the mask path. Bracketed by three synthetic
+  packs: smooth content max delta **9**, adversarial content max delta **116**; confirmed by three
+  path-scoped `DIVERGENCE_RULES` entries (added 2026-07-23) rather than a baseline, since no single
+  tolerance survives — there is no provable bound to pin one to. Closing it means a BC encoder matching
+  TexImpNet/nvtt. **(2) The mip chain** — found 2026-08-09, a plain port **bug** rather than a
+  divergence: at the one call path where `MergePixelData` is the *final* encode
+  (`ValidateTexFileData`'s Branch A, `EndwalkerUpgrade.cs · 2109-2112` — the other three re-encode
+  through a later `ConvertToDDS`), TexTools emits a full `GetMipCount` pyramid where we emit
+  `CreateFast8888DDS`'s 2px-floor chain: measured 7 levels / 21924 bytes vs our 6 / 21920, mip0
+  byte-identical. Needs **no BC encoder** (it reaches a lossless source too) and is much the cheaper
+  half, modulo one unmeasured question — whether levels 1+ also need nvtt's filter.
+  **Its "zero corpus packs reach it" basis is corrected twice over**: the `ValidateTexFileData`
+  load-seam port (see the 2026-07-25 dated pass note above) reaches consequence 1 for real via
+  `KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`, and consequence 2 via the synthetic
+  `load-seam-npot.ttmp2` (whose ratchet baseline therefore carries a real defect, not only manifest
+  noise). **Stays unprioritized on rank** (2026-07-25 survey: leverage-not-urgency, large standalone
+  effort) — not re-ranked here.
 - [`[Inako] Lilith Wish.pmp` — `/resave` diverges on ~30 eye/face `.tex` payloads](backlog/2026-07-17-lilith-wish-resave-tex-divergence.md)
   — every mismatch is `ours.length === golden.length + 80`, a constant excess regardless of texture
   size (not the known ±1 BC-decode tolerance). Pre-existing writer/codec gap, unrelated to this
@@ -410,11 +417,6 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   ready to wire) but also truncates trailing null padding, which remains unported. Blast radius is
   bigger than a byte diff — dedup keys on loaded content, so it changes `common/N` **member names**.
   Must land before member-name parity is complete.
-- [Synthetic `/upgrade` goldens for the `ValidateTexFileData` load-seam port](backlog/2026-07-25-validate-tex-load-seam-synthetics.md)
-  — the load-seam resize (Branch A) and mip-offset fixup (Branch B) shipped 2026-07-25 with unit +
-  real-corpus coverage but no dedicated synthetic pack golden through the real oracle. Needs
-  `ttmp2-builder.ts` changes (an old-`TTMPVersion` param, a Type-4 tex payload writer) to build.
-
 ### Metadata
 
 - [v1 metadata support](backlog/2026-07-11-v1-metadata-support.md) — `deserialize.ts` throws on

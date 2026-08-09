@@ -1,4 +1,4 @@
-# `MergePixelData`'s BC re-encode is unported, and the NPOT mask and hair paths diverge because of it
+# `MergePixelData`'s encode is unported, and the NPOT mask/hair paths and the `.tex` load seam diverge because of it
 
 **Filed:** 2026-07-22, from the NPOT texture-resize work
 ([`docs/superpowers/specs/2026-07-21-npot-texture-resize-design.md`](../superpowers/specs/2026-07-21-npot-texture-resize-design.md)).
@@ -31,9 +31,72 @@ would copy a needless quality loss into what the user renders. Our skipping it i
 code-trace argument and has **not** been game-verified (`AGENTS.md` user-benefit bar: leg 1 met via
 #18, leg 3 not), so no confirmed-superiority claim is made.
 
+## Second consequence, found 2026-08-09: the mip **chain** diverges too, not only the pixels
+
+Everything above this line is about the *pixels* — the lossy BC round-trip our output skips. That is
+one consequence of eliding `MergePixelData`. There is a second, recorded here because it has the same
+root cause (we do not port `MergePixelData`'s encode) and will be closed or not by the same work.
+
+**Why it was invisible until now.** At three of `MergePixelData`'s four `/upgrade` call paths, the
+`ResizeXivTx` call is only an NPOT-normalizing *pre-step* and the **final** encode is a separate,
+later `Tex.ConvertToDDS(byte[], …, allowFast8888: true)` — the index path
+(`EndwalkerUpgrade.cs · CreateIndexFromNormal · 1098` then `· 1107`), the hair path
+(`· UpdateEndwalkerHairTextures · 1197,1201` then `· 1213,1222`) and the mask path
+(`· UpgradeMaskTex · 2088` then `· 2094`). `DefaultTextureFormat` is `A8R8G8B8`, so that later call
+takes `CreateFast8888DDS`, and *its* mip chain is what lands in the file. `src/tex/encode.ts ·
+generateMipmaps` is a faithful port of `CreateFast8888DDS`, so those three paths are right — whatever
+mip chain `MergePixelData` built in between is overwritten and never observed.
+
+**The load seam is the fourth call path, and it has no second encode.**
+`EndwalkerUpgrade.cs · ValidateTexFileData · 2109-2112` calls `ResizeXivTx` and then
+`tex.ToUncompressedTex()` **directly**. So here `MergePixelData` *is* the final encode, and its mip
+behaviour reaches the output bytes:
+
+- it asks nvtt for a full pyramid — `SetMipmapGeneration(true, maxMipCount)` with `maxMipCount = -1`
+  whenever the source had mips (`Tex.cs · MergePixelData · 672-678, 685`), i.e. all the way down to
+  1×1;
+- and it then sets `MipMapCount = GetMipCount(Width, Height)` (`Tex.cs · MergePixelData · 700-704`),
+  where `GetMipCount(largestSize) = floor(log2(largestSize) + 1)` over `max(w, h)`
+  (`Tex.cs · GetMipCount · 707-714`) — **7** levels for a 64px result.
+
+Ours calls `encodeUncompressedTex(…, { mips: true })` (`src/upgrade/validate-tex.ts ·
+validateTexFileData · 37-39`), i.e. `generateMipmaps`' `CreateFast8888DDS` decimation, which stops at
+a **2px** floor and emits `max(1, floor(log2(min(w, h))))` levels — **6** for the same 64px result.
+Correct at the other three sites, wrong at this one.
+
+**Measured** against a real ConsoleTools `/upgrade` golden (`load-seam-npot.ttmp2`, 2026-08-09):
+
+| | ours | golden |
+|---|---|---|
+| `.tex` length | 21920 | 21924 |
+| header `MipCount` | 6 | 7 |
+| dimensions | 64×64 | 64×64 |
+
+Both sides agree on the resize itself: mip0 — the first 16384 payload bytes, `64*64*4` — is
+**byte-identical**, and the divergence begins at exactly the mip0/mip1 boundary (payload offset
+16384). The 4-byte length difference is the missing 1×1 level. Note the fixture is **A8R8G8B8**, a
+lossless source: this consequence is *not* BC-specific, which is why the item's title and the
+"Measured cost" table above — both scoped to the BC re-encode — do not cover it.
+
+**Open question, not yet answered.** Only the *first* differing offset was probed. Whether mip levels
+1-5 would match nvtt's own filter even once the level *count* is right is **unchecked** — nobody has
+compared those levels pixel-by-pixel. So the fix is not necessarily "emit one more level": it may be
+that this call site needs a real nvtt-compatible mip filter rather than `CreateFast8888DDS`'s
+top-left-texel decimation. Answer that before assuming a `GetMipCount`-shaped variant of
+`encodeUncompressedTex` closes it.
+
+**Reached by** `test/corpus/synthetic/load-seam-npot.ttmp2`
+(`scripts/generate-synthetics/build-synthetic-load-seam-npot.ts`), built 2026-08-09 as the Branch-A
+load-seam golden. Its `/upgrade` and `/resave` baseline entries therefore contain **a real defect**
+alongside the cosmetic `ModsJsons[].{Name,Category,DatFile}` re-derivation gap
+([`2026-07-13-resave-ttmp2-name-category.md`](2026-07-13-resave-ttmp2-name-category.md)) — anyone
+burning that baseline down should treat the `_d.tex` payload entry as this item, not as manifest
+noise.
+
 ## Measured cost
 
-Against real cached ConsoleTools `/upgrade` goldens:
+Scoped to the BC re-encode — the *pixel* consequence. The mip-chain consequence above has its own
+measurement. Against real cached ConsoleTools `/upgrade` goldens:
 
 | case | pack | result |
 |---|---|---|
@@ -129,12 +192,24 @@ not (that is why this changed).
 A **shape** rule — confirming "these bytes differ exactly as a BC round-trip would explain" — remains
 impossible: it requires performing the BC round-trip, i.e. the encoder we lack.
 
+**"No forever-baseline" is true of the pixel half only, as of 2026-08-09.** The mip-chain consequence
+is carried by `load-seam-npot.ttmp2`'s ratchet baseline, deliberately and with no confirmation rule —
+because it is **not** an intended divergence to confirm. It is a straightforward port bug: our output
+is wrong and TexTools' is right, with no trade-off and nothing to adjudicate. A `DIVERGENCE_RULES`
+entry would assert we meant it. The baseline records it as a known-open diff, and *this section of
+this item* is the documentation AGENTS.md requires a baseline entry to have alongside it.
+
 ## What would close it
 
 Note the goal is in genuine tension with `docs/TEXTOOLS_BUGS.md` #18: "closing" this means
 *reproducing* the golden, which means re-introducing the needless BC generation into a used texture.
 So the honest framing is a choice, not a pure fix — byte-parity vs. the (plausibly, unverified)
 higher-quality output we ship today. If the operator ever prefers parity here, the way to get it is:
+
+**The two consequences do not close together.** The mip-chain half (above) needs no BC encoder at
+all — it is reachable on a lossless A8R8G8B8 source — so it is separable and much cheaper: the level
+*count* is a one-line `GetMipCount` port, and the only real question is whether levels 1+ need nvtt's
+filter as well (unmeasured; see that section's open question). The pixel half is the expensive one:
 
 A BC1/BC3/BC4/BC5 encoder matching TexImpNet/nvtt's output byte-for-byte. That is a large piece of
 work with its own oracle problem, and it would also retire the related ±1 BCn **decoder** divergence
@@ -166,6 +241,12 @@ mip0 max delta 254/255, noise-magnitude — see `test/helpers/upgrade-compare.ts
 `confirmBcResizedAsA8` rule). So a real pack now depends on this same gap; it is fresh evidence for
 re-weighing this item's priority (`docs/BACKLOG.md`'s "deploying changes the probability term" note),
 even though the mask/hair call sites this item is scoped to remain unreached by any known corpus pack.
+
+**Widened again 2026-08-09.** The same load seam reaches the elision on a **lossless** source too,
+via the mip chain rather than the pixels — `test/corpus/synthetic/load-seam-npot.ttmp2`, see the
+*Second consequence* section above. So two corpus packs now depend on this item: one real
+(`KK_Sportcar_Final_Hotfix_V1.1.1.ttmp2`, BC pixels) and one synthetic (`load-seam-npot.ttmp2`, mip
+chain). Ranking is unchanged — that is not this item's call to make.
 
 ## Test that pins it
 

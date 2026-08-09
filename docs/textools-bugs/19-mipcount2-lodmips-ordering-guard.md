@@ -1,14 +1,17 @@
 # 19. A canonical `MipCount==2` header's `LoDMips=[0,1,0]` trips `TexHeader.ToBytes`'s own ordering guard
 
-**Status:** reproduced · **FIXED UPSTREAM in `1993bf6` ("Be less strict about texture mip data, and
-fix non-ascending lodmips", v3.1.1.4). Our port has NOT yet been changed, so our faithful
-reproduction is now a *divergence from the new oracle*, to be closed in Part B.** See the "Upstream
-fix, as landed" section at the end of this entry.
+**Status:** **Fixed upstream in `1993bf6` ("Be less strict about texture mip data, and fix
+non-ascending lodmips", v3.1.1.4); our port reproduces the fixed behaviour as of `14e9194` (hunks 1
+and 3) and `1c25308` (hunk 2).** The entry is kept, not deleted: it is the record of why the old
+bytes looked as they did, which the golden cache and the re-pin spec both reference. Everything
+below describes the **pre-fix** behaviour unless marked otherwise; see "Upstream fix, as landed" and
+"What Part B owed" at the end.
 
 **Where** (line numbers below are the **v3.1.1.4** pin unless marked *pre-fix*):
 `Tex.cs:1124-1126` (`CreateTexFileHeader`) vs the ordering guard that `1993bf6` **deleted** from
 `TexHeader.ToBytes` (`Tex.cs:138-139` *pre-fix*, inside the `:138-145` guard block) — see
-`src/tex/header.ts`, `buildCanonicalTexHeader` / `assertTexHeaderWritable`
+`src/tex/header.ts`, `buildCanonicalTexHeader` (our port of the guard, `assertTexHeaderWritable`,
+was deleted with it)
 
 `CreateTexFileHeader` set `LoD1Mip = newMipCount > 1 ? 1 : 0` and `LoD2Mip = newMipCount > 2 ? 2 : 0`
 (`:1126-1127` *pre-fix*; the second of those is the line the fix changed, now `:1126`). For a texture
@@ -36,18 +39,37 @@ but its absence isn't what caused the crash; `ToBytes()` would throw on that hea
 fixup pass ever ran. (`1993bf6` also added an ascending-order clamp to that same loop, `:213-218`, so
 at the new pin it *would* normalize `[0,1,0]` to `[0,1,1]` — a second, independent leg of the fix.)
 `ValidateTexFileData`'s Branch B (`EndwalkerUpgrade.cs:2116-2124`) is
-simply the first place *our port* currently reaches this shared defect, because a broken-offset old
+simply the first place *our port* ever reached this shared defect, because a broken-offset old
 two-mip `.tex` is the case our load seam constructs; the crash itself is reachable anywhere TexTools
 serializes a canonical `MipCount==2` header, broken offsets or not.
 
-**Us:** ported both symbols verbatim — `buildCanonicalTexHeader` (`src/tex/header.ts`) reproduces the
-`[0,1,0]` construction for `MipCount==2`, and `assertTexHeaderWritable` reproduces `ToBytes`'s ordering
-check, so `validateTexFileData`'s Branch B (`src/upgrade/validate-tex.ts`) throws on this shape exactly
-where TexTools would. Found while writing this task's synthetic Branch-B test: a naive 4x4
-(`mipCount==2`) fixture with a corrupted mip0 offset reliably reproduces the crash — pinned directly by
-`test/upgrade/validate-tex.test.ts` ("Branch B: a mipCount==2 tex with a broken offset throws the ToBytes
-ordering guard"); the *rewrite-path* test uses 16x16 (`mipCount==4`, `LoDMips=[0,1,2]`) instead, to
-exercise the intended repair without tripping this defect. No corpus pack is known to reach it yet.
+**Us — historical, then current.** We *did* port both symbols verbatim: `buildCanonicalTexHeader`
+(`src/tex/header.ts`) reproduced the `[0,1,0]` construction for `MipCount==2`, and
+`assertTexHeaderWritable` reproduced `ToBytes`'s ordering check, so `validateTexFileData`'s Branch B
+(`src/upgrade/validate-tex.ts`) threw on this shape exactly where the old TexTools would — and the
+enclosing load-fix `catch` then dropped the file. That reproduction was found while writing the
+original synthetic Branch-B test (a naive 4×4 `mipCount==2` fixture with a corrupted mip0 offset
+reproduces the crash reliably), and no corpus pack was ever known to reach it.
+
+**None of that is live any more.** `assertTexHeaderWritable` is deleted, `buildCanonicalTexHeader`
+emits `[0,1,1]`, and `fixUpBrokenMipOffsets` carries the ascending clamp, so a broken-offset
+non-ascending-`LoDMips` `.tex` is now **repaired and kept** rather than dropped. What pins the fixed
+behaviour today:
+
+- **Unit** — `test/upgrade/validate-tex.test.ts` "Branch B: a legacy non-ascending LoDMips tex is
+  repaired and KEPT (TEXTOOLS_BUGS #19)", plus `test/tex/tex-header.test.ts` "emits LoD2 =
+  mipCount - 1 below three mips (Tex.cs:1126, as fixed by 1993bf6)" and "raises a non-ascending
+  LoDMips entry to its predecessor (Tex.cs:213-218, added by 1993bf6)".
+- **Real oracle** — `test/corpus/synthetic/load-seam-mipfix.ttmp2`
+  (`scripts/generate-synthetics/build-synthetic-load-seam-mipfix.ts`), built for this purpose: an
+  old-version (`TTMPVersion "2.0w"`) TTMP carrying both trigger shapes — a 4×4 two-mip header with
+  the canonical `[0,1,0]` **and** a 16×16 four-mip header with a stored `[0,2,1]`, each with a
+  clobbered mip0 offset. Against the v3.1.1.4 oracle both `.tex` payloads come back
+  **byte-identical** to the golden, which is the direct proof that our repair matches the fixed
+  upstream one. (Its baseline entries are all `ModsJsons[].{Name,Category,DatFile}` — the unrelated,
+  pre-existing writer gap `docs/backlog/2026-07-13-resave-ttmp2-name-category.md`; none of them is a
+  `.tex`.) The sibling `load-seam-npot.ttmp2` pins Branch A and is *not* clean — see that pack's own
+  note in `docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md`.
 
 **Upstream fix, as landed** (`1993bf6`, 2025-11-02 — verified against `git show`, three hunks, all in
 `Tex.cs`):
@@ -67,7 +89,7 @@ exercise the intended repair without tripping this defect. No corpus pack is kno
 
 **Reach re-measured (2026-08-09, pre-Part-B fact-check).** The entry above, and §10 row 1, both
 understate what the deleted guard reached and overstate what the `CreateTexFileHeader` fix moves.
-Three corrections, none of which change the three edits Part B owes:
+Three corrections, none of which changed the three edits Part B then owed:
 
 1. **The guard fired on more than the canonical `[0,1,0]`.** Branch B's rewrite
    (`EndwalkerUpgrade.cs · ValidateTexFileData · 2116-2124`) threw for *any* header whose `LoDMips`
@@ -96,12 +118,30 @@ Three corrections, none of which change the three edits Part B owes:
    `modified` on a Branch-B texture that previously returned `null` untouched, or threw — and not
    from (b).
 
-**What Part B owes** (spec `docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md` §10
-row 1): delete `assertTexHeaderWritable` and its Branch-B call site (`src/upgrade/validate-tex.ts`),
-change `buildCanonicalTexHeader`'s LoD2 to `mipCount > 2 ? 2 : mipCount - 1`, and add the ascending
-clamp to `fixUpBrokenMipOffsets` — with tests, including replacing the two `test/upgrade/validate-tex.test.ts`
-and `test/tex/tex-header.test.ts` cases that currently assert the throw. Plus one thing the original
-itemisation missed: **rewrite the deferred-recompress rationale** in `src/upgrade/load-fixes.ts`
-(the `.tex` bullet of `makeTtmpLoadFix`'s header comment). It justifies skipping
-`Tex.CompressTexFile` on the grounds that the step is "invisible to the golden" — true only once
-hunk (a) lands, because until then that call carried the guard described in point 2 above.
+   **Measured afterwards: neither hunk moved a byte.** Under the 2026-08-09 bless, all 166
+   pre-existing baseline files were byte-identical before and after — so (c)'s clamp fires on no
+   corpus texture either. The prediction above was right about (b) and merely conservative about
+   (c). The change's value is the class-1 fix, not a diff reduction; that is why the two synthetics
+   were built rather than relying on corpus movement as the evidence.
+
+**What Part B owed — DISCHARGED 2026-08-09** (spec
+`docs/superpowers/specs/2026-08-05-textools-repin-v3.1.1.4-design.md` §10 row 1). Kept as the
+itemisation of what "reproduces the fixed behaviour" concretely meant, each line marked with where it
+landed:
+
+1. Delete `assertTexHeaderWritable` and its Branch-B call site (`src/upgrade/validate-tex.ts`) — done,
+   `14e9194`.
+2. Change `buildCanonicalTexHeader`'s LoD2 to `mipCount > 2 ? 2 : mipCount - 1` — done, `1c25308`.
+3. Add the ascending clamp to `fixUpBrokenMipOffsets` — done, `14e9194`.
+4. Replace the `test/upgrade/validate-tex.test.ts` and `test/tex/tex-header.test.ts` cases that
+   asserted the throw — done, inverted rather than deleted (the current names are listed under **Us**
+   above).
+5. Rewrite the deferred-recompress rationale in `src/upgrade/load-fixes.ts` (the `.tex` bullet of
+   `makeTtmpLoadFix`'s header comment), which justified skipping `Tex.CompressTexFile` as "invisible
+   to the golden" — true only *after* item 1 lands, because until then that call carried the guard
+   described in point 2 of *Reach re-measured* — done, `14e9194`.
+
+Beyond the itemisation, the fix was pinned against the real oracle by two purpose-built synthetic
+packs (`d3b120d`, `8e77407`); see **Us** above. Measured corpus effect of the whole change: **zero
+bytes moved** on all 166 pre-existing baseline files — expected, and recorded with its reasoning in
+§10.1's totals table.

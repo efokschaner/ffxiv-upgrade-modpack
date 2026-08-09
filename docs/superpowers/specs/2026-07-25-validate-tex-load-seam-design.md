@@ -273,11 +273,17 @@ branches.
   `KK_Sportcar` pack this spec's Branch A reaches (a different call site, the identical
   `MergePixelData`-elision gap), and the item file's Reachability section and `docs/BACKLOG.md`'s
   Textures entry were both corrected to say so, per §3.4/§6.2 above.
-- **Synthetics deferred, not built.** §6.1/§6.2 called for two synthetic `/upgrade` goldens (an
-  A8R8G8B8 NPOT-with-mips `.tex` for Branch A, a POT broken-mip-offset `.tex` for Branch B). Neither
-  was built in this change — both branches already have unit-test + real-corpus coverage (§6), and
-  building the fixtures needs `ttmp2-builder.ts` changes (an old-`TTMPVersion` parameter, a Type-4 tex
-  payload writer) that were judged out of scope for this pass. Filed as
-  [`2026-07-25-validate-tex-load-seam-synthetics.md`](../../backlog/2026-07-25-validate-tex-load-seam-synthetics.md)
-  instead — the plan `test/helpers/upgrade-compare.ts`'s `confirmBcResizedAsA8` rule comment refers to
-  when it says a dedicated A8R8G8B8 synthetic is "planned."
+- **Synthetics deferred here, built 2026-08-09.** §6.1/§6.2 called for two synthetic `/upgrade`
+  goldens (an A8R8G8B8 NPOT-with-mips `.tex` for Branch A, a POT broken-mip-offset `.tex` for
+  Branch B). Neither was built in *this* change — both branches already had unit-test + real-corpus
+  coverage (§6), and building the fixtures needed an old-`TTMPVersion` parameter on
+  `ttmp2-builder.ts` (a Type-4 tex payload writer was also thought necessary; it turned out not to
+  be — `writeTtmp2Files` wraps every payload as SqPack Type 2 and `FixOldTexData` gates on storage
+  type, not SqPack type). They shipped alongside the v3.1.1.4 re-pin Part B work as
+  `test/corpus/synthetic/load-seam-npot.ttmp2` (§6.1) and `load-seam-mipfix.ttmp2` (§6.2). Two
+  results worth carrying forward: Branch B is **byte-exact** against the real oracle, and Branch A
+  is **not** — mip0 matches but the mip *chain* does not, an unrelated pre-existing gap in
+  `MergePixelData`'s unported encode, written up in
+  `docs/backlog/2026-07-22-bc-encoder-merge-pixel-data.md`. `test/helpers/upgrade-compare.ts`'s
+  `confirmBcResizedAsA8` comment no longer says a synthetic is "planned"; it names that pack and
+  what it established.
