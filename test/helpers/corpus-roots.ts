@@ -3,8 +3,15 @@ import { dirname, join } from "node:path";
 
 // Single source of truth for corpus discovery. Depends ONLY on node:fs/node:path (no vitest), so
 // both the Node-API runner (corpus-units.ts) and the vitest helpers (oracle.ts) can import it.
-// Real mods (test/corpus/real) and authored synthetic packs (test/corpus/synthetic) flow through
-// the IDENTICAL pipeline; all roots are gitignored (see .gitignore). See the parity design spec.
+// Third-party packs (test/corpus/real) and authored synthetic packs (test/corpus/synthetic) flow
+// through the IDENTICAL pipeline; all roots are gitignored (see .gitignore). See the parity design
+// spec.
+/** Packs we did NOT author: real third-party mods, and third-party TEST FIXTURES (e.g. Penumbra's
+ *  own `Parent Settings.pmp` feature-test pack). The line against `synthetic` is authorship, not
+ *  genre — a synthetic pack is one WE build from a committed builder under
+ *  `scripts/generate-synthetics/`, so `npm run synthetics` regenerates it in a fresh clone. Anything
+ *  a fresh clone cannot regenerate belongs here. Widened from "real mods" 2026-08-09; see
+ *  docs/superpowers/specs/2026-08-09-resave-matched-failure-design.md §4. */
 const REAL = join(__dirname, "..", "corpus", "real");
 const SYNTHETIC = join(__dirname, "..", "corpus", "synthetic");
 /** Packs ConsoleTools /upgrade is EXPECTED to error on (the expected-failure /upgrade test). Scoped

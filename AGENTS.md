@@ -103,8 +103,11 @@ intuition** when the two conflict:
 - **ConsoleTools** — TexTools' CLI; its `/upgrade` command is our oracle.
 - **golden** — the ConsoleTools `/upgrade` output we diff our result against, byte-for-byte.
 - **corpus** — the mod packs we test over, both gitignored / local and both driving the
-  same `/upgrade` golden harness: `test/corpus/real/` (real third-party mods) and
-  `test/corpus/synthetic/` (minimal packs we author ourselves). "Corpus" means both roots.
+  same `/upgrade` golden harness: `test/corpus/real/` (third-party packs we did not author —
+  real mods, and third-party test fixtures such as Penumbra's own feature-test packs) and
+  `test/corpus/synthetic/` (minimal packs we author ourselves). The dividing line is
+  authorship, not genre: a synthetic pack is one a fresh clone can regenerate with
+  `npm run synthetics`. "Corpus" means both roots.
 - **ratchet / baseline** — the per-pack record of currently-known diffs; a pack passes while
   its diff stays a subset of its baseline, so regressions fail but pre-existing gaps don't block.
 - **divergence** — an intended, documented deviation from the golden, confirmed by a
@@ -141,7 +144,8 @@ result against a cached ConsoleTools `/upgrade` golden (per `gamePath`, on
 decompressed content).
 
 The **corpus** spans two **gitignored / local-only** sister roots, both driving the same
-`upgrade` check: `test/corpus/real/` (real third-party mods we don't redistribute) and
+`upgrade` check: `test/corpus/real/` (third-party packs we don't redistribute — real mods, and
+third-party test fixtures) and
 `test/corpus/synthetic/` (minimal packs we author to exercise paths real mods don't reach —
 e.g. the F1 filename repro). Because both are gitignored, a fresh clone starts empty and the
 `upgrade` check no-ops until you populate `real/` (supply the mods) and/or rebuild the

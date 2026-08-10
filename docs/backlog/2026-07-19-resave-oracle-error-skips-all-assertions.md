@@ -179,3 +179,38 @@ That covers the branch permanently: it cannot rot when upstream changes, and it 
 port advances. It is a synthetic unit test rather than a golden — a deliberate departure from
 AGENTS.md's usual preference, justified because that preference governs *ported behaviour*, and this
 is harness behaviour with no oracle to appeal to.
+
+## Update (2026-08-09): the branch narrowed; this item did **not** change
+
+Two things landed with
+[`docs/superpowers/specs/2026-08-09-resave-matched-failure-design.md`](../superpowers/specs/2026-08-09-resave-matched-failure-design.md).
+Both touch the code this item describes, and neither implements or closes it.
+
+**1. The ordering bug in front of it is fixed.** `registerResaveCheck` used to call `loadModpack` +
+`writeModpack` *above* the `resaveGoldenCached` fetch, so a pack our writer refused threw out of the
+`it()` before the `{ kind: "error" }` branch was reached at all. Load and write now run **after** the
+fetch, inside whichever branch is taken — the same seam `registerUpgradeCheck` has always used.
+
+**2. A matched-failure branch now sits in front of the skip, and it is *narrower*, not wider.** A
+`/resave` oracle error whose captured trace matches a **declared** entry in
+`RESAVE_MATCHED_FAILURE_RULES` (`test/helpers/resave-compare.ts`) is a *semantic refusal* — TexTools
+declining the pack on its bytes, at a seam this port reproduces — and is asserted as a matched failure
+(a PASS). Live case: the PMP `Combining` write refusal, `WizardData.cs:897-900`.
+
+**This is not the "fix" this item warns against.** The warning above is against making the
+*environmental* case a matched-failure assertion, and that case is untouched: an oracle error matching
+**no** rule still falls through to the identical `console.error("[resave] UNVERIFIED: …")` +
+`ctx.skip`, and `test/helpers/resave-compare.test.ts` pins that the recorded Milktruck CMP trace
+matches no rule — a guarantee the live corpus can no longer supply, since Milktruck stopped erroring
+at the v3.1.1.4 pin.
+
+**Why the oracle-free assertions were still not added.** Deliberately, per this item's own ruling
+above: with no pack reaching the environmental branch, the code would ship unexercised, and the
+prescribed shape (extract the assertions into an exported function; unit-test it through
+`resaveGoldenCached`'s `opts.produce` seam) is a piece of work in its own right rather than something
+that falls out of the reordering. That prescription is unchanged and still correct. What *has* changed
+is that the branch is now reached by strictly fewer packs, so the residual exposure is smaller than
+when this was filed.
+
+Line references above are pre-2026-08-09; the branch is now the `matchResaveFailure` lookup and the
+`ctx.skip` that follows it.
