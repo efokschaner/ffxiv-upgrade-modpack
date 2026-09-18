@@ -46,6 +46,21 @@ small size; diff the header + mip-offset-table bytes specifically, then decide i
 bytes, one small phantom mip, or padding) — not yet done; only the aggregate length/uniform-delta shape
 is confirmed so far.
 
+## Update (2026-08-09): step 2's bisect is very likely already answered — by a different pack
+
+The same constant-80 signature was measured **byte-for-byte** on a real Penumbra v4 pack
+(`hs-Yet Another Leisurewear …`, 6 equipment textures; see
+[`2026-08-08-bug23-in-game-verification.md`](2026-08-08-bug23-in-game-verification.md)): common prefix
+byte-identical, our excess 80 bytes **all zero, at the tail**. That is not a header or mip-offset-table
+difference — it is trailing null padding, i.e. the PMP-load `FastValidateTexFile` truncation of
+[`2026-07-13-pmp-load-time-tex-fixup.md`](2026-07-13-pmp-load-time-tex-fixup.md), step 3's first bucket.
+
+This makes the same attribution highly likely for this pack — it is also a `.pmp`, so the same
+PMP-load fixup applies, and the delta shape is identical — but it is **not measured here**: Lilith Wish
+remains scoped out of `/resave`, so nobody has confirmed *its* 80 bytes are zeros. Step 2 below is now
+a cheap confirmation (dump the tail, not bisect the header) rather than an open investigation, and
+step 3's answer is provisionally the PMP load-time fixup item.
+
 ## What to do
 
 1. Reproduce locally: move the maintainer's local `[Inako] Lilith Wish.pmp` (gitignored, currently in

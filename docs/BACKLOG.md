@@ -156,6 +156,19 @@ it says today, and rank arithmetic about items that no longer exist ages into no
   [`MergePixelData` item](backlog/2026-07-22-bc-encoder-merge-pixel-data.md) (*Unprioritized →
   Textures*), which now covers two consequences rather than one.
 
+- **2026-08-09b** — sourcing a subject pack for item 1 turned up the first two **real Penumbra v4
+  packs** this project has seen, and reading them produced **four new items**: two ranked as a block
+  directly under the site (6, 7 — the v4-input refusal and the dropped schema keys) and two
+  unprioritized (`Combining` group support, and real-v4 corpus coverage — the latter **deferred by
+  operator decision** the same day, since `/upgrade` has no v4 golden to compare against; the item
+  records that `/resave` *does* support v4, so only half of it is blocked). The new block takes slots
+  **6-7**, so the previous 6, 7 and 8 shift down to **8, 9 and 10**; no existing item's *relative* order
+  changed, and items 1-5 are untouched. The block sits under the
+  site because both are gated behind a page existing. Item 1 was also corrected in the same pass: the
+  synthetic pack it named cannot discharge its own evidence bar (payload at a gamePath nothing renders,
+  and a size claim that is false at 839 vs 948 bytes), so the real pack is the subject now and both
+  artifacts are built.
+
 **The ranking objective.** The product is a static webpage that upgrades a modpack as robustly as
 TexTools does — the port's functional completeness and the site are the *same* goal, not competing
 ones, so this is one list rather than "port work" and "product work". Items are ordered by
@@ -186,10 +199,17 @@ unchanged by deployment; only probability moves.
    evidence bar — someone verified in the real game that our output is better — has **not** been met.
    Bars 1 and 2 are (registered defect; confirmed corpus-side by `makeV4ExtraFileDuplicateConfirmation`
    over the purpose-built `test/corpus/synthetic/pmp-v4-extrafiles.pmp`), so this is the sole gap, and
-   the divergence currently ships on the 2026-08-06 operator ruling instead of on evidence. The work is
-   one manual test: `/resave` that pack through both our port and ConsoleTools, install both in
-   Penumbra, confirm both load, the in-game result is identical, and ours is roughly half the size.
-   **Plan for a negative result** — if the duplication turns out to be load-bearing in-game, the
+   the divergence currently ships on the 2026-08-06 operator ruling instead of on evidence. **Updated
+   2026-08-09:** the synthetic pack turned out to be unable to discharge the bar — its payload sits at a
+   gamePath nothing renders, so "identical in-game result" is vacuous on it, and at 839 vs 948 bytes the
+   size claim is false. A real Penumbra v4 export (`hs-Yet Another Leisurewear …`, sourced from the dev
+   Discord) is the subject instead, and **both artifacts are now built** in
+   `test/corpus/.bug23-ingame/leisurewear/`: 88 members / 34.7 MB ours vs 173 / 68.1 MB ConsoleTools' —
+   **1.96×**, with all 85 golden-only members referenced by nothing in the golden's own manifest. What
+   remains is only the operator's Penumbra step: install both, confirm both load and render identically.
+   One caveat recorded in the item — the pair also differs by the unported 80-byte null-padding
+   truncation on 6 textures, so a rendering difference must not be attributed to #23 without ruling that
+   out. **Plan for a negative result** — if the duplication turns out to be load-bearing in-game, the
    divergence has to be withdrawn and our reader goes back to reproducing the bug, with the
    confirmation rule and the synthetic re-pointed at the reproduction. Ranked first not by size but
    because it is the only thing in the repo shipping on a ruling rather than on evidence, against one
@@ -268,7 +288,41 @@ unchanged by deployment; only probability moves.
    item 4 on cheapness, neither on the rubric. (The 2026-08-03 pass placed a sixth entry above
    these — the re-pin Part B port, ranked on completed analysis — which shipped 2026-08-09.)
 
-6. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
+6. [**`/upgrade` refuses every v4 Penumbra pack, and v4 is what current Penumbra and TexTools write**](backlog/2026-08-09-v4-pmp-input-refused.md)
+   — `src/upgrade/upgrade.ts:445-451` throws *"Cannot convert v4+ Penumbra modpack to ttmp/pmp."*, a
+   faithful port of `ModpackUpgrader.cs:218-241`. Nothing is wrong; the concern is **reach**. The corpus
+   makes v4 look exotic, but that is an artifact of when the corpus was collected: `PMP._WriteFileVersion
+   = 4` (`PMP.cs:47`) means TexTools writes v4 on every save, our own writer matches it
+   (`src/container/pmp.ts:1176`) — so **our own `/upgrade` output is a pack we would refuse to
+   re-upgrade** — and both real Penumbra exports sampled 2026-08-09 are v4. The share of real packs the
+   site can process shrinks on its own over time. Rubric class 3 shading into class 2 (an honest refusal,
+   nobody harmed silently), and it cannot affect a user until the site ships — hence directly below the
+   site rather than above it. What earns it a place near the site is that it bounds how useful the site
+   is on launch day. **The port work may be near zero** (operator's question, 2026-08-09, traced in the
+   item): read is ported, the transform is container-agnostic, and `writePmp` **already emits v4**
+   (`FileVersion: 4` + inline `Groups`, `pmp.ts:1175-1200`) — the pipeline round-trips v4 end to end
+   today and only the ported gate stands in front of it. The cost is all in **fidelity**: item 7 is a
+   hard precondition (it is the real content of upstream's caution — its model cannot represent
+   `Condition`/`ParentSetting`/`Combining`, so refusing is how it avoids shipping that loss silently),
+   plus a deliberate three-bar divergence decision, plus the fact that the golden harness has **no
+   oracle** for output ConsoleTools refuses to produce. Also settled 2026-08-09: a `.pmp` destination
+   does **not** dodge the throw — `ModpackUpgrader.cs:228` covers `.ttmp2` *and* `.pmp`; only a folder
+   destination escapes, and it raw-copies without upgrading.
+
+7. [**Newer Penumbra group/option/meta keys are dropped on write, including behaviour-defining ones**](backlog/2026-08-09-penumbra-schema-keys-dropped.md)
+   — measured 2026-08-09 on `Parent Settings.pmp`: its groups carry `Condition`, `ParentSetting`,
+   `Layout`, `Id` and its options `Condition`, `Layout`, `Color`, none of which this port models, and its
+   meta carries `RequiredFeatures`/`PageNames`. `KNOWN_GROUP_KEYS` (`pmp.ts:1012-1026`) is an allowlist,
+   `optionToJson` rebuilds from a fixed field set, and `meta.json` is a fixed literal — so all of them are
+   dropped. `Condition`/`ParentSetting` are load-bearing: dropping them **flattens a conditional mod into
+   an unconditional one**. **Not a divergence** — TexTools declares none of these fields either, so
+   reproducing the drop is correct and no golden diff exists; it is filed because it is silent and,
+   unlike `DefaultPreferredItems`, changes what the mod does. Unreachable today behind item 6's v4
+   refusal, and ranked *below* item 6 by the same precedent that ranks the tex-payload-shadow item last —
+   the derivative sits under its driver — but it must **land before** item 6 ships, or an honest class-2
+   refusal becomes a silent class-1 loss. First step is a synthetic that proves the drop; nothing does today.
+
+8. **Widen the corpus to vet the product.** Bounded product-vetting work with specific goals, not
    maintenance: the corpus is how every gap on this list was found, and widening it is how we
    establish that the shipped page handles what real users will actually upload. It is **85 real
    packs** (121 total, incl. 29 synthetic and 7 expected-failure — the empty-group-and-DataPages work
@@ -281,7 +335,7 @@ unchanged by deployment; only probability moves.
    this entry cannot be checked off. Write them in before picking the item up. See also design §8.4's
    thin-coverage note.
 
-7. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
+9. **The two remaining `writeTtmp2` manifest items** — [`Name`/`Category` re-derivation](backlog/2026-07-13-resave-ttmp2-name-category.md)
    and [option file order](backlog/2026-07-13-resave-ttmp2-option-file-order.md). They share the same
    entries — every `ModsJsons/N/*` entry in `.upgrade-baseline` is one or the other (a re-derived
    `Name`/`Category`, or a `FullPath`/`DatFile` shifted by ordering) — **2490 of the 3002 entries
@@ -295,7 +349,7 @@ unchanged by deployment; only probability moves.
    sibling, verbatim-null descriptions), **shipped 2026-07-20** and removed 2809 of the then-5811
    entries; see `docs/superpowers/specs/2026-07-20-ttmp2-mpl-manifest-fidelity-design.md`.
 
-8. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
+10. [PMP `structure` diffs are tex-payload shadows, not a `common/N` numbering bug](backlog/2026-07-21-common-n-tex-hash-shadows.md)
    — the ~42 non-orphan `structure` entries in `.upgrade-baseline`. ~22 are `diffPayloadMembers`
    (`upgrade-archive-diff.ts:335`) re-reporting a `.tex`/`.mdl` `payload` mismatch under the zip member
    name (19/19 verified as also `payload` entries); ~20 are `common/N` mismatches that look like a
@@ -325,6 +379,16 @@ unchanged by deployment; only probability moves.
 - [Manipulation normalization fails loud on a missing field](backlog/2026-07-13-pmp-manipulation-field-defaults.md)
   — instead of emitting the C# type's own default for an omitted key. The honest fix needs each
   field's exact C# enum and its zero-value member name. No corpus manipulation omits a field.
+- [Penumbra `Combining` groups are unported in both writers](backlog/2026-08-09-pmp-combining-group-support.md)
+  — a fail-loud guard waiting on a product decision, same shape as the `.meta`/`.rgsp` item above.
+  Verified 2026-08-09 against the real `Parent Settings.pmp` (3 Combining groups, 8 containers each):
+  the group loads opaquely, `writePmp` refuses it exactly where `WizardGroupEntry.ToPmpGroup` does
+  (`WizardData.cs:897-900` — **TexTools refuses too**), and `writeTtmp2` throws an `UnportedGapError`.
+  No silent wrong output anywhere. Two questions are open: whether to support the feature at all
+  (which means doing what ConsoleTools refuses, so the golden harness has no oracle — answer it once,
+  together with the v4-input item in the Prioritized list), and whether our whole-write refusal
+  matches the C#'s *per-option* seam or diverges from it, which has not been traced. Unprioritized:
+  reachable only behind the v4 refusal today.
 - [Split `writePmp`](backlog/2026-07-13-split-writepmp-module.md) — it blends `PMP.WritePmp` and
   `WizardData.WritePmp` into one module, against "split, don't blend". Pure reorganization; needs its
   own careful pass because a mechanical refactor here risks byte-parity regressions with no new test
@@ -492,14 +556,17 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   `.ttmp` name → empty → whole-pack phantom `added`) is **fixed**; both harnesses now re-read under the
   written `target`. What remains is the fail-loud half: `readLegacyTtmp` should throw on a zip (the
   `PK` magic) instead of yielding empty, so a future miswire is loud rather than a silent phantom diff.
-- [`/resave` asserts nothing when its oracle errors](backlog/2026-07-19-resave-oracle-error-skips-all-assertions.md)
-  — it skips (loudly, and correctly — the one such error is environmental, TexTools reading the
-  installed game's `human.cmp`) *before* running the checks that need no golden: the
-  write→re-read→compare round-trip and `pmpSelfConsistency`. Matters because
-  `Milktruck Bust Scaling Tweaks v1.0.0.ttmp2` is both a `/upgrade` no-op and a `/resave` oracle
-  error, so nothing in either harness compares its written output to anything. Fixable entirely
-  inside `/resave`, with no crosstalk between the harnesses. Do **not** close it by asserting a
-  matched failure — the item explains why that is wrong here.
+- [`/resave` asserts nothing when its oracle errors *environmentally*](backlog/2026-07-19-resave-oracle-error-skips-all-assertions.md)
+  — it skips (loudly, and correctly — an environmental error is TexTools reading the installed game's
+  `human.cmp`, not a property of the pack) *before* running the checks that need no golden: the
+  write→re-read→compare round-trip and `pmpSelfConsistency`. Do **not** close it by asserting a
+  matched failure on that branch — the item explains why that is wrong here. **Narrowed 2026-08-09**
+  ([spec](superpowers/specs/2026-08-09-resave-matched-failure-design.md)): a `/resave` oracle error
+  whose trace matches a *declared* `RESAVE_MATCHED_FAILURE_RULES` entry is now asserted as a matched
+  failure (a PASS) instead of reaching the skip at all — the PMP `Combining` write refusal,
+  `WizardData.cs:897-900`. Environmental errors are untouched, and a unit test pins that the recorded
+  Milktruck CMP trace matches no rule. The oracle-free assertions are still deliberately not
+  implemented: nothing reaches that branch at the current pin, so they would ship unexercised.
 - [Make the ConsoleTools oracle async, so the lock can heartbeat](backlog/2026-07-13-consoletools-oracle-async-lock.md)
   — the hand-rolled mutex breaks "stale" locks on a guess. A heartbeat is the proper fix but needs
   the `execFileSync` critical section gone first. Operator's call (2026-07-13): keep the hand-rolled
@@ -524,6 +591,35 @@ about **seam fidelity**, and any fix must keep the `/upgrade` goldens byte-exact
   never in the `npm test` gate. Filed 2026-08-01 from the diagnostics-channel design, which rejected a
   narrower trace-based oracle for addressing only a keyhole of this class. Costs to size first:
   runtime, Stryker-vs-custom-runner integration, and equivalent-mutant triage.
+- [Imc group JSON is passed through verbatim, so a source that omits a field omits it on write](backlog/2026-08-09-imc-group-json-field-defaults.md)
+  — `writePmp` carries an Imc group's `Identifier`/`AllVariants`/`OnlyAttributes` through `filteredRaw`
+  verbatim; TexTools deserializes into `PMPImcGroupJson` (`PMP.cs:1536-1546`) and re-serializes the
+  **complete** field set, so a field the source omits is written at its C# default rather than staying
+  absent. Key *set* is in scope under the JSON-manifest rule, so this is a real divergence. Measured on
+  `hs-Yet Another Leisurewear …`: 3 Imc groups omitting `AllVariants`/`OnlyAttributes` and
+  `Identifier.{BodySlot,SecondaryId}` produce exactly the 10 golden-only `meta.json` pointers predicted
+  (4+4+2). **Not** gated behind the v4 refusal — nothing about it is v4-specific. Undetected by anything
+  when filed (zero hits across all 170 baselines); **now pinned by a real corpus pack** — that pack was
+  added 2026-08-10 and its `/resave` baseline carries the 10 pointers, so the fix's success criterion is
+  that they disappear. `DefaultEntry` already gets the right treatment via `normalizeImcEntry`; this is
+  the same for its three siblings.
+- [Real Penumbra v4 packs are absent from the corpus — two are in hand, deferred](backlog/2026-08-09-real-v4-corpus-coverage.md)
+  — 37 of the 38 corpus `.pmp` packs are `FileVersion 3` with zero inline groups (scanned 2026-08-09);
+  the only v4 pack is the 708-byte synthetic built to exercise bug #23, so the entire v4 read path is
+  pinned by a pack we authored to match our own prediction. Two real Penumbra v4 exports are in hand.
+  **Largely closed 2026-08-10: both packs are now in `test/corpus/real/`.** Leisurewear's four units
+  all run — `/upgrade` as a matched-failure assertion (no baseline file), assets clean on a real 34 MB
+  v4 pack (24 mtrl / 72 tex / 77 mdl byte-exact), `/resave` blessed at 94 entries. The 2026-08-09
+  deferral (no v4 as `/upgrade` **golden** inputs while TexTools refuses to rewrite them) still stands
+  and is really the v4-input item's question. What actually remains here is **durability**:
+  `test/corpus/**` is gitignored, so both packs live only there and in the operator's Downloads, and
+  neither is re-sourceable without the dev Discord.
+  Note the block is **half a block**, and the item records exactly which half: `/upgrade` refuses v4
+  (`ModpackUpgrader.cs:226-232`) but **`/resave` supports it fully** (`Program.cs:204` loads with the
+  default `enforceCompatibility = false`, so `PMP.cs:176`'s v4 throw never fires) — confirmed by
+  running the oracle on both packs. So writer-parity coverage via `/resave` is available today and was
+  *not* ruled out; and the existing synthetic stays as a matched-failure upgrade input. Revisit
+  alongside prioritized item 6.
 - [Audit temp-dir usage for leaks](backlog/2026-07-10-temp-dir-leaks.md) — several `mkdtempSync`
   sites never remove their directory; the two worst run on every `npm test`.
 - [Vet page-load and upgrade-operation performance](backlog/2026-07-11-webapp-performance-vetting.md)

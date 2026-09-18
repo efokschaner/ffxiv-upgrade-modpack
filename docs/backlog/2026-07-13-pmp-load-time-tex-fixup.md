@@ -64,6 +64,27 @@ unported (`FixUpBrokenMipOffsets` alone does not truncate trailing padding; that
 `FastValidateTexFile`'s own second step, `EndwalkerUpgrade.cs:2149-2165`). That truncation half remains
 the only unported piece of this item.
 
+## Update (2026-08-09): the padding half now has direct byte-level evidence, on a second pack
+
+Every earlier observation of this fixup was *inferential* — a length delta that happened to be a
+multiple of 80. A `/resave` of the real Penumbra v4 pack
+`hs-Yet Another Leisurewear (+Rue!)-1.1.1-Zx8j.pmp` (see
+[`2026-08-08-bug23-in-game-verification.md`](2026-08-08-bug23-in-game-verification.md), which built
+the pair for an unrelated reason) measures the delta directly on 6 equipment textures
+(`v01_c0{2,1}01e619{5,6}_top_{mask,norm,id}.tex`, 349 KB–1.4 MB):
+
+- `ours.length === golden.length + 80` on all six, invariant across a 4× size range;
+- the common prefix is **byte-identical**;
+- our extra 80 bytes are **all zero**.
+
+So the delta is provably a trailing run of nulls that TexTools strips and we keep — this fixup's
+step 2 (`EndwalkerUpgrade.cs:2149-2165`), with no header or mip-offset component. That also rules the
+mip-offset half (step 1) out as a contributor *on this pack*, which matters because that half is
+already ported and merely unwired: wiring it alone would not move these bytes.
+
+Our output is byte-identical to the input for 87 of 88 members (the 88th being the regenerated
+`meta.json`), confirming the direction — we pass the padded texture through untouched.
+
 ## Update (2026-07-13): confirmed on the `/upgrade` side too, not just `/resave`
 
 Turning on `checkPayloadMembers` (payload zip-member NAME comparison) for every PMP golden, not just
